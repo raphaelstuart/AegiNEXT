@@ -1,0 +1,6 @@
+using System.Collections.Immutable;
+using AegiNext.Desktop.Shortcuts;
+
+namespace AegiNext.Desktop.Menus;
+
+internal sealed record WorkbenchMenuGroup(string Key, ImmutableArray<WorkbenchCommand?> Commands);

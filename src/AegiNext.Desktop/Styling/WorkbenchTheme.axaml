@@ -1,0 +1,38 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+  <Styles.Resources>
+    <ResourceDictionary>
+    <sys:Double x:Key="WorkbenchControlHeight">32</sys:Double>
+    <sys:Double x:Key="WorkbenchBodyFontSize">13</sys:Double>
+    <sys:Double x:Key="WorkbenchTabFontSize">13</sys:Double>
+    <sys:Double x:Key="WorkbenchGapSmall">8</sys:Double>
+    <sys:Double x:Key="WorkbenchGap">12</sys:Double>
+    <Thickness x:Key="WorkbenchInset">12</Thickness>
+    <Thickness x:Key="WorkbenchButtonPadding">12,6</Thickness>
+    <ResourceDictionary.ThemeDictionaries>
+      <ResourceDictionary x:Key="Light">
+        <SolidColorBrush x:Key="PreviewBackground">#F2F4F8</SolidColorBrush>
+        <SolidColorBrush x:Key="PreviewSurface">#FFFFFF</SolidColorBrush>
+        <SolidColorBrush x:Key="PreviewBorder">#DDE2EA</SolidColorBrush>
+        <SolidColorBrush x:Key="PreviewMuted">#627087</SolidColorBrush>
+        <SolidColorBrush x:Key="PreviewError">#B42318</SolidColorBrush>
+      </ResourceDictionary>
+      <ResourceDictionary x:Key="Dark">
+        <SolidColorBrush x:Key="PreviewBackground">#12151C</SolidColorBrush>
+        <SolidColorBrush x:Key="PreviewSurface">#1C222D</SolidColorBrush>
+        <SolidColorBrush x:Key="PreviewBorder">#303949</SolidColorBrush>
+        <SolidColorBrush x:Key="PreviewMuted">#9AAAC2</SolidColorBrush>
+        <SolidColorBrush x:Key="PreviewError">#FF9A9A</SolidColorBrush>
+      </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Styles.Resources>
+  <Style Selector="Window"><Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}"/><Setter Property="Background" Value="{DynamicResource PreviewBackground}"/></Style>
+  <Style Selector="Button"><Setter Property="CornerRadius" Value="6"/><Setter Property="Padding" Value="{StaticResource WorkbenchButtonPadding}"/><Setter Property="MinHeight" Value="{StaticResource WorkbenchControlHeight}"/><Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+  <Style Selector="TextBox, ComboBox, NumericUpDown, AutoCompleteBox"><Setter Property="MinHeight" Value="{StaticResource WorkbenchControlHeight}"/><Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}"/></Style>
+  <Style Selector="TabItem"><Setter Property="FontSize" Value="{StaticResource WorkbenchTabFontSize}"/><Setter Property="Padding" Value="12,8"/></Style>
+  <Style Selector="TextBlock.field"><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="{DynamicResource PreviewMuted}"/></Style>
+  <Style Selector="ListBoxItem"><Setter Property="Padding" Value="8,4"/></Style>
+  <Style Selector="WrapPanel &gt; Button"><Setter Property="Margin" Value="0,0,8,8"/></Style>
+</Styles>

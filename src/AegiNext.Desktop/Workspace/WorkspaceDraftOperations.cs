@@ -1,0 +1,67 @@
+using System.Collections.Immutable;
+using AegiNext.Core.Projects;
+
+namespace AegiNext.Desktop.Workspace;
+
+internal static class WorkspaceDraftOperations
+{
+    internal static ProjectDocument UpdateSubtitle(ProjectDocument document, Guid id, Func<SubtitleLine, SubtitleLine> edit)
+    {
+        var original = document.Subtitles.Single(value => value.Id == id);
+        var changed = edit(original);
+        if (changed == original)
+        {
+            return document;
+        }
+
+        return document with
+        {
+            Subtitles = document.Subtitles.SetItem(document.Subtitles.IndexOf(original), changed),
+            Layers = MapLayers(document.Layers, layer => layer.SubtitleId == id ? layer with
+            {
+                Start = changed.Start, End = changed.End,
+                AnimationOffset = layer.AnimationOffset + changed.Start - original.Start
+            } : layer)
+        };
+    }
+
+    internal static ProjectDocument UpdateLayer(ProjectDocument document, Guid id, Func<ProjectLayer, ProjectLayer> edit)
+    {
+        return document with { Layers = MapLayers(document.Layers, layer => layer.Id == id ? edit(layer) : layer) };
+    }
+
+    internal static ProjectDocument SetKeyframe(ProjectDocument document, Guid id, AnimationProperty property, Keyframe keyframe)
+    {
+        return UpdateLayer(document, id, layer =>
+        {
+            var track = layer.Tracks.FirstOrDefault(value => value.Property == property);
+            if (track?.Keyframes.FirstOrDefault(value => value.Time == keyframe.Time) == keyframe)
+            {
+                return layer;
+            }
+            var frames = (track?.Keyframes ?? []).Where(value => value.Time != keyframe.Time).Append(keyframe)
+                .OrderBy(value => value.Time).ToImmutableArray();
+            var updated = new AnimationTrack(property, frames);
+            return layer with
+            {
+                Tracks = track is null ? layer.Tracks.Add(updated) : layer.Tracks.SetItem(layer.Tracks.IndexOf(track), updated)
+            };
+        });
+    }
+
+    private static ImmutableArray<ProjectLayer> MapLayers(ImmutableArray<ProjectLayer> layers, Func<ProjectLayer, ProjectLayer> edit)
+    {
+        var changed = false;
+        var builder = ImmutableArray.CreateBuilder<ProjectLayer>(layers.Length);
+        foreach (var layer in layers)
+        {
+            var children = MapLayers(layer.Children, edit);
+            var candidate = children == layer.Children ? layer : layer with { Children = children };
+            var next = edit(candidate);
+            changed |= next != layer;
+            builder.Add(next);
+        }
+
+        return changed ? builder.MoveToImmutable() : layers;
+    }
+}

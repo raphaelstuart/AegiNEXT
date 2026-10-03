@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>AegiNext.Media</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AegiNextNativeRuntimeIdentifier Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</AegiNextNativeRuntimeIdentifier>
+    <AegiNextNativeRuntimeIdentifier Condition="'$(AegiNextNativeRuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</AegiNextNativeRuntimeIdentifier>
+    <AegiNextNativeDirectory>$(MSBuildThisFileDirectory)../../artifacts/native/$(AegiNextNativeRuntimeIdentifier)/$(Configuration)</AegiNextNativeDirectory>
+    <AegiNextNativeLibraryPath>$(AegiNextNativeDirectory)/libaeginext_media.dylib</AegiNextNativeLibraryPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../AegiNext.Core/AegiNext.Core.csproj" />
+    <ProjectReference Include="../AegiNext.Rendering/AegiNext.Rendering.csproj" />
+    <EmbeddedResource Include="Probing/ffmpeg-toolchain.json" />
+    <InternalsVisibleTo Include="AegiNext.Media.Tests" />
+    <InternalsVisibleTo Include="AegiNext.Desktop.Tests" />
+    <InternalsVisibleTo Include="AegiNext.Desktop.Ui.Tests" />
+    <None Include="$(AegiNextNativeLibraryPath)"
+          Link="libaeginext_media.dylib"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+           Condition="$([MSBuild]::IsOSPlatform('OSX')) And Exists('$(AegiNextNativeLibraryPath)')" />
+    <None Include="$(AegiNextNativeDirectory)/libaeginext_decode.dylib"
+          Link="libaeginext_decode.dylib"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+           Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('osx-')) And Exists('$(AegiNextNativeDirectory)/libaeginext_decode.dylib')" />
+    <None Include="$(AegiNextNativeDirectory)/libaeginext_audio.dylib" Link="libaeginext_audio.dylib"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('osx-')) And Exists('$(AegiNextNativeDirectory)/libaeginext_audio.dylib')" />
+    <None Include="$(AegiNextNativeDirectory)/libaeginext_export.dylib" Link="libaeginext_export.dylib"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('osx-')) And Exists('$(AegiNextNativeDirectory)/libaeginext_export.dylib')" />
+    <None Include="$(AegiNextNativeDirectory)/*.dll"
+          Link="%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('win-')) And Exists('$(AegiNextNativeDirectory)/aeginext_decode.dll')" />
+    <None Include="$(AegiNextNativeDirectory)/libaeginext_decode.so"
+          Link="libaeginext_decode.so"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('linux-')) And Exists('$(AegiNextNativeDirectory)/libaeginext_decode.so')" />
+  </ItemGroup>
+</Project>

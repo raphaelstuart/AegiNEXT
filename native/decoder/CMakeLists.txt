@@ -1,0 +1,122 @@
+cmake_minimum_required(VERSION 3.25)
+
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Product minimum macOS target; SDK dependencies are validated separately")
+endif()
+
+project(AegiNextDecode VERSION 0.1.0 LANGUAGES C CXX)
+
+if(NOT APPLE AND NOT WIN32)
+    message(FATAL_ERROR "The first decoder development targets are macOS and Windows.")
+endif()
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR "The decoder ABI currently supports 64-bit targets only.")
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(AEGINEXT_FFMPEG_ROOT "" CACHE PATH "Pinned FFmpeg shared SDK root (include/lib/bin)")
+set(AEGINEXT_NATIVE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/lib" CACHE PATH "Decoder development output directory")
+if(NOT AEGINEXT_FFMPEG_ROOT)
+    message(FATAL_ERROR "Specify AEGINEXT_FFMPEG_ROOT explicitly; ambient FFmpeg SDK fallback is not supported.")
+endif()
+
+unset(FFMPEG_INCLUDE_DIR CACHE)
+find_path(FFMPEG_INCLUDE_DIR libavformat/avformat.h PATHS "${AEGINEXT_FFMPEG_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
+foreach(COMPONENT avformat avcodec avutil swscale)
+    unset(FFMPEG_${COMPONENT}_LIBRARY CACHE)
+    find_library(FFMPEG_${COMPONENT}_LIBRARY NAMES ${COMPONENT} ${COMPONENT}.dll
+        PATHS "${AEGINEXT_FFMPEG_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
+endforeach()
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../src/AegiNext.Media/Probing/ffmpeg-toolchain.json" TOOLCHAIN_MANIFEST)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/AegiNext.Media/Probing/ffmpeg-toolchain.json")
+set(VERSION_HEADER "#pragma once\n")
+foreach(COMPONENT avformat avcodec avutil swscale)
+    string(JSON VERSION GET "${TOOLCHAIN_MANIFEST}" libraries "lib${COMPONENT}")
+    string(REPLACE "." ";" VERSION_PARTS "${VERSION}")
+    list(GET VERSION_PARTS 0 MAJOR)
+    list(GET VERSION_PARTS 1 MINOR)
+    list(GET VERSION_PARTS 2 MICRO)
+    math(EXPR VERSION_INT "(${MAJOR} << 16) | (${MINOR} << 8) | ${MICRO}")
+    string(TOUPPER "${COMPONENT}" COMPONENT_UPPER)
+    string(APPEND VERSION_HEADER "#define AN_EXPECTED_${COMPONENT_UPPER} ${VERSION_INT}\n")
+endforeach()
+string(JSON RELEASE_COUNT LENGTH "${TOOLCHAIN_MANIFEST}" acceptedVersionStrings)
+math(EXPR LAST_RELEASE "${RELEASE_COUNT} - 1")
+string(APPEND VERSION_HEADER "inline constexpr const char *AN_ACCEPTED_RELEASES[] = {\n")
+foreach(INDEX RANGE ${LAST_RELEASE})
+    string(JSON RELEASE GET "${TOOLCHAIN_MANIFEST}" acceptedVersionStrings ${INDEX})
+    if(NOT RELEASE MATCHES "^[A-Za-z0-9._+-]+$")
+        message(FATAL_ERROR "Unexpected characters in the FFmpeg version manifest.")
+    endif()
+    string(APPEND VERSION_HEADER "    \"${RELEASE}\",\n")
+endforeach()
+string(APPEND VERSION_HEADER "};\n")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/decode_versions.h" "${VERSION_HEADER}")
+
+add_library(aeginext_decode_objects OBJECT src/decode_support.cpp src/frame_owner.cpp src/decoder_context.cpp src/preview_converter.cpp)
+target_include_directories(aeginext_decode_objects PUBLIC include src "${FFMPEG_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
+set_target_properties(aeginext_decode_objects PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_VISIBILITY_PRESET hidden)
+
+add_library(aeginext_decode SHARED src/decode_api.cpp $<TARGET_OBJECTS:aeginext_decode_objects>)
+target_include_directories(aeginext_decode PUBLIC include PRIVATE src "${FFMPEG_INCLUDE_DIR}")
+target_compile_definitions(aeginext_decode PRIVATE AEGINEXT_DECODE_BUILD)
+target_link_libraries(aeginext_decode PRIVATE "${FFMPEG_avformat_LIBRARY}" "${FFMPEG_avcodec_LIBRARY}" "${FFMPEG_avutil_LIBRARY}" "${FFMPEG_swscale_LIBRARY}")
+set_target_properties(aeginext_decode PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES
+    LIBRARY_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
+    BUILD_RPATH "${AEGINEXT_FFMPEG_ROOT}/lib")
+foreach(CONFIG DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set_target_properties(aeginext_decode PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY_${CONFIG} "${AEGINEXT_NATIVE_OUTPUT_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${AEGINEXT_NATIVE_OUTPUT_DIR}"
+        ARCHIVE_OUTPUT_DIRECTORY_${CONFIG} "${AEGINEXT_NATIVE_OUTPUT_DIR}")
+endforeach()
+if(WIN32)
+    set_target_properties(aeginext_decode PROPERTIES PREFIX "")
+endif()
+
+foreach(TARGET aeginext_decode_objects aeginext_decode)
+    if(MSVC)
+        target_compile_options(${TARGET} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${TARGET} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endforeach()
+if(MINGW)
+    target_link_options(aeginext_decode PRIVATE -static-libgcc -static-libstdc++)
+    target_link_libraries(aeginext_decode PRIVATE -Wl,-Bstatic winpthread -Wl,-Bdynamic)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(aeginext_decode_tests Tests/decode_tests.cpp Tests/c_abi_test.c $<TARGET_OBJECTS:aeginext_decode_objects>)
+    target_include_directories(aeginext_decode_tests PRIVATE include src "${FFMPEG_INCLUDE_DIR}")
+    target_link_libraries(aeginext_decode_tests PRIVATE aeginext_decode "${FFMPEG_avformat_LIBRARY}" "${FFMPEG_avcodec_LIBRARY}" "${FFMPEG_avutil_LIBRARY}" "${FFMPEG_swscale_LIBRARY}")
+    set_target_properties(aeginext_decode_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
+        BUILD_RPATH "${AEGINEXT_NATIVE_OUTPUT_DIR};${AEGINEXT_FFMPEG_ROOT}/lib")
+    if(MINGW)
+        target_link_options(aeginext_decode_tests PRIVATE -static-libgcc -static-libstdc++)
+        target_link_libraries(aeginext_decode_tests PRIVATE -Wl,-Bstatic winpthread -Wl,-Bdynamic)
+    endif()
+    add_test(NAME aeginext.decode.contracts COMMAND aeginext_decode_tests)
+
+    add_executable(aeginext_preview_tests Tests/preview_tests.cpp $<TARGET_OBJECTS:aeginext_decode_objects>)
+    target_include_directories(aeginext_preview_tests PRIVATE include src "${FFMPEG_INCLUDE_DIR}")
+    target_link_libraries(aeginext_preview_tests PRIVATE aeginext_decode "${FFMPEG_avformat_LIBRARY}"
+        "${FFMPEG_avcodec_LIBRARY}" "${FFMPEG_avutil_LIBRARY}" "${FFMPEG_swscale_LIBRARY}")
+    set_target_properties(aeginext_preview_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
+        BUILD_RPATH "${AEGINEXT_NATIVE_OUTPUT_DIR};${AEGINEXT_FFMPEG_ROOT}/lib")
+    if(MINGW)
+        target_link_options(aeginext_preview_tests PRIVATE -static-libgcc -static-libstdc++)
+        target_link_libraries(aeginext_preview_tests PRIVATE -Wl,-Bstatic winpthread -Wl,-Bdynamic)
+    endif()
+    add_test(NAME aeginext.preview.contracts COMMAND aeginext_preview_tests)
+endif()
+
+message(STATUS "Standalone software decoder uses the explicit SDK: ${AEGINEXT_FFMPEG_ROOT}")
+message(STATUS "Development output: ${AEGINEXT_NATIVE_OUTPUT_DIR}; dependency redistribution is a later packaging step.")

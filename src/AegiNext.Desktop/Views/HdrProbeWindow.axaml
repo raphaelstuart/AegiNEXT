@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AegiNext.Desktop.Views.HdrProbeWindow"
+        Title="AegiNext · HDR Probe"
+        Width="1120" Height="760" MinWidth="640" MinHeight="480">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="20" RowSpacing="14">
+    <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="4">
+        <TextBlock Text="HDR 预览" FontSize="22" FontWeight="SemiBold" />
+        <TextBlock Text="0 · 0.18 · 0.5 · 1 · 2 · 4 × 参考白" Opacity="0.6" />
+      </StackPanel>
+      <Button Grid.Column="1" Name="CloseButton" Content="关闭" VerticalAlignment="Center" />
+    </Grid>
+    <Border Grid.Row="1" Name="PreviewSlot" Background="Black" />
+    <TextBlock Grid.Row="2" Name="StatusText" Text="正在初始化原生预览…" TextWrapping="Wrap" />
+  </Grid>
+</Window>

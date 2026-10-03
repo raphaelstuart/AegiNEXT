@@ -1,0 +1,11 @@
+{
+  "version": "9.0.2",
+  "acceptedVersionStrings": ["9.0.2", "9.0.2-full_build-www.gyan.dev"],
+  "libraries": {
+    "libavutil": "61.1.102",
+    "libavcodec": "63.1.102",
+    "libavformat": "63.1.102",
+    "libswscale": "10.1.102",
+    "libswresample": "7.1.102"
+  }
+}

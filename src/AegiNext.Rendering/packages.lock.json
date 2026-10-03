@@ -1,0 +1,62 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "SkiaSharp": {
+        "type": "Direct",
+        "requested": "[3.119.4, )",
+        "resolved": "3.119.4",
+        "contentHash": "53NOSUZ1Us+91Sm0uCkIivh/k7jOowRErZT2sIWwPFN9mLUvdxnE6rS4sWo4255+Rd2MWUSF+j0NMZHD6Cke+Q==",
+        "dependencies": {
+          "SkiaSharp.NativeAssets.Win32": "3.119.4",
+          "SkiaSharp.NativeAssets.macOS": "3.119.4"
+        }
+      },
+      "SkiaSharp.HarfBuzz": {
+        "type": "Direct",
+        "requested": "[3.119.4, )",
+        "resolved": "3.119.4",
+        "contentHash": "YkN+X5fW9hXFlkoYaxDfYHuSE7SzIHlYMdWarmk03WOad1Rur8zJqGp1dkYp69FGpFxBVgnd/euiJnDPfr3WZQ==",
+        "dependencies": {
+          "HarfBuzzSharp": "8.3.1.5",
+          "SkiaSharp": "3.119.4"
+        }
+      },
+      "SkiaSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "3.119.4",
+        "contentHash": "fgBOWEqbY012x7gMfJU4ezgz6dfhJb30Z6YdW35h85Zoe39+a8YNbAAwL29ihPfWoppg5AjvyKNzD1oCvlqWwA=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "3.119.4",
+        "contentHash": "XOpbx/4CReO2wYsq2s6rbvdauc6dntG4Zv499sHGTJ87bwZaFXszFkwql3+FIZMc8kUPeaj3Mx2ezIJmo8a1Kg=="
+      },
+      "aeginext.core": {
+        "type": "Project"
+      },
+      "HarfBuzzSharp": {
+        "type": "CentralTransitive",
+        "requested": "[8.3.1.5, )",
+        "resolved": "8.3.1.5",
+        "contentHash": "K0+U7592Ne10BCuHZrZYIbaYUQy20CsYM9A3+Xjz3UpLPjs6nosbQtDYp2PueWJ7AQ5/htbyO8WqnUe+uf8AAQ==",
+        "dependencies": {
+          "HarfBuzzSharp.NativeAssets.Win32": "8.3.1.5",
+          "HarfBuzzSharp.NativeAssets.macOS": "8.3.1.5"
+        }
+      },
+      "HarfBuzzSharp.NativeAssets.macOS": {
+        "type": "CentralTransitive",
+        "requested": "[8.3.1.5, )",
+        "resolved": "8.3.1.5",
+        "contentHash": "TWSbMOIBiGvCTnR2MUlmhnP92L7qwYmpDXSNOkYQUh6Iuc7W7Y3z/Q+X3N6scvbZbDmfbZjqbNUqDEz/JzpwBg=="
+      },
+      "HarfBuzzSharp.NativeAssets.Win32": {
+        "type": "CentralTransitive",
+        "requested": "[8.3.1.5, )",
+        "resolved": "8.3.1.5",
+        "contentHash": "p95FW4SwP50qD4cq6e2/P5DP7As6c6aQU5qHvsdCKorX5GFLHUMIx/zQgiLvB871xQrhdN24sZyMbCufnTHvsQ=="
+      }
+    }
+  }
+}

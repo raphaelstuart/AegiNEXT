@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>AegiNext.Desktop</RootNamespace>
+    <AssemblyName>aegi-next</AssemblyName>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AegiNext.Desktop.Tests" />
+    <InternalsVisibleTo Include="AegiNext.Desktop.Ui.Tests" />
+    <ProjectReference Include="../AegiNext.Media/AegiNext.Media.csproj" />
+    <ProjectReference Include="../AegiNext.Rendering/AegiNext.Rendering.csproj" />
+    <ProjectReference Include="../AegiNext.Application/AegiNext.Application.csproj" />
+    <ProjectReference Include="../AegiNext.ExportWorker/AegiNext.ExportWorker.csproj" ReferenceOutputAssembly="false" />
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Controls.ColorPicker" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Dock.Avalonia" />
+    <PackageReference Include="Dock.Model.Mvvm" />
+    <PackageReference Include="Dock.Avalonia.Themes.Fluent" />
+  </ItemGroup>
+  <Target Name="CopyExportWorker" AfterTargets="Build">
+    <MSBuild Projects="../AegiNext.ExportWorker/AegiNext.ExportWorker.csproj" Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier)">
+      <Output TaskParameter="TargetOutputs" ItemName="_ExportWorkerTarget" />
+    </MSBuild>
+    <ItemGroup>
+      <_ExportWorkerFiles Include="$([System.IO.Path]::GetDirectoryName('%(_ExportWorkerTarget.Identity)'))/AegiNext.ExportWorker*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ExportWorkerFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishExportWorker" BeforeTargets="ComputeFilesToPublish">
+    <MSBuild Projects="../AegiNext.ExportWorker/AegiNext.ExportWorker.csproj" Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier)">
+      <Output TaskParameter="TargetOutputs" ItemName="_PublishedWorkerTarget" />
+    </MSBuild>
+    <ItemGroup>
+      <_WorkerPublishFile Include="$([System.IO.Path]::GetDirectoryName('%(_PublishedWorkerTarget.Identity)'))/AegiNext.ExportWorker.dll;
+                                  $([System.IO.Path]::GetDirectoryName('%(_PublishedWorkerTarget.Identity)'))/AegiNext.ExportWorker.deps.json;
+                                  $([System.IO.Path]::GetDirectoryName('%(_PublishedWorkerTarget.Identity)'))/AegiNext.ExportWorker.runtimeconfig.json;
+                                  $([System.IO.Path]::GetDirectoryName('%(_PublishedWorkerTarget.Identity)'))/AegiNext.ExportWorker.pdb" />
+    </ItemGroup>
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_WorkerPublishFile)">
+        <RelativePath>%(_WorkerPublishFile.Filename)%(_WorkerPublishFile.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>

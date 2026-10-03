@@ -1,0 +1,142 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts" xmlns:presets="using:AegiNext.Core.Presets"
+             xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:settings="using:AegiNext.Desktop.Settings"
+             xmlns:vm="using:AegiNext.Desktop.Settings.Styles"
+             x:Class="AegiNext.Desktop.Settings.Styles.StyleSettingsView" x:DataType="vm:StyleSettingsViewModel">
+  <UserControl.Resources>
+    <settings:SettingsSceneColorConverter x:Key="SceneConverter" />
+  </UserControl.Resources>
+  <Grid Name="StylesPage" IsVisible="{Binding $parent[UserControl].IsVisible}" IsEnabled="{Binding IsAvailable}"
+        RowDefinitions="Auto,*,Auto" RowSpacing="12">
+    <WrapPanel>
+      <Button Name="AddStyleButton" Command="{Binding AddCommand}" Click="FocusName" Tag="Add" Margin="0,0,8,8" />
+      <Button Name="DuplicateStyleButton" Command="{Binding DuplicateCommand}" Click="FocusName" Tag="Duplicate"
+              Margin="0,0,8,8" />
+      <Button Name="DeleteStyleButton" Command="{Binding DeleteCommand}" Tag="Delete" Margin="0,0,8,8" />
+      <Button Name="ImportStylesButton" Command="{Binding ImportCommand}" Tag="Import" Margin="0,0,8,8" />
+      <Button Name="ExportStylesButton" Command="{Binding ExportCommand}" Tag="Export" Margin="0,0,0,8" />
+    </WrapPanel>
+    <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="16">
+      <Grid>
+        <ListBox Name="StyleList" ItemsSource="{Binding Styles}" SelectedItem="{Binding SelectedStyle, Mode=TwoWay}"
+                 Background="{DynamicResource SettingsSurface}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="presets:SubtitleStylePreset">
+              <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Name="EmptyStylesLabel" IsVisible="{Binding IsEmpty}" Tag="EmptyStyles" Classes="field"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+      </Grid>
+      <ScrollViewer Grid.Column="1">
+        <StackPanel Name="StyleEditor" IsEnabled="{Binding CanEdit}" Spacing="12">
+          <StackPanel Spacing="8">
+            <TextBlock Tag="Name" Classes="field" />
+            <TextBox Name="StyleNameInput" Text="{Binding Name, Mode=TwoWay}" MaxLength="128" />
+          </StackPanel>
+          <Grid ColumnDefinitions="*,112" ColumnSpacing="12">
+            <StackPanel Spacing="8">
+              <TextBlock Tag="Font" Classes="field" /><controls:FontFamilyPicker Name="FontInput" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="8">
+              <TextBlock Tag="FontSize" Classes="field" />
+              <controls:NumericDraftInput Name="FontSizeInput" RawText="{Binding FontSizeText, Mode=TwoWay}"
+                                          Value="{Binding FontSize, Mode=TwoWay}"
+                                          Minimum="0.01" Maximum="4096"
+                                          Increment="1" />
+            </StackPanel>
+          </Grid>
+          <TextBlock Name="FontSourceLabel" Text="{Binding FontSource}" Classes="field" />
+          <StackPanel Orientation="Horizontal" Spacing="16">
+            <CheckBox Name="BoldCheck" IsChecked="{Binding Bold, Mode=TwoWay}" Tag="Bold" />
+            <CheckBox Name="ItalicCheck" IsChecked="{Binding Italic, Mode=TwoWay}" Tag="Italic" />
+          </StackPanel>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+            <StackPanel Spacing="8">
+              <TextBlock Tag="Fill" Classes="field" />
+              <ColorPicker Name="FillPicker"
+                           Color="{Binding Fill, Mode=TwoWay, Converter={StaticResource SceneConverter}}"
+                           IsColorPaletteVisible="False" IsColorComponentsVisible="False" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="8">
+              <TextBlock Tag="Stroke" Classes="field" />
+              <ColorPicker Name="StrokePicker"
+                           Color="{Binding Stroke, Mode=TwoWay, Converter={StaticResource SceneConverter}}"
+                           IsColorPaletteVisible="False" IsColorComponentsVisible="False" />
+            </StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+            <StackPanel Spacing="8">
+              <TextBlock Tag="StrokeWidth" Classes="field" />
+              <controls:NumericDraftInput Name="StrokeWidthInput" RawText="{Binding StrokeWidthText, Mode=TwoWay}"
+                                          Value="{Binding StrokeWidth, Mode=TwoWay}"
+                                          Minimum="0"
+                                          Maximum="4096" Increment="0.5" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="8">
+              <TextBlock Tag="Margin" Classes="field" />
+              <controls:NumericDraftInput Name="MarginInput" RawText="{Binding MarginText, Mode=TwoWay}" Minimum="0"
+                                          Value="{Binding Margin, Mode=TwoWay}"
+                                          Maximum="32768"
+                                          Increment="1" />
+            </StackPanel>
+          </Grid>
+          <StackPanel Spacing="8">
+            <TextBlock Tag="Alignment" Classes="field" />
+            <ComboBox Name="AlignmentCombo" ItemsSource="{Binding Alignments}"
+                      SelectedIndex="{Binding AlignmentIndex, Mode=TwoWay}" />
+          </StackPanel>
+          <Expander Tag="Advanced" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="12" Margin="0,12,0,0">
+              <StackPanel Spacing="8">
+                <TextBlock Tag="LineHeight" Classes="field" />
+                <controls:NumericDraftInput Name="LineHeightInput" RawText="{Binding LineHeightText, Mode=TwoWay}"
+                                            Value="{Binding LineHeight, Mode=TwoWay}"
+                                            Minimum="0.1"
+                                            Maximum="10" Increment="0.1" />
+              </StackPanel>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <StackPanel Spacing="8">
+                  <TextBlock Tag="ShadowX" Classes="field" />
+                  <controls:NumericDraftInput Name="ShadowXInput" RawText="{Binding ShadowXText, Mode=TwoWay}"
+                                              Value="{Binding ShadowX, Mode=TwoWay}"
+                                              Minimum="-1000000000"
+                                              Maximum="1000000000" Increment="1" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="8">
+                  <TextBlock Tag="ShadowY" Classes="field" />
+                  <controls:NumericDraftInput Name="ShadowYInput" RawText="{Binding ShadowYText, Mode=TwoWay}"
+                                              Value="{Binding ShadowY, Mode=TwoWay}"
+                                              Minimum="-1000000000"
+                                              Maximum="1000000000" Increment="1" />
+                </StackPanel>
+              </Grid>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <StackPanel Spacing="8">
+                  <TextBlock Tag="ShadowBlur" Classes="field" />
+                  <controls:NumericDraftInput Name="ShadowBlurInput" RawText="{Binding ShadowBlurText, Mode=TwoWay}"
+                                              Value="{Binding ShadowBlur, Mode=TwoWay}"
+                                              Minimum="0"
+                                              Maximum="512" Increment="0.5" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="8">
+                  <TextBlock Tag="ShadowColor" Classes="field" />
+                  <ColorPicker Name="ShadowPicker"
+                               Color="{Binding ShadowColor, Mode=TwoWay, Converter={StaticResource SceneConverter}}"
+                               IsColorPaletteVisible="False" IsColorComponentsVisible="False" />
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Expander>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+    <WrapPanel Grid.Row="2">
+      <Button Name="CaptureStyleButton" Command="{Binding CaptureCommand}" Tag="Capture" Margin="0,0,8,8" />
+      <Button Name="ApplyStyleButton" Click="ApplyStyle" IsEnabled="{Binding CanApply}" Tag="Apply" Margin="0,0,8,8" />
+      <Button Name="SaveStyleButton" Click="SaveStyle" IsEnabled="{Binding CanEdit}" Tag="Save" Classes="accent"
+              Margin="0,0,0,8" />
+    </WrapPanel>
+  </Grid>
+</UserControl>

@@ -1,0 +1,113 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts"
+        xmlns:presets="using:AegiNext.Core.Presets"
+        xmlns:controls="using:AegiNext.Desktop.Controls.Common"
+        xmlns:settings="using:AegiNext.Desktop.Settings"
+        xmlns:appearance="using:AegiNext.Desktop.Settings.Appearance"
+        xmlns:shortcutPages="using:AegiNext.Desktop.Settings.Shortcuts"
+        xmlns:stylePages="using:AegiNext.Desktop.Settings.Styles"
+        x:Class="AegiNext.Desktop.Settings.SettingsWindow" x:DataType="settings:SettingsWindowViewModel"
+        Title="{Binding Title}"
+        Width="980" Height="720" MinWidth="860" MinHeight="580"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource SettingsBackground}">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="SettingsBackground">#F4F5F8</SolidColorBrush>
+          <SolidColorBrush x:Key="SettingsSurface">#FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="SettingsBorder">#DFE3EB</SolidColorBrush>
+          <SolidColorBrush x:Key="SettingsMuted">#637087</SolidColorBrush>
+          <SolidColorBrush x:Key="SettingsError">#B42318</SolidColorBrush>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="SettingsBackground">#151920</SolidColorBrush>
+          <SolidColorBrush x:Key="SettingsSurface">#1D232E</SolidColorBrush>
+          <SolidColorBrush x:Key="SettingsBorder">#343D4D</SolidColorBrush>
+          <SolidColorBrush x:Key="SettingsMuted">#A5B1C6</SolidColorBrush>
+          <SolidColorBrush x:Key="SettingsError">#FF9A9A</SolidColorBrush>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="Button">
+      <Setter Property="Padding" Value="{StaticResource WorkbenchButtonPadding}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="MinHeight" Value="{StaticResource WorkbenchControlHeight}" />
+      <Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}" />
+    </Style>
+    <Style Selector="TextBox, NumericUpDown">
+      <Setter Property="MinHeight" Value="{StaticResource WorkbenchControlHeight}" />
+      <Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="MinHeight" Value="{StaticResource WorkbenchControlHeight}" />
+      <Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="TextBlock.field">
+      <Setter Property="FontSize" Value="12" /><Setter Property="Foreground" Value="{DynamicResource SettingsMuted}" />
+    </Style>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="12,8" /><Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource SettingsSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource SettingsBorder}" />
+      <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+  </Window.Styles>
+  <Grid RowDefinitions="Auto,*">
+    <controls:WindowTitleBar Name="SettingsTitleBar" Title="{Binding Title}" />
+    <Grid Grid.Row="1" ColumnDefinitions="184,*">
+      <Border BorderBrush="{DynamicResource SettingsBorder}" BorderThickness="0,0,1,0" Padding="12,16">
+        <StackPanel Spacing="16">
+          <TextBlock Tag="Settings" Margin="12,0" FontSize="20" FontWeight="SemiBold" />
+          <ListBox Name="Navigation" Background="Transparent" SelectedIndex="{Binding PageIndex, Mode=TwoWay}">
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Width="18" Height="18"
+                          Data="M12,2 A10,10 0 1 0 12,22 A10,10 0 0 0 12,2 M12,5 L12,19 A7,7 0 0 1 12,5 Z" />
+                <TextBlock Tag="Appearance" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Width="18" Height="18"
+                          Data="M2,5 L22,5 L22,19 L2,19 Z M4,7 L4,17 L20,17 L20,7 Z M6,9 L8,9 L8,11 L6,11 Z M10,9 L12,9 L12,11 L10,11 Z M14,9 L16,9 L16,11 L14,11 Z M6,13 L18,13 L18,15 L6,15 Z" />
+                <TextBlock Tag="Shortcuts" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Width="18" Height="18" Data="M3,3 L21,3 L21,7 L14,7 L14,21 L10,21 L10,7 L3,7 Z" />
+                <TextBlock Tag="Styles" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+          </ListBox>
+        </StackPanel>
+      </Border>
+      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" Margin="24,20" RowSpacing="16">
+        <TextBlock Name="PageTitle" Text="{Binding PageTitle}" FontSize="22" FontWeight="SemiBold" />
+        <Grid Grid.Row="1" IsVisible="{Binding IsAppearanceVisible}">
+          <appearance:AppearanceSettingsView Name="AppearanceView" DataContext="{Binding Appearance}"
+                                             IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsShortcutsVisible}">
+          <shortcutPages:ShortcutSettingsView Name="ShortcutsView" DataContext="{Binding Shortcuts}"
+                                              IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsStylesVisible}">
+          <stylePages:StyleSettingsView Name="StylesView" DataContext="{Binding Styles}"
+                                        IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <TextBlock Name="SettingsError" Grid.Row="2" Text="{Binding Error}"
+                   Foreground="{DynamicResource SettingsError}" IsVisible="{Binding HasError}" TextWrapping="Wrap"
+                   MaxHeight="64" TextTrimming="CharacterEllipsis" />
+      </Grid>
+    </Grid>
+  </Grid>
+</Window>

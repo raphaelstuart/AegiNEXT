@@ -1,0 +1,37 @@
+namespace AegiNext.Desktop.Shortcuts;
+
+/// <summary>应用内统一命令标识，按钮、菜单及快捷键使用同一命令入口。</summary>
+public enum WorkbenchCommand
+{
+    NEW_PROJECT,
+    OPEN_PROJECT,
+    SAVE_PROJECT,
+    SAVE_PROJECT_AS,
+    OPEN_MEDIA,
+    IMPORT_SUBTITLES,
+    EXPORT_SUBTITLES,
+    UNDO,
+    REDO,
+    OPEN_SETTINGS,
+    PLAY_PAUSE,
+    SEEK_BACKWARD,
+    SEEK_FORWARD,
+    TIMING_ENTER,
+    TIMING_EXIT,
+    ADD_SUBTITLE,
+    DELETE_SUBTITLE,
+    SPLIT_SUBTITLE,
+    MERGE_SUBTITLE,
+    EXPORT_VIDEO,
+    EXIT,
+    VIEW_STYLES,
+    VIEW_EFFECTS,
+    VIEW_EXPORT,
+    VIEW_TIMELINE,
+    VIEW_PREVIEW,
+    VIEW_SUBTITLES,
+    LAYOUT_SAVE,
+    LAYOUT_SAVE_AS,
+    LAYOUT_MANAGE,
+    LAYOUT_RESTORE_DEFAULT
+}

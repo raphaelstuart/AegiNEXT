@@ -1,0 +1,3 @@
+# 项目枚举按用户要求使用 ALL_UPPER。
+[*.cs]
+dotnet_diagnostic.CA1707.severity = none

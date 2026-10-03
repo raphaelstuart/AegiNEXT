@@ -1,0 +1,146 @@
+using System.Collections.Immutable;
+using System.Collections.Frozen;
+using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
+
+namespace AegiNext.Core.Editing;
+
+/// <summary>纯函数动画求值，不依赖时钟、文件系统或渲染框架。</summary>
+public static class SceneEvaluator
+{
+    /// <summary>验证工程并按精确半开时间区间求出可见合成树。</summary>
+    public static ImmutableArray<EvaluatedLayer> Evaluate(ProjectDocument document, MediaTime time)
+    {
+        return Evaluate(new PreparedProjectScene(document), time);
+    }
+
+    /// <summary>求值已验证快照，适用于预览及逐帧压制。</summary>
+    public static ImmutableArray<EvaluatedLayer> Evaluate(PreparedProjectScene scene, MediaTime time)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        return EvaluateLayers(scene.Document.Layers, scene.Subtitles, time);
+    }
+
+    /// <summary>求严格递增轨道的保持、线性或缓动值；时间在首尾之外时保持端点。</summary>
+    public static double EvaluateTrack(AnimationTrack track, MediaTime time)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+        if (track.Keyframes.IsDefaultOrEmpty)
+        {
+            throw new ArgumentException("轨道没有关键帧。", nameof(track));
+        }
+
+        var frames = track.Keyframes;
+        if (time <= frames[0].Time)
+        {
+            return frames[0].Value;
+        }
+
+        for (var index = 1; index < frames.Length; index++)
+        {
+            if (time >= frames[index].Time)
+            {
+                continue;
+            }
+
+            var first = frames[index - 1];
+            var second = frames[index];
+            var fraction = Fraction(time - first.Time, second.Time - first.Time);
+            fraction = first.Interpolation switch
+            {
+                KeyframeInterpolation.HOLD => 0,
+                KeyframeInterpolation.LINEAR => fraction,
+                KeyframeInterpolation.EASE_IN => fraction * fraction,
+                KeyframeInterpolation.EASE_OUT => 1 - (1 - fraction) * (1 - fraction),
+                KeyframeInterpolation.EASE_IN_OUT => fraction * fraction * (3 - 2 * fraction),
+                _ => throw new InvalidDataException("未知关键帧插值。")
+            };
+            return first.Value + (second.Value - first.Value) * fraction;
+        }
+
+        return frames[^1].Value;
+    }
+
+    /// <summary>以 [0,1] 段参数求路径位置，超界参数夹在首尾。</summary>
+    public static ScenePoint EvaluatePath(PathGeometry path, double progress)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (path.Segments.IsDefaultOrEmpty || !double.IsFinite(progress))
+        {
+            throw new ArgumentException("路径或参数无效。", nameof(path));
+        }
+
+        var scaled = Math.Clamp(progress, 0, 1) * path.Segments.Length;
+        var index = Math.Min((int)scaled, path.Segments.Length - 1);
+        var t = scaled - index;
+        var a = index == 0 ? path.Start : path.Segments[index - 1].End;
+        var segment = path.Segments[index];
+        var inverse = 1 - t;
+        return new(inverse * inverse * inverse * a.X + 3 * inverse * inverse * t * segment.Control1.X +
+            3 * inverse * t * t * segment.Control2.X + t * t * t * segment.End.X,
+            inverse * inverse * inverse * a.Y + 3 * inverse * inverse * t * segment.Control1.Y +
+            3 * inverse * t * t * segment.Control2.Y + t * t * t * segment.End.Y);
+    }
+
+    private static ImmutableArray<EvaluatedLayer> EvaluateLayers(ImmutableArray<ProjectLayer> layers,
+        FrozenDictionary<Guid, SubtitleLine> subtitles, MediaTime time)
+    {
+        var result = ImmutableArray.CreateBuilder<EvaluatedLayer>();
+        foreach (var layer in layers)
+        {
+            if (time < layer.Start || time >= layer.End)
+            {
+                continue;
+            }
+
+            var subtitle = layer.SubtitleId is { } id ? subtitles[id] : null;
+            var local = time - layer.Start + layer.AnimationOffset;
+            var values = layer.Tracks.ToDictionary(track => track.Property, track => EvaluateTrack(track, local));
+            var transform = layer.Transform with
+            {
+                X = Get(values, AnimationProperty.POSITION_X, layer.Transform.X),
+                Y = Get(values, AnimationProperty.POSITION_Y, layer.Transform.Y),
+                ScaleX = Get(values, AnimationProperty.SCALE_X, layer.Transform.ScaleX),
+                ScaleY = Get(values, AnimationProperty.SCALE_Y, layer.Transform.ScaleY),
+                Rotation = Get(values, AnimationProperty.ROTATION, layer.Transform.Rotation)
+            };
+            if (layer.MotionPath is { } motion)
+            {
+                var progress = Get(values, AnimationProperty.PATH_PROGRESS, Fraction(local, motion.Duration));
+                var point = EvaluatePath(motion.Path, progress);
+                var rotation = transform.Rotation;
+                if (motion.OrientToPath)
+                {
+                    var before = EvaluatePath(motion.Path, progress - 0.00001);
+                    var after = EvaluatePath(motion.Path, progress + 0.00001);
+                    rotation += Math.Atan2(after.Y - before.Y, after.X - before.X) * 180 / Math.PI;
+                }
+
+                transform = transform with { X = transform.X + point.X, Y = transform.Y + point.Y, Rotation = rotation };
+            }
+
+            var fill = subtitle?.Style.Fill ?? layer.Fill;
+            var stroke = subtitle?.Style.Stroke ?? layer.Stroke;
+            result.Add(new(layer, local, transform, Get(values, AnimationProperty.OPACITY, layer.Opacity),
+                new(Get(values, AnimationProperty.FILL_RED, fill.Red), Get(values, AnimationProperty.FILL_GREEN, fill.Green),
+                    Get(values, AnimationProperty.FILL_BLUE, fill.Blue), Get(values, AnimationProperty.FILL_ALPHA, fill.Alpha)),
+                new(Get(values, AnimationProperty.STROKE_RED, stroke.Red), Get(values, AnimationProperty.STROKE_GREEN, stroke.Green),
+                    Get(values, AnimationProperty.STROKE_BLUE, stroke.Blue), Get(values, AnimationProperty.STROKE_ALPHA, stroke.Alpha)),
+                Get(values, AnimationProperty.STROKE_WIDTH, subtitle?.Style.StrokeWidth ?? layer.StrokeWidth),
+                Get(values, AnimationProperty.BLUR, layer.Blur), subtitle, EvaluateLayers(layer.Children, subtitles, time)));
+        }
+
+        return result.ToImmutable();
+    }
+
+    private static double Get(Dictionary<AnimationProperty, double> values, AnimationProperty property, double fallback)
+    {
+        return values.GetValueOrDefault(property, fallback);
+    }
+
+    private static double Fraction(MediaTime elapsed, MediaTime duration)
+    {
+        return Math.Clamp(((double)elapsed.Numerator / elapsed.Denominator) /
+            ((double)duration.Numerator / duration.Denominator), 0, 1);
+    }
+}

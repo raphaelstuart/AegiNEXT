@@ -1,0 +1,309 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Buffers;
+using System.Text;
+
+namespace AegiNext.Core.Projects;
+
+/// <summary>工程边界校验；无效快照在进入编辑历史、渲染或持久化前整体拒绝。</summary>
+public static class ProjectValidator
+{
+    /// <summary>验证版本、资源引用、合成树、关键帧与文本区间，不修改输入。</summary>
+    public static void Validate(ProjectDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        Require(document.Version == ProjectDocument.CURRENT_VERSION, "不支持的工程版本。");
+        Require(document.Id != Guid.Empty && document.Name is { Length: <= 1024 }, "工程标识或名称无效。");
+        ValidateText(document.Name);
+        Require(document.Width is > 0 and <= 32768 && document.Height is > 0 and <= 32768 &&
+            (long)document.Width * document.Height <= 33177600, "工程画布超过像素预算。");
+        Require(document.FrameRate is { Numerator: > 0 } &&
+            (double)document.FrameRate.Numerator / document.FrameRate.Denominator <= 1000, "工程帧率无效。");
+        Number(document.ReferenceWhiteNits, 0.001, 10000, "参考白");
+        Require(!document.Assets.IsDefault && document.Assets.Length <= 10000 &&
+            !document.Subtitles.IsDefault && document.Subtitles.Length <= 100000 &&
+            !document.Layers.IsDefault && !document.Presets.IsDefault, "工程集合无效或过大。");
+        var assets = new Dictionary<Guid, ProjectAsset>();
+        foreach (var asset in document.Assets)
+        {
+            NotNull(asset, "数据项不能为 null。");
+            Require(asset.Id != Guid.Empty && assets.TryAdd(asset.Id, asset), "资源标识为空或重复。");
+            Require(Enum.IsDefined(asset.Kind), "未知资源类型。");
+            if (asset.ExternalPath is { } external)
+            {
+                Require(asset.Kind == ProjectAssetKind.MEDIA && asset.RelativePath == string.Empty &&
+                    ProjectAssetLocation.IsAbsoluteReference(external), "只有媒体允许本机绝对外部引用。");
+            }
+            else
+            {
+                ValidateRelativePath(asset.RelativePath);
+            }
+            Require(asset.Sha256 is null || asset.Sha256.Length == 64 && asset.Sha256.All(Uri.IsHexDigit), "资源哈希无效。");
+        }
+
+        if (document.Media is { } media)
+        {
+            Asset(assets, media.AssetId, ProjectAssetKind.MEDIA);
+            Require(media.VideoStreamIndex >= 0 && media.AudioStreamIndex is null or >= 0, "媒体流索引无效。");
+        }
+
+        var subtitles = new Dictionary<Guid, SubtitleLine>();
+        long totalText = 0;
+        foreach (var line in document.Subtitles)
+        {
+            NotNull(line, "数据项不能为 null。");
+            Require(line.Id != Guid.Empty && subtitles.TryAdd(line.Id, line), "字幕标识为空或重复。");
+            Require(line.Start < line.End && line.Text is { Length: <= 1000000 } && !line.Karaoke.IsDefault, "字幕区间或文本无效。");
+            ValidateText(line.Text);
+            totalText += line.Text.Length;
+            Require(totalText <= 8 * 1024 * 1024, "工程文本总量超过预算。");
+            Style(line.Style, assets);
+            var boundaries = StringInfo.ParseCombiningCharacters(line.Text).ToHashSet();
+            boundaries.Add(line.Text.Length);
+            var previousEnd = 0;
+            foreach (var segment in line.Karaoke)
+            {
+                NotNull(segment, "数据项不能为 null。");
+                Require(segment.Utf16Start >= previousEnd && segment.Utf16Length > 0 &&
+                    (long)segment.Utf16Start + segment.Utf16Length <= line.Text.Length, "卡拉 OK 文本区间重叠或越界。");
+                var end = checked(segment.Utf16Start + segment.Utf16Length);
+                Require(boundaries.Contains(segment.Utf16Start) && boundaries.Contains(end), "卡拉 OK 不能拆开字素。");
+                Require(segment.Start >= Timing.MediaTime.Zero && segment.Start < segment.End,
+                    "卡拉 OK 时间越界。");
+                Color(segment.HighlightColor);
+                previousEnd = end;
+            }
+        }
+
+        var ids = new HashSet<Guid>();
+        var referenced = new HashSet<Guid>();
+        foreach (var layer in document.Layers)
+        {
+            Layer(layer, 0, assets, subtitles, ids, referenced);
+        }
+
+        Require(referenced.Count == subtitles.Count, "每个字幕必须由唯一字幕层引用。");
+        var presetIds = new HashSet<Guid>();
+        Require(document.Presets.Length <= 10000, "预设数量过大。");
+        foreach (var preset in document.Presets)
+        {
+            NotNull(preset, "数据项不能为 null。");
+            Require(preset.Id != Guid.Empty && presetIds.Add(preset.Id) &&
+                preset.Name is { Length: > 0 and <= 1024 } && Enum.IsDefined(preset.Blend), "预设无效。");
+            ValidateText(preset.Name);
+            Tracks(preset.Tracks);
+            Motion(preset.MotionPath);
+            if (preset.Mask is { } mask)
+            {
+                Path(mask.Path);
+            }
+        }
+    }
+
+    /// <summary>验证跨平台的工程内相对资源路径。</summary>
+    public static void ValidateRelativePath(string path)
+    {
+        Require(!string.IsNullOrWhiteSpace(path) && path.Length <= 4096 && !path.Contains('\\') && !path.Contains(':') &&
+            !path.Any(char.IsControl) && !System.IO.Path.IsPathRooted(path) &&
+            path.Split('/').All(segment => segment is not "" and not "." and not ".."), "资源必须使用工程内的规范相对路径。");
+        ValidateText(path);
+    }
+
+    /// <summary>拒绝不完整 UTF-16 和空字符，避免 JSON 或文本编码时悄悄替换内容。</summary>
+    public static void ValidateText(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var remaining = text.AsSpan();
+        while (!remaining.IsEmpty)
+        {
+            var status = Rune.DecodeFromUtf16(remaining, out var rune, out var consumed);
+            Require(status == OperationStatus.Done && rune.Value != 0, "文本包含无效 Unicode 或空字符。");
+            remaining = remaining[consumed..];
+        }
+    }
+
+    private static void Layer(ProjectLayer? layer, int depth, Dictionary<Guid, ProjectAsset> assets,
+        Dictionary<Guid, SubtitleLine> subtitles, HashSet<Guid> ids, HashSet<Guid> referenced)
+    {
+        Require(depth <= 32 && layer is not null && layer.Id != Guid.Empty && ids.Add(layer.Id) && ids.Count <= 10000,
+            "合成树过深、过大或存在重复节点。");
+        Require(layer.Start < layer.End && layer.Name is { Length: <= 1024 } &&
+            Enum.IsDefined(layer.Kind) && Enum.IsDefined(layer.Blend) && !layer.Children.IsDefault, "图层数据无效。");
+        ValidateText(layer.Name);
+        Require(layer.Transform is not null, "缺少图层变换。");
+        var transform = layer.Transform;
+        Number(transform.X, -1e9, 1e9, "X");
+        Number(transform.Y, -1e9, 1e9, "Y");
+        Number(transform.AnchorX, -1e9, 1e9, "AnchorX");
+        Number(transform.AnchorY, -1e9, 1e9, "AnchorY");
+        Number(transform.ScaleX, -10000, 10000, "ScaleX");
+        Number(transform.ScaleY, -10000, 10000, "ScaleY");
+        Number(transform.Rotation, -1e9, 1e9, "Rotation");
+        Number(layer.Opacity, 0, 1, "Opacity");
+        Number(layer.StrokeWidth, 0, 4096, "StrokeWidth");
+        Number(layer.Blur, 0, 512, "Blur");
+        Color(layer.Fill);
+        Color(layer.Stroke);
+        Tracks(layer.Tracks);
+        Motion(layer.MotionPath);
+        if (layer.Mask is { } mask)
+        {
+            Path(mask.Path);
+        }
+
+        Require(layer.Kind == LayerKind.GROUP || layer.Children.IsEmpty, "只有组可以包含子图层。");
+        Require((layer.Kind == LayerKind.SUBTITLE) == layer.SubtitleId.HasValue &&
+            (layer.Kind == LayerKind.SHAPE) == (layer.Shape is not null) &&
+            (layer.Kind == LayerKind.IMAGE) == (layer.Image is not null), "图层载荷与类型不匹配。");
+        if (layer.SubtitleId is { } subtitleId)
+        {
+            Require(subtitles.TryGetValue(subtitleId, out var line) && referenced.Add(subtitleId), "字幕层引用不存在或重复。");
+            Require(layer.Start == line.Start && layer.End == line.End, "字幕层与字幕行的时间必须一致。");
+        }
+
+        if (layer.Shape is { } shape)
+        {
+            Require(Enum.IsDefined(shape.Kind), "未知形状。");
+            Number(shape.Width, 0.001, 1e6, "形状宽度");
+            Number(shape.Height, 0.001, 1e6, "形状高度");
+            Require((shape.Kind == ShapeKind.PATH) == (shape.Path is not null), "路径形状缺少路径或其他形状含多余路径。");
+            if (shape.Path is { } geometry)
+            {
+                Path(geometry);
+            }
+        }
+
+        if (layer.Image is { } image)
+        {
+            Asset(assets, image.AssetId, ProjectAssetKind.IMAGE);
+            Number(image.Width, 0.001, 1e6, "图片宽度");
+            Number(image.Height, 0.001, 1e6, "图片高度");
+            Require(Enum.IsDefined(image.Fit), "未知图片适配方式。");
+        }
+
+        foreach (var child in layer.Children)
+        {
+            Layer(child, depth + 1, assets, subtitles, ids, referenced);
+        }
+    }
+
+    /// <summary>验证字幕样式本身的排版、颜色及数值，不解析工程字体引用。</summary>
+    public static void ValidateSubtitleStyle([NotNull] SubtitleStyle? style)
+    {
+        Require(style is not null && style.FontFamily is { Length: > 0 and <= 512 } && Enum.IsDefined(style.Alignment), "字幕样式无效。");
+        ValidateText(style.FontFamily);
+        Number(style.FontSize, 0.01, 4096, "字号");
+        Number(style.StrokeWidth, 0, 4096, "描边");
+        Number(style.Margin, 0, 32768, "字幕边距");
+        Number(style.LineHeight, 0.1, 10, "行高");
+        Number(style.ShadowBlur, 0, 512, "阴影模糊");
+        Point(style.ShadowOffset);
+        Color(style.Fill);
+        Color(style.Stroke);
+        Color(style.ShadowColor);
+    }
+
+    private static void Style(SubtitleStyle? style, Dictionary<Guid, ProjectAsset> assets)
+    {
+        ValidateSubtitleStyle(style);
+        if (style.FontAssetId is { } font)
+        {
+            Asset(assets, font, ProjectAssetKind.FONT);
+        }
+    }
+
+    private static void Tracks(System.Collections.Immutable.ImmutableArray<AnimationTrack> tracks)
+    {
+        Require(!tracks.IsDefault && tracks.Length <= 64, "关键帧轨道无效。");
+        var properties = new HashSet<AnimationProperty>();
+        foreach (var track in tracks)
+        {
+            NotNull(track, "数据项不能为 null。");
+            Require(Enum.IsDefined(track.Property) && properties.Add(track.Property) &&
+                !track.Keyframes.IsDefaultOrEmpty && track.Keyframes.Length <= 10000, "属性轨道重复、为空或过大。");
+            Timing.MediaTime? previous = null;
+            foreach (var frame in track.Keyframes)
+            {
+                NotNull(frame, "数据项不能为 null。");
+                Require(frame.Time >= Timing.MediaTime.Zero &&
+                    (!previous.HasValue || frame.Time > previous.Value) && Enum.IsDefined(frame.Interpolation), "关键帧时间必须非负且严格递增。");
+                var limits = track.Property switch
+                {
+                    AnimationProperty.OPACITY or AnimationProperty.FILL_ALPHA or AnimationProperty.STROKE_ALPHA or AnimationProperty.PATH_PROGRESS => (0d, 1d),
+                    AnimationProperty.BLUR => (0d, 512d),
+                    AnimationProperty.STROKE_WIDTH => (0d, 4096d),
+                    AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y => (-10000d, 10000d),
+                    AnimationProperty.FILL_RED or AnimationProperty.FILL_GREEN or AnimationProperty.FILL_BLUE or
+                        AnimationProperty.STROKE_RED or AnimationProperty.STROKE_GREEN or AnimationProperty.STROKE_BLUE => (-65504d, 65504d),
+                    _ => (-1e9, 1e9)
+                };
+                Number(frame.Value, limits.Item1, limits.Item2, "关键帧值");
+                previous = frame.Time;
+            }
+        }
+    }
+
+    private static void Motion(MotionPath? motion)
+    {
+        if (motion is null)
+        {
+            return;
+        }
+
+        Require(motion.Duration > Timing.MediaTime.Zero, "路径时长必须大于零。");
+        Path(motion.Path);
+    }
+
+    private static void Path(PathGeometry? path)
+    {
+        Require(path is not null && !path.Segments.IsDefaultOrEmpty && path.Segments.Length <= 10000, "路径为空或过大。");
+        Point(path.Start);
+        foreach (CubicBezierSegment? segment in path.Segments)
+        {
+            Require(segment is not null, "路径段为空。");
+            Point(segment.Control1);
+            Point(segment.Control2);
+            Point(segment.End);
+        }
+    }
+
+    private static void Point(ScenePoint point)
+    {
+        Number(point.X, -1e9, 1e9, "路径 X");
+        Number(point.Y, -1e9, 1e9, "路径 Y");
+    }
+
+    private static void Color(SceneColor color)
+    {
+        Number(color.Red, -65504, 65504, "Red");
+        Number(color.Green, -65504, 65504, "Green");
+        Number(color.Blue, -65504, 65504, "Blue");
+        Number(color.Alpha, 0, 1, "Alpha");
+    }
+
+    private static void Asset(Dictionary<Guid, ProjectAsset> assets, Guid id, ProjectAssetKind kind)
+    {
+        Require(assets.TryGetValue(id, out var asset) && asset.Kind == kind, "资源引用不存在或类型不符。");
+    }
+
+    private static void Number(double value, double minimum, double maximum, string name)
+    {
+        Require(double.IsFinite(value) && value >= minimum && value <= maximum, $"{name} 超出有限范围。");
+    }
+
+    private static void NotNull([NotNull] object? value, string message)
+    {
+        if (value is null)
+        {
+            throw new InvalidDataException(message);
+        }
+    }
+
+    private static void Require([DoesNotReturnIf(false)] bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidDataException(message);
+        }
+    }
+}

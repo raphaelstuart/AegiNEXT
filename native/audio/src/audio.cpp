@@ -1,0 +1,354 @@
+#include "aeginext_audio.h"
+#include "audio_versions.h"
+#include <SDL3/SDL.h>
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/version.h>
+#include <libswresample/swresample.h>
+}
+#include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <vector>
+
+namespace {
+constexpr int MAX_CONVERTED_FRAMES = 262144;
+void check(int result, const char *operation)
+{
+    if (result < 0)
+    {
+        char detail[AV_ERROR_MAX_STRING_SIZE]{};
+        av_strerror(result, detail, sizeof(detail));
+        throw std::runtime_error(std::string(operation) + ": " + detail);
+    }
+}
+void require(bool condition, const char *message)
+{
+    if (!condition) { throw std::runtime_error(message); }
+}
+template<typename Function> int boundary(char *error, uint32_t capacity, Function &&function)
+{
+    if (error && capacity) { error[0] = 0; }
+    try { return function(); }
+    catch (const std::exception &exception)
+    {
+        if (error && capacity) { std::snprintf(error, capacity, "%s", exception.what()); }
+        return 2;
+    }
+    catch (...)
+    {
+        if (error && capacity) { std::snprintf(error, capacity, "Unknown audio failure"); }
+        return 2;
+    }
+}
+void verify_versions()
+{
+    require(avformat_version() == AN_EXPECTED_AVFORMAT && LIBAVFORMAT_VERSION_INT == AN_EXPECTED_AVFORMAT &&
+        avcodec_version() == AN_EXPECTED_AVCODEC && LIBAVCODEC_VERSION_INT == AN_EXPECTED_AVCODEC &&
+        avutil_version() == AN_EXPECTED_AVUTIL && LIBAVUTIL_VERSION_INT == AN_EXPECTED_AVUTIL &&
+        swresample_version() == AN_EXPECTED_SWRESAMPLE && LIBSWRESAMPLE_VERSION_INT == AN_EXPECTED_SWRESAMPLE,
+        "FFmpeg audio build/runtime versions do not match the pinned manifest");
+}
+struct Decoder
+{
+    std::atomic_bool cancelled{false};
+    AVFormatContext *format = nullptr;
+    AVCodecContext *codec = nullptr;
+    AVPacket *packet = av_packet_alloc();
+    AVFrame *frame = av_frame_alloc();
+    SwrContext *resampler = nullptr;
+    int stream = -1;
+    int rate = 0;
+    int channels = 0;
+    bool input_end = false;
+    bool sent_end = false;
+    bool resampler_end = false;
+    bool packet_pending = false;
+    int64_t next_sample = AV_NOPTS_VALUE;
+    int64_t minimum_sample = std::numeric_limits<int64_t>::min();
+    int64_t pending_start = 0;
+    int pending_offset = 0;
+    std::vector<float> pending;
+    ~Decoder()
+    {
+        swr_free(&resampler);
+        av_frame_free(&frame);
+        av_packet_free(&packet);
+        avcodec_free_context(&codec);
+        avformat_close_input(&format);
+    }
+    static int interrupt(void *context) { return static_cast<Decoder *>(context)->cancelled.load() ? 1 : 0; }
+    void open(const char *path, int index, int output_rate, int output_channels)
+    {
+        verify_versions();
+        require(path && !format && packet && frame && output_rate >= 8000 && output_rate <= 192000 &&
+            output_channels >= 1 && output_channels <= 2, "Invalid audio open arguments");
+        rate = output_rate;
+        channels = output_channels;
+        format = avformat_alloc_context();
+        require(format != nullptr, "Audio format allocation failed");
+        format->interrupt_callback = {interrupt, this};
+        AVDictionary *options = nullptr;
+        av_dict_set(&options, "protocol_whitelist", "file", 0);
+        const auto result = avformat_open_input(&format, path, nullptr, &options);
+        av_dict_free(&options);
+        check(result, "Open audio");
+        check(avformat_find_stream_info(format, nullptr), "Probe audio");
+        require(index >= 0 && static_cast<unsigned>(index) < format->nb_streams &&
+            format->streams[index]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO, "Requested stream is not audio");
+        stream = index;
+        const auto *decoder = avcodec_find_decoder(format->streams[stream]->codecpar->codec_id);
+        require(decoder != nullptr, "Audio codec unavailable");
+        codec = avcodec_alloc_context3(decoder);
+        require(codec != nullptr, "Audio codec allocation failed");
+        check(avcodec_parameters_to_context(codec, format->streams[stream]->codecpar), "Audio codec parameters");
+        codec->thread_count = 1;
+        check(avcodec_open2(codec, decoder, nullptr), "Open audio codec");
+        require(codec->sample_rate > 0 && codec->ch_layout.nb_channels > 0, "Audio format is incomplete");
+        AVChannelLayout layout{};
+        av_channel_layout_default(&layout, channels);
+        const auto configured = swr_alloc_set_opts2(&resampler, &layout, AV_SAMPLE_FMT_FLT, rate,
+            &codec->ch_layout, codec->sample_fmt, codec->sample_rate, 0, nullptr);
+        av_channel_layout_uninit(&layout);
+        check(configured, "Create audio resampler");
+        check(swr_init(resampler), "Initialize audio resampler");
+    }
+    bool receive()
+    {
+        while (!cancelled.load())
+        {
+            av_frame_unref(frame);
+            const auto result = avcodec_receive_frame(codec, frame);
+            if (result == 0) { return true; }
+            if (result == AVERROR_EOF) { return false; }
+            if (result != AVERROR(EAGAIN)) { check(result, "Decode audio"); }
+            if (packet_pending)
+            {
+                const auto sent = avcodec_send_packet(codec, packet);
+                if (sent == AVERROR(EAGAIN)) { throw std::runtime_error("Audio codec made no progress"); }
+                check(sent, "Send audio packet");
+                av_packet_unref(packet);
+                packet_pending = false;
+                continue;
+            }
+            if (input_end)
+            {
+                require(!sent_end, "Audio decoder stalled while draining");
+                check(avcodec_send_packet(codec, nullptr), "Drain audio codec");
+                sent_end = true;
+                continue;
+            }
+            while (true)
+            {
+                if (cancelled.load()) { return false; }
+                const auto read = av_read_frame(format, packet);
+                if (read == AVERROR_EOF) { input_end = true; break; }
+                check(read, "Read audio packet");
+                if (packet->stream_index == stream) { packet_pending = true; break; }
+                av_packet_unref(packet);
+            }
+        }
+        return false;
+    }
+    bool convert_next()
+    {
+        if (resampler_end) { return false; }
+        const auto has_frame = receive();
+        if (cancelled.load()) { return false; }
+        int output_capacity = 4096;
+        if (has_frame)
+        {
+            require(frame->sample_rate == codec->sample_rate && frame->format == codec->sample_fmt &&
+                av_channel_layout_compare(&frame->ch_layout, &codec->ch_layout) == 0,
+                "Midstream audio format changes are unsupported");
+            const auto timestamp = frame->best_effort_timestamp;
+            if (timestamp != AV_NOPTS_VALUE)
+            {
+                const auto sample = av_rescale_q(timestamp, format->streams[stream]->time_base, AVRational{1, rate});
+                const auto delay = swr_get_delay(resampler, rate);
+                const auto timestamp_resolution = av_rescale_q_rnd(1, format->streams[stream]->time_base,
+                    AVRational{1, rate}, AV_ROUND_UP);
+                if (next_sample == AV_NOPTS_VALUE) { next_sample = sample; }
+                else if (std::llabs(sample - (next_sample + delay)) > std::max<int64_t>(2, timestamp_resolution + 1))
+                {
+                    swr_close(resampler);
+                    check(swr_init(resampler), "Reset discontinuous audio resampler");
+                    next_sample = sample;
+                }
+            }
+            require(next_sample != AV_NOPTS_VALUE, "Audio frame has no usable timestamp");
+            output_capacity = swr_get_out_samples(resampler, frame->nb_samples);
+        }
+        else if (next_sample == AV_NOPTS_VALUE) { resampler_end = true; return false; }
+        require(output_capacity >= 0 && output_capacity <= MAX_CONVERTED_FRAMES, "Decoded audio block exceeds capacity");
+        pending.resize(static_cast<size_t>(output_capacity) * channels);
+        auto *destination = reinterpret_cast<uint8_t *>(pending.data());
+        const auto count = swr_convert(resampler, &destination, output_capacity,
+            has_frame ? const_cast<const uint8_t **>(frame->extended_data) : nullptr, has_frame ? frame->nb_samples : 0);
+        check(count, "Resample audio");
+        pending.resize(static_cast<size_t>(count) * channels);
+        pending_start = next_sample;
+        next_sample += count;
+        pending_offset = 0;
+        if (!has_frame && count == 0) { resampler_end = true; }
+        return !resampler_end;
+    }
+    int read(float *samples, int frame_capacity, int *frames, int64_t *start)
+    {
+        require(codec && samples && frames && start && frame_capacity > 0 && frame_capacity <= MAX_CONVERTED_FRAMES,
+            "Invalid audio read arguments");
+        *frames = 0;
+        while (!cancelled.load())
+        {
+            const auto total = static_cast<int>(pending.size()) / channels;
+            if (pending_offset < total)
+            {
+                if (minimum_sample > pending_start + pending_offset)
+                {
+                    const auto trim = std::min<int64_t>(total - pending_offset, minimum_sample - pending_start - pending_offset);
+                    pending_offset += static_cast<int>(trim);
+                }
+                const auto count = std::min(frame_capacity, total - pending_offset);
+                if (count)
+                {
+                    std::memcpy(samples, pending.data() + pending_offset * channels, static_cast<size_t>(count) * channels * sizeof(float));
+                    *start = pending_start + pending_offset;
+                    *frames = count;
+                    pending_offset += count;
+                    return 0;
+                }
+            }
+            if (!convert_next()) { return cancelled.load() ? 6 : 1; }
+        }
+        return 6;
+    }
+    void seek(int64_t sample)
+    {
+        require(codec != nullptr, "Audio decoder is not open");
+        auto target = av_rescale_q(sample, AVRational{1, rate}, format->streams[stream]->time_base);
+        const auto *track = format->streams[stream];
+        if (track->start_time != AV_NOPTS_VALUE)
+        {
+            target = std::max(target, track->start_time);
+            if (track->duration > 0 && track->duration < std::numeric_limits<int64_t>::max() - std::max<int64_t>(0, track->start_time))
+            {
+                target = std::min(target, track->start_time + track->duration - 1);
+            }
+        }
+        check(avformat_seek_file(format, stream, std::numeric_limits<int64_t>::min(), target, target, AVSEEK_FLAG_BACKWARD), "Seek audio");
+        avcodec_flush_buffers(codec);
+        av_packet_unref(packet);
+        av_frame_unref(frame);
+        swr_close(resampler);
+        check(swr_init(resampler), "Reset audio resampler");
+        input_end = sent_end = resampler_end = packet_pending = false;
+        next_sample = AV_NOPTS_VALUE;
+        minimum_sample = sample;
+        pending.clear();
+        pending_offset = 0;
+    }
+};
+struct Output
+{
+    SDL_AudioStream *stream = nullptr;
+    int rate;
+    int channels;
+    bool initialized = false;
+    Output(int rate_value, int channels_value) : rate(rate_value), channels(channels_value) {}
+    ~Output()
+    {
+        if (stream) { SDL_DestroyAudioStream(stream); }
+        if (initialized) { SDL_QuitSubSystem(SDL_INIT_AUDIO); }
+    }
+};
+}
+
+uint32_t an_audio_abi_version() { return 1; }
+int an_audio_decoder_create(void **decoder, char *error, uint32_t capacity)
+{
+    return boundary(error, capacity, [&] { require(decoder, "Missing decoder output"); *decoder = new Decoder(); return 0; });
+}
+int an_audio_decoder_open(void *decoder, const char *path, int stream, int rate, int channels, char *error, uint32_t capacity)
+{
+    const auto result = boundary(error, capacity, [&] { require(decoder, "Missing decoder"); static_cast<Decoder *>(decoder)->open(path, stream, rate, channels); return 0; });
+    return decoder && static_cast<Decoder *>(decoder)->cancelled.load() ? 6 : result;
+}
+int an_audio_decoder_read(void *decoder, float *samples, int frame_capacity, int *frames, int64_t *start, char *error, uint32_t capacity)
+{
+    const auto result = boundary(error, capacity, [&] { require(decoder, "Missing decoder"); return static_cast<Decoder *>(decoder)->read(samples, frame_capacity, frames, start); });
+    return decoder && static_cast<Decoder *>(decoder)->cancelled.load() ? 6 : result;
+}
+int an_audio_decoder_seek(void *decoder, int64_t sample, char *error, uint32_t capacity)
+{
+    const auto result = boundary(error, capacity, [&] { require(decoder, "Missing decoder"); static_cast<Decoder *>(decoder)->seek(sample); return 0; });
+    return decoder && static_cast<Decoder *>(decoder)->cancelled.load() ? 6 : result;
+}
+void an_audio_decoder_cancel(void *decoder) { if (decoder) { static_cast<Decoder *>(decoder)->cancelled.store(true); } }
+void an_audio_decoder_destroy(void *decoder) { delete static_cast<Decoder *>(decoder); }
+int an_audio_output_create(void **output, int rate, int channels, char *error, uint32_t capacity)
+{
+    return boundary(error, capacity, [&]
+    {
+        require(output && rate == 48000 && channels == 2, "Playback requires 48kHz stereo");
+        require(SDL_GetVersion() == SDL_VERSION && SDL_VERSION == SDL_VERSIONNUM(3, 4, 16), "SDL3 build/runtime version must be 3.4.16");
+        *output = nullptr;
+        auto result = std::make_unique<Output>(rate, channels);
+        require(SDL_InitSubSystem(SDL_INIT_AUDIO), SDL_GetError());
+        result->initialized = true;
+        SDL_AudioSpec spec{SDL_AUDIO_F32, channels, rate};
+        result->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+        require(result->stream, SDL_GetError());
+        *output = result.release();
+        return 0;
+    });
+}
+int an_audio_output_write(void *output, const float *samples, int frames, char *error, uint32_t capacity)
+{
+    return boundary(error, capacity, [&]
+    {
+        require(output && samples && frames > 0 && frames <= 12000, "Invalid playback PCM block");
+        auto *device = static_cast<Output *>(output);
+        const auto queued = SDL_GetAudioStreamQueued(device->stream);
+        require(queued >= 0 && queued + frames * device->channels * 4 <= 12000 * device->channels * 4, "Audio playback queue capacity exceeded");
+        require(SDL_PutAudioStreamData(device->stream, samples, frames * device->channels * 4), SDL_GetError());
+        return 0;
+    });
+}
+int an_audio_output_pause(void *output, int pause, char *error, uint32_t capacity)
+{
+    return boundary(error, capacity, [&] { require(output, "Missing audio output"); auto *stream = static_cast<Output *>(output)->stream;
+        require(pause ? SDL_PauseAudioStreamDevice(stream) : SDL_ResumeAudioStreamDevice(stream), SDL_GetError()); return 0; });
+}
+int an_audio_output_clear(void *output, char *error, uint32_t capacity)
+{
+    return boundary(error, capacity, [&] { require(output, "Missing audio output"); require(SDL_ClearAudioStream(static_cast<Output *>(output)->stream), SDL_GetError()); return 0; });
+}
+int an_audio_output_queued(void *output)
+{
+    if (!output) { return -1; }
+    const auto *device = static_cast<Output *>(output);
+    const auto bytes = SDL_GetAudioStreamQueued(device->stream);
+    return bytes < 0 ? -1 : bytes / (device->channels * 4);
+}
+int an_audio_output_latency(void *output)
+{
+    if (!output) { return -1; }
+    const auto *device = static_cast<Output *>(output);
+    SDL_AudioSpec spec{};
+    int frames = 0;
+    if (!SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(device->stream), &spec, &frames) || spec.freq <= 0) { return -1; }
+    return static_cast<int>(av_rescale_rnd(frames, device->rate, spec.freq, AV_ROUND_UP));
+}
+int an_audio_output_gain(void *output, float gain, char *error, uint32_t capacity)
+{
+    return boundary(error, capacity, [&] { require(output && std::isfinite(gain) && gain >= 0 && gain <= 1, "Invalid audio gain");
+        require(SDL_SetAudioStreamGain(static_cast<Output *>(output)->stream, gain), SDL_GetError()); return 0; });
+}
+void an_audio_output_destroy(void *output) { delete static_cast<Output *>(output); }

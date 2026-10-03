@@ -1,0 +1,3 @@
+[*.cs]
+# 枚举命令遵循工程的 ALL_UPPER 规范。
+dotnet_diagnostic.CA1707.severity = none

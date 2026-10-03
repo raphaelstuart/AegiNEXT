@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts" xmlns:presets="using:AegiNext.Core.Presets"
+             xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:settings="using:AegiNext.Desktop.Settings"
+             xmlns:vm="using:AegiNext.Desktop.Settings.Shortcuts"
+             x:Class="AegiNext.Desktop.Settings.Shortcuts.ShortcutSettingsView"
+             x:DataType="vm:ShortcutSettingsViewModel">
+
+  <Grid Name="ShortcutsPage" IsVisible="{Binding $parent[UserControl].IsVisible}" RowDefinitions="Auto,*,Auto,Auto"
+        RowSpacing="12">
+    <Grid ColumnDefinitions="*,220" Margin="12,0">
+      <TextBlock Tag="Action" Classes="field" /><TextBlock Grid.Column="1" Tag="Gesture" Classes="field" />
+    </Grid>
+    <ListBox Name="ShortcutList" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+             Grid.Row="1" Background="{DynamicResource SettingsSurface}">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="shortcuts:ShortcutSettingRow">
+          <Grid ColumnDefinitions="*,220" ColumnSpacing="12">
+            <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding Gesture}" VerticalAlignment="Center" FontFamily="monospace" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+      <TextBox Name="GestureInput" Text="{Binding Gesture, Mode=TwoWay}" IsEnabled="{Binding HasSelection}"
+               PlaceholderText="CmdOrCtrl+K" />
+      <Button Grid.Column="1" Name="RecordShortcutButton" Command="{Binding ToggleRecordingCommand}"
+              Click="FocusGesture" Tag="Record" />
+      <Button Grid.Column="2" Name="ClearShortcutButton" Command="{Binding ClearCommand}" Tag="Clear" />
+    </Grid>
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto">
+      <Button Name="ResetShortcutsButton" Command="{Binding ResetCommand}" Tag="Reset" />
+      <Button Name="SaveShortcutsButton" Command="{Binding SaveCommand}" Grid.Column="2" Tag="Save" Classes="accent" />
+    </Grid>
+  </Grid>
+</UserControl>

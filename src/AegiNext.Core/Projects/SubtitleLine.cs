@@ -1,0 +1,15 @@
+using System.Collections.Immutable;
+using AegiNext.Core.Timing;
+
+namespace AegiNext.Core.Projects;
+
+/// <summary>具有稳定标识与精确半开时间区间的字幕行；卡拉 OK 时间相对字幕层的内容原点。</summary>
+public sealed record SubtitleLine
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public MediaTime Start { get; init; }
+    public MediaTime End { get; init; } = new(2);
+    public string Text { get; init; } = string.Empty;
+    public SubtitleStyle Style { get; init; } = new();
+    public ImmutableArray<KaraokeSegment> Karaoke { get; init; } = [];
+}

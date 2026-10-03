@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:common="using:AegiNext.Desktop.Controls.Common"
+        xmlns:vm="using:AegiNext.Desktop.Workspace"
+        x:Class="AegiNext.Desktop.Views.MainWindow" x:DataType="vm:WorkbenchViewModel"
+        Title="{Binding Title}" Width="1460" Height="1000" MinWidth="760" MinHeight="620"
+        Background="{DynamicResource PreviewBackground}">
+  <DockPanel>
+    <common:WindowTitleBar Name="TitleBar" DockPanel.Dock="Top"/>
+    <Border Name="ErrorPanel" DockPanel.Dock="Bottom" IsVisible="{Binding HasError}" Margin="{StaticResource WorkbenchInset}" Padding="0,0,0,6">
+      <TextBlock Name="ErrorText" Text="{Binding Error}" Foreground="{DynamicResource PreviewError}" TextWrapping="Wrap" MaxHeight="60" TextTrimming="CharacterEllipsis"/>
+    </Border>
+    <ContentControl Name="WorkspaceHost" IsEnabled="{Binding !IsBusy}" Margin="{StaticResource WorkbenchInset}"/>
+  </DockPanel>
+</Window>

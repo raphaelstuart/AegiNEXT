@@ -1,0 +1,61 @@
+namespace AegiNext.Desktop.Layouts;
+
+internal static class WorkspaceLayoutPresets
+{
+    public const string STANDARD = "standard";
+    public const string TIMING = "timing";
+    public const string EFFECTS = "effects";
+    public const string ENCODE = "encode";
+
+    public static WorkspaceLayoutSnapshot Standard { get; } = new()
+    {
+        Main = Split("vertical", 1,
+            Split("horizontal", 0.58,
+                Tabs(0.75, WorkbenchPanelIds.PREVIEW),
+                Tabs(0.25, WorkbenchPanelIds.STYLES, WorkbenchPanelIds.EFFECTS, WorkbenchPanelIds.EXPORT)),
+            Tabs(0.19, WorkbenchPanelIds.TIMELINE),
+            Tabs(0.23, WorkbenchPanelIds.SUBTITLES)),
+        FocusedPanelId = WorkbenchPanelIds.PREVIEW
+    };
+
+    public static IReadOnlyList<WorkspaceLayoutPreset> BuiltIn { get; } =
+    [
+        new(STANDARD, STANDARD, true, Standard),
+        new(TIMING, TIMING, true, new()
+        {
+            Main = Split("vertical", 1,
+                Split("horizontal", 0.7, Tabs(0.58, WorkbenchPanelIds.PREVIEW), Tabs(0.42, WorkbenchPanelIds.SUBTITLES)),
+                Tabs(0.3, WorkbenchPanelIds.TIMELINE)),
+            HiddenPanelIds = [WorkbenchPanelIds.STYLES, WorkbenchPanelIds.EFFECTS, WorkbenchPanelIds.EXPORT],
+            FocusedPanelId = WorkbenchPanelIds.SUBTITLES
+        }),
+        new(EFFECTS, EFFECTS, true, new()
+        {
+            Main = Split("vertical", 1,
+                Split("horizontal", 0.72, Tabs(0.66, WorkbenchPanelIds.PREVIEW), Tabs(0.34, WorkbenchPanelIds.EFFECTS, WorkbenchPanelIds.STYLES)),
+                Tabs(0.28, WorkbenchPanelIds.TIMELINE)),
+            HiddenPanelIds = [WorkbenchPanelIds.SUBTITLES, WorkbenchPanelIds.EXPORT],
+            FocusedPanelId = WorkbenchPanelIds.EFFECTS
+        }),
+        new(ENCODE, ENCODE, true, new()
+        {
+            Main = Split("horizontal", 1, Tabs(0.66, WorkbenchPanelIds.PREVIEW), Tabs(0.34, WorkbenchPanelIds.EXPORT)),
+            HiddenPanelIds = [WorkbenchPanelIds.SUBTITLES, WorkbenchPanelIds.STYLES, WorkbenchPanelIds.EFFECTS, WorkbenchPanelIds.TIMELINE],
+            FocusedPanelId = WorkbenchPanelIds.EXPORT
+        })
+    ];
+
+    internal static LayoutNodeSnapshot Tabs(double proportion, params string[] ids)
+    {
+        return new()
+        {
+            Kind = "tabs", Proportion = proportion, ActivePanelId = ids.FirstOrDefault(),
+            Children = ids.Select(id => new LayoutNodeSnapshot { Kind = "panel", PanelId = id }).ToArray()
+        };
+    }
+
+    internal static LayoutNodeSnapshot Split(string orientation, double proportion, params LayoutNodeSnapshot[] children)
+    {
+        return new() { Kind = "split", Orientation = orientation, Proportion = proportion, Children = children };
+    }
+}

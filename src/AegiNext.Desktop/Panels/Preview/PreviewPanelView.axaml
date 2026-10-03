@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
+    xmlns:vm="using:AegiNext.Desktop.Panels.Preview" x:DataType="vm:PreviewPanelViewModel"
+    x:Class="AegiNext.Desktop.Panels.Preview.PreviewPanelView">
+<Border Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Grid ColumnDefinitions="*,Auto" Margin="12,8">
+            <TextBlock Name="FileTitle" TextTrimming="CharacterEllipsis" FontSize="12" Text="{Binding FileTitle, Mode=OneWay}" />
+            <TextBlock Name="ModeLabel" Grid.Column="1" Classes="field" Text="SDR" />
+          </Grid>
+          <Grid Grid.Row="1" Background="#080A0E" MinHeight="250">
+            <controls:VideoFramePresenter Name="VideoImage" Stretch="Uniform" />
+            <StackPanel Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" IsVisible="{Binding !HasFrame, Mode=OneWay}">
+              <TextBlock Text="▷" FontSize="42" Foreground="#7C8AA6" HorizontalAlignment="Center" />
+              <TextBlock Name="EmptyLabel" Foreground="#A5ADBD" FontSize="13" Text="{Binding EmptyLabel, Mode=OneWay}" />
+            </StackPanel>
+            <ProgressBar Name="OpeningProgress" IsIndeterminate="True" Height="3" VerticalAlignment="Top" IsVisible="{Binding IsOpening, Mode=OneWay}" />
+          </Grid>
+          <Grid Grid.Row="2" Margin="12,8" RowDefinitions="Auto,Auto" RowSpacing="4">
+            <Slider Name="PositionSlider" Minimum="0" Maximum="{Binding Duration}" IsEnabled="{Binding CanSeek}" Value="{Binding Position, Mode=OneWay}" />
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+              <Button Name="PlayButton" IsEnabled="{Binding CanPlay}" MinWidth="76" Command="{Binding PlayCommand}" Content="{Binding PlayLabel}" />
+              <TextBlock Name="TimeLabel" Grid.Column="1" FontSize="12" VerticalAlignment="Center" Text="{Binding TimeLabel, Mode=OneWay}" />
+              <Slider Name="VolumeSlider" Grid.Column="3" Minimum="0" Maximum="1" Width="76" Value="{Binding Volume, Mode=TwoWay}" />
+              <CheckBox Name="MuteCheck" Grid.Column="4" Tag="Mute" FontSize="11" IsChecked="{Binding IsMuted, Mode=TwoWay}" />
+            </Grid>
+          </Grid>
+        </Grid>
+      </Border>
+      
+</UserControl>

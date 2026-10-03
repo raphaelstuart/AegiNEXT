@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:chrome="using:Avalonia.Controls.Chrome"
+             xmlns:local="using:AegiNext.Desktop.Controls.Common"
+             x:Class="AegiNext.Desktop.Controls.Common.WindowTitleBar"
+             x:DataType="local:WindowTitleBar"
+             x:Name="Root"
+             Height="40"
+             chrome:WindowDecorationProperties.ElementRole="TitleBar">
+  <Border Background="{DynamicResource PreviewSurface}"
+          Padding="{Binding CaptionInsets, ElementName=Root}">
+    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="8,0">
+      <ContentControl Name="MenuPresenter"
+                      Content="{Binding MenuContent, ElementName=Root}"
+                      VerticalContentAlignment="Center"
+                      chrome:WindowDecorationProperties.ElementRole="User"/>
+      <TextBlock Name="TitleText" Grid.Column="1"
+                 Text="{Binding Title, ElementName=Root}"
+                 VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"
+                 TextTrimming="CharacterEllipsis"
+                 chrome:WindowDecorationProperties.ElementRole="TitleBar"/>
+    </Grid>
+  </Border>
+</UserControl>
