@@ -18,7 +18,7 @@ internal static class WindowChrome
             return new WindowsWindowChrome(window, titleBar);
         }
 
-        if (OperatingSystem.IsMacOS() && window.TryGetPlatformHandle() is IMacOSTopLevelPlatformHandle)
+        if (OperatingSystem.IsMacOS() && window.TryGetPlatformHandle() is IPlatformHandle { HandleDescriptor: "NSWindow", Handle: not 0 })
         {
             return new MacOsWindowChrome(window, titleBar);
         }

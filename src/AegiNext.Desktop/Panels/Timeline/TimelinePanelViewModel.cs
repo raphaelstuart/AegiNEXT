@@ -16,6 +16,9 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private readonly WorkbenchSession session;
     private ProjectDocument document = new();
     private Guid? selectedCueId;
+    private Guid? selectedTrackId;
+    private Guid? renamingTrackId;
+    private string trackNameDraft = string.Empty;
     private ProjectLayer? selectedLayer;
     private MediaTime position = MediaTime.Zero;
     private TimelineViewport viewport = new();
@@ -32,6 +35,13 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     internal TimelinePanelViewModel(WorkbenchSession session)
     {
         this.session = session;
+        AddTrackCommand = new(() => session.RunCommandAsync(() => session.EditAsync(session.AddSubtitleTrack)));
+        RenameTrackCommand = new(BeginRenameTrack, () => SelectedTrackId.HasValue);
+        DeleteTrackCommand = new(() => session.RunCommandAsync(() => session.EditAsync(session.RemoveSubtitleTrack)), () => CanDeleteTrack);
+        MoveTrackUpCommand = new(() => session.MoveCurrentSubtitleTrackAsync(-1), () => CanMoveTrackUp);
+        MoveTrackDownCommand = new(() => session.MoveCurrentSubtitleTrackAsync(1), () => CanMoveTrackDown);
+        ConfirmTrackRenameCommand = new(ConfirmTrackRenameAsync, () => CanConfirmTrackRename);
+        CancelTrackRenameCommand = new(CancelTrackRename);
     }
 
     public ProjectDocument Document
@@ -44,7 +54,99 @@ internal sealed class TimelinePanelViewModel : ObservableObject
                 documentDuration = Math.Max(1, Flatten(value.Layers).Select(layer => Seconds(layer.End))
                     .Concat(value.Subtitles.Select(cue => Seconds(cue.End))).DefaultIfEmpty(1).Max());
                 OnPropertyChanged(nameof(FullDuration));
+                RefreshTrackCommands();
             }
+        }
+    }
+
+    public Guid? SelectedTrackId
+    {
+        get => selectedTrackId;
+        set
+        {
+            if (SetProperty(ref selectedTrackId, value))
+            {
+                CancelTrackRename();
+                RefreshTrackCommands();
+            }
+        }
+    }
+
+    public AsyncRelayCommand AddTrackCommand { get; }
+    public RelayCommand RenameTrackCommand { get; }
+    public AsyncRelayCommand DeleteTrackCommand { get; }
+    public AsyncRelayCommand MoveTrackUpCommand { get; }
+    public AsyncRelayCommand MoveTrackDownCommand { get; }
+    public AsyncRelayCommand ConfirmTrackRenameCommand { get; }
+    public RelayCommand CancelTrackRenameCommand { get; }
+    public bool CanDeleteTrack => Document.SubtitleTracks.Length > 1 && SelectedTrackId is { } id &&
+        !Document.Subtitles.Any(cue => cue.TrackId == id);
+    public bool CanMoveTrackUp => SelectedTrackIndex > 0;
+    public bool CanMoveTrackDown => SelectedTrackIndex >= 0 && SelectedTrackIndex < Document.SubtitleTracks.Length - 1;
+    public bool IsRenamingTrack => renamingTrackId.HasValue;
+    public bool CanConfirmTrackRename => IsRenamingTrack && !string.IsNullOrWhiteSpace(TrackNameDraft) &&
+        TrackNameDraft.Length <= 128 && !TrackNameDraft.Any(char.IsControl);
+    private int SelectedTrackIndex => SelectedTrackId is { } id
+        ? Document.SubtitleTracks.IndexOf(Document.SubtitleTracks.FirstOrDefault(track => track.Id == id)!) : -1;
+
+    public string TrackNameDraft
+    {
+        get => trackNameDraft;
+        set
+        {
+            if (SetProperty(ref trackNameDraft, value))
+            {
+                OnPropertyChanged(nameof(CanConfirmTrackRename));
+                ConfirmTrackRenameCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    private void BeginRenameTrack()
+    {
+        if (SelectedTrackId is { } id && session.SelectTrack(id))
+        {
+            renamingTrackId = id;
+            TrackNameDraft = Document.SubtitleTracks.Single(track => track.Id == id).Name;
+            OnPropertyChanged(nameof(IsRenamingTrack));
+            ConfirmTrackRenameCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private async Task ConfirmTrackRenameAsync()
+    {
+        if (!CanConfirmTrackRename || renamingTrackId is not { } id)
+        {
+            return;
+        }
+
+        var name = TrackNameDraft;
+        await session.RunCommandAsync(() => session.EditAsync(() => session.RenameSubtitleTrack(id, name)));
+        if (session.DocumentSnapshot.SubtitleTracks.FirstOrDefault(track => track.Id == id)?.Name == name)
+        {
+            CancelTrackRename();
+        }
+    }
+
+    private void CancelTrackRename()
+    {
+        renamingTrackId = null;
+        OnPropertyChanged(nameof(IsRenamingTrack));
+        ConfirmTrackRenameCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RefreshTrackCommands()
+    {
+        RenameTrackCommand.NotifyCanExecuteChanged();
+        DeleteTrackCommand.NotifyCanExecuteChanged();
+        MoveTrackUpCommand.NotifyCanExecuteChanged();
+        MoveTrackDownCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanDeleteTrack));
+        OnPropertyChanged(nameof(CanMoveTrackUp));
+        OnPropertyChanged(nameof(CanMoveTrackDown));
+        if (renamingTrackId is { } id && !Document.SubtitleTracks.Any(track => track.Id == id))
+        {
+            CancelTrackRename();
         }
     }
 
@@ -133,7 +235,13 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     public bool IsSeeking
     {
         get => isSeeking;
-        set => SetProperty(ref isSeeking, value);
+        set
+        {
+            if (SetProperty(ref isSeeking, value))
+            {
+                session.SetInteractiveSeeking(value);
+            }
+        }
     }
 
     public AnimationProperty EffectProperty
@@ -163,7 +271,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     /// <summary>将时间线的主层和多选集合同步到同一会话选择。</summary>
     public void SelectLayers(TimelineSelectionEventArgs value) => session.SelectLayer(value.Id, value.SelectedIds.ToArray());
     /// <summary>切换当前字幕轨道，不改变工程合成顺序。</summary>
-    public void SelectTrack(Guid id) => session.SelectTrack(id);
+    public bool SelectTrack(Guid id) => session.SelectTrack(id);
     /// <summary>一次完成的时间线手势对应一次工程事务。</summary>
     public Task CommitTimingAsync(TimelineTimingEventArgs value)
     {
@@ -185,7 +293,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         }));
     }
     /// <summary>选择关键帧并同步属性检查器。</summary>
-    public void SelectKeyframe(TimelineKeyframeEventArgs value) => session.SelectKeyframe(value);
+    public bool SelectKeyframe(TimelineKeyframeEventArgs value) => session.SelectKeyframe(value);
     /// <summary>提交完成的关键帧手势。</summary>
     public Task MoveKeyframeAsync(TimelineKeyframeEventArgs value) => session.RunCommandAsync(() => session.EditAsync(() => session.MoveKeyframe(value)));
     /// <summary>视口尺寸改变后重新计算滚动范围。</summary>

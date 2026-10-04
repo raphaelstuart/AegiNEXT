@@ -4,6 +4,11 @@ namespace AegiNext.Media;
 
 internal static partial class NativeHdrMethods
 {
+    static NativeHdrMethods()
+    {
+        NativeMediaRuntime.Initialize();
+    }
+
     internal const uint ABI_VERSION = 1;
     internal const int NOT_READY = 5;
     private const string LIBRARY = "aeginext_media";

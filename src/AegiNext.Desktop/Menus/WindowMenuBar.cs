@@ -1,5 +1,4 @@
 using AegiNext.Desktop.Localization;
-using AegiNext.Desktop.Styling;
 using Avalonia.Controls;
 using Avalonia;
 
@@ -10,11 +9,23 @@ internal sealed class WindowMenuBar : UserControl, IDisposable
     private readonly WorkbenchMenuCatalog catalog;
     private readonly Menu fullMenu = new() { Name = "MainMenu" };
     private readonly Menu overflowMenu = new();
+    private readonly MenuItem overflow = new() { Header = "☰" };
+    private readonly List<WindowMenuGroupProjection> projections = [];
     private double availableWidth = double.PositiveInfinity;
 
     internal WindowMenuBar(WorkbenchMenuCatalog catalog)
     {
         this.catalog = catalog;
+        foreach (var group in WorkbenchMenuCatalog.Groups)
+        {
+            var main = new WindowMenuGroupProjection(group, catalog);
+            var compact = new WindowMenuGroupProjection(group, catalog);
+            projections.Add(main);
+            projections.Add(compact);
+            fullMenu.Items.Add(main.Item);
+            overflow.Items.Add(compact.Item);
+        }
+        overflowMenu.Items.Add(overflow);
         Content = fullMenu;
         catalog.Changed += OnChanged;
         AttachedToVisualTree += OnAttached;
@@ -47,56 +58,13 @@ internal sealed class WindowMenuBar : UserControl, IDisposable
 
     private void Refresh()
     {
-        fullMenu.Items.Clear();
-        overflowMenu.Items.Clear();
-        var overflow = new MenuItem { Header = "☰" };
         ToolTip.SetTip(overflow, WorkbenchText.Get("View"));
-        foreach (var group in WorkbenchMenuCatalog.Groups)
+        foreach (var projection in projections)
         {
-            fullMenu.Items.Add(CreateGroup(group));
-            overflow.Items.Add(CreateGroup(group));
+            projection.Refresh();
         }
-
-        overflowMenu.Items.Add(overflow);
         fullMenu.Measure(new(double.PositiveInfinity, 40));
         RefreshOverflow();
-    }
-
-    private MenuItem CreateGroup(WorkbenchMenuGroup group)
-    {
-        var label = WorkbenchText.Get(group.Key);
-        if (group.Key == "Layouts" && catalog.IsLayoutModified)
-        {
-            label += $" ({WorkbenchText.Get("LayoutModified")})";
-        }
-
-        var item = new MenuItem { Header = label };
-        if (group.Key == "Layouts")
-        {
-            foreach (var choice in catalog.LayoutChoices)
-            {
-                item.Items.Add(new MenuItem
-                {
-                    Header = choice.Title, Command = choice.Command,
-                    ToggleType = MenuItemToggleType.Radio, IsChecked = choice.IsSelected
-                });
-            }
-
-            item.Items.Add(new Separator());
-        }
-
-        foreach (var command in group.Commands)
-        {
-            item.Items.Add(command is { } id
-                ? new MenuItem
-                {
-                    Header = catalog.GetDisplayLabel(id), Command = catalog.GetCommand(id),
-                    InputGesture = catalog.GetGesture(id), Icon = WorkbenchIcon.Create(id.ToString())
-                }
-                : new Separator());
-        }
-
-        return item;
     }
 
     private void RefreshOverflow()

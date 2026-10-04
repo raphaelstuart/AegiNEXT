@@ -1,4 +1,6 @@
 using AegiNext.Media.Preview;
+using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
 
 namespace AegiNext.Desktop.Controllers;
 
@@ -8,4 +10,7 @@ namespace AegiNext.Desktop.Controllers;
 public sealed record VideoPreviewUpdate(VideoPreviewSnapshot Snapshot, SdrVideoFrame? Frame, bool ClearFrame)
 {
     public SdrVideoFrame? BackgroundFrame { get; init; }
+    public ProjectDocument? CompositionDocument { get; init; }
+    public MediaTime? CompositionTime { get; init; }
+    public bool IsInteractiveComposition { get; init; }
 }

@@ -6,6 +6,7 @@ using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Styling;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
@@ -19,6 +20,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
     private readonly WorkbenchMenuCatalog catalog;
     private readonly Action invalidateTiming;
     private readonly Action? cancelGestures;
+    private readonly WorkbenchApplicationMenu? applicationMenu;
     private readonly Dictionary<Window, WorkbenchWindowEntry> windows = [];
     private readonly Dictionary<WorkbenchCommand, Bitmap> icons = [];
     private WorkbenchPreferences preferences = new();
@@ -30,12 +32,17 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         this.catalog = catalog;
         this.invalidateTiming = invalidateTiming;
         this.cancelGestures = cancelGestures;
+        if (OperatingSystem.IsMacOS() && Avalonia.Application.Current is { } application)
+        {
+            applicationMenu = new(application, catalog);
+        }
         catalog.Changed += OnCatalogChanged;
     }
 
     internal IReadOnlyCollection<Window> Windows => windows.Keys;
 
-    internal void Register(Window window, Func<string> titleProvider, WindowTitleBar? titleBar = null)
+    internal void Register(Window window, Func<string> titleProvider, WindowTitleBar? titleBar = null,
+        WorkbenchWindowRole role = WorkbenchWindowRole.MAIN)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         if (windows.ContainsKey(window))
@@ -61,7 +68,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         var native = new WorkbenchNativeMenu(WorkbenchMenuCatalog.Groups, catalog.GetCommand, GetIcon);
         NativeMenu.SetMenu(window, native.Menu);
         var entry = new WorkbenchWindowEntry(window, titleBar, WindowChrome.Attach(window, titleBar),
-            new(catalog), native, titleProvider, []);
+            new(catalog), native, titleProvider, [], role);
         windows.Add(window, entry);
         window.AddHandler(InputElement.KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel, true);
         window.AddHandler(InputElement.KeyUpEvent, OnKeyUp, RoutingStrategies.Tunnel, true);
@@ -83,9 +90,13 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         catalog.Update(value);
         foreach (var entry in windows.Values)
         {
-            entry.PressedKeys.Clear();
             Apply(entry);
         }
+    }
+
+    internal void RegisterAuxiliary(Window window)
+    {
+        Register(window, () => window.Title ?? string.Empty, role: WorkbenchWindowRole.AUXILIARY);
     }
 
     internal void RefreshTitles()
@@ -106,6 +117,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
 
         disposed = true;
         catalog.Changed -= OnCatalogChanged;
+        applicationMenu?.Dispose();
         foreach (var window in windows.Keys.ToArray())
         {
             Unregister(window);
@@ -128,12 +140,9 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             _ => ThemeVariant.Default
         };
         var prefersWindowMenu = !OperatingSystem.IsMacOS() || preferences.WindowMenuOnMac;
-        var windowMenu = prefersWindowMenu || !NativeMenu.GetIsNativeMenuExported(entry.Window);
-        entry.TitleBar.MenuContent = windowMenu ? entry.MenuBar : null;
+        entry.TitleBar.MenuContent = prefersWindowMenu && entry.Role == WorkbenchWindowRole.MAIN ? entry.MenuBar : null;
         entry.NativeMenu.SetEnabled(!OperatingSystem.IsMacOS() || !prefersWindowMenu);
-        entry.NativeMenu.Update(key => key == "Layouts" && catalog.IsLayoutModified
-            ? $"{WorkbenchText.Get(key)} ({WorkbenchText.Get("LayoutModified")})"
-            : WorkbenchText.Get(key), catalog.GetDisplayLabel, catalog.GetGestureLabel);
+        entry.NativeMenu.Update(WorkbenchText.Get, catalog.GetDisplayLabel, catalog.GetGestureLabel);
         entry.NativeMenu.UpdateLayouts(catalog.LayoutChoices);
         UpdateMenuWidth(entry);
     }
@@ -165,13 +174,24 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Handled || sender is not Window window || !windows.TryGetValue(window, out var entry) ||
-            window is SettingsWindow { IsShortcutCaptureActive: true })
+        if (sender is not Window window || !windows.TryGetValue(window, out var entry))
         {
             return;
         }
 
+        if (entry.PressedKeys.Contains(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+
         var visual = e.Source as Visual;
+        if (e.Handled || window.IsDialog || window is SettingsWindow { IsShortcutCaptureActive: true } ||
+            HasOpenKeyboardSurface(window, visual))
+        {
+            return;
+        }
+
         var textInput = visual is TextBox || visual?.GetVisualAncestors().Any(value => value is TextBox) == true;
         if (!router.TryResolve(e.Key, e.KeyModifiers, textInput, out var id))
         {
@@ -194,14 +214,12 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             return;
         }
 
+        e.Handled = true;
+        entry.PressedKeys.Add(e.Key);
         var command = catalog.GetCommand(id);
         if (command.CanExecute(null))
         {
-            e.Handled = true;
-            if (entry.PressedKeys.Add(e.Key))
-            {
-                command.Execute(null);
-            }
+            command.Execute(null);
         }
     }
 
@@ -209,8 +227,30 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
     {
         if (sender is Window window && windows.TryGetValue(window, out var entry))
         {
-            entry.PressedKeys.Remove(e.Key);
+            if (entry.PressedKeys.Remove(e.Key))
+            {
+                e.Handled = true;
+            }
         }
+    }
+
+    private static bool HasOpenKeyboardSurface(Window window, Visual? source)
+    {
+        if (source is MenuItem or MenuBase or PopupRoot ||
+            source?.GetVisualAncestors().Any(value => value is MenuItem or MenuBase or PopupRoot) == true)
+        {
+            return true;
+        }
+
+        return window.GetVisualDescendants().OfType<Control>().Any(control => control switch
+        {
+            ComboBox { IsDropDownOpen: true } => true,
+            AutoCompleteBox { IsDropDownOpen: true } => true,
+            MenuBase { IsOpen: true } => true,
+            Popup { IsOpen: true } => true,
+            Button { Flyout.IsOpen: true } => true,
+            _ => control.ContextMenu?.IsOpen == true || control.ContextFlyout?.IsOpen == true
+        });
     }
 
     private void OnDeactivated(object? sender, EventArgs e)
@@ -253,10 +293,6 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             UpdateMenuWidth(entry);
         }
 
-        else if (e.Property == NativeMenu.IsNativeMenuExportedProperty)
-        {
-            Apply(entry);
-        }
     }
 
     private void OnTitleBarPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)

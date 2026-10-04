@@ -5,6 +5,7 @@ namespace AegiNext.Desktop.Windowing;
 internal static class WindowsChromeGeometry
 {
     internal const double STANDARD_DPI = 96;
+    private const uint NON_INTERACTIVE_CAPTION_STATE = 0x00008000 | 0x00010000 | 0x00000001;
 
     internal static int ToPixels(double value, uint dpi)
     {
@@ -94,8 +95,41 @@ internal static class WindowsChromeGeometry
         return new(0, 0, right * STANDARD_DPI / dpi, 0);
     }
 
+    internal static WindowsChromeHitTest HitCaptionButtons(WindowsPoint screenPoint, in WindowsTitleBarInfoEx titleBar)
+    {
+        if (HitCaptionButton(screenPoint, titleBar.MinimizeBounds, titleBar.MinimizeState))
+        {
+            return WindowsChromeHitTest.MINIMIZE;
+        }
+
+        if (HitCaptionButton(screenPoint, titleBar.MaximizeBounds, titleBar.MaximizeState))
+        {
+            return WindowsChromeHitTest.MAXIMIZE;
+        }
+
+        return HitCaptionButton(screenPoint, titleBar.CloseBounds, titleBar.CloseState)
+            ? WindowsChromeHitTest.CLOSE : WindowsChromeHitTest.NONE;
+    }
+
+    internal static Rect GetCaptionAperture(WindowsRect windowRect, WindowsPoint clientOrigin,
+        Size clientSize, WindowsRect captionBounds, uint dpi)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(dpi);
+        var left = ((long)windowRect.Left + captionBounds.Left - clientOrigin.X) * STANDARD_DPI / dpi;
+        var bottom = ((long)windowRect.Top + captionBounds.Bottom - clientOrigin.Y) * STANDARD_DPI / dpi;
+        left = Math.Clamp(left, 0, clientSize.Width);
+        bottom = Math.Clamp(bottom, 0, clientSize.Height);
+        return new(left, 0, clientSize.Width - left, bottom);
+    }
+
     internal static bool IsUsableCaptionBounds(WindowsRect bounds)
     {
         return bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right > bounds.Left && bounds.Bottom > bounds.Top;
+    }
+
+    private static bool HitCaptionButton(WindowsPoint screenPoint, WindowsRect bounds, uint state)
+    {
+        return (state & NON_INTERACTIVE_CAPTION_STATE) == 0 && screenPoint.X >= bounds.Left &&
+               screenPoint.X < bounds.Right && screenPoint.Y >= bounds.Top && screenPoint.Y < bounds.Bottom;
     }
 }

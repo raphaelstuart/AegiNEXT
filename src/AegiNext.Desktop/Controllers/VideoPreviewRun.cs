@@ -29,6 +29,7 @@ internal sealed class VideoPreviewRun : IDisposable
     internal MediaTime? PresentedFrameTime { get; set; }
     internal MediaTime? PresentedAtPosition { get; set; }
     internal long? PresentedGeneration { get; set; }
+    internal CancellationTokenSource? ConversionCancellation { get; set; }
     internal Task Pump { get; set; } = Task.CompletedTask;
     internal TaskCompletionSource<bool> Resume { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 

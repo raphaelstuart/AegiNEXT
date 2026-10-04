@@ -5,6 +5,11 @@ namespace AegiNext.Media.Encoding;
 
 internal static partial class NativeExportMethods
 {
+    static NativeExportMethods()
+    {
+        NativeMediaRuntime.Initialize();
+    }
+
     private const string LIBRARY = "aeginext_export";
 
     [LibraryImport(LIBRARY, EntryPoint = "an_export_abi_version")]

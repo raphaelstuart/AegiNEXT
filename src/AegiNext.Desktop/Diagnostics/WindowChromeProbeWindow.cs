@@ -81,7 +81,7 @@ internal sealed class WindowChromeProbeWindow : Window
 
     internal void SetWindowMenu(bool visible)
     {
-        TitleBar.MenuContent = visible ? windowMenu : null;
+        TitleBar.MenuContent = visible && Host == "Main" ? windowMenu : null;
         if (OperatingSystem.IsMacOS() && !visible)
         {
             if (nativeMenu.Items.Count == 0)
@@ -104,21 +104,30 @@ internal sealed class WindowChromeProbeWindow : Window
     {
         int? count = null;
         bool? measured = null;
+        bool? renderingEnabled = null;
+        string? transparency = null;
+        double? apertureWidth = null;
+        double? apertureHeight = null;
         string? failure = null;
-        if (OperatingSystem.IsMacOS() && TryGetPlatformHandle() is IMacOSTopLevelPlatformHandle handle)
+        if (OperatingSystem.IsMacOS() && TryGetPlatformHandle() is IPlatformHandle { HandleDescriptor: "NSWindow", Handle: not 0 } handle)
         {
-            count = MacOsCaptionButtons.CountVisible(handle.NSWindow);
+            count = MacOsCaptionButtons.CountVisible(handle.Handle);
             measured = count == 3 && TitleBar.CaptionInsets.Left > 0;
         }
         else if (OperatingSystem.IsWindows() && chrome is WindowsWindowChrome native)
         {
             measured = native.CaptionButtonsMeasured;
+            renderingEnabled = native.NonClientRenderingEnabled;
+            transparency = ActualTransparencyLevel.ToString();
+            apertureWidth = native.CaptionAperture.Width;
+            apertureHeight = native.CaptionAperture.Height;
             failure = native.LastError?.ToString();
         }
 
         return new(action, Host, Title ?? string.Empty, ClientSize.Width, ClientSize.Height, RenderScaling,
             TitleBar.CaptionInsets.Left, TitleBar.CaptionInsets.Right, ExtendClientAreaToDecorationsHint,
-            WindowDecorations.ToString(), WindowState.ToString(), WindowMenuVisible, count, measured, failure);
+            WindowDecorations.ToString(), WindowState.ToString(), WindowMenuVisible, count, measured, failure,
+            renderingEnabled, transparency, apertureWidth, apertureHeight);
     }
 
     /// <inheritdoc />

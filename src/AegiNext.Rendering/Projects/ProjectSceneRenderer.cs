@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Collections.Immutable;
-using System.Text;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
@@ -114,13 +113,13 @@ public sealed class ProjectSceneRenderer : IDisposable
 
     /// <summary>将视频等比例放入指定的工程预览表面，保持工程叠层的坐标与宽高比，并使用 203 nit SDR 名义白。</summary>
     public byte[] ComposePreview(ProjectDocument document, MediaTime time, ReadOnlySpan<byte> bgra,
-        int width, int height, int rowBytes, int outputWidth, int outputHeight)
+        int width, int height, int rowBytes, int outputWidth, int outputHeight, CancellationToken cancellationToken = default)
     {
-        return ComposePreviewCore(document, time, bgra, width, height, rowBytes, outputWidth, outputHeight, true);
+        return ComposePreviewCore(document, time, bgra, width, height, rowBytes, outputWidth, outputHeight, true, cancellationToken);
     }
 
     private byte[] ComposePreviewCore(ProjectDocument document, MediaTime time, ReadOnlySpan<byte> bgra,
-        int width, int height, int rowBytes, int outputWidth, int outputHeight, bool projectViewport)
+        int width, int height, int rowBytes, int outputWidth, int outputHeight, bool projectViewport, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(isDisposed, this);
         ArgumentNullException.ThrowIfNull(document);
@@ -136,7 +135,15 @@ public sealed class ProjectSceneRenderer : IDisposable
         }
 
         Prepare(document);
-        previewScene ??= new(new(document.Width, document.Height, (float)document.ReferenceWhiteNits));
+        var scale = Math.Min(1, Math.Min((double)outputWidth / document.Width, (double)outputHeight / document.Height));
+        var sceneWidth = Math.Max(1, (int)Math.Round(document.Width * scale));
+        var sceneHeight = Math.Max(1, (int)Math.Round(document.Height * scale));
+        if (previewScene is null || previewScene.Info.Width != sceneWidth || previewScene.Info.Height != sceneHeight)
+        {
+            previewScene?.Dispose();
+            previewScene = new(new(sceneWidth, sceneHeight, (float)document.ReferenceWhiteNits));
+            previewSceneValid = false;
+        }
         if (previewTarget is null || previewTarget.Info.Width != outputWidth || previewTarget.Info.Height != outputHeight)
         {
             previewTarget?.Dispose();
@@ -146,16 +153,21 @@ public sealed class ProjectSceneRenderer : IDisposable
         var layers = SceneEvaluator.Evaluate(prepared!, time);
         if (!previewSceneValid || !Equivalent(previewLayers, layers))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            previewSceneValid = false;
             previewScene.Clear();
+            previewScene.Canvas.SetMatrix(SKMatrix.CreateScale((float)sceneWidth / document.Width, (float)sceneHeight / document.Height));
             foreach (var evaluated in layers)
             {
-                DrawLayer(document, previewScene.Canvas, evaluated);
+                cancellationToken.ThrowIfCancellationRequested();
+                DrawLayer(document, previewScene.Canvas, evaluated, sceneWidth, sceneHeight, (float)scale, cancellationToken);
             }
 
             previewLayers = layers;
             previewSceneValid = true;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var scene = previewScene;
         var result = previewTarget;
         using var srgb = SKColorSpace.CreateSrgb();
@@ -171,7 +183,8 @@ public sealed class ProjectSceneRenderer : IDisposable
             previewWhiteFilter ??= CreatePreviewWhiteFilter((float)(document.ReferenceWhiteNits / PREVIEW_REFERENCE_WHITE_NITS));
         }
 
-        using var layerPaint = new SKPaint { ColorFilter = previewWhiteFilter };
+        using var layerPaint = new SKPaint();
+        layerPaint.ColorFilter = previewWhiteFilter;
         var sceneBounds = projectViewport ? FitPreview(document.Width, document.Height, outputWidth, outputHeight) : output;
         result.Canvas.DrawImage(layer, sceneBounds, new SKSamplingOptions(SKFilterMode.Linear), layerPaint);
         return result.CopySrgbBgra();
@@ -259,9 +272,10 @@ public sealed class ProjectSceneRenderer : IDisposable
         return true;
     }
 
-    private void DrawLayer(ProjectDocument document, SKCanvas parent, EvaluatedLayer layer)
+    private void DrawLayer(ProjectDocument document, SKCanvas parent, EvaluatedLayer layer, int renderWidth = 0, int renderHeight = 0, float blurScale = 1, CancellationToken cancellationToken = default)
     {
-        using var surface = new LinearRenderSurface(new(document.Width, document.Height, (float)document.ReferenceWhiteNits));
+        cancellationToken.ThrowIfCancellationRequested();
+        using var surface = new LinearRenderSurface(new(renderWidth > 0 ? renderWidth : document.Width, renderHeight > 0 ? renderHeight : document.Height, (float)document.ReferenceWhiteNits));
         var canvas = surface.Canvas;
         canvas.SetMatrix(parent.TotalMatrix);
         var saved = canvas.Save();
@@ -308,7 +322,7 @@ public sealed class ProjectSceneRenderer : IDisposable
                 case LayerKind.GROUP:
                     foreach (var child in layer.Children)
                     {
-                        DrawLayer(document, canvas, child);
+                        DrawLayer(document, canvas, child, renderWidth, renderHeight, blurScale, cancellationToken);
                     }
 
                     break;
@@ -316,7 +330,8 @@ public sealed class ProjectSceneRenderer : IDisposable
                     throw new InvalidDataException("未知图层类型。");
             }
 
-            F16LayerBlur.Apply(surface, layer.Blur);
+            cancellationToken.ThrowIfCancellationRequested();
+            F16LayerBlur.Apply(surface, layer.Blur * blurScale);
             using var snapshot = surface.Snapshot();
             var parentSave = parent.Save();
             try
@@ -737,7 +752,8 @@ public sealed class ProjectSceneRenderer : IDisposable
     {
         using var effect = SKRuntimeEffect.CreateColorFilter("uniform float scale; half4 main(half4 c) { return half4(c.rgb * scale, c.a); }", out var error)
             ?? throw new InvalidOperationException($"无法创建预览参考白转换：{error}");
-        using var uniforms = new SKRuntimeEffectUniforms(effect) { ["scale"] = scale };
+        using var uniforms = new SKRuntimeEffectUniforms(effect);
+        uniforms["scale"] = scale;
         return effect.ToColorFilter(uniforms) ?? throw new InvalidOperationException("无法创建预览参考白转换实例。");
     }
 

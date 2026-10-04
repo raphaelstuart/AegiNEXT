@@ -35,16 +35,18 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         var orientPath = this.FindControl<CheckBox>("OrientPathCheck")!;
         orientPath.IsCheckedChanged += (_, _) => viewModel.CommitOrientPath(orientPath.IsChecked == true);
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
-        AddHandler(KeyDownEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
         AddHandler(LostFocusEvent, (_, e) =>
         {
             if (e.Source is TextBox or NumericUpDown)
             {
                 var root = TopLevel.GetTopLevel(this);
                 var suppressed = suppressFocusCommit;
+                var revision = focusCommitRevision;
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (!suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
+                    if (!disposed && revision == focusCommitRevision && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
                         this.IsAttachedToVisualTree())
                     {
                         viewModel.CommitDrafts();
@@ -70,6 +72,32 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         }, DispatcherPriority.Background);
     }
     public void FocusInvalidField(string? fieldKey) => (fieldKey is { } key ? this.FindControl<Control>(key) ?? this : this).Focus();
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        suppressFocusCommit = false;
+        if (e.Key == Key.Escape && e.Source is Control source)
+        {
+            var field = source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault() as Control ??
+                source.GetSelfAndVisualAncestors().OfType<TextBox>().FirstOrDefault(control => control.Name is not null && !control.Name.StartsWith("PART_", StringComparison.Ordinal));
+            if (field?.Name is { } name)
+            {
+                viewModel.RestoreField(name);
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(EffectsPanelViewModel.ValidationError) or nameof(EffectsPanelViewModel.InvalidFieldKey))
+        {
+            foreach (var input in this.GetVisualDescendants().OfType<NumericDraftInput>())
+            {
+                DataValidationErrors.SetErrors(input, input.Name == viewModel.InvalidFieldKey && viewModel.ValidationError is { } message ? new[] { message } : null);
+            }
+        }
+    }
+
     private void OnPreferencesChanged(object? sender, EventArgs e) => ControlLocalization.Apply(this);
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     public void Dispose()
@@ -77,6 +105,7 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         if (!disposed)
         {
             disposed = true;
+            viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             session.PreferencesChanged -= OnPreferencesChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
         }

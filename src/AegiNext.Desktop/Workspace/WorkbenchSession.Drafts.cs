@@ -23,7 +23,7 @@ internal sealed partial class WorkbenchSession
 
     private readonly HashSet<string> changedEffectFields = [];
 
-    internal bool TryCommitDrafts()
+    internal bool TryCommitDrafts(bool focusInvalid = true)
     {
         if (updatingWorkbench || closing)
         {
@@ -114,8 +114,9 @@ internal sealed partial class WorkbenchSession
             {
                 var vm = ViewModel.Effects;
                 ViewModel.InvalidPanelId = "effects";
-                var keyframeValue = RequiredNumber(vm.KeyframeValueText, "Property", "KeyframeValueInput");
-                if (keyframeValue < (double)vm.KeyframeMinimum || keyframeValue > (double)vm.KeyframeMaximum)
+                var keyframeChanged = changedEffectFields.Contains("KeyframeValueText") || changedEffectFields.Contains("KeyframeValue");
+                var keyframeValue = keyframeChanged ? RequiredNumber(vm.KeyframeValueText, "Property", "KeyframeValueInput") : (double)(vm.KeyframeValue ?? 0);
+                if (keyframeChanged && (keyframeValue < (double)vm.KeyframeMinimum || keyframeValue > (double)vm.KeyframeMaximum))
                 {
                     throw new InvalidDataException(WorkbenchText.Get("Property"));
                 }
@@ -139,8 +140,8 @@ internal sealed partial class WorkbenchSession
                 {
                     var displayedX = originalBase.X + positionX;
                     var displayedY = originalBase.Y + positionY;
-                    var requestedX = ReadNumber(vm.PositionXText, displayedX, "PositionX", "PositionXInput");
-                    var requestedY = ReadNumber(vm.PositionYText, displayedY, "PositionY", "PositionYInput");
+                    var requestedX = ReadEffectNumber(vm.PositionXText, displayedX, "PositionX", "PositionXInput", "PositionXText");
+                    var requestedY = ReadEffectNumber(vm.PositionYText, displayedY, "PositionY", "PositionYInput", "PositionYText");
                     if (requestedX != displayedX || requestedY != displayedY)
                     {
                         if (preparedPlacement.BasePosition is not { } preparedBase)
@@ -184,7 +185,7 @@ internal sealed partial class WorkbenchSession
                 })
                 {
                     var original = InspectorValue(selected, property, fallback);
-                    var requested = ReadNumber(text, original, label, field);
+                    var requested = ReadEffectNumber(text, original, label, field, label + "Text");
                     if (requested != original)
                     {
                         prepared = AnimationEditOperations.SetValue(prepared, target, property, requested);
@@ -198,12 +199,13 @@ internal sealed partial class WorkbenchSession
                 {
                     prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.POSITION_Y, positionY);
                 }
-                if (SelectedKeyTime is { } keyTime && (changedEffectFields.Contains("KeyframeValueText") || changedEffectFields.Contains("KeyframeValue") || changedEffectFields.Contains("Interpolation")))
+                if (target.IsKeyframe && (keyframeChanged || changedEffectFields.Contains("Interpolation")))
                 {
-                    var frame = SelectedKeyframe ?? new Keyframe(keyTime, keyframeValue);
-                    prepared = WorkspaceDraftOperations.SetKeyframe(prepared, selected.Id, ActiveProperty, frame with
+                    var property = target.Property ?? ActiveProperty;
+                    var frame = selected.Tracks.FirstOrDefault(track => track.Property == property)?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime) ?? new Keyframe(target.LocalTime, keyframeValue);
+                    prepared = WorkspaceDraftOperations.SetKeyframe(prepared, selected.Id, property, frame with
                     {
-                        Value = changedEffectFields.Contains("KeyframeValueText") || changedEffectFields.Contains("KeyframeValue") ? keyframeValue : frame.Value,
+                        Value = keyframeChanged ? keyframeValue : frame.Value,
                         Interpolation = (KeyframeInterpolation)vm.Interpolation,
                         CurveStart = vm.Interpolation == (int)frame.Interpolation ? frame.CurveStart : 0,
                         CurveEnd = vm.Interpolation == (int)frame.Interpolation ? frame.CurveEnd : 1
@@ -263,14 +265,16 @@ internal sealed partial class WorkbenchSession
             ViewModel.InvalidFieldKey = null;
             ViewModel.Subtitles.ValidationError = null;
             ViewModel.Subtitles.InvalidRowId = null;
+            ViewModel.Effects.ValidationError = null;
+            ViewModel.Effects.InvalidFieldKey = null;
+            lastDraftDiagnostic = null;
             return true;
         }
         catch (Exception error)
         {
             ViewModel.Subtitles.InvalidRowId = invalidRow;
             ViewModel.Subtitles.ValidationError = error.Message;
-            ShowError(error);
-            ViewModel.FocusDraftError();
+            ReportDraftError(error, focusInvalid);
             return false;
         }
     }
@@ -316,7 +320,7 @@ internal sealed partial class WorkbenchSession
     {
         if (!projectBusy && !updatingWorkbench && row.IsDirty)
         {
-            TryCommitDrafts();
+            TryCommitDrafts(false);
         }
     }
 
@@ -337,6 +341,7 @@ internal sealed partial class WorkbenchSession
         if (!updatingWorkbench && e.PropertyName is { } name && styleDraftProperties.Contains(name))
         {
             stylesDirty = true;
+            draftRevision++;
             FreezeDraftTarget();
         }
     }
@@ -385,6 +390,7 @@ internal sealed partial class WorkbenchSession
         if (effectDraftProperties.Contains(e.PropertyName))
         {
             effectsDirty = true;
+            draftRevision++;
             FreezeDraftTarget();
             changedEffectFields.Add(e.PropertyName);
         }
@@ -439,7 +445,7 @@ internal sealed partial class WorkbenchSession
 
             if (!document.Subtitles.Any(value => value.Id == SelectedCueId))
             {
-                SelectedCueId = document.Subtitles.FirstOrDefault(value => value.TrackId == CurrentTrackId)?.Id;
+                SelectedCueId = null;
             }
 
             ViewModel.Subtitles.SelectedRow = rows.FirstOrDefault(value => value.Id == SelectedCueId);
@@ -451,7 +457,7 @@ internal sealed partial class WorkbenchSession
 
             if (!layers.Any(value => value.Id == SelectedLayerId))
             {
-                SelectedLayerId = Flatten(document.Layers).FirstOrDefault(layer => layer.SubtitleId == SelectedCueId)?.Id ?? (SelectedCueId is null ? null : layers.FirstOrDefault()?.Id);
+                SelectedLayerId = SelectedCueId is { } cueId ? Flatten(document.Layers).FirstOrDefault(layer => layer.SubtitleId == cueId)?.Id : null;
             }
 
             if (SelectedKeyTime is { } selectedTime && SelectedLayer?.Tracks.Any(track => track.Keyframes.Any(frame => frame.Time == selectedTime)) != true)

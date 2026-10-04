@@ -53,7 +53,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     internal MainWindow(Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory)
     {
         AvaloniaXamlLoader.Load(this);
-        Session = WorkbenchCompositionRoot.Create(new WindowWorkbenchDialogService(this), controllerFactory);
+        Session = WorkbenchCompositionRoot.Create(new WindowWorkbenchDialogService(this,
+            registerWindow: RegisterAuxiliaryWindow), controllerFactory);
         ViewModel = Session.ViewModel;
         DataContext = ViewModel;
         panels = new(StringComparer.Ordinal)
@@ -69,7 +70,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         workspaceHost = this.FindControl<ContentControl>("WorkspaceHost")!;
         menuCatalog = new(ViewModel.GetCommand);
         windowRegistry = new(menuCatalog, Session.InvalidateTimingSession, ViewModel.CancelGestures);
-        windowRegistry.Register(this, () => ViewModel.Title, this.FindControl<WindowTitleBar>("TitleBar")!);
+        windowRegistry.Register(this, () => ViewModel.Title, this.FindControl<WindowTitleBar>("TitleBar")!,
+            WorkbenchWindowRole.MAIN);
         layouts = new(this, panels, Session.PreferencesStore.DirectoryPath, ViewModel.TryCommitDrafts,
             ViewModel.CancelGestures, RegisterWorkspaceWindow);
         workspaceHost.Content = layouts.Host;
@@ -182,6 +184,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
     }
 
+    private void RegisterAuxiliaryWindow(Window window)
+    {
+        windowRegistry.RegisterAuxiliary(window);
+    }
+
     private void RegisterWorkspaceWindow(Window window)
     {
         windowRegistry.Register(window, () => window switch
@@ -189,7 +196,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             WorkbenchFloatingHostWindow => $"{ViewModel.Title} — {floatingTitles.GetValueOrDefault(window, string.Empty)}",
             LayoutPresetManagerWindow => $"{LayoutText.Get("Manage", Session.InterfaceCulture)} — AegiNext",
             _ => $"{LayoutText.Get("SaveAs", Session.InterfaceCulture)} — AegiNext"
-        });
+        }, role: window is WorkbenchFloatingHostWindow ? WorkbenchWindowRole.FLOATING : WorkbenchWindowRole.AUXILIARY);
         window.Closed += (_, _) => floatingTitles.Remove(window);
     }
 

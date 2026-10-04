@@ -7,6 +7,9 @@ internal static class WorkbenchText
 {
     private static readonly Dictionary<string, (string Chinese, string English)> entries = new(StringComparer.Ordinal)
     {
+        ["CollapseTrack"] = ("折叠轨道", "Collapse track"),
+        ["ExpandTrack"] = ("展开轨道", "Expand track"),
+        ["RestoreField"] = ("恢复当前错误字段（Esc）", "Restore invalid field (Esc)"),
         ["EditKeyframeTarget"] = ("编辑关键帧", "Editing keyframe"),
         ["EditPlayheadTarget"] = ("编辑播放头时刻", "Editing playhead time"),
         ["SubtitleTrack"] = ("字幕轨道", "Subtitle track"),

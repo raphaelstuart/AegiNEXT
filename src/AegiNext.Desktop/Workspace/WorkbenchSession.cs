@@ -266,6 +266,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     {
         closing = true;
         editor.Changed -= OnDocumentChanged;
+        playback.Invalidate();
         ViewModel.CancelGestures();
         analysis.Cancel();
         export.Cancel();
@@ -356,8 +357,9 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
                 ViewModel.Preview.HasFrame = true;
             }
 
+            var identity = update.Frame is { } presentedFrame ? previewFrames.FindIdentity(presentedFrame) : null;
             var presented = update.Frame is { } frame
-                ? update with { BackgroundFrame = update.BackgroundFrame ?? previewFrames.FindBackground(frame) ?? frame }
+                ? update with { BackgroundFrame = update.BackgroundFrame ?? identity?.Background ?? frame, CompositionDocument = identity?.Document, CompositionTime = identity?.Time, IsInteractiveComposition = identity?.Interactive ?? false }
                 : update;
             PreviewUpdated?.Invoke(this, presented);
             Tick();

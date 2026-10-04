@@ -11,6 +11,8 @@ internal sealed class WorkspaceProbeReport
     public List<string> Failures { get; } = [];
     public List<WorkspaceProbeSample> Samples { get; } = [];
     public List<WorkspaceDockProbeSample> DockSamples { get; } = [];
+    public List<MacOsActualMenuSample> ActualMacOsMenus { get; } = [];
+    public List<MacOsFocusWaitSample> MacOsFocusWaits { get; } = [];
     public bool Completed { get; set; }
     public bool SourceProfileCopied { get; set; }
     public int LoadedStylePresetCount { get; set; }

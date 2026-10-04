@@ -15,4 +15,8 @@ internal sealed record WindowChromeProbeSample(
     bool WindowMenuVisible,
     int? VisibleMacOsSystemButtons,
     bool? NativeCaptionButtonsMeasured,
-    string? PlatformFailure);
+    string? PlatformFailure,
+    bool? NativeNonClientRenderingEnabled = null,
+    string? NativeCaptionTransparency = null,
+    double? NativeCaptionApertureWidth = null,
+    double? NativeCaptionApertureHeight = null);

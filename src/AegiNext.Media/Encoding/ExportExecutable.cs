@@ -4,6 +4,11 @@ internal static class ExportExecutable
 {
     internal static string Resolve(string name, string? explicitPath = null)
     {
+        if (name == "ffmpeg")
+        {
+            return AegiNext.Media.Probing.MediaToolchain.ResolveFfmpeg(explicitPath);
+        }
+
         if (explicitPath is not null)
         {
             if (!Path.IsPathFullyQualified(explicitPath) || !File.Exists(explicitPath))

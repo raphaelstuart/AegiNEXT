@@ -103,16 +103,17 @@ function Get-AegiNextDecoderEnvironment
     $prefixes = @{}
     $platform = $HostInfo.Platform
     $manager = if ($platform -eq 'Windows') { 'scoop' } else { 'brew' }
-    $isSupportedArchitecture = $HostInfo.Architecture -eq $HostInfo.ProcessArchitecture -and
-        (($platform -eq 'Windows' -and $HostInfo.Architecture -eq 'X64') -or
-         ($platform -eq 'MacOS' -and $HostInfo.Architecture -in @('Arm64', 'X64')))
+    $isSupportedArchitecture = ($platform -eq 'Windows' -and $HostInfo.Architecture -in @('Arm64', 'X64') -and
+        $HostInfo.ProcessArchitecture -in @('Arm64', 'X64')) -or
+        ($platform -eq 'MacOS' -and $HostInfo.Architecture -eq $HostInfo.ProcessArchitecture -and
+         $HostInfo.Architecture -in @('Arm64', 'X64'))
     if (!$isSupportedArchitecture)
     {
-        $checks.Add((Get-AegiNextCheck 'Architecture' 'Unsupported' 'Decoder requires native macOS arm64/x64 or Windows x64 PowerShell; emulated or mixed architectures are unsupported.'))
+        $checks.Add((Get-AegiNextCheck 'Architecture' 'Unsupported' 'Decoder requires native macOS arm64/x64 or Windows x64 target on an x64/arm64 host.'))
     }
     else
     {
-        $checks.Add((Get-AegiNextCheck 'Architecture' 'Ready' $HostInfo.Architecture))
+        $checks.Add((Get-AegiNextCheck 'Architecture' 'Ready' "$($HostInfo.Architecture) host; Windows native output is always x64, including ARM64 emulation."))
     }
 
     $cmakeSource = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'native/decoder/CMakeLists.txt') -Raw

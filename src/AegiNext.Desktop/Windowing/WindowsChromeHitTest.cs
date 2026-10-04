@@ -5,6 +5,8 @@ internal enum WindowsChromeHitTest
     NONE = 0,
     CLIENT = 1,
     CAPTION = 2,
+    MINIMIZE = 8,
+    MAXIMIZE = 9,
     LEFT = 10,
     RIGHT = 11,
     TOP = 12,
@@ -12,5 +14,6 @@ internal enum WindowsChromeHitTest
     TOP_RIGHT = 14,
     BOTTOM = 15,
     BOTTOM_LEFT = 16,
-    BOTTOM_RIGHT = 17
+    BOTTOM_RIGHT = 17,
+    CLOSE = 20
 }

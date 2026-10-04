@@ -4,6 +4,8 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class WorkbenchSession
 {
+    internal void SetInteractiveSeeking(bool value) => playback.SetInteractive(value);
+
     internal Task SeekForEditingAsync(MediaTime time) => playback.SeekAsync((controller.Snapshot.Start ?? MediaTime.Zero) + time, false);
 
     internal Task SeekFromUserAsync(MediaTime position) => playback.SeekAsync(position);
@@ -17,7 +19,11 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
-        if (e.PropertyName == "Volume")
+        if (e.PropertyName == "IsScrubbing")
+        {
+            SetInteractiveSeeking(ViewModel.Preview.IsScrubbing);
+        }
+        else if (e.PropertyName == "Volume")
         {
             var value = (float)ViewModel.Preview.Volume;
             controller.SetVolume(value);

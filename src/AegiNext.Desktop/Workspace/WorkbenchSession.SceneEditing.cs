@@ -36,7 +36,7 @@ internal sealed partial class WorkbenchSession
             return;
         }
         var local = SelectedKeyTime ?? (inspectorTime ?? ProjectPosition) - layer.Start + layer.AnimationOffset;
-        SceneEditing.DraftTarget = new(layer.Id, LayerAnimationTiming.ClampTime(layer, local), SelectedKeyTime is not null);
+        SceneEditing.DraftTarget = new(layer.Id, LayerAnimationTiming.ClampTime(layer, local), SelectedKeyTime is not null, ActiveProperty);
         _ = RunCommandAsync(PauseForSceneEditAsync);
     }
 
@@ -112,7 +112,8 @@ internal sealed partial class WorkbenchSession
     private void RefreshEditingPreview()
     {
         ViewModel.Preview.Scene = new(DocumentSnapshot, SelectedLayer, EditingPosition, SceneEditing.Mode,
-            ProjectDirectory, SelectedKeyTime is not null || SceneEditing.GestureTarget is not null);
+            ProjectDirectory, SelectedKeyTime is not null || SceneEditing.GestureTarget is not null, playback.IsInteractive);
+        Volatile.Write(ref previewState, new(DocumentSnapshot, ProjectDirectory, ProjectPosition, playback.IsInteractive));
     }
 
     private double InspectorValue(ProjectLayer layer, AnimationProperty property, double fallback) =>

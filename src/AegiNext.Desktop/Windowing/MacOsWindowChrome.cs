@@ -82,9 +82,9 @@ internal sealed class MacOsWindowChrome : IWindowChrome
 
     private void RefreshInsets()
     {
-        if (!disposed && window.TryGetPlatformHandle() is IMacOSTopLevelPlatformHandle { NSWindow: not 0 } handle)
+        if (!disposed && window.TryGetPlatformHandle() is IPlatformHandle { HandleDescriptor: "NSWindow", Handle: not 0 } handle)
         {
-            titleBar.CaptionInsets = new(MacOsCaptionButtons.MeasureLeftInset(handle.NSWindow), 0, 0, 0);
+            titleBar.CaptionInsets = new(MacOsCaptionButtons.MeasureLeftInset(handle.Handle), 0, 0, 0);
         }
     }
 }

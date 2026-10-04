@@ -23,6 +23,8 @@ param(
     [switch] $WithMediaTools,
     [string] $FfmpegRoot,
     [string] $SdlRoot,
+    [ValidateSet('osx-arm64', 'osx-x64', 'win-x64')]
+    [string] $RuntimeIdentifier,
     [switch] $RunTests,
     [ValidateSet('Core', 'Application', 'Rendering', 'Media', 'Desktop', 'Desktop.Ui')]
     [string[]] $TestProjects = @('Core', 'Application', 'Rendering', 'Media', 'Desktop'),

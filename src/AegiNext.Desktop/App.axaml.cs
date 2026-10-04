@@ -17,6 +17,10 @@ public class App : Avalonia.Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+        if (OperatingSystem.IsMacOS() && NativeMenu.GetMenu(this) is null)
+        {
+            NativeMenu.SetMenu(this, new NativeMenu());
+        }
     }
 
     /// <inheritdoc />

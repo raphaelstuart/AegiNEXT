@@ -131,10 +131,6 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     private void RefreshLocalization()
     {
         ControlLocalization.Apply(this);
-        this.FindControl<Button>("MoveSubtitleTrackUpButton")!.Content =
-            WorkbenchIcon.Content(WorkbenchText.Get("MoveTrackUp"), "Up");
-        this.FindControl<Button>("MoveSubtitleTrackDownButton")!.Content =
-            WorkbenchIcon.Content(WorkbenchText.Get("MoveTrackDown"), "Down");
     }
     private void OnScrollRequested(object? sender, EventArgs e)
     {

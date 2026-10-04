@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Layouts;
+using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.Menus;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Views;
@@ -17,6 +20,8 @@ namespace AegiNext.Desktop.Diagnostics;
 
 internal sealed class WorkspaceProbe
 {
+    private const int MAC_OS_FOCUS_TIMEOUT_MILLISECONDS = 5000;
+    private const int MAC_OS_FOCUS_POLL_MILLISECONDS = 25;
     private static readonly JsonSerializerOptions jsonOptions = new() { WriteIndented = true };
     private readonly WorkspaceProbeOptions options;
     private readonly IClassicDesktopStyleApplicationLifetime desktop;
@@ -82,19 +87,24 @@ internal sealed class WorkspaceProbe
                 Verify(MainWindow.Panels[id].IsAttachedToVisualTree(), $"Standard panel attached: {id}");
             }
             var log = MainWindow.Panels[WorkbenchPanelIds.LOG];
+            var logOwner = (Dock.Model.Core.IDock)MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.LOG].Owner!;
+            var subtitlePanel = MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.SUBTITLES];
             Verify(MainWindow.Panels.Count == WorkbenchPanelIds.All.Count && WorkbenchPanelIds.All.Count == 7,
                 "All seven stable panel views were registered");
-            Verify(MainWindow.Layouts.IsVisible(WorkbenchPanelIds.LOG) && !log.IsEffectivelyVisible,
+            Verify(MainWindow.Layouts.IsVisible(WorkbenchPanelIds.LOG) && !IsDisplayed(log) &&
+                   ReferenceEquals(logOwner.ActiveDockable, subtitlePanel),
                 "Standard layout kept the Log tab inactive");
             MainWindow.Session.Journal.Clear();
             MainWindow.Session.LogInfo("Workspace probe", "Native Log activation check");
             MainWindow.Session.LogError("Workspace probe", new InvalidOperationException("Native unread error check"));
             await SettleAsync();
-            Verify(!log.IsEffectivelyVisible && MainWindow.ViewModel.Log.UnreadErrorCount == 1,
+            Verify(!IsDisplayed(log) && ReferenceEquals(logOwner.ActiveDockable, subtitlePanel) &&
+                   MainWindow.ViewModel.Log.UnreadErrorCount == 1,
                 "New log entries retained the active work tab and marked one unread error");
             await MainWindow.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_LOG);
             await SettleAsync();
-            Verify(log.IsAttachedToVisualTree() && log.IsEffectivelyVisible && MainWindow.ViewModel.Log.UnreadErrorCount == 0,
+            Verify(IsDisplayed(log) && ReferenceEquals(logOwner.ActiveDockable, MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.LOG]) &&
+                   MainWindow.ViewModel.Log.UnreadErrorCount == 0,
                 "The shared Log command activated its existing view and marked visible errors read");
             Capture("log-active");
             MainWindow.Session.Journal.Clear();
@@ -132,7 +142,8 @@ internal sealed class WorkspaceProbe
             MainWindow.Session.UpdatePreferences(MainWindow.Session.Preferences with { WindowMenuOnMac = true, Language = "en-US" });
             await SettleAsync();
             Capture("window-menu-three-hosts");
-            Verify(MainWindow.WindowRegistry.Windows.All(window => FindTitleBar(window).MenuContent is not null), "Window menus applied to all three hosts");
+            Verify(MainWindow.WindowRegistry.Windows.All(window => (ReferenceEquals(window, MainWindow) && FindTitleBar(window).MenuContent is not null) || (!ReferenceEquals(window, MainWindow) && FindTitleBar(window).MenuContent is null)), "Window menu belongs only to main workbench");
+            await VerifyActualMacOsMenusAsync(true);
             MainWindow.Session.UpdatePreferences(MainWindow.Session.Preferences with { WindowMenuOnMac = false, Language = "zh-CN" });
             await SettleAsync();
             Capture("system-menu-restored");
@@ -140,6 +151,7 @@ internal sealed class WorkspaceProbe
             {
                 Verify(MainWindow.WindowRegistry.Windows.All(window => NativeMenu.GetIsNativeMenuExported(window) && FindTitleBar(window).MenuContent is null), "Native system menus restored on all macOS hosts");
             }
+            await VerifyActualMacOsMenusAsync(false);
             floating.Close();
             await SettleAsync();
             Verify(MainWindow.IsVisible && !MainWindow.Layouts.IsVisible(WorkbenchPanelIds.PREVIEW), "Closing the floating host only hid its panel");
@@ -235,9 +247,9 @@ internal sealed class WorkspaceProbe
         {
             var titleBar = FindTitleBar(window);
             int? buttons = null;
-            if (OperatingSystem.IsMacOS() && window.TryGetPlatformHandle() is IMacOSTopLevelPlatformHandle { NSWindow: not 0 } handle)
+            if (OperatingSystem.IsMacOS() && window.TryGetPlatformHandle() is IPlatformHandle { HandleDescriptor: "NSWindow", Handle: not 0 } handle)
             {
-                buttons = MacOsCaptionButtons.CountVisible(handle.NSWindow);
+                buttons = MacOsCaptionButtons.CountVisible(handle.Handle);
                 Verify(buttons == 3, $"Three native traffic lights visible: {action}/{window.GetType().Name}");
             }
             report.Samples.Add(new(action, window.GetType().Name, window.Title ?? string.Empty, window.ClientSize.Width,
@@ -251,6 +263,144 @@ internal sealed class WorkspaceProbe
     {
         (condition ? report.Checks : report.Failures).Add(description);
     }
+
+    private async Task VerifyActualMacOsMenusAsync(bool windowMenuMode)
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var hosts = MainWindow.WindowRegistry.Windows.Where(window => window.IsVisible).ToArray();
+        var roots = hosts.ToDictionary(window => window, NativeMenu.GetMenu);
+        for (var cycle = 0; cycle < 3; cycle++)
+        {
+            foreach (var host in hosts)
+            {
+                host.Activate();
+                var action = $"focus-{cycle + 1}";
+                await WaitForMacOsKeyWindowAsync(action, host, windowMenuMode, roots);
+                CaptureActualMacOsMenu(action, host, windowMenuMode, roots);
+                if (cycle == 2)
+                {
+                    await Task.Delay(1000);
+                    CaptureActualMacOsMenu(action + "-idle", host, windowMenuMode, roots);
+                }
+            }
+        }
+
+        var dialog = new UnsavedProjectDialog();
+        Task<int>? dialogCompletion = null;
+        try
+        {
+            MainWindow.WindowRegistry.RegisterAuxiliary(dialog);
+            roots.Add(dialog, NativeMenu.GetMenu(dialog));
+            dialogCompletion = dialog.ShowDialog<int>(MainWindow);
+            await WaitForMacOsKeyWindowAsync("modal-focused", dialog, windowMenuMode, roots);
+            Verify(dialog.IsDialog && dialog.IsVisible, "Actual unsaved-project modal dialog opened");
+            CaptureActualMacOsMenu("modal-focused", dialog, windowMenuMode, roots);
+            await Task.Delay(1000);
+            CaptureActualMacOsMenu("modal-focused-idle", dialog, windowMenuMode, roots);
+        }
+        finally
+        {
+            if (dialog.IsVisible)
+            {
+                dialog.Close(0);
+            }
+
+            if (dialogCompletion is not null)
+            {
+                await dialogCompletion;
+            }
+        }
+
+        roots.Remove(dialog);
+        MainWindow.Activate();
+        await WaitForMacOsKeyWindowAsync("main-after-modal", MainWindow, windowMenuMode, roots);
+        await Task.Delay(1000);
+        CaptureActualMacOsMenu("main-idle-after-modal", MainWindow, windowMenuMode, roots);
+        Verify(!MainWindow.WindowRegistry.Windows.Contains(dialog), "Modal host was unregistered after close");
+    }
+
+    private async Task WaitForMacOsKeyWindowAsync(string action, Window host, bool windowMenuMode,
+        IReadOnlyDictionary<Window, NativeMenu?> roots)
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        if (host.TryGetPlatformHandle() is not IPlatformHandle { HandleDescriptor: "NSWindow", Handle: not 0 } handle)
+        {
+            throw new InvalidOperationException("The focus probe requires a real macOS NSWindow.");
+        }
+
+        var timer = Stopwatch.StartNew();
+        nint observed = 0;
+        var polls = 0;
+        while (timer.ElapsedMilliseconds < MAC_OS_FOCUS_TIMEOUT_MILLISECONDS)
+        {
+            observed = MacOsActualMenuSnapshot.ReadKeyWindowHandle();
+            polls++;
+            if (observed == handle.Handle)
+            {
+                break;
+            }
+
+            await Task.Delay(MAC_OS_FOCUS_POLL_MILLISECONDS);
+        }
+
+        var matched = observed == handle.Handle;
+        report.MacOsFocusWaits.Add(new(action, host.GetType().Name, windowMenuMode, (long)handle.Handle,
+            (long)observed, timer.ElapsedMilliseconds, polls, matched));
+        if (!matched)
+        {
+            var rootsPreserved = roots.All(pair => ReferenceEquals(pair.Value, NativeMenu.GetMenu(pair.Key)));
+            var sample = MacOsActualMenuSnapshot.Capture(action + "-focus-timeout", host.GetType().Name,
+                windowMenuMode, rootsPreserved) with { RequestedKeyWindowHandle = (long)handle.Handle };
+            report.ActualMacOsMenus.Add(sample);
+            throw new TimeoutException($"Native keyWindow did not reach {host.GetType().Name} within " +
+                                       $"{MAC_OS_FOCUS_TIMEOUT_MILLISECONDS} ms: expected {handle.Handle}, observed {observed}.");
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(host.UpdateLayout, DispatcherPriority.Background);
+    }
+
+    private void CaptureActualMacOsMenu(string action, Window host, bool windowMenuMode,
+        IReadOnlyDictionary<Window, NativeMenu?> roots)
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var rootsPreserved = roots.All(pair => ReferenceEquals(pair.Value, NativeMenu.GetMenu(pair.Key)));
+        if (host.TryGetPlatformHandle() is not IPlatformHandle { HandleDescriptor: "NSWindow", Handle: not 0 } handle)
+        {
+            throw new InvalidOperationException("The menu probe requires a real macOS NSWindow.");
+        }
+
+        var sample = MacOsActualMenuSnapshot.Capture(action, host.GetType().Name, windowMenuMode, rootsPreserved)
+            with { RequestedKeyWindowHandle = (long)handle.Handle };
+        report.ActualMacOsMenus.Add(sample);
+        var description = $"{action}/{host.GetType().Name}/window-menu={windowMenuMode}";
+        Verify(sample.MainMenuHandle != 0 && sample.Items.Length > 0,
+            $"NSApplication actual mainMenu retained application items: {description}");
+        Verify(sample.KeyWindowHandle == sample.RequestedKeyWindowHandle && sample.KeyWindowTitle == host.Title,
+            $"Native keyWindow matched the requested focus host: {description}");
+        Verify(sample.ManagedRootsPreserved, $"Managed native menu roots survived focus: {description}");
+        var titles = sample.Items.Select(item => item.Title).ToArray();
+        foreach (var group in WorkbenchMenuCatalog.Groups)
+        {
+            var label = WorkbenchText.Get(group.Key);
+            Verify(titles.Contains(label, StringComparer.Ordinal) != windowMenuMode,
+                $"Actual native workbench group '{label}' matched the selected menu mode: {description}");
+        }
+    }
+
+    private static bool IsDisplayed(Control control) => control.IsAttachedToVisualTree() && control.IsEffectivelyVisible &&
+        control.Bounds.Width > 0 && control.Bounds.Height > 0;
 
     private async Task SettleAsync()
     {

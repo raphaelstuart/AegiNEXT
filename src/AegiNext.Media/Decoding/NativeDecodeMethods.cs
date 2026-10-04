@@ -5,6 +5,11 @@ namespace AegiNext.Media.Decoding;
 
 internal static partial class NativeDecodeMethods
 {
+    static NativeDecodeMethods()
+    {
+        NativeMediaRuntime.Initialize();
+    }
+
     internal const uint ABI_VERSION = 1;
     internal const uint SEEK_FEATURE = 1;
     internal const int EOF = 1;

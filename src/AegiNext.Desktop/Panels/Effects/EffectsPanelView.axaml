@@ -3,6 +3,7 @@
     xmlns:vm="using:AegiNext.Desktop.Panels.Effects" x:DataType="vm:EffectsPanelViewModel"
     x:Class="AegiNext.Desktop.Panels.Effects.EffectsPanelView">
 <ScrollViewer><StackPanel Name="EffectPanel" Margin="4" Spacing="8">
+              <TextBlock Text="{Binding ValidationError}" Foreground="Tomato" TextWrapping="Wrap" /><Button Name="RestoreFieldButton" Tag="RestoreField" Command="{Binding RestoreInvalidFieldCommand}" />
               <TextBlock Name="EditingTarget" Text="{Binding EditTargetLabel}" TextWrapping="Wrap" Classes="field" />
               <WrapPanel><Button Name="RectangleButton" Tag="Rectangle" Command="{Binding RectangleCommand}" /><Button Name="EllipseButton" Tag="Ellipse" Command="{Binding EllipseCommand}" /><Button Name="ImageButton" Tag="Image" Command="{Binding ImageCommand}" /><Button Name="GroupButton" Tag="Group" Command="{Binding GroupCommand}" /><Button Name="UngroupButton" Tag="Ungroup" Command="{Binding UngroupCommand}" /><Button Name="DeleteLayerButton" Tag="Delete" Command="{Binding DeleteLayerCommand}" /><Button Name="LayerUpButton" Tag="Up" Command="{Binding LayerUpCommand}" /><Button Name="LayerDownButton" Tag="Down" Command="{Binding LayerDownCommand}" /></WrapPanel>
               <TextBox Name="LayerNameInput" Text="{Binding LayerName, Mode=TwoWay}" />

@@ -144,7 +144,7 @@ internal sealed class StylesPanelViewModel : ObservableObject
         session.TryCommitDrafts();
     }
     /// <summary>提交所有面板的有效草稿。</summary>
-    public void CommitDrafts() => session.TryCommitDrafts();
+    public void CommitDrafts() => session.TryCommitDrafts(false);
     public string FontSizeText
     {
         get => fontSizeText;

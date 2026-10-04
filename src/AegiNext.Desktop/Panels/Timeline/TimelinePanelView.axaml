@@ -6,6 +6,18 @@
       <Grid RowDefinitions="28,*">
         <controls:TimelineOverviewControl Name="TimelineMinimap" Margin="4,2" />
         <controls:SubtitleTimelineControl Name="Timeline" Grid.Row="1" />
+        <Border Name="TrackRenameEditor" Grid.Row="1" Margin="8" Padding="12" Width="260"
+            HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource PreviewSurface}"
+            BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" CornerRadius="8" IsVisible="{Binding IsRenamingTrack}">
+          <StackPanel Spacing="8">
+            <TextBlock Tag="RenameTrack" FontWeight="SemiBold" />
+            <TextBox Name="TimelineTrackNameInput" Text="{Binding TrackNameDraft, Mode=TwoWay}" MaxLength="128" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Name="ConfirmTrackRenameButton" Tag="Save" Command="{Binding ConfirmTrackRenameCommand}" />
+              <Button Name="CancelTrackRenameButton" Tag="Cancel" Command="{Binding CancelTrackRenameCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
       </Grid>
     </Border>
     

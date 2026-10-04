@@ -1,21 +1,25 @@
 using System.Runtime.CompilerServices;
 using AegiNext.Media.Preview;
+using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
 
 namespace AegiNext.Desktop.Rendering;
 
 internal sealed class PreviewFrameCatalog
 {
-    private readonly ConditionalWeakTable<SdrVideoFrame, SdrVideoFrame> backgrounds = new();
+    private readonly ConditionalWeakTable<SdrVideoFrame, PreviewFrameRecord> backgrounds = new();
 
-    internal void Register(SdrVideoFrame presented, SdrVideoFrame background)
+    internal void Register(SdrVideoFrame presented, SdrVideoFrame background, ProjectDocument? document = null, MediaTime? time = null, bool interactive = false)
     {
-        backgrounds.Add(presented, background);
+        backgrounds.Add(presented, new(background, document, time, interactive));
     }
 
     internal SdrVideoFrame? FindBackground(SdrVideoFrame presented)
     {
-        return backgrounds.TryGetValue(presented, out var background) ? background : null;
+        return backgrounds.TryGetValue(presented, out var record) ? record.Background : null;
     }
+
+    internal PreviewFrameRecord? FindIdentity(SdrVideoFrame presented) => backgrounds.TryGetValue(presented, out var record) ? record : null;
 
     internal void Clear()
     {

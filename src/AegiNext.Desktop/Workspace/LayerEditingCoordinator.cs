@@ -257,18 +257,18 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         session.CancelCanvasGesture();
     }
 
-    internal void SelectKeyframe(TimelineKeyframeEventArgs e)
+    internal bool SelectKeyframe(TimelineKeyframeEventArgs e)
     {
         if (!session.TryCommitDrafts())
         {
-            return;
+            return false;
         }
         var layer = session.SelectedLayer;
         if (layer is null || layer.Id != e.LayerId || layer.Tracks
                 .FirstOrDefault(track => track.Property == e.Property)?.Keyframes
                 .FirstOrDefault(frame => frame.Time == e.OldTime) is null)
         {
-            return;
+            return false;
         }
 
         session.ViewModel.CancelGestures();
@@ -294,6 +294,8 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         {
             session.IsUpdating = wasUpdating;
         }
+
+        return true;
     }
 
     internal void RefreshKeyframeInspector()

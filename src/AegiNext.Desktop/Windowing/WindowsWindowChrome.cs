@@ -6,6 +6,7 @@ using AegiNext.Desktop.Controls.Common;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Styling;
 using Avalonia.Threading;
 
 namespace AegiNext.Desktop.Windowing;
@@ -18,11 +19,13 @@ internal sealed class WindowsWindowChrome : IWindowChrome
     private readonly nint handle;
     private readonly Win32Properties.CustomWndProcHookCallback callback;
     private readonly double minimumTitleBarHeight;
+    private readonly WindowsCaptionSurface captionSurface;
     private Size? openingClientSize;
     private Size? deferredClientSize;
     private bool disposed;
     private bool refreshQueued;
     private bool frameRefreshRequested;
+    private bool applyingFrame;
 
     internal WindowsWindowChrome(Window window, WindowTitleBar titleBar)
     {
@@ -55,6 +58,7 @@ internal sealed class WindowsWindowChrome : IWindowChrome
 
         window.WindowDecorations = WindowDecorations.Full;
         window.ExtendClientAreaToDecorationsHint = false;
+        captionSurface = new(window);
         callback = WindowProcedure;
         Win32Properties.AddWndProcHookCallback(window, callback);
         window.Opened += OnOpened;
@@ -76,6 +80,8 @@ internal sealed class WindowsWindowChrome : IWindowChrome
 
     internal Exception? LastError { get; private set; }
     internal bool CaptionButtonsMeasured { get; private set; }
+    internal bool NonClientRenderingEnabled { get; private set; }
+    internal Rect CaptionAperture => captionSurface.Aperture;
 
     /// <inheritdoc />
     public void ResizeClient(Size size)
@@ -133,6 +139,7 @@ internal sealed class WindowsWindowChrome : IWindowChrome
         window.ScalingChanged -= OnScalingChanged;
         window.PropertyChanged -= OnWindowPropertyChanged;
         titleBar.PropertyChanged -= OnTitleBarPropertyChanged;
+        captionSurface.Dispose();
     }
 
     private unsafe nint WindowProcedure(nint nativeWindow, uint message, nint wParam, nint lParam, ref bool handled)
@@ -198,7 +205,9 @@ internal sealed class WindowsWindowChrome : IWindowChrome
 
                     return 0;
                 case WindowsNativeMethods.WM_DPICHANGED:
+                case WindowsNativeMethods.WM_ACTIVATE:
                 case WindowsNativeMethods.WM_DWMCOMPOSITIONCHANGED:
+                case WindowsNativeMethods.WM_THEMECHANGED:
                     QueueRefresh(true);
                     return 0;
                 default:
@@ -214,14 +223,24 @@ internal sealed class WindowsWindowChrome : IWindowChrome
         }
     }
 
-    private nint HitTest(nint nativeWindow, uint message, nint wParam, nint lParam)
+    private unsafe nint HitTest(nint nativeWindow, uint message, nint wParam, nint lParam)
     {
-        if (WindowsNativeMethods.DwmDefWindowProc(nativeWindow, message, wParam, lParam, out var result) != 0)
+        if (WindowsNativeMethods.DwmDefWindowProc(nativeWindow, message, wParam, lParam, out var result) != 0 &&
+            result != (nint)WindowsChromeHitTest.CLIENT && result != (nint)WindowsChromeHitTest.NONE)
         {
             return result;
         }
 
         var point = WindowsChromeGeometry.GetScreenPoint(lParam);
+        var nativeTitleBar = new WindowsTitleBarInfoEx { Size = checked((uint)sizeof(WindowsTitleBarInfoEx)) };
+        WindowsNativeMethods.DefWindowProc(handle, WindowsNativeMethods.WM_GETTITLEBARINFOEX, 0,
+            (nint)(&nativeTitleBar));
+        var captionHit = WindowsChromeGeometry.HitCaptionButtons(point, in nativeTitleBar);
+        if (captionHit != WindowsChromeHitTest.NONE)
+        {
+            return (nint)captionHit;
+        }
+
         CheckWin32(WindowsNativeMethods.GetWindowRect(handle, out var outer));
         var resize = WindowsChromeGeometry.HitResizeFrame(point, outer, ReadFrameInsets(), window.CanResize,
             WindowsNativeMethods.IsZoomed(handle) != 0);
@@ -291,28 +310,55 @@ internal sealed class WindowsWindowChrome : IWindowChrome
 
     private void ApplyFrame()
     {
-        var margins = new WindowsMargins
+        applyingFrame = true;
+        try
         {
-            TopHeight = window.WindowState == WindowState.FullScreen
-                ? 0
-                : WindowsChromeGeometry.ToPixels(titleBar.Height, ReadDpi())
-        };
-        Marshal.ThrowExceptionForHR(WindowsNativeMethods.DwmExtendFrameIntoClientArea(handle, in margins));
-        CheckWin32(WindowsNativeMethods.SetWindowPos(handle, 0, 0, 0, 0, 0,
-            WindowsNativeMethods.SWP_NOMOVE | WindowsNativeMethods.SWP_NOSIZE | WindowsNativeMethods.SWP_NOZORDER |
-            WindowsNativeMethods.SWP_NOACTIVATE | WindowsNativeMethods.SWP_FRAMECHANGED));
+            CheckWin32(WindowsNativeMethods.SetWindowPos(handle, 0, 0, 0, 0, 0,
+                WindowsNativeMethods.SWP_NOMOVE | WindowsNativeMethods.SWP_NOSIZE | WindowsNativeMethods.SWP_NOZORDER |
+                WindowsNativeMethods.SWP_NOACTIVATE | WindowsNativeMethods.SWP_FRAMECHANGED));
+            var policy = WindowsNativeMethods.DWMNCRP_ENABLED;
+            Marshal.ThrowExceptionForHR(WindowsNativeMethods.DwmSetWindowAttribute(handle,
+                WindowsNativeMethods.DWMWA_NCRENDERING_POLICY, in policy, sizeof(int)));
+            var dark = window.ActualThemeVariant == ThemeVariant.Dark ? 1 : 0;
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+            {
+                Marshal.ThrowExceptionForHR(WindowsNativeMethods.DwmSetWindowAttribute(handle,
+                    WindowsNativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, in dark, sizeof(int)));
+            }
+
+            var margins = new WindowsMargins
+            {
+                TopHeight = window.WindowState == WindowState.FullScreen
+                    ? 0
+                    : WindowsChromeGeometry.ToPixels(titleBar.Height, ReadDpi())
+            };
+            Marshal.ThrowExceptionForHR(WindowsNativeMethods.DwmExtendFrameIntoClientArea(handle, in margins));
+            Marshal.ThrowExceptionForHR(WindowsNativeMethods.DwmGetWindowAttribute(handle,
+                WindowsNativeMethods.DWMWA_NCRENDERING_ENABLED, out int enabled, sizeof(int)));
+            NonClientRenderingEnabled = enabled != 0;
+        }
+        finally
+        {
+            applyingFrame = false;
+        }
     }
 
     private void RefreshCaptionGeometry()
     {
+        if (window.WindowState == WindowState.FullScreen)
+        {
+            captionSurface.Update(default);
+            return;
+        }
+
         if (WindowsNativeMethods.IsWindowVisible(handle) == 0 || WindowsNativeMethods.IsIconic(handle) != 0 ||
-            window.WindowState == WindowState.FullScreen)
+            window.ClientSize.Width <= 0 || window.ClientSize.Height <= 0)
         {
             return;
         }
 
         var status = WindowsNativeMethods.DwmGetWindowAttribute(handle, WindowsNativeMethods.DWMWA_CAPTION_BUTTON_BOUNDS,
-            out var bounds, checked((uint)Marshal.SizeOf<WindowsRect>()));
+            out WindowsRect bounds, checked((uint)Marshal.SizeOf<WindowsRect>()));
         CaptionButtonsMeasured = status >= 0 && WindowsChromeGeometry.IsUsableCaptionBounds(bounds);
         if (!CaptionButtonsMeasured)
         {
@@ -328,6 +374,7 @@ internal sealed class WindowsWindowChrome : IWindowChrome
             bounds, dpi);
         var captionBottom = (long)outer.Top + bounds.Bottom - origin.Y;
         titleBar.Height = Math.Max(minimumTitleBarHeight, captionBottom * WindowsChromeGeometry.STANDARD_DPI / dpi);
+        captionSurface.Update(WindowsChromeGeometry.GetCaptionAperture(outer, origin, window.ClientSize, bounds, dpi));
     }
 
     private void QueueRefresh(bool frame)
@@ -397,7 +444,10 @@ internal sealed class WindowsWindowChrome : IWindowChrome
 
     private void OnResized(object? sender, WindowResizedEventArgs e)
     {
-        QueueRefresh(false);
+        if (!applyingFrame)
+        {
+            QueueRefresh(true);
+        }
     }
 
     private void OnScalingChanged(object? sender, EventArgs e)
@@ -408,7 +458,8 @@ internal sealed class WindowsWindowChrome : IWindowChrome
     private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
         if (e.Property == Window.WindowStateProperty || e.Property == Window.CanResizeProperty ||
-            e.Property == Window.CanMinimizeProperty || e.Property == Window.CanMaximizeProperty)
+            e.Property == Window.CanMinimizeProperty || e.Property == Window.CanMaximizeProperty ||
+            e.Property == TopLevel.ActualThemeVariantProperty)
         {
             QueueRefresh(true);
         }

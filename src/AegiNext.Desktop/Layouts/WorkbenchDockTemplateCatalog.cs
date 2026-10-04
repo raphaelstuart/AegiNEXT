@@ -41,7 +41,7 @@ internal static class WorkbenchDockTemplateCatalog
                 }.RegisterInNameScope(scope);
                 DockProperties.SetIsDropArea(tracking, true);
                 DockProperties.SetIsDockTarget(tracking, true);
-                tracking.Children.Add(new ToolChromeControl
+                tracking.Children.Add(new WorkbenchToolChromeControl
                 {
                     Content = new WorkbenchToolControl(),
                     [!ToolChromeControl.IsActiveProperty] = new Binding(nameof(IToolDock.IsActive)),

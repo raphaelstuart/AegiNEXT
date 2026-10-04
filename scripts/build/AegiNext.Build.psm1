@@ -14,6 +14,19 @@ function Get-AegiNextHost
     }
 }
 
+function Get-AegiNextRuntimeIdentifier
+{
+    param([object] $HostInfo = (Get-AegiNextHost), [string] $RuntimeIdentifier)
+    $expected = if ($HostInfo.Platform -eq 'Windows') { 'win-x64' }
+        elseif ($HostInfo.Platform -eq 'MacOS') { "osx-$($HostInfo.Architecture.ToLowerInvariant())" }
+        else { "linux-$($HostInfo.Architecture.ToLowerInvariant())" }
+    if ($RuntimeIdentifier -and $RuntimeIdentifier -ne $expected)
+    {
+        throw "Target RID $RuntimeIdentifier does not match this build host. Use $expected; Windows ARM64 hosts build the x64 target for emulation."
+    }
+    return $expected
+}
+
 function Find-AegiNextCommand
 {
     param([Parameter(Mandatory)][string] $Name)
@@ -133,6 +146,10 @@ function Get-AegiNextSdkArchitectureCheck
     $project = Join-Path $RepositoryRoot 'src/AegiNext.Media/AegiNext.Media.csproj'
     $result = Invoke-AegiNextCommand $Dotnet @('msbuild', $project, '-nologo', '-getProperty:NETCoreSdkRuntimeIdentifier') $RepositoryRoot
     $actualRid = $result.Output.Trim()
+    if ($HostInfo.Platform -eq 'Windows' -and $HostInfo.Architecture -eq 'Arm64' -and $result.ExitCode -eq 0 -and $actualRid -eq 'win-arm64')
+    {
+        return Get-AegiNextCheck 'SdkArchitecture' 'Ready' 'win-arm64 SDK host; managed build/publish explicitly targets win-x64, and MinGW compiler identity separately verifies x64 native output.'
+    }
     if ($result.ExitCode -ne 0 -or $actualRid -ne $expectedRid)
     {
         return Get-AegiNextCheck 'SdkArchitecture' 'Invalid' "The native build needs SDK RID $expectedRid, but dotnet resolved '$actualRid'. Use the matching native dotnet SDK on PATH."
@@ -527,8 +544,10 @@ function Get-AegiNextBuildPlan
         [switch] $RunTests,
         [ValidateSet('Core', 'Application', 'Rendering', 'Media', 'Desktop', 'Desktop.Ui')][string[]] $TestProjects = @('Core', 'Application', 'Rendering', 'Media', 'Desktop'),
         [ValidateRange(1, 128)][int] $Jobs = 2,
+        [ValidateSet('osx-arm64', 'osx-x64', 'win-x64')][string] $RuntimeIdentifier,
         [hashtable] $NativePrefixes = @{}
     )
+    $rid = Get-AegiNextRuntimeIdentifier -HostInfo $HostInfo -RuntimeIdentifier $RuntimeIdentifier
     $problem = Get-AegiNextTargetProblem $HostInfo.Platform $Target -RunTests:$RunTests -TestProjects $TestProjects
     if ($problem)
     {
@@ -590,11 +609,11 @@ function Get-AegiNextBuildPlan
         $solution = Join-Path $RepositoryRoot 'AegiNext.sln'
         $plan.Add([pscustomobject]@{
             Label = 'Restore managed'; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-            Arguments = [string[]]@('restore', $solution, '--locked-mode')
+            Arguments = [string[]](@('restore', $solution, '--locked-mode') + $(if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows') { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
         })
         $plan.Add([pscustomobject]@{
             Label = 'Build managed'; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-            Arguments = [string[]]@('build', $solution, '--configuration', $Configuration, '--no-restore')
+            Arguments = [string[]](@('build', $solution, '--configuration', $Configuration, '--no-restore') + $(if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows') { @("-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
         })
         if ($RunTests)
         {
@@ -606,8 +625,8 @@ function Get-AegiNextBuildPlan
             {
                 $plan.Add([pscustomobject]@{
                     Label = "Test $project"; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-                    Arguments = [string[]]@('test', (Join-Path $RepositoryRoot "Tests/AegiNext.$project.Tests/AegiNext.$project.Tests.csproj"),
-                        '--configuration', $Configuration, '--no-build', '--no-restore')
+                    Arguments = [string[]](@('test', (Join-Path $RepositoryRoot "Tests/AegiNext.$project.Tests/AegiNext.$project.Tests.csproj"),
+                        '--configuration', $Configuration, '--no-restore') + $(if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows') { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
                 })
             }
         }
@@ -630,6 +649,7 @@ function Invoke-AegiNextBuild
         [switch] $RunTests,
         [ValidateSet('Core', 'Application', 'Rendering', 'Media', 'Desktop', 'Desktop.Ui')][string[]] $TestProjects = @('Core', 'Application', 'Rendering', 'Media', 'Desktop'),
         [ValidateRange(1, 128)][int] $Jobs = 2,
+        [ValidateSet('osx-arm64', 'osx-x64', 'win-x64')][string] $RuntimeIdentifier,
         [string] $ReportPath
     )
     if ($CheckEnvironment -and $InstallDependencies)
@@ -648,6 +668,7 @@ function Invoke-AegiNextBuild
 
     $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
     $hostInfo = Get-AegiNextHost
+    $null = Get-AegiNextRuntimeIdentifier -HostInfo $hostInfo -RuntimeIdentifier $RuntimeIdentifier
     $environmentArguments = @{ RepositoryRoot = $RepositoryRoot; Target = $Target; HostInfo = $hostInfo; WithMediaTools = $WithMediaTools; FfmpegRoot = $FfmpegRoot; SdlRoot = $SdlRoot; RunTests = $RunTests; TestProjects = $TestProjects }
     $report = Get-AegiNextEnvironment @environmentArguments
     if ($InstallDependencies -and !@($report.Checks | Where-Object Status -EQ 'Unsupported').Count)
@@ -676,7 +697,12 @@ function Invoke-AegiNextBuild
         return 0
     }
 
-    $plan = @(Get-AegiNextBuildPlan -RepositoryRoot $RepositoryRoot -Target $Target -Configuration $Configuration -HostInfo $hostInfo -RunTests:$RunTests -TestProjects $TestProjects -Jobs $Jobs -NativePrefixes $report.NativePrefixes)
+    $planArguments = @{ RepositoryRoot = $RepositoryRoot; Target = $Target; Configuration = $Configuration; HostInfo = $hostInfo; RunTests = $RunTests; TestProjects = $TestProjects; Jobs = $Jobs; NativePrefixes = $report.NativePrefixes }
+    if ($RuntimeIdentifier)
+    {
+        $planArguments.RuntimeIdentifier = $RuntimeIdentifier
+    }
+    $plan = @(Get-AegiNextBuildPlan @planArguments)
     foreach ($step in $plan)
     {
         Write-Information -InformationAction Continue -MessageData "[$($step.Label)]"
@@ -701,5 +727,5 @@ function Invoke-AegiNextBuild
     return 0
 }
 
-Export-ModuleMember -Function Get-AegiNextHost, Find-AegiNextCommand, Invoke-AegiNextCommand, Test-AegiNextSdkVersion,
+Export-ModuleMember -Function Get-AegiNextHost, Get-AegiNextRuntimeIdentifier, Find-AegiNextCommand, Invoke-AegiNextCommand, Test-AegiNextSdkVersion,
     Get-AegiNextEnvironment, Install-AegiNextDependency, Get-AegiNextBuildPlan, Invoke-AegiNextBuild

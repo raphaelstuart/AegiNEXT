@@ -33,16 +33,14 @@
     </ItemGroup>
     <Copy SourceFiles="@(_ExportWorkerFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
-  <Target Name="PublishExportWorker" BeforeTargets="ComputeFilesToPublish">
-    <MSBuild Projects="../AegiNext.ExportWorker/AegiNext.ExportWorker.csproj" Targets="GetTargetPath"
-             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier)">
-      <Output TaskParameter="TargetOutputs" ItemName="_PublishedWorkerTarget" />
-    </MSBuild>
+  <Target Name="PublishExportWorker" BeforeTargets="ComputeFilesToPublish" Condition="'$(AegiNextPublishWorkerSeparately)' != 'true'">
+    <PropertyGroup>
+      <_WorkerPublishDirectory>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'worker-publish', '$(Configuration)', '$(TargetFramework)', '$(RuntimeIdentifier)'))/</_WorkerPublishDirectory>
+    </PropertyGroup>
+    <MSBuild Projects="../AegiNext.ExportWorker/AegiNext.ExportWorker.csproj" Targets="Publish"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishDir=$(_WorkerPublishDirectory);AegiNextPublishWorkerSeparately=true" />
     <ItemGroup>
-      <_WorkerPublishFile Include="$([System.IO.Path]::GetDirectoryName('%(_PublishedWorkerTarget.Identity)'))/AegiNext.ExportWorker.dll;
-                                  $([System.IO.Path]::GetDirectoryName('%(_PublishedWorkerTarget.Identity)'))/AegiNext.ExportWorker.deps.json;
-                                  $([System.IO.Path]::GetDirectoryName('%(_PublishedWorkerTarget.Identity)'))/AegiNext.ExportWorker.runtimeconfig.json;
-                                  $([System.IO.Path]::GetDirectoryName('%(_PublishedWorkerTarget.Identity)'))/AegiNext.ExportWorker.pdb" />
+      <_WorkerPublishFile Include="$(_WorkerPublishDirectory)AegiNext.ExportWorker*" />
     </ItemGroup>
     <ItemGroup>
       <ResolvedFileToPublish Include="@(_WorkerPublishFile)">

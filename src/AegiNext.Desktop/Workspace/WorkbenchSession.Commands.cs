@@ -59,10 +59,7 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.EXPORT_SUBTITLES: await workflow.ExportSubtitlesAsync(); break;
                 case WorkbenchCommand.EXPORT_VIDEO: await export.EncodeAsync(); break;
                 case WorkbenchCommand.PLAY_PAUSE:
-                    if (!TryCommitDrafts())
-                    {
-                        break;
-                    }
+                    TryCommitDrafts(false);
                     ViewModel.CancelGestures();
                     ClearKeyframeSelection();
                     if (controller.Snapshot.State == VideoPlaybackState.PLAYING)

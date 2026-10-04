@@ -77,7 +77,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         }
         if (update.Frame is { } frame)
         {
-            canvas.PresentComposite(frame, update.BackgroundFrame ?? frame);
+            canvas.PresentComposite(frame, update.BackgroundFrame ?? frame, update.CompositionTime ?? (update.Snapshot.PresentedFrameTime is { } time ? time - (viewModel.Scene.Document.Media?.MediaOrigin ?? MediaTime.Zero) : null), update.CompositionDocument, update.IsInteractiveComposition);
             ApplyScene();
         }
     }
@@ -91,6 +91,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
     private void ApplyScene()
     {
         var scene = viewModel.Scene;
+        canvas.InteractivePreview = scene.IsInteractive;
         canvas.EditMode = scene.Mode;
         canvas.SetScene(scene.Document, scene.SelectedLayer, scene.Position, scene.AssetDirectory, scene.IsEditingPose);
     }

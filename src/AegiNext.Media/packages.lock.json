@@ -18,7 +18,7 @@
       "aeginext.rendering": {
         "type": "Project",
         "dependencies": {
-          "AegiNext.Core": "[1.0.0, )",
+          "AegiNext.Core": "[0.1.0, )",
           "SkiaSharp": "[3.119.4, )",
           "SkiaSharp.HarfBuzz": "[3.119.4, )"
         }

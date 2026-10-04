@@ -9,6 +9,7 @@ namespace AegiNext.Desktop.Rendering;
 internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
 {
     private readonly SdrVideoConverter converter = new();
+    private SdrVideoConverter? interactiveConverter;
     private readonly Func<ProjectPreviewState> getState;
     private readonly Action<Exception?> reportError;
     private readonly PreviewFrameCatalog? previewFrames;
@@ -26,15 +27,16 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
 
     public SdrVideoFrame Convert(IVideoFrame frame, CancellationToken cancellationToken = default)
     {
-        var background = converter.Convert(frame, cancellationToken);
         var state = getState();
+        var activeConverter = state.IsInteractive ? interactiveConverter ??= new(new(960, 540)) : converter;
+        var background = activeConverter.Convert(frame, cancellationToken);
         var document = state.Document;
         var timestamp = frame.Info.PresentationTimestamp ?? frame.Info.BestEffortTimestamp
             ?? throw new InvalidDataException("视频帧缺少显示时间。");
-        var time = timestamp.ToMediaTime() - (document.Media?.MediaOrigin ?? MediaTime.Zero);
+        var time = state.IsInteractive && state.TargetTime is { } target ? target : timestamp.ToMediaTime() - (document.Media?.MediaOrigin ?? MediaTime.Zero);
         if (ReferenceEquals(document, failedDocument))
         {
-            return CompleteFrame(background, background);
+            return CompleteFrame(background, background, state, time);
         }
 
         reportError(null);
@@ -49,15 +51,15 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
         {
             var size = GetPreviewSize(document, background.Width, background.Height);
             var pixels = renderer.ComposePreview(document, time, background.Pixels.Span,
-                background.Width, background.Height, background.Width * 4, size.Width, size.Height);
+                background.Width, background.Height, background.Width * 4, size.Width, size.Height, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            return CompleteFrame(new(size.Width, size.Height, pixels), background);
+            return CompleteFrame(new(size.Width, size.Height, pixels), background, state, time);
         }
         catch (Exception error) when (error is InvalidDataException or IOException or InvalidOperationException or NotSupportedException or ArgumentException)
         {
             failedDocument = document;
             reportError(error);
-            return CompleteFrame(background, background);
+            return CompleteFrame(background, background, state, time);
         }
     }
 
@@ -68,9 +70,9 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
             Math.Max(1, (int)Math.Round(document.Height * scale)));
     }
 
-    private SdrVideoFrame CompleteFrame(SdrVideoFrame presented, SdrVideoFrame background)
+    private SdrVideoFrame CompleteFrame(SdrVideoFrame presented, SdrVideoFrame background, ProjectPreviewState state, MediaTime time)
     {
-        previewFrames?.Register(presented, background);
+        previewFrames?.Register(presented, background, ReferenceEquals(state.Document, failedDocument) ? null : state.Document, time, state.IsInteractive);
         return presented;
     }
 
@@ -78,5 +80,6 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
     {
         renderer?.Dispose();
         converter.Dispose();
+        interactiveConverter?.Dispose();
     }
 }

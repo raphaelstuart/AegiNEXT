@@ -173,6 +173,10 @@ internal sealed class WindowChromeProbe : IDisposable
             {
                 report.Failures.Add($"{sample.Host}: native caption button bounds were not available after settling.");
             }
+            if (action == "settled" && sample.NativeNonClientRenderingEnabled is false)
+            {
+                report.Failures.Add($"{sample.Host}: DWM native non-client rendering was disabled.");
+            }
         }
     }
 

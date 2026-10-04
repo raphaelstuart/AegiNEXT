@@ -21,4 +21,7 @@ public sealed class TimelineKeyframeEventArgs : EventArgs
     public MediaTime OldTime { get; }
     public MediaTime NewTime { get; }
     public double? NewValue { get; }
+
+    /// <summary>选择接收方完成草稿验证后允许控件开始手势。</summary>
+    public bool SelectionAccepted { get; set; }
 }

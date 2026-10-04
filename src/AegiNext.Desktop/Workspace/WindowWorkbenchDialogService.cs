@@ -5,7 +5,8 @@ using Avalonia.Platform.Storage;
 
 namespace AegiNext.Desktop.Workspace;
 
-internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStorageProvider>? storageProvider = null) : IWorkbenchDialogService
+internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStorageProvider>? storageProvider = null,
+    Action<Window>? registerWindow = null) : IWorkbenchDialogService
 {
     /// <summary>在所属窗口选择本地文件；取消时返回空路径。</summary>
     public async Task<string?> OpenFileAsync(string title, string typeName, string[] patterns)
@@ -32,5 +33,10 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
     }
 
     /// <summary>等待用户决定如何处理工程的未保存修改。</summary>
-    public Task<int> ConfirmUnsavedAsync() => new UnsavedProjectDialog().ShowDialog<int>(owner);
+    public Task<int> ConfirmUnsavedAsync()
+    {
+        var dialog = new UnsavedProjectDialog();
+        registerWindow?.Invoke(dialog);
+        return dialog.ShowDialog<int>(owner);
+    }
 }

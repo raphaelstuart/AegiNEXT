@@ -41,7 +41,9 @@ foreach ($name in $qaModules.Keys)
 
 $findings = @(
     Invoke-ScriptAnalyzer -Path (Join-Path $repositoryRoot 'build.ps1') -Severity Warning, Error
+    Invoke-ScriptAnalyzer -Path (Join-Path $repositoryRoot 'publish.ps1') -Severity Warning, Error
     Invoke-ScriptAnalyzer -Path (Join-Path $repositoryRoot 'scripts/build') -Recurse -Severity Warning, Error
+    Invoke-ScriptAnalyzer -Path (Join-Path $repositoryRoot 'scripts/publish') -Recurse -Severity Warning, Error
     Invoke-ScriptAnalyzer -Path $PSCommandPath -Severity Warning, Error
     Invoke-ScriptAnalyzer -Path (Join-Path $repositoryRoot 'Tests/Build') -Recurse -Severity Warning, Error `
         -ExcludeRule PSUseDeclaredVarsMoreThanAssignments, PSUseShouldProcessForStateChangingFunctions

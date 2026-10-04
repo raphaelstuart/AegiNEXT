@@ -12,11 +12,11 @@ internal sealed partial class WorkbenchSession
     internal Guid CurrentTrackId => editor.Snapshot.SubtitleTracks.Any(track => track.Id == currentTrackId)
         ? currentTrackId : editor.Snapshot.SubtitleTracks[0].Id;
 
-    internal void SelectTrack(Guid trackId)
+    internal bool SelectTrack(Guid trackId)
     {
-        if (updatingWorkbench || projectBusy || CurrentTrackId == trackId)
+        if (updatingWorkbench || projectBusy)
         {
-            return;
+            return false;
         }
         if (!editor.Snapshot.SubtitleTracks.Any(track => track.Id == trackId))
         {
@@ -25,23 +25,25 @@ internal sealed partial class WorkbenchSession
         if (!TryCommitDrafts())
         {
             RefreshSubtitleTracks();
-            return;
+            return false;
         }
 
         ViewModel.CancelGestures();
         currentTrackId = trackId;
-        SelectedCueId = editor.Snapshot.Subtitles.Where(line => line.TrackId == trackId).OrderBy(line => line.Start).FirstOrDefault()?.Id;
-        SelectedLayerId = SelectedCueId is { } cueId
-            ? Flatten(editor.Snapshot.Layers).Single(layer => layer.SubtitleId == cueId).Id : null;
+        SelectedCueId = null;
+        SelectedLayerId = null;
+        ViewModel.Effects.SelectedIds = [];
         SelectedKeyTime = null;
         timingSession = timingSession.Reset();
         RefreshDocument();
+        return true;
     }
 
     internal void RefreshSubtitleTracks()
     {
         currentTrackId = CurrentTrackId;
         ViewModel.Subtitles.UpdateTracks(editor.Snapshot.SubtitleTracks, currentTrackId);
+        ViewModel.Timeline.SelectedTrackId = currentTrackId;
     }
 
     internal void SyncCurrentTrackForSelection()
@@ -68,10 +70,9 @@ internal sealed partial class WorkbenchSession
         SelectTrack(id);
     }
 
-    internal void RenameSubtitleTrack()
+    internal void RenameSubtitleTrack(Guid trackId, string name)
     {
-        editor.RenameSubtitleTrack(CurrentTrackId, ViewModel.Subtitles.TrackName);
-        ViewModel.Subtitles.AcceptTrackName();
+        editor.RenameSubtitleTrack(trackId, name);
         RefreshSubtitleTracks();
     }
 

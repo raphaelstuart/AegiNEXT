@@ -495,6 +495,7 @@ public sealed class VideoPreviewController : IAsyncDisposable
             if (invalidate)
             {
                 revision++;
+                run.ConversionCancellation?.Cancel();
                 ClearPresentationMeasurementUnderLock(run);
             }
 
@@ -555,8 +556,33 @@ public sealed class VideoPreviewController : IAsyncDisposable
                     }
                 }
 
-                var frame = converter.Convert(presentation.PositionedFrame.Frame, run.Token);
-                await DispatchAsync(run, identity, frame, false, run.Token).ConfigureAwait(false);
+                using var conversion = CancellationTokenSource.CreateLinkedTokenSource(run.Token);
+                lock (gate)
+                {
+                    if (!IsPresentationCurrentUnderLock(run, identity))
+                    {
+                        continue;
+                    }
+                    run.ConversionCancellation = conversion;
+                }
+                try
+                {
+                    var frame = converter.Convert(presentation.PositionedFrame.Frame, conversion.Token);
+                    await DispatchAsync(run, identity, frame, false, run.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (conversion.IsCancellationRequested && !run.Token.IsCancellationRequested)
+                {
+                }
+                finally
+                {
+                    lock (gate)
+                    {
+                        if (ReferenceEquals(run.ConversionCancellation, conversion))
+                        {
+                            run.ConversionCancellation = null;
+                        }
+                    }
+                }
             }
         }
         catch (OperationCanceledException) when (run.Token.IsCancellationRequested)

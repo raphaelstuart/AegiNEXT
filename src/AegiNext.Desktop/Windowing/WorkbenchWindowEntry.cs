@@ -6,4 +6,5 @@ using Avalonia.Input;
 namespace AegiNext.Desktop.Windowing;
 
 internal sealed record WorkbenchWindowEntry(Window Window, WindowTitleBar TitleBar, IWindowChrome Chrome,
-    WindowMenuBar MenuBar, WorkbenchNativeMenu NativeMenu, Func<string> TitleProvider, HashSet<Key> PressedKeys);
+    WindowMenuBar MenuBar, WorkbenchNativeMenu NativeMenu, Func<string> TitleProvider, HashSet<Key> PressedKeys,
+    WorkbenchWindowRole Role);

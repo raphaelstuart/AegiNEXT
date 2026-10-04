@@ -11,7 +11,8 @@ internal sealed class UnsavedProjectDialog : Window
     {
         Title = WorkbenchText.Get("UnsavedTitle");
         Width = 410;
-        SizeToContent = SizeToContent.Height;
+        Height = 230;
+        SizeToContent = SizeToContent.Manual;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };

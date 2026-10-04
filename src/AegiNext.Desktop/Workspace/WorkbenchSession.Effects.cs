@@ -38,6 +38,6 @@ internal sealed partial class WorkbenchSession
     internal void ClearKaraoke() => layerEditing.ClearKaraoke();
     internal Task ImportFontAsync() => layerEditing.ImportFontAsync();
     internal Task ImportImageAsync() => layerEditing.ImportImageAsync();
-    internal void SelectKeyframe(TimelineKeyframeEventArgs value) => layerEditing.SelectKeyframe(value);
+    internal bool SelectKeyframe(TimelineKeyframeEventArgs value) => layerEditing.SelectKeyframe(value);
     internal void MoveKeyframe(TimelineKeyframeEventArgs value) => layerEditing.MoveKeyframe(value);
 }

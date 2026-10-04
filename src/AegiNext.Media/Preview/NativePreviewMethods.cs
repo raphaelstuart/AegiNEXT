@@ -6,6 +6,11 @@ namespace AegiNext.Media.Preview;
 
 internal static partial class NativePreviewMethods
 {
+    static NativePreviewMethods()
+    {
+        NativeMediaRuntime.Initialize();
+    }
+
     internal const uint FEATURE = 2;
     private const string LIBRARY = "aeginext_decode";
 

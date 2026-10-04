@@ -11,6 +11,7 @@ internal static partial class WindowsNativeMethods
     internal const uint WS_CAPTION = 0x00C00000;
     internal const uint WS_MINIMIZE = 0x20000000;
     internal const uint WS_MAXIMIZE = 0x01000000;
+    internal const uint WM_ACTIVATE = 0x0006;
     internal const uint WM_NCCALCSIZE = 0x0083;
     internal const uint WM_NCHITTEST = 0x0084;
     internal const uint WM_NCMOUSEMOVE = 0x00A0;
@@ -23,12 +24,18 @@ internal static partial class WindowsNativeMethods
     internal const uint WM_GETMINMAXINFO = 0x0024;
     internal const uint WM_DPICHANGED = 0x02E0;
     internal const uint WM_DWMCOMPOSITIONCHANGED = 0x031E;
+    internal const uint WM_THEMECHANGED = 0x031A;
+    internal const uint WM_GETTITLEBARINFOEX = 0x033F;
     internal const uint SWP_NOSIZE = 0x0001;
     internal const uint SWP_NOMOVE = 0x0002;
     internal const uint SWP_NOZORDER = 0x0004;
     internal const uint SWP_NOACTIVATE = 0x0010;
     internal const uint SWP_FRAMECHANGED = 0x0020;
     internal const uint DWMWA_CAPTION_BUTTON_BOUNDS = 5;
+    internal const uint DWMWA_NCRENDERING_ENABLED = 1;
+    internal const uint DWMWA_NCRENDERING_POLICY = 2;
+    internal const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    internal const int DWMNCRP_ENABLED = 2;
 
     internal static nint GetWindowLongPtr(nint window, int index)
     {
@@ -86,5 +93,14 @@ internal static partial class WindowsNativeMethods
     internal static partial int DwmGetWindowAttribute(nint window, uint attribute, out WindowsRect rect, uint size);
 
     [LibraryImport("dwmapi.dll")]
+    internal static partial int DwmGetWindowAttribute(nint window, uint attribute, out int value, uint size);
+
+    [LibraryImport("dwmapi.dll")]
+    internal static partial int DwmSetWindowAttribute(nint window, uint attribute, in int value, uint size);
+
+    [LibraryImport("dwmapi.dll")]
     internal static partial int DwmDefWindowProc(nint window, uint message, nint wParam, nint lParam, out nint result);
+
+    [LibraryImport("user32.dll", EntryPoint = "DefWindowProcW")]
+    internal static partial nint DefWindowProc(nint window, uint message, nint wParam, nint lParam);
 }

@@ -23,6 +23,8 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     private string opacityText = "1";
     private string blurText = "0";
     private string keyframeValueText = "1";
+    private string? validationError;
+    private string? invalidFieldKey;
     private readonly WorkbenchSession session;
     private ProjectDocument document = new();
     private ProjectLayer? selectedLayer;
@@ -62,6 +64,13 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     internal EffectsPanelViewModel(WorkbenchSession session)
     {
         this.session = session;
+        RestoreInvalidFieldCommand = new RelayCommand(() =>
+        {
+            if (InvalidFieldKey is { } field)
+            {
+                RestoreField(field);
+            }
+        });
         RectangleCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddRectangle)));
         EllipseCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddEllipse)));
         DeleteLayerCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.DeleteLayer)));
@@ -82,6 +91,20 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         SlideCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ApplySlide)));
         ImageCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ImportImageAsync()));
     }
+
+    public string? ValidationError
+    {
+        get => validationError;
+        internal set => SetProperty(ref validationError, value);
+    }
+
+    public string? InvalidFieldKey
+    {
+        get => invalidFieldKey;
+        internal set => SetProperty(ref invalidFieldKey, value);
+    }
+
+    public ICommand RestoreInvalidFieldCommand { get; }
 
     public ProjectDocument Document
     {
@@ -260,8 +283,13 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         get => (int)session.SceneEditing.Property;
         set
         {
-            if (Property == value || !session.IsUpdating && !session.TryCommitDrafts())
+            if (Property == value)
             {
+                return;
+            }
+            if (!session.IsUpdating && !session.TryCommitDrafts())
+            {
+                OnPropertyChanged();
                 return;
             }
             session.SceneEditing.Property = (AnimationProperty)value;
@@ -377,7 +405,9 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     /// <summary>提交画布完成后的变换与路径参数。</summary>
     public Task CommitCanvasAsync(CanvasLayerEditEventArgs value) => session.CommitCanvasAsync(value);
     /// <summary>提交所有面板的有效草稿。</summary>
-    public void CommitDrafts() => session.TryCommitDrafts();
+    public void CommitDrafts() => session.TryCommitDrafts(false);
+
+    public void RestoreField(string fieldKey) => session.RestoreEffectDraftField(fieldKey);
     /// <summary>向工作台报告画布资源或工程渲染失败。</summary>
     public void ReportRenderingError(Exception error) => session.ShowError(error);
     public string LayerWidthText

@@ -19,10 +19,12 @@ namespace AegiNext.Desktop.Controls;
 /// <summary>语谱图上的字幕区间及效果关键帧，拖动只在完成时提交编辑。</summary>
 public sealed class SubtitleTimelineControl : Control, IDisposable
 {
+    private static readonly Cursor resizeCursor = new(StandardCursorType.SizeWestEast);
     private ProjectDocument document = new();
     private SpectrogramData? spectrum;
     private WriteableBitmap? spectrumBitmap;
     private Guid? selectedCue;
+    private Guid? selectedTrack;
     private ProjectLayer? selectedLayer;
     private MediaTime position;
     private TimelineViewport viewport = new();
@@ -39,6 +41,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     private TimelineDragMode dragMode;
     private Guid dragId;
     private double dragPointer;
+    private double dragPointerY;
     private MediaTime originalStart;
     private MediaTime originalEnd;
     private MediaTime pendingStart;
@@ -49,6 +52,8 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     private double pendingValue;
     private double valueMinimum;
     private double valueMaximum;
+    private AnimationProperty dragProperty;
+    private Rect dragCurve;
     private bool stretching;
     private AnimationProperty effectProperty = AnimationProperty.OPACITY;
     private IPointer? capturedPointer;
@@ -72,6 +77,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     public event EventHandler<TimelineKeyframeEventArgs>? KeyframeSelected;
     public event EventHandler<TimelineSelectionEventArgs>? ClipSelectionChanged;
     public event EventHandler<TimelineSelectionEventArgs>? TrackSelected;
+    public event EventHandler<TimelineTrackContextEventArgs>? TrackContextRequested;
     public event EventHandler<TimelineViewportEventArgs>? ViewportChanged;
 
     public new AnimationProperty EffectProperty
@@ -138,15 +144,18 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     }
 
     /// <summary>替换显示快照，不持有可变编辑器。</summary>
-    public void SetDocument(ProjectDocument value, Guid? cueId, ProjectLayer? layer, IReadOnlyList<Guid>? selection = null)
+    public void SetDocument(ProjectDocument value, Guid? cueId, ProjectLayer? layer, IReadOnlyList<Guid>? selection = null,
+        Guid? trackId = null)
     {
         var nextSelection = selection ?? (layer is null ? Array.Empty<Guid>() : [layer.Id]);
         if (ReferenceEquals(document, value) && selectedCue == cueId && ReferenceEquals(selectedLayer, layer) &&
-            selectedIds.SetEquals(nextSelection))
+            selectedIds.SetEquals(nextSelection) && selectedTrack == trackId)
         {
             return;
         }
 
+        var selectionChanged = selectedLayer?.Id != layer?.Id || selectedTrack != trackId;
+        var previousProperties = selectedLayer is { } previousLayer ? GetAnimationProperties(previousLayer.Id) : [];
         if (!ReferenceEquals(document, value) || selectedCue != cueId || selectedLayer?.Id != layer?.Id)
         {
             CancelDrag();
@@ -155,10 +164,20 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         document = value;
         selectedCue = cueId;
         selectedLayer = layer;
+        selectedTrack = trackId;
         selectedIds.Clear();
         selectedIds.UnionWith(nextSelection);
         RebuildRows();
-        EnsureSelectedRowVisible();
+        var animationRowsChanged = selectedLayer is { } nextLayer &&
+            !previousProperties.SequenceEqual(GetAnimationProperties(nextLayer.Id));
+        if (selectionChanged || animationRowsChanged)
+        {
+            EnsureSelectedRowVisible();
+        }
+        else
+        {
+            SetViewport(viewport, duration);
+        }
         InvalidateVisual();
     }
 
@@ -229,7 +248,13 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 context.DrawLine(grid, new(HeaderWidth, y + row.Height), new(Bounds.Width, y + row.Height));
                 if (selectedLayer is { } layer && ClipsForRow(row).Any(clip => clip.Id == layer.Id) && row.CurveHeight > 0)
                 {
-                    DrawEffects(context, foreground, y);
+                    foreach (var animation in row.Animations)
+                    {
+                        if (CurveRectangle(layer.Id, animation.Property) is { } curve && curve.Bottom >= RulerHeight && curve.Top <= Bounds.Height)
+                        {
+                            DrawEffects(context, foreground, animation.Property, curve);
+                        }
+                    }
                 }
 
                 foreach (var clip in ClipsForRow(row))
@@ -267,10 +292,11 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
             using (context.PushClip(new Rect(0, RulerHeight, HeaderWidth, Math.Max(0, Bounds.Height - RulerHeight))))
             {
-                context.DrawRectangle(new SolidColorBrush(Color.Parse(dark ? "#202C40" : "#D9E2EE")), null,
+                context.DrawRectangle(new SolidColorBrush(Color.Parse(row.TrackId == selectedTrack && selectedTrack.HasValue
+                        ? dark ? "#354C73" : "#AACAF0" : dark ? "#202C40" : "#D9E2EE")), null,
                     new(0, y, HeaderWidth, row.Height));
                 DrawText(context, row.IsCollapsed ? "▸" : "▾", new(6 + row.Depth * 8, y + 5), foreground, 12);
-                if (row.Clips.Any(clip => clip.Id == selectedLayer?.Id))
+                if (row.Clips.Any(clip => clip.Id == selectedLayer?.Id) && selectedLayer!.Tracks.Any(track => !track.Keyframes.IsEmpty))
                 {
                     DrawText(context, row.CurveHeight > 0 ? "◆" : "◇", new(28 + row.Depth * 8, y + 5), foreground, 12);
                 }
@@ -314,6 +340,14 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        {
+            CancelDrag();
+            TrackContextRequested?.Invoke(this, new(RowAt(e.GetPosition(this).Y)?.TrackId));
+            e.Handled = true;
+            return;
+        }
+
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
             return;
@@ -357,19 +391,33 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
         dragPointer = point.X;
         stretching = (e.KeyModifiers & KeyModifiers.Control) != 0;
-        if (selectedLayer is { } layer && CurveRectangle(layer.Id) is { } curve && curve.Contains(point))
+        if (selectedLayer is { } layer && row is not null)
         {
-            var track = layer.Tracks.FirstOrDefault(item => item.Property == EffectProperty);
-            if (track is not null)
+            foreach (var animation in row.Animations)
             {
-                (valueMinimum, valueMaximum) = ValueRange(track);
+                if (CurveRectangle(layer.Id, animation.Property) is not { } curve || !curve.Contains(point))
+                {
+                    continue;
+                }
+
+                var track = layer.Tracks.Single(item => item.Property == animation.Property);
                 foreach (var key in track.Keyframes)
                 {
-                    var keyPoint = GetKeyframePoint(layer.Id, key.Time, key.Value);
+                    var keyPoint = GetKeyframePoint(layer.Id, animation.Property, key.Time, key.Value);
                     if (keyPoint is { } location && Math.Abs(point.X - location.X) <= 9 && Math.Abs(point.Y - location.Y) <= 9)
                     {
-                        BeginKeyframeDrag(layer, key, point.X);
-                        KeyframeSelected?.Invoke(this, new(layer.Id, EffectProperty, key.Time, key.Time));
+                        var selection = new TimelineKeyframeEventArgs(layer.Id, animation.Property, key.Time, key.Time);
+                        KeyframeSelected?.Invoke(this, selection);
+                        if (!selection.SelectionAccepted)
+                        {
+                            e.Handled = true;
+                            return;
+                        }
+
+                        var currentLayer = selectedLayer!;
+                        var currentTrack = currentLayer.Tracks.Single(item => item.Property == animation.Property);
+                        var currentKey = currentTrack.Keyframes.Single(item => item.Time == key.Time);
+                        BeginKeyframeDrag(currentLayer, currentKey, point.X, animation.Property, point.Y);
                         if (HasActiveDrag)
                         {
                             capturedPointer = e.Pointer;
@@ -410,6 +458,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                     ? document.Subtitles.First(cue => cue.Id == cueId).TrackId : null;
                 capturedPointer = e.Pointer;
                 e.Pointer.Capture(this);
+                UpdateCursor(point);
                 e.Handled = true;
                 return;
             }
@@ -417,6 +466,12 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
         if (point.Y >= RulerHeight)
         {
+            if (row?.TrackId is { } trackId && point.Y >= RowY(row) + row.CurveHeight)
+            {
+                TrackSelected?.Invoke(this, new(trackId));
+                e.Handled = true;
+            }
+
             return;
         }
 
@@ -501,20 +556,27 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 pendingKey = selectedLayer is { } keyLayer
                     ? LayerAnimationTiming.ClampTime(keyLayer, originalKey + delta)
                     : originalKey;
-                pendingValue = Math.Clamp(valueMinimum + (1 - (point.Y - EffectTop) / EffectHeight) *
+                pendingValue = Math.Clamp(originalValue + (dragPointerY - point.Y) / dragCurve.Height *
                     (valueMaximum - valueMinimum), valueMinimum, valueMaximum);
                 break;
         }
 
         if (dragMode is TimelineDragMode.MOVE or TimelineDragMode.TRIM_START or TimelineDragMode.TRIM_END)
         {
+            var previousTrack = pendingTrackId;
             UpdateTimingDrop(point.Y);
+            if (previousTrack != pendingTrackId)
+            {
+                RebuildRows();
+            }
         }
 
         if (dragMode != TimelineDragMode.NONE)
         {
             InvalidateVisual();
         }
+
+        UpdateCursor(point);
     }
 
     /// <inheritdoc />
@@ -533,7 +595,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         if (mode == TimelineDragMode.KEYFRAME && (pendingKey != originalKey || !pendingValue.Equals(originalValue)) &&
             selectedLayer is { } layer)
         {
-            KeyframeMoved?.Invoke(this, new(layer.Id, EffectProperty, originalKey, pendingKey, pendingValue));
+            KeyframeMoved?.Invoke(this, new(layer.Id, dragProperty, originalKey, pendingKey, pendingValue));
         }
         else if (mode is TimelineDragMode.MOVE or TimelineDragMode.TRIM_START or TimelineDragMode.TRIM_END &&
                  canCommit && (pendingStart != originalStart || pendingEnd != originalEnd || targetTrack != originalTrackId))
@@ -585,12 +647,21 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
     internal void BeginKeyframeDrag(ProjectLayer layer, Keyframe key, double pointer)
     {
+        BeginKeyframeDrag(layer, key, pointer, layer.Tracks.First(track => track.Keyframes.Contains(key)).Property);
+    }
+
+    private void BeginKeyframeDrag(ProjectLayer layer, Keyframe key, double pointer, AnimationProperty property, double? pointerY = null)
+    {
         CancelDrag();
         dragMode = TimelineDragMode.KEYFRAME;
         dragPointer = pointer;
         originalKey = pendingKey = key.Time;
         originalValue = pendingValue = key.Value;
         dragId = layer.Id;
+        dragProperty = property;
+        dragCurve = CurveRectangle(layer.Id, property)!.Value;
+        (valueMinimum, valueMaximum) = ValueRange(layer.Tracks.Single(track => track.Property == property));
+        dragPointerY = pointerY ?? ValueY(key.Value, valueMinimum, valueMaximum, dragCurve);
     }
 
     internal void CancelGesture() => CancelDrag();
@@ -599,6 +670,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     {
         var wasDragging = HasActiveDrag;
         dragMode = TimelineDragMode.NONE;
+        Cursor = null;
         lastSeekRequest = null;
         var pointer = capturedPointer;
         capturedPointer = null;
@@ -620,7 +692,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         }
     }
 
-    private void DrawEffects(DrawingContext context, IBrush foreground, double top)
+    private void DrawEffects(DrawingContext context, IBrush foreground, AnimationProperty property, Rect curve)
     {
         var layer = selectedLayer!;
         if (dragMode == TimelineDragMode.MOVE && dragId == layer.Id)
@@ -633,19 +705,16 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 stretching ? TimelineEditMode.STRETCH : TimelineEditMode.CROP);
         }
 
-        if (Bounds.Height >= 120)
-        {
-            DrawText(context, WorkbenchText.Property(EffectProperty), new(HeaderWidth + 5, top + 4), foreground, 12);
-        }
-        var track = layer.Tracks.FirstOrDefault(item => item.Property == EffectProperty);
+        DrawText(context, WorkbenchText.Property(property), new(HeaderWidth + 5, curve.Top - 15), foreground, 11);
+        var track = layer.Tracks.FirstOrDefault(item => item.Property == property);
         if (track is null)
         {
             return;
         }
 
         var (minimum, maximum) =
-            dragMode == TimelineDragMode.KEYFRAME ? (valueMinimum, valueMaximum) : ValueRange(track);
-        if (dragMode == TimelineDragMode.KEYFRAME)
+            dragMode == TimelineDragMode.KEYFRAME && dragProperty == property ? (valueMinimum, valueMaximum) : ValueRange(track);
+        if (dragMode == TimelineDragMode.KEYFRAME && dragProperty == property)
         {
             track = track with
             {
@@ -664,13 +733,15 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             return;
         }
 
+        using var clip = context.PushClip(new Rect(startX, curve.Top, endX - startX, curve.Height));
+
         var samples = Math.Max(2, (int)(endX - startX) / 3);
         for (var sample = 0; sample <= samples; sample++)
         {
             var x = startX + sample * (endX - startX) / samples;
             var time = new MediaTime((long)Math.Round((ViewStart + (x - HeaderWidth) / PixelsPerSecond) * 1000000), 1000000) -
                 layer.Start + layer.AnimationOffset;
-            var point = new Point(x, ValueY(SceneEvaluator.EvaluateTrack(track, time), minimum, maximum));
+            var point = new Point(x, ValueY(SceneEvaluator.EvaluateTrack(track, time), minimum, maximum, curve));
             if (previous is { } first)
             {
                 context.DrawLine(curvePen, first, point);
@@ -681,12 +752,12 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
         foreach (var key in track.Keyframes)
         {
-            var time = dragMode == TimelineDragMode.KEYFRAME && key.Time == originalKey ? pendingKey : key.Time;
+            var time = dragMode == TimelineDragMode.KEYFRAME && dragProperty == property && key.Time == originalKey ? pendingKey : key.Time;
             var x = X(Seconds(layer.Start + time - layer.AnimationOffset));
-            var value = dragMode == TimelineDragMode.KEYFRAME && key.Time == originalKey ? pendingValue : key.Value;
-            var y = ValueY(value, minimum, maximum);
+            var value = dragMode == TimelineDragMode.KEYFRAME && dragProperty == property && key.Time == originalKey ? pendingValue : key.Value;
+            var y = ValueY(value, minimum, maximum, curve);
             var diamond = new StreamGeometry();
-            var radius = Math.Min(6, Math.Max(2, EffectHeight / 5));
+            var radius = Math.Min(6, Math.Max(2, curve.Height / 5));
             using (var geometry = diamond.Open())
             {
                 geometry.BeginFigure(new(x, y - radius));
@@ -724,9 +795,9 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         return (minimum - margin, maximum + margin);
     }
 
-    private double ValueY(double value, double minimum, double maximum)
+    private static double ValueY(double value, double minimum, double maximum, Rect curve)
     {
-        return EffectTop + (1 - (value - minimum) / (maximum - minimum)) * EffectHeight;
+        return curve.Top + (1 - (value - minimum) / (maximum - minimum)) * curve.Height;
     }
 
     private void DrawWaveform(DrawingContext context, double top, double height)
@@ -750,8 +821,8 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         ? rectangle.Top : RulerHeight;
     internal double ClipHeight => selectedLayer is { } layer && GetClipRectangle(layer.Id) is { } rectangle
         ? rectangle.Height : 24;
-    internal double EffectTop => selectedLayer is { } layer && CurveRectangle(layer.Id) is { } curve ? curve.Top : RulerHeight;
-    internal double EffectHeight => selectedLayer is { } layer && CurveRectangle(layer.Id) is { } curve ? curve.Height : 1;
+    internal double EffectTop => selectedLayer is { } layer && CurveRectangle(layer.Id, EffectProperty) is { } curve ? curve.Top : RulerHeight;
+    internal double EffectHeight => selectedLayer is { } layer && CurveRectangle(layer.Id, EffectProperty) is { } curve ? curve.Height : 1;
 
     /// <summary>返回实际绘制的片段范围；折叠的场景子节点返回 null。</summary>
     public Rect? GetClipRectangle(Guid layerId)
@@ -770,9 +841,15 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     /// <summary>返回已展开属性曲线上关键帧的真实控件坐标。</summary>
     public Point? GetKeyframePoint(Guid layerId, MediaTime time, double value)
     {
+        return GetKeyframePoint(layerId, EffectProperty, time, value);
+    }
+
+    /// <summary>返回指定属性行中关键帧的真实坐标。</summary>
+    public Point? GetKeyframePoint(Guid layerId, AnimationProperty property, MediaTime time, double value)
+    {
         var layer = Flatten(document.Layers).FirstOrDefault(item => item.Id == layerId);
-        var track = layer?.Tracks.FirstOrDefault(item => item.Property == EffectProperty);
-        if (layer is null || track is null || CurveRectangle(layerId) is not { } curve)
+        var track = layer?.Tracks.FirstOrDefault(item => item.Property == property);
+        if (layer is null || track is null || CurveRectangle(layerId, property) is not { } curve)
         {
             return null;
         }
@@ -782,6 +859,14 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             curve.Top + (1 - (value - minimum) / (maximum - minimum)) * curve.Height);
     }
 
+    /// <summary>返回展开片段已有动画属性的显示顺序。</summary>
+    public IReadOnlyList<AnimationProperty> GetAnimationProperties(Guid layerId)
+    {
+        return selectedLayer?.Id == layerId
+            ? rows.FirstOrDefault(row => row.Clips.Any(clip => clip.Id == layerId))?.Animations.Select(row => row.Property).ToArray() ?? []
+            : [];
+    }
+
     /// <summary>返回真实轨道头部的可见坐标，供面板和辅助功能导航。</summary>
     public Rect? GetTrackHeaderRectangle(Guid trackId)
     {
@@ -789,11 +874,36 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             ? new Rect(0, RowY(value), HeaderWidth, value.Height) : null;
     }
 
-    private Rect? CurveRectangle(Guid layerId)
+    /// <summary>取得字幕轨道的紧凑显示状态。</summary>
+    public bool IsTrackCollapsed(Guid trackId) => collapsedTracks.Contains(trackId);
+
+    /// <summary>切换轨道的紧凑显示，不修改字幕或动画数据。</summary>
+    public void ToggleTrackCollapse(Guid trackId)
     {
+        if (!document.SubtitleTracks.Any(track => track.Id == trackId))
+        {
+            return;
+        }
+
+        CancelDrag();
+        Toggle(collapsedTracks, trackId);
+        RebuildRows();
+        PublishViewport(viewport);
+        InvalidateVisual();
+    }
+
+    private Rect? CurveRectangle(Guid layerId, AnimationProperty property)
+    {
+        if (selectedLayer?.Id != layerId)
+        {
+            return null;
+        }
+
         var row = rows.FirstOrDefault(item => ClipsForRow(item).Any(clip => clip.Id == layerId));
-        return row is { CurveHeight: > 0 } ? new Rect(HeaderWidth, RowY(row) + 4,
-            Math.Max(0, Bounds.Width - HeaderWidth), Math.Max(1, row.CurveHeight - 8)) : null;
+        var animation = row?.Animations.FirstOrDefault(item => item.Property == property);
+        return row is not null && animation is not null
+            ? new Rect(HeaderWidth, RowY(row) + animation.Top + 20,
+                Math.Max(0, Bounds.Width - HeaderWidth), Math.Max(1, animation.Height - 24)) : null;
     }
 
     private void RebuildRows()
@@ -807,11 +917,14 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             var clips = document.Subtitles.Where(cue => cue.TrackId == track.Id).OrderBy(cue => cue.Start)
                 .Select(cue => byCue[cue.Id]).ToArray();
             var collapsed = collapsedTracks.Contains(track.Id);
-            var animated = !collapsed && selectedLayer is { } selected && clips.Any(clip => clip.Id == selected.Id) &&
-                !collapsedAnimations.Contains(selected.Id);
-            var curve = animated ? Math.Min(88, Math.Max(0, Bounds.Height - RulerHeight - 30)) : 0;
+            var movingBetweenTracks = dragMode == TimelineDragMode.MOVE && originalTrackId.HasValue && selectedLayer?.Id == dragId;
+            var selectedInRow = selectedLayer is { } selected && (movingBetweenTracks
+                ? pendingTrackId == track.Id : clips.Any(clip => clip.Id == selected.Id));
+            var animated = !collapsed && selectedInRow && !collapsedAnimations.Contains(selectedLayer!.Id);
+            var animations = animated ? CreateAnimationRows(selectedLayer!) : [];
+            var curve = animations.Sum(animation => animation.Height);
             var height = 28 + curve;
-            result.Add(new(track.Id, track.Id, track.Name, clips, 0, false, collapsed, top, height, curve));
+            result.Add(new(track.Id, track.Id, track.Name, clips, 0, false, collapsed, top, height, animations));
             top += height;
         }
 
@@ -831,15 +944,53 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
             var group = layer.Kind == LayerKind.GROUP;
             var collapsed = group && collapsedGroups.Contains(layer.Id);
-            var curve = selectedLayer?.Id == layer.Id && !collapsedAnimations.Contains(layer.Id)
-                ? Math.Min(88, Math.Max(0, Bounds.Height - RulerHeight - 30)) : 0;
+            var animations = selectedLayer?.Id == layer.Id && !collapsedAnimations.Contains(layer.Id)
+                ? CreateAnimationRows(layer) : [];
+            var curve = animations.Sum(animation => animation.Height);
             var height = 28 + curve;
-            result.Add(new(layer.Id, null, layer.Name, [layer], depth, group, collapsed, top, height, curve));
+            result.Add(new(layer.Id, null, layer.Name, [layer], depth, group, collapsed, top, height, animations));
             top += height;
             if (group && !collapsed)
             {
                 AddSceneRows(layer.Children, depth + 1, result, ref top);
             }
+        }
+    }
+
+    private TimelineAnimationRow[] CreateAnimationRows(ProjectLayer layer)
+    {
+        var height = Math.Clamp(Bounds.Height - RulerHeight - 30, 36, 76);
+        return layer.Tracks.Where(track => !track.Keyframes.IsEmpty).OrderBy(track => track.Property)
+            .Select((track, index) => new TimelineAnimationRow(track.Property, index * height, height)).ToArray();
+    }
+
+    private void UpdateCursor(Point point)
+    {
+        if (dragMode is TimelineDragMode.TRIM_START or TimelineDragMode.TRIM_END)
+        {
+            Cursor = resizeCursor;
+            return;
+        }
+
+        if (dragMode != TimelineDragMode.NONE || point.X < HeaderWidth || point.Y < RulerHeight || RowAt(point.Y) is not { } row)
+        {
+            Cursor = null;
+            return;
+        }
+
+        var clip = row.Clips.Reverse().FirstOrDefault(clip => clip.Kind != LayerKind.GROUP && ClipRectangle(clip, row).Contains(point));
+        var rectangle = clip is null ? default : ClipRectangle(clip, row);
+        Cursor = clip is not null && (point.X - rectangle.Left < 8 || rectangle.Right - point.X < 8)
+            ? resizeCursor : null;
+    }
+
+    /// <inheritdoc />
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        if (!HasActiveDrag)
+        {
+            Cursor = null;
         }
     }
 

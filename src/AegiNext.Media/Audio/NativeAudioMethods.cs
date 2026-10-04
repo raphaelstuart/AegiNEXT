@@ -5,6 +5,11 @@ namespace AegiNext.Media.Audio;
 
 internal static partial class NativeAudioMethods
 {
+    static NativeAudioMethods()
+    {
+        NativeMediaRuntime.Initialize();
+    }
+
     internal const int ERROR_CAPACITY = 1024;
     private const string LIBRARY = "aeginext_audio";
 

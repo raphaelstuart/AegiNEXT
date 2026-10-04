@@ -10,7 +10,7 @@ using Avalonia.Threading;
 using AegiNext.Media.Preview;
 using AegiNext.Rendering.Projects;
 using SkiaSharp;
-using System.Runtime.InteropServices;
+using AegiNext.Desktop.Rendering;
 using PathGeometry = AegiNext.Core.Projects.PathGeometry;
 
 namespace AegiNext.Desktop.Controls;
@@ -21,11 +21,24 @@ public sealed class EffectCanvasControl : Control, IDisposable
     private ProjectDocument document = new();
     private readonly VideoFrameSurface sceneSurface = new();
     private ProjectSceneRenderer? renderer;
+    private ScenePreviewScheduler? previewScheduler;
+    private Task previewDrain = Task.CompletedTask;
+    private long previewSequence;
+    private long presentedPreviewSequence;
+    private long sceneRevision;
+    private MediaTime? compositeTime;
+    private MediaTime? videoTime;
+    private ProjectLayer? scheduledDraft;
+    private bool scheduledEditingPose;
+    private Guid? scheduledEditingLayerId;
+    private bool scheduledInteractive;
+    private bool interactivePreview;
     private string directory = Path.GetTempPath();
     private SdrVideoFrame? video;
     private SdrVideoFrame? compositeFrame;
     private ProjectDocument? compositeDocument;
     private bool editingPose;
+    private bool compositeInteractive;
     private ProjectDocument? renderedDocument;
     private MediaTime renderedPosition;
     private SdrVideoFrame? renderedVideo;
@@ -48,7 +61,6 @@ public sealed class EffectCanvasControl : Control, IDisposable
     private IPointer? capturedPointer;
     private bool isRendering;
     private bool renderingFaulted;
-    private bool renderingFailedInPass;
     private bool gestureCancellationPending;
 
     public event EventHandler<CanvasLayerEditEventArgs>? LayerEdited;
@@ -72,6 +84,9 @@ public sealed class EffectCanvasControl : Control, IDisposable
     }
 
     internal bool HasActiveDrag => dragging;
+    internal long PreviewSequence => previewSequence;
+    internal long PresentedPreviewSequence => presentedPreviewSequence;
+    internal Task PreviewCompletion => previewScheduler?.Completion ?? previewDrain;
 
     internal void SetScene(ProjectDocument value, ProjectLayer? layer, MediaTime time, string? assetDirectory = null, bool editorPose = false)
     {
@@ -108,6 +123,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
             renderedDocument = null;
         }
 
+        sceneRevision++;
         selected = layer;
         position = time;
         editingPose = editorPose;
@@ -125,7 +141,6 @@ public sealed class EffectCanvasControl : Control, IDisposable
         }
 
         isRendering = true;
-        renderingFailedInPass = false;
         try
         {
             RenderScene(context);
@@ -133,19 +148,6 @@ public sealed class EffectCanvasControl : Control, IDisposable
         finally
         {
             isRendering = false;
-            if (renderingFaulted && !renderingFailedInPass)
-            {
-                renderingFaulted = false;
-                var recoveredDocument = document;
-                var recoveredPosition = position;
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (!disposed && !renderingFaulted && ReferenceEquals(document, recoveredDocument) && position == recoveredPosition)
-                    {
-                        RenderingRecovered?.Invoke(this, EventArgs.Empty);
-                    }
-                }, DispatcherPriority.Normal);
-            }
         }
     }
 
@@ -168,7 +170,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
                 sceneDocument = sceneDocument with { Layers = ExtendEditorEndpoint(sceneDocument.Layers, selected.Id) };
             }
         }
-        PresentScene(sceneDocument, board);
+        PresentScene(sceneDocument);
         if (sceneSurface.Bitmap is { } bitmap)
         {
             context.DrawImage(bitmap, new Rect(bitmap.Size), board);
@@ -329,6 +331,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
                 : selected with { MotionPath = selected.MotionPath! with { Path = edited } };
         }
 
+        sceneRevision++;
         InvalidateVisual();
     }
 
@@ -394,6 +397,10 @@ public sealed class EffectCanvasControl : Control, IDisposable
     private void CancelDrag(bool notifyCancellation = true)
     {
         var cancelled = dragging;
+        if (draft is not null)
+        {
+            sceneRevision++;
+        }
         dragging = false;
         draft = null;
         handle = -1;
@@ -446,10 +453,12 @@ public sealed class EffectCanvasControl : Control, IDisposable
     }
 
     /// <summary>复用播放会话合成帧；原始帧仅供暂存手势或编辑端点重绘。</summary>
-    public void PresentComposite(SdrVideoFrame frame, SdrVideoFrame background)
+    public void PresentComposite(SdrVideoFrame frame, SdrVideoFrame background, MediaTime? evaluationTime = null, ProjectDocument? evaluationDocument = null, bool interactive = false)
     {
+        compositeTime = videoTime = evaluationTime ?? position;
         compositeFrame = frame;
-        compositeDocument = document;
+        compositeDocument = evaluationDocument;
+        compositeInteractive = interactive;
         PresentVideo(background);
     }
 
@@ -508,15 +517,36 @@ public sealed class EffectCanvasControl : Control, IDisposable
     public void PresentVideo(SdrVideoFrame frame)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+        sceneRevision++;
         video = frame;
+        if (sceneSurface.Bitmap is null)
+        {
+            sceneSurface.Present(frame);
+        }
         renderedDocument = null;
         InvalidateVisual();
+    }
+
+    internal bool InteractivePreview
+    {
+        get => interactivePreview;
+        set
+        {
+            if (interactivePreview != value)
+            {
+                interactivePreview = value;
+                sceneRevision++;
+                renderedDocument = null;
+                InvalidateVisual();
+            }
+        }
     }
 
     /// <summary>清除视频背景和当前呈现资源，工程底板随后重新绘制。</summary>
     public void ClearVideo()
     {
         video = null;
+        previewSequence++;
         compositeFrame = null;
         compositeDocument = null;
         renderedVideo = null;
@@ -537,6 +567,9 @@ public sealed class EffectCanvasControl : Control, IDisposable
             compositeDocument = null;
             renderedVideo = null;
             renderedDocument = null;
+            previewDrain = previewScheduler?.Completion ?? Task.CompletedTask;
+            previewScheduler?.Dispose();
+            previewScheduler = null;
             sceneSurface.Dispose();
             reportedFailures.Clear();
             renderer?.Dispose();
@@ -570,7 +603,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
 
     private void DrawSubtitleAnchor(DrawingContext context, ProjectDocument sceneDocument, ProjectLayer layer, Matrix fit, Point origin)
     {
-        if (layer.SubtitleId is not { } subtitleId || sceneDocument.Subtitles.FirstOrDefault(cue => cue.Id == subtitleId) is not { } cue)
+        if (layer.SubtitleId is not { } subtitleId || sceneDocument.Subtitles.FirstOrDefault(line => line.Id == subtitleId) is not { } cue)
         {
             return;
         }
@@ -578,7 +611,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
         var placement = cue.Style.Position ?? SubtitlePosition.FromAlignment(cue.Style.Alignment, cue.Style.Margin);
         var anchor = new Point(placement.Anchor.X * sceneDocument.Width, placement.Anchor.Y * sceneDocument.Height) * parentMatrix * fit;
         var markerPen = new Pen(Brushes.Gold, 1.5);
-        context.DrawLine(new Pen(new SolidColorBrush(Color.Parse("#80FFD700")), 1), anchor, origin);
+        context.DrawLine(new Pen(new SolidColorBrush(Color.Parse("#80FFD700"))), anchor, origin);
         context.DrawEllipse(null, markerPen, anchor, 4.5, 4.5);
         context.DrawLine(markerPen, anchor - new Vector(7, 0), anchor + new Vector(7, 0));
         context.DrawLine(markerPen, anchor - new Vector(0, 7), anchor + new Vector(0, 7));
@@ -627,72 +660,72 @@ public sealed class EffectCanvasControl : Control, IDisposable
         return localBounds.Contains((float)local.X, (float)local.Y);
     }
 
-    private void PresentScene(ProjectDocument sceneDocument, Rect board)
+    private void PresentScene(ProjectDocument sceneDocument)
     {
-        if (draft is null && !editingPose && ReferenceEquals(compositeDocument, sceneDocument) && compositeFrame is { } presentedFrame)
+        if (draft is null && !editingPose && !interactivePreview && !compositeInteractive && ReferenceEquals(compositeDocument, sceneDocument) && compositeTime == position && compositeFrame is { } presentedFrame)
         {
             if (!ReferenceEquals(renderedVideo, presentedFrame))
             {
+                previewSequence++;
                 sceneSurface.Present(presentedFrame);
+                presentedPreviewSequence = previewSequence;
                 renderedVideo = presentedFrame;
             }
             return;
         }
-        var previewScale = Math.Min(1, 1024d / Math.Max(board.Width, board.Height));
-        var size = new PixelSize(Math.Max(1, (int)Math.Round(board.Width * previewScale)),
-            Math.Max(1, (int)Math.Round(board.Height * previewScale)));
-        if (ReferenceEquals(renderedDocument, sceneDocument) && renderedPosition == position &&
-            ReferenceEquals(renderedVideo, video) && renderedSize == size)
+        var interactive = interactivePreview || dragging;
+        var maximumWidth = interactive ? 960 : 1280;
+        var maximumHeight = interactive ? 540 : 720;
+        var scale = Math.Min(1, Math.Min((double)maximumWidth / document.Width, (double)maximumHeight / document.Height));
+        var size = new PixelSize(Math.Max(1, (int)Math.Round(document.Width * scale)), Math.Max(1, (int)Math.Round(document.Height * scale)));
+        var editingLayerId = editingPose ? selected?.Id : null;
+        if (ReferenceEquals(renderedDocument, document) && ReferenceEquals(scheduledDraft, draft) && renderedPosition == position &&
+            ReferenceEquals(renderedVideo, video) && renderedSize == size && scheduledEditingPose == editingPose &&
+            scheduledEditingLayerId == editingLayerId && scheduledInteractive == interactive)
         {
             return;
         }
-
-        using var srgb = SKColorSpace.CreateSrgb();
-        using var background = new SKBitmap(new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Opaque, srgb));
-        using (var canvas = new SKCanvas(background))
-        {
-            canvas.Clear(SKColors.Black);
-            if (video is { } frame)
-            {
-                using var image = SKImage.FromPixelCopy(new(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Opaque, srgb),
-                    frame.Pixels.Span, checked(frame.Width * 4));
-                var scale = Math.Min(size.Width / (double)frame.Width, size.Height / (double)frame.Height);
-                var width = (float)(frame.Width * scale);
-                var height = (float)(frame.Height * scale);
-                var x = (size.Width - width) / 2;
-                var y = (size.Height - height) / 2;
-                canvas.DrawImage(image, new SKRect(x, y, x + width, y + height), new SKSamplingOptions(SKFilterMode.Linear));
-            }
-        }
-
-        var pixels = new byte[checked(size.Width * size.Height * 4)];
-        for (var row = 0; row < size.Height; row++)
-        {
-            Marshal.Copy(background.GetPixels() + row * background.RowBytes, pixels, row * size.Width * 4, size.Width * 4);
-        }
-
-        var composite = pixels;
-        try
-        {
-            renderer ??= new(new DirectoryProjectAssetResolver(directory));
-            composite = renderer.ComposePreview(sceneDocument, position, pixels, size.Width, size.Height, size.Width * 4);
-        }
-        catch (Exception error) when (IsRenderingFailure(error))
-        {
-            ReportRenderingFailure(error);
-        }
-
-        sceneSurface.Present(new(size.Width, size.Height, composite));
-        renderedDocument = sceneDocument;
+        renderedDocument = document;
+        scheduledDraft = draft;
         renderedPosition = position;
         renderedVideo = video;
         renderedSize = size;
+        scheduledEditingPose = editingPose;
+        scheduledEditingLayerId = editingLayerId;
+        scheduledInteractive = interactive;
+        previewScheduler ??= new(result => Dispatcher.UIThread.Post(() =>
+        {
+            if (disposed || result.Request.Sequence != previewSequence || result.Request.SceneRevision != sceneRevision)
+            {
+                return;
+            }
+            if (result.Error is { } error)
+            {
+                if (result.Frame is { } fallback)
+                {
+                    sceneSurface.Present(fallback);
+                }
+                ReportRenderingFailure(error);
+            }
+            else if (result.Frame is { } frame)
+            {
+                sceneSurface.Present(frame);
+                if (renderingFaulted)
+                {
+                    renderingFaulted = false;
+                    RenderingRecovered?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            presentedPreviewSequence = result.Request.Sequence;
+            InvalidateVisual();
+        }, DispatcherPriority.Render));
+        previewScheduler.Submit(new(++previewSequence, sceneRevision, sceneDocument, position, videoTime, video,
+            size.Width, size.Height, directory, interactive));
     }
 
     private void ReportRenderingFailure(Exception error)
     {
         renderingFaulted = true;
-        renderingFailedInPass = true;
         if (HasActiveDrag)
         {
             CancelDrag();
