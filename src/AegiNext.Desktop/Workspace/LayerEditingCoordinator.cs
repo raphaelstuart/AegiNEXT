@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using AegiNext.Application;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
@@ -65,11 +66,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         }
         else
         {
-            session.Editor.UpdateLayer(layer.Id, value => value with
-            {
-                Start = start ? time : value.Start, End = start ? value.End : time,
-                AnimationOffset = start ? value.AnimationOffset + time - value.Start : value.AnimationOffset
-            });
+            session.Editor.SetLayerTiming(layer.Id, start ? time : layer.Start, start ? layer.End : time, TimelineEditMode.CROP);
         }
     }
 
@@ -257,10 +254,15 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
     {
         session.SelectedKeyTime = null;
         session.ViewModel.Effects.CanDeleteKeyframe = false;
+        session.CancelCanvasGesture();
     }
 
     internal void SelectKeyframe(TimelineKeyframeEventArgs e)
     {
+        if (!session.TryCommitDrafts())
+        {
+            return;
+        }
         var layer = session.SelectedLayer;
         if (layer is null || layer.Id != e.LayerId || layer.Tracks
                 .FirstOrDefault(track => track.Property == e.Property)?.Keyframes
@@ -269,6 +271,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             return;
         }
 
+        session.ViewModel.CancelGestures();
         var wasUpdating = session.IsUpdating;
         session.IsUpdating = true;
         try
@@ -276,7 +279,16 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             session.SelectedKeyTime = e.OldTime;
             session.ViewModel.Effects.Property = (int)e.Property;
             session.ViewModel.Timeline.EffectProperty = e.Property;
+            session.RefreshDocument();
             RefreshKeyframeInspector();
+            _ = session.RunCommandAsync(async () =>
+            {
+                await session.PauseForSceneEditAsync();
+                if (!session.IsClosing && session.SelectedLayerId == e.LayerId && session.SelectedKeyTime == e.OldTime)
+                {
+                    await session.SeekForEditingAsync(layer.Start + e.OldTime - layer.AnimationOffset);
+                }
+            });
         }
         finally
         {
@@ -291,10 +303,6 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         try
         {
             var frame = SelectedKeyframe;
-            if (frame is null)
-            {
-                session.SelectedKeyTime = null;
-            }
 
             var (minimum, maximum) = ActiveProperty switch
             {
@@ -319,7 +327,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
                 session.ViewModel.Effects.Interpolation = (int)frame.Interpolation;
             }
 
-            session.ViewModel.Effects.CanAddKeyframe = session.SelectedLayer is not null;
+            RefreshKeyframeAvailability();
             session.ViewModel.Effects.CanDeleteKeyframe = frame is not null;
         }
         finally
@@ -340,10 +348,15 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
     {
         var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
         var time = session.ProjectPosition - layer.Start + layer.AnimationOffset;
+        if (session.ProjectPosition < layer.Start || session.ProjectPosition > layer.End ||
+            time < MediaTime.Zero)
+        {
+            return;
+        }
+
         session.Editor.SetKeyframe(layer.Id, ActiveProperty, new(time,
             (double)(session.ViewModel.Effects.KeyframeValue ?? 0),
             (KeyframeInterpolation)Math.Max(0, session.ViewModel.Effects.Interpolation)));
-        session.ViewModel.Timeline.ShowEffects = true;
         session.ViewModel.Timeline.EffectProperty = ActiveProperty;
         SelectKeyframe(new(layer.Id, ActiveProperty, time, time));
     }
@@ -367,45 +380,70 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     internal void MoveKeyframe(TimelineKeyframeEventArgs e)
     {
-        session.Editor.UpdateLayer(e.LayerId, layer => layer with
+        var movedTime = e.NewTime;
+        session.Editor.UpdateLayer(e.LayerId, layer =>
         {
-            Tracks = layer.Tracks.Select(track => track.Property == e.Property
+            movedTime = LayerAnimationTiming.ClampTime(layer, e.NewTime);
+            return layer with
+            {
+                Tracks = layer.Tracks.Select(track => track.Property == e.Property
                 ? track with
                 {
                     Keyframes = track.Keyframes
+                        .Where(frame => frame.Time != movedTime || frame.Time == e.OldTime)
                         .Select(frame =>
                             frame.Time == e.OldTime
-                                ? frame with { Time = e.NewTime, Value = e.NewValue ?? frame.Value }
+                                ? frame with { Time = movedTime, Value = e.NewValue ?? frame.Value }
                                 : frame).OrderBy(frame => frame.Time).ToImmutableArray()
                 }
                 : track).ToImmutableArray()
+            };
         });
-        SelectKeyframe(new(e.LayerId, e.Property, e.NewTime, e.NewTime));
+        SelectKeyframe(new(e.LayerId, e.Property, movedTime, movedTime));
+    }
+
+    internal void RefreshKeyframeAvailability()
+    {
+        session.ViewModel.Effects.CanAddKeyframe = session.SelectedLayer is { } layer &&
+            session.ProjectPosition >= layer.Start && session.ProjectPosition <= layer.End &&
+            session.ProjectPosition - layer.Start + layer.AnimationOffset >= MediaTime.Zero;
     }
 
     internal void SavePreset()
     {
         var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
         var name = session.ViewModel.Effects.PresetName;
+        var origin = LayerAnimationTiming.GetRange(layer).Minimum;
         var preset = new EffectPreset(Guid.NewGuid(),
             string.IsNullOrWhiteSpace(name)
                 ? WorkbenchText.Get("Preset") + " " + (session.Editor.Snapshot.Presets.Length + 1)
                 : name,
-            layer.Tracks, layer.MotionPath, layer.Mask, layer.Blend);
+            layer.Tracks.Select(track => track with
+            {
+                Keyframes = track.Keyframes.Select(frame => frame with
+                {
+                    Time = frame.Time - origin
+                }).ToImmutableArray()
+            }).ToImmutableArray(), layer.MotionPath, layer.Mask, layer.Blend);
         session.Editor.Apply("Save preset", document => document with { Presets = document.Presets.Add(preset) });
     }
 
     internal void ApplyBuiltinPreset(string name)
     {
         var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
-        var duration = layer.End - layer.Start;
+        var (offset, maximum) = LayerAnimationTiming.GetRange(layer);
+        var duration = maximum - offset;
+        if (duration <= MediaTime.Zero)
+        {
+            throw new InvalidOperationException("片段中没有可应用动画的时间。");
+        }
+
         var edge = new MediaTime(1, 4);
         if (duration < edge + edge)
         {
             edge = new(duration.Numerator, checked(duration.Denominator * 3));
         }
 
-        var offset = layer.AnimationOffset < MediaTime.Zero ? MediaTime.Zero : layer.AnimationOffset;
         var tracks = name switch
         {
             "Fade" => ImmutableArray.Create(new AnimationTrack(AnimationProperty.OPACITY,
@@ -426,7 +464,6 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
                 .ToImmutableArray()
         });
         session.ViewModel.Effects.Property = (int)tracks[0].Property;
-        session.ViewModel.Timeline.ShowEffects = true;
     }
 
     internal void AddRectangle() => AddShape(ShapeKind.RECTANGLE);

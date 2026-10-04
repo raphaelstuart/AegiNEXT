@@ -1,6 +1,7 @@
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Localization;
 using AegiNext.Media.Analysis;
+using AegiNext.Desktop.Workspace.Diagnostics;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -27,6 +28,7 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
         var media = session.Controller.MediaInfo;
         if (media?.AudioStreamIndex is not { } index || media.Duration is not { } duration || duration <= MediaTime.Zero)
         {
+            session.LogInfo("Analysis", WorkflowLogText.Get("AudioAnalysisSkipped", session.InterfaceCulture), path);
             return;
         }
 
@@ -43,6 +45,7 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
             {
                 session.ViewModel.Timeline.Spectrogram = data;
                 session.ViewModel.Timeline.AnalysisStatus = string.Empty;
+                session.LogInfo("Analysis", WorkflowLogText.Get("AudioAnalysisCompleted", session.InterfaceCulture), path);
             }
         }
         catch (OperationCanceledException)
@@ -53,6 +56,7 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
             if (!token.IsCancellationRequested && !session.IsClosing)
             {
                 session.ViewModel.Timeline.AnalysisStatus = error.Message;
+                session.LogError("Analysis", error);
             }
         }
     }

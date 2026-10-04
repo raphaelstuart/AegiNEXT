@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Layouts;
@@ -20,16 +21,26 @@ internal sealed class WorkspaceProbe
     private readonly WorkspaceProbeOptions options;
     private readonly IClassicDesktopStyleApplicationLifetime desktop;
     private readonly WorkspaceProbeReport report = new();
+    private readonly EventHandler<FirstChanceExceptionEventArgs> captureBindingException;
 
     internal WorkspaceProbe(WorkspaceProbeOptions options, IClassicDesktopStyleApplicationLifetime desktop)
     {
         this.options = options;
         this.desktop = desktop;
+        WorkspaceProbeProfile.Prepare(options);
+        report.SourceProfileCopied = options.SourceProfileDirectory is not null;
+        captureBindingException = OnBindingException;
+        AppDomain.CurrentDomain.FirstChanceException += captureBindingException;
         var previous = Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY");
         try
         {
             Environment.SetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY", options.ProfileDirectory);
             MainWindow = new();
+        }
+        catch
+        {
+            AppDomain.CurrentDomain.FirstChanceException -= captureBindingException;
+            throw;
         }
         finally
         {
@@ -45,21 +56,64 @@ internal sealed class WorkspaceProbe
         try
         {
             await SettleAsync();
+            await MainWindow.Session.Styles.Completion;
+            report.LoadedStylePresetCount = MainWindow.Session.StyleLibrary.Snapshot.Presets.Length;
+            await MainWindow.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SETTINGS);
+            await SettleAsync();
+            var settings = MainWindow.WindowRegistry.Windows.OfType<SettingsWindow>().SingleOrDefault();
+            if (settings is null)
+            {
+                throw new InvalidOperationException("Settings did not open: " +
+                    (MainWindow.Session.LastError?.ToString() ?? MainWindow.ViewModel.Error ?? "No settings host was registered."));
+            }
+            Verify(settings.IsVisible, "Settings opened after loading the isolated preferences and style library");
+            foreach (var page in Enum.GetValues<SettingsPage>())
+            {
+                settings.SelectPage(page);
+                await SettleAsync();
+                Verify(settings.CurrentPage == page && settings.IsVisible, $"Settings page displayed: {page}");
+            }
+            settings.Close();
+            await SettleAsync();
+            Verify(report.SettingsBindingExceptionCount == 0, "Settings compiled bindings raised no InvalidCastException");
             Capture("standard");
             foreach (var id in new[] { WorkbenchPanelIds.PREVIEW, WorkbenchPanelIds.TIMELINE, WorkbenchPanelIds.SUBTITLES, WorkbenchPanelIds.STYLES })
             {
                 Verify(MainWindow.Panels[id].IsAttachedToVisualTree(), $"Standard panel attached: {id}");
             }
+            var log = MainWindow.Panels[WorkbenchPanelIds.LOG];
+            Verify(MainWindow.Panels.Count == WorkbenchPanelIds.All.Count && WorkbenchPanelIds.All.Count == 7,
+                "All seven stable panel views were registered");
+            Verify(MainWindow.Layouts.IsVisible(WorkbenchPanelIds.LOG) && !log.IsEffectivelyVisible,
+                "Standard layout kept the Log tab inactive");
+            MainWindow.Session.Journal.Clear();
+            MainWindow.Session.LogInfo("Workspace probe", "Native Log activation check");
+            MainWindow.Session.LogError("Workspace probe", new InvalidOperationException("Native unread error check"));
+            await SettleAsync();
+            Verify(!log.IsEffectivelyVisible && MainWindow.ViewModel.Log.UnreadErrorCount == 1,
+                "New log entries retained the active work tab and marked one unread error");
+            await MainWindow.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_LOG);
+            await SettleAsync();
+            Verify(log.IsAttachedToVisualTree() && log.IsEffectivelyVisible && MainWindow.ViewModel.Log.UnreadErrorCount == 0,
+                "The shared Log command activated its existing view and marked visible errors read");
+            Capture("log-active");
+            MainWindow.Session.Journal.Clear();
+            Verify(await MainWindow.Layouts.ApplyPresetAsync(WorkspaceLayoutPresets.STANDARD), "Restored Standard after the Log activation check");
+            await SettleAsync();
             var panelInstances = MainWindow.Panels.ToDictionary(pair => pair.Key, pair => pair.Value);
             var controller = MainWindow.Session.Controller;
             foreach (var id in new[] { WorkspaceLayoutPresets.TIMING, WorkspaceLayoutPresets.EFFECTS, WorkspaceLayoutPresets.ENCODE, WorkspaceLayoutPresets.STANDARD })
             {
                 Verify(await MainWindow.Layouts.ApplyPresetAsync(id), $"Applied preset: {id}");
                 await SettleAsync();
+                if (id == WorkspaceLayoutPresets.ENCODE)
+                {
+                    CaptureExportChoices();
+                }
                 Capture(id);
             }
             Verify(panelInstances.All(pair => ReferenceEquals(pair.Value, MainWindow.Panels[pair.Key])) &&
-                   ReferenceEquals(controller, MainWindow.Session.Controller), "All six views and the media controller retained their identity");
+                   ReferenceEquals(controller, MainWindow.Session.Controller), "All seven views and the media controller retained their identity");
             Verify(!MainWindow.Session.Editor.CanUndo, "Layout changes did not add an undo entry");
             var preset = await MainWindow.Layouts.SaveAsAsync("Runtime verification");
             Verify(preset is not null, "Saved a personal preset");
@@ -96,6 +150,8 @@ internal sealed class WorkspaceProbe
             await MainWindow.Layouts.RestoreDefaultAsync();
             await MainWindow.Layouts.FlushAsync();
             Capture("final-standard");
+            Verify(report.ExportBindingExceptionCount == 0, "Export compiled bindings raised no InvalidCastException");
+            Verify(report.GetBindingExceptionCount == 0, "Binding evaluation raised no GetBinding exception");
             report.Completed = true;
         }
         catch (Exception error)
@@ -104,6 +160,7 @@ internal sealed class WorkspaceProbe
         }
         finally
         {
+            AppDomain.CurrentDomain.FirstChanceException -= captureBindingException;
             try
             {
                 await MainWindow.DisposeAsync();
@@ -119,6 +176,45 @@ internal sealed class WorkspaceProbe
             Directory.Delete(options.ProfileDirectory, true);
             desktop.Shutdown(report.Completed && report.Failures.Count == 0 ? 0 : 1);
         }
+    }
+
+    private void OnBindingException(object? sender, FirstChanceExceptionEventArgs args)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return;
+        }
+
+        var error = args.Exception;
+        var settingsBinding = error is InvalidCastException && error.Message.Contains("AegiNext.Desktop.Settings.", StringComparison.Ordinal);
+        var exportBinding = error is InvalidCastException && error.Message.Contains("AegiNext.Desktop.Panels.Export.", StringComparison.Ordinal);
+        var getBinding = error.StackTrace?.Contains("GetBinding", StringComparison.Ordinal) == true;
+        if (settingsBinding)
+        {
+            report.SettingsBindingExceptionCount++;
+        }
+        if (exportBinding)
+        {
+            report.ExportBindingExceptionCount++;
+        }
+        if (getBinding)
+        {
+            report.GetBindingExceptionCount++;
+        }
+        if (settingsBinding || exportBinding || getBinding)
+        {
+            report.Failures.Add(error.ToString());
+        }
+    }
+
+    private void CaptureExportChoices()
+    {
+        var export = MainWindow.Panels[WorkbenchPanelIds.EXPORT];
+        report.ExportCodecChoiceCount = export.FindControl<ComboBox>("CodecCombo")!.ItemCount;
+        report.ExportSpeedChoiceCount = export.FindControl<ComboBox>("SpeedCombo")!.ItemCount;
+        report.ExportAudioModeChoiceCount = export.FindControl<ComboBox>("AudioModeCombo")!.ItemCount;
+        Verify(report.ExportCodecChoiceCount == 3 && report.ExportSpeedChoiceCount == 3 && report.ExportAudioModeChoiceCount == 3,
+            $"Export choices were populated: codec={report.ExportCodecChoiceCount}, speed={report.ExportSpeedChoiceCount}, audio={report.ExportAudioModeChoiceCount}");
     }
 
     private void Capture(string action)

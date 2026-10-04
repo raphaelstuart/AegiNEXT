@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AegiNext.Desktop.Panels.Log" xmlns:diagnostics="using:AegiNext.Desktop.Workspace.Diagnostics"
+             x:Class="AegiNext.Desktop.Panels.Log.LogPanelView" x:DataType="vm:LogPanelViewModel">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="4" RowSpacing="6">
+    <Grid ColumnDefinitions="140,*,Auto,Auto,Auto" ColumnSpacing="6">
+      <ComboBox Name="LogLevelFilter" ItemsSource="{Binding Levels}" SelectedIndex="{Binding FilterIndex, Mode=TwoWay}" />
+      <TextBox Name="LogSearch" Grid.Column="1" Text="{Binding FilterText, Mode=TwoWay}" PlaceholderText="{Binding SearchLabel}" />
+      <Button Name="CopyLogSelected" Grid.Column="2" Content="{Binding CopySelectedLabel}" IsEnabled="{Binding HasSelection}" Click="CopySelected" />
+      <Button Name="CopyLogVisible" Grid.Column="3" Content="{Binding CopyVisibleLabel}" Click="CopyVisible" />
+      <Button Name="ClearLog" Grid.Column="4" Content="{Binding ClearLabel}" Command="{Binding ClearCommand}" />
+    </Grid>
+    <Grid Grid.Row="1">
+      <ListBox Name="LogEntries" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry, Mode=TwoWay}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="diagnostics:WorkbenchLogEntry">
+            <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontFamily="monospace" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Text="{Binding EmptyLabel}" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Grid>
+    <TextBox Name="LogDetails" Grid.Row="2" Text="{Binding Details, Mode=OneWay}" IsReadOnly="True"
+             AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="160" MinHeight="40" FontFamily="monospace" />
+  </Grid>
+</UserControl>

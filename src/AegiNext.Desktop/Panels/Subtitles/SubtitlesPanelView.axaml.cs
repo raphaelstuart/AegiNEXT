@@ -1,6 +1,8 @@
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Workspace;
+using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.Styling;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -24,6 +26,14 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         this.viewModel = viewModel;
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
+        var tracks = this.FindControl<ComboBox>("SubtitleTrackCombo")!;
+        tracks.SelectionChanged += (_, _) =>
+        {
+            if (tracks.SelectedItem is AegiNext.Core.Projects.SubtitleTrack track)
+            {
+                viewModel.SelectTrack(track.Id);
+            }
+        };
         list = this.FindControl<ListBox>("SubtitleList")!;
         list.SelectionChanged += (_, _) =>
         {
@@ -69,7 +79,7 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         session.PreferencesChanged += OnPreferencesChanged;
         session.SubtitleScrollRequested += OnScrollRequested;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
-        ControlLocalization.Apply(this);
+        RefreshLocalization();
     }
 
     public string PanelId => "subtitles";
@@ -117,7 +127,15 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
             caretInputs.Remove(box);
         }
     }
-    private void OnPreferencesChanged(object? sender, EventArgs e) => ControlLocalization.Apply(this);
+    private void OnPreferencesChanged(object? sender, EventArgs e) => RefreshLocalization();
+    private void RefreshLocalization()
+    {
+        ControlLocalization.Apply(this);
+        this.FindControl<Button>("MoveSubtitleTrackUpButton")!.Content =
+            WorkbenchIcon.Content(WorkbenchText.Get("MoveTrackUp"), "Up");
+        this.FindControl<Button>("MoveSubtitleTrackDownButton")!.Content =
+            WorkbenchIcon.Content(WorkbenchText.Get("MoveTrackDown"), "Down");
+    }
     private void OnScrollRequested(object? sender, EventArgs e)
     {
         if (list.SelectedItem is { } selected)

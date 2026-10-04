@@ -79,7 +79,10 @@ public static class SubtitleStylePresetStore
             _ = strictUtf8.GetCharCount(json);
             using var parsed = JsonDocument.Parse(json.ToArray(), new() { MaxDepth = 16 });
             RejectDuplicateKeys(parsed.RootElement);
-            var collection = parsed.RootElement.Deserialize<SubtitleStylePresetCollection>(options) ??
+            var upgraded = SubtitlePositionJsonMigration.UpgradeVersionOne(parsed.RootElement, "presets");
+            var collection = (upgraded is null
+                ? parsed.RootElement.Deserialize<SubtitleStylePresetCollection>(options)
+                : upgraded.Deserialize<SubtitleStylePresetCollection>(options)) ??
                 throw new JsonException("样式库不能为 null。");
             SubtitleStylePresetValidator.Validate(collection);
             return collection;

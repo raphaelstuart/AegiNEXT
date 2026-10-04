@@ -37,14 +37,12 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly StyleLibraryCoordinator styles;
     private readonly LayerEditingCoordinator layerEditing;
     private readonly PlaybackSeekingCoordinator playback;
+    private readonly PreviewFrameCatalog previewFrames = new();
     private ProjectPreviewState previewState = new(new(), Path.GetTempPath());
     private WorkbenchPreferences preferences;
     private Task preferencesWrite = Task.CompletedTask;
     private string? projectPath;
     private string projectDirectory;
-    private Guid? selectedCueId;
-    private Guid? selectedLayerId;
-    private MediaTime? selectedKeyTime;
     private Exception? previewRenderError;
     private bool updatingWorkbench;
     private bool projectBusy;
@@ -73,7 +71,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         styleLibrary = new(Path.Combine(this.preferencesStore.DirectoryPath, "subtitle-styles.aegistyles"));
         ViewModel = new(this);
         controller = controllerFactory?.Invoke(ApplyUpdate) ?? new(this.dispatch, ApplyUpdate,
-            () => new ProjectPreviewConverter(() => Volatile.Read(ref previewState), error => Volatile.Write(ref previewRenderError, error)));
+            () => new ProjectPreviewConverter(() => Volatile.Read(ref previewState),
+                error => Volatile.Write(ref previewRenderError, error), previewFrames));
         workflow = new(this, dialogs);
         analysis = new(this);
         export = new(this, dialogs, exportService ?? new VideoWorkbenchExportService(new AegiNext.Media.Encoding.VideoExporter()));
@@ -100,6 +99,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal event EventHandler? SelectionChanged;
     internal event EventHandler? SubtitleScrollRequested;
     internal WorkbenchViewModel ViewModel { get; }
+    internal Exception? LastError { get; private set; }
     internal ProjectEditor Editor => editor;
     internal VideoPreviewController Controller => controller;
     internal WorkbenchPreferences Preferences => preferences;
@@ -110,15 +110,16 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal bool IsClosing => closing;
     internal bool IsProjectBusy => projectBusy;
     internal bool IsUpdating { get => updatingWorkbench; set => updatingWorkbench = value; }
-    internal Guid? SelectedLayerId { get => selectedLayerId; set => selectedLayerId = value; }
-    internal MediaTime? SelectedKeyTime { get => selectedKeyTime; set => selectedKeyTime = value; }
+    internal Guid? SelectedLayerId { get => SceneEditing.LayerId; set => SceneEditing.LayerId = value; }
+    internal Guid? SelectedCueId { get => SceneEditing.CueId; set => SceneEditing.CueId = value; }
+    internal MediaTime? SelectedKeyTime { get => SceneEditing.KeyframeTime; set => SceneEditing.KeyframeTime = value; }
     internal bool HasSelectedCue => SelectedCue is not null;
     internal string ProjectDirectory => projectDirectory;
     internal string? ProjectPath { get => projectPath; set => projectPath = value; }
     internal string ScratchDirectory => scratchDirectory;
     internal MediaTime ProjectPosition => (playback.PendingPosition ?? controller.Snapshot.Position) - (controller.Snapshot.Start ?? MediaTime.Zero);
-    internal ProjectLayer? SelectedLayer => Flatten(editor.Snapshot.Layers).FirstOrDefault(value => value.Id == selectedLayerId);
-    internal SubtitleLine? SelectedCue => editor.Snapshot.Subtitles.FirstOrDefault(value => value.Id == selectedCueId);
+    internal ProjectLayer? SelectedLayer => Flatten(editor.Snapshot.Layers).FirstOrDefault(value => value.Id == SelectedLayerId);
+    internal SubtitleLine? SelectedCue => editor.Snapshot.Subtitles.FirstOrDefault(value => value.Id == SelectedCueId);
     internal AnalysisCoordinator Analysis => analysis;
     internal ExportCoordinator Export => export;
     internal StyleLibraryCoordinator Styles => styles;
@@ -137,8 +138,13 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         QueuePreferencesWrite();
     }
 
-    internal void ShowError(Exception error)
+    internal void ShowError(Exception error, bool recordLog = true)
     {
+        if (recordLog)
+        {
+            LogError("Workspace", error);
+        }
+        LastError = error;
         var text = error.Message;
         ViewModel.Error = text.Length > 700 ? text[..700] + "…" : text;
         ViewModel.RefreshCommands();
@@ -153,11 +159,13 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
         try
         {
+            LastError = null;
             ViewModel.Error = null;
             await command();
         }
         catch (OperationCanceledException)
         {
+            LogInfo("Workflow", WorkbenchText.Get("Cancelled"));
         }
         catch (Exception error)
         {
@@ -171,6 +179,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             if (!closing)
             {
                 Tick();
+                RestorePlacementDiagnostic();
                 ViewModel.RefreshCommands();
             }
         }
@@ -267,10 +276,13 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         finally
         {
             await controller.DisposeAsync();
+            previewFrames.Clear();
+            layerPlacement.Dispose();
             analysis.Dispose();
             export.Dispose();
             styleLibrary.Dispose();
             preferencesStore.Dispose();
+            DisposeJournal();
             PreviewUpdated = null;
             if (Directory.Exists(scratchDirectory))
             {
@@ -294,9 +306,9 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             ViewModel.Effects.Blends = blendKeys.Select(WorkbenchText.Get).ToArray();
             ViewModel.Effects.Properties = Enum.GetValues<AnimationProperty>().Select(WorkbenchText.Property).ToArray();
             ViewModel.Effects.Interpolations = interpolationKeys.Select(WorkbenchText.Get).ToArray();
-            ViewModel.Export.Codecs = [WorkbenchText.Get("Automatic"), "H.264", "HEVC / H.265"];
-            ViewModel.Export.Speeds = speedKeys.Select(WorkbenchText.Get).ToArray();
-            ViewModel.Export.AudioModes = [WorkbenchText.Get("Copy"), "AAC", WorkbenchText.Get("NoAudio")];
+            ViewModel.Export.RefreshChoices([WorkbenchText.Get("Automatic"), "H.264", "HEVC / H.265"],
+                speedKeys.Select(WorkbenchText.Get).ToArray(),
+                [WorkbenchText.Get("Copy"), "AAC", WorkbenchText.Get("NoAudio")]);
             RefreshDocument();
             Tick();
         }
@@ -344,7 +356,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
                 ViewModel.Preview.HasFrame = true;
             }
 
-            PreviewUpdated?.Invoke(this, update);
+            var presented = update.Frame is { } frame
+                ? update with { BackgroundFrame = update.BackgroundFrame ?? previewFrames.FindBackground(frame) ?? frame }
+                : update;
+            PreviewUpdated?.Invoke(this, presented);
             Tick();
         }
     }
@@ -367,8 +382,13 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
         preview.TimeLabel = $"{FormatTime(relative)} / {(snapshot.Duration is { } end ? FormatTime(end) : "--:--")}";
         var timeline = ViewModel.Timeline;
+        timeline.MediaDuration = snapshot.Duration is { } mediaDuration ? ToSeconds(mediaDuration) : 0;
         timeline.Position = relative;
-        ViewModel.Effects.Position = relative;
+        ViewModel.Effects.Position = EditingPosition;
+        RefreshAnimatedInspectorAtTime();
+        RefreshEditingTargetLabel();
+        RefreshEditingPreview();
+        layerEditing.RefreshKeyframeAvailability();
         var durationSeconds = Math.Max(snapshot.Duration is { } value ? ToSeconds(value) : 60,
             editor.Snapshot.Subtitles.Select(line => ToSeconds(line.End)).DefaultIfEmpty(60).Max());
         timeline.ScrollMaximum = Math.Max(0, durationSeconds - timeline.VisibleDuration);
@@ -379,9 +399,13 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             timeline.ViewStart = Math.Max(0, ToSeconds(relative) - timeline.VisibleDuration / 5);
         }
 
-        if ((snapshot.Error ?? snapshot.AudioError ?? Volatile.Read(ref previewRenderError)) is { } error)
+        var renderError = Volatile.Read(ref previewRenderError);
+        SetDiagnosticError("Video playback", snapshot.Error);
+        SetDiagnosticError("Audio playback", snapshot.AudioError);
+        SetDiagnosticError("Preview rendering", renderError);
+        if ((snapshot.Error ?? snapshot.AudioError ?? renderError) is { } error)
         {
-            ShowError(error);
+            ShowError(error, false);
         }
 
         ViewModel.RefreshCommands();
@@ -420,12 +444,15 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     internal void ResetSelection()
     {
-        selectedCueId = null;
-        selectedLayerId = null;
-        selectedKeyTime = null;
+        SelectedCueId = null;
+        SelectedLayerId = null;
+        SelectedKeyTime = null;
         timingSession = timingSession.Reset();
         stylesDirty = false;
         effectsDirty = false;
+        SceneEditing.DraftTarget = null;
+        SceneEditing.GestureTarget = null;
+        changedEffectFields.Clear();
     }
 
     internal static IEnumerable<ProjectLayer> Flatten(ImmutableArray<ProjectLayer> layers)

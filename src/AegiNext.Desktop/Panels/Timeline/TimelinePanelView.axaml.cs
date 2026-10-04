@@ -13,8 +13,10 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private readonly WorkbenchSession session;
     private readonly TimelinePanelViewModel viewModel;
     private readonly SubtitleTimelineControl timeline;
+    private readonly TimelineOverviewControl overview;
     private AegiNext.Media.Analysis.SpectrogramData? spectrum;
     private bool disposed;
+    private bool applying;
     internal TimelinePanelView(TimelinePanelViewModel viewModel, WorkbenchSession session)
     {
         this.session = session;
@@ -22,8 +24,12 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
         timeline = this.FindControl<SubtitleTimelineControl>("Timeline")!;
+        overview = this.FindControl<TimelineOverviewControl>("TimelineMinimap")!;
         timeline.SeekRequested += async (_, e) => await viewModel.SeekAsync(e.Time);
-        timeline.CueSelected += (_, e) => viewModel.SelectCue(e.Id);
+        timeline.ClipSelectionChanged += (_, e) => viewModel.SelectLayers(e);
+        timeline.TrackSelected += (_, e) => viewModel.SelectTrack(e.Id);
+        timeline.ViewportChanged += OnViewportChanged;
+        overview.ViewportChanged += OnViewportChanged;
         timeline.TimingChanged += async (_, e) => await viewModel.CommitTimingAsync(e);
         timeline.KeyframeSelected += (_, e) => viewModel.SelectKeyframe(e);
         timeline.KeyframeMoved += async (_, e) => await viewModel.MoveKeyframeAsync(e);
@@ -32,7 +38,6 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         timeline.PointerCaptureLost += (_, _) => viewModel.IsSeeking = false;
         timeline.SizeChanged += (_, _) =>
         {
-            viewModel.VisibleDuration = timeline.VisibleDuration;
             viewModel.RefreshViewport();
         };
         viewModel.PropertyChanged += OnViewModelChanged;
@@ -46,24 +51,47 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     public void CancelGestures()
     {
         timeline.CancelGesture();
+        overview.CancelGesture();
         viewModel.IsSeeking = false;
     }
     public void FocusInvalidField(string? fieldKey) => timeline.Focus();
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e) => ApplyState();
     private void ApplyState()
     {
-        timeline.Position = viewModel.Position;
-        timeline.PixelsPerSecond = viewModel.PixelsPerSecond;
-        timeline.ViewStart = viewModel.ViewStart;
-        timeline.ShowEffects = viewModel.ShowEffects;
-        timeline.EffectProperty = viewModel.EffectProperty;
-        timeline.SetDocument(viewModel.Document, viewModel.SelectedCueId, viewModel.SelectedLayer);
-        if (!ReferenceEquals(spectrum, viewModel.Spectrogram))
+        if (applying || disposed)
         {
-            spectrum = viewModel.Spectrogram;
-            timeline.SetSpectrogram(spectrum);
+            return;
         }
-        viewModel.VisibleDuration = Math.Max(0.01, timeline.VisibleDuration);
+
+        applying = true;
+        try
+        {
+            timeline.Position = viewModel.Position;
+            timeline.EffectProperty = viewModel.EffectProperty;
+            timeline.SetDocument(viewModel.Document, viewModel.SelectedCueId, viewModel.SelectedLayer,
+                viewModel.SelectedLayerIds.Count == 0 && viewModel.SelectedLayer is { } selected ? [selected.Id] : viewModel.SelectedLayerIds);
+            timeline.SetViewport(viewModel.Viewport, viewModel.FullDuration);
+            if (!ReferenceEquals(spectrum, viewModel.Spectrogram))
+            {
+                spectrum = viewModel.Spectrogram;
+                timeline.SetSpectrogram(spectrum);
+            }
+
+            viewModel.Viewport = timeline.Viewport;
+            overview.SetScene(viewModel.Document, viewModel.Viewport, viewModel.FullDuration, viewModel.Position);
+        }
+        finally
+        {
+            applying = false;
+        }
+    }
+    private void OnViewportChanged(object? sender, TimelineViewportEventArgs e)
+    {
+        viewModel.Viewport = e.Viewport;
+        if (!applying)
+        {
+            ApplyState();
+        }
     }
     private void OnPreferencesChanged(object? sender, EventArgs e) => ControlLocalization.Apply(this);
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
@@ -75,6 +103,9 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             viewModel.PropertyChanged -= OnViewModelChanged;
             session.PreferencesChanged -= OnPreferencesChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
+            timeline.ViewportChanged -= OnViewportChanged;
+            overview.ViewportChanged -= OnViewportChanged;
+            overview.CancelGesture();
             timeline.Dispose();
         }
     }

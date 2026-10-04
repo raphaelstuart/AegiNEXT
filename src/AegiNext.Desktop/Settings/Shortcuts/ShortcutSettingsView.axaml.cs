@@ -12,9 +12,10 @@ public sealed partial class ShortcutSettingsView : UserControl
 {
     private ShortcutSettingsViewModel? model;
 
-    /// <summary>创建编译绑定页面并接线局部键盘输入。</summary>
+    /// <summary>先隔离父级上下文，再加载编译绑定并接线局部键盘输入。</summary>
     public ShortcutSettingsView()
     {
+        DataContext = null;
         AvaloniaXamlLoader.Load(this);
         DataContextChanged += (_, _) => ChangeModel();
         AddHandler(KeyDownEvent, RecordShortcut, RoutingStrategies.Tunnel);

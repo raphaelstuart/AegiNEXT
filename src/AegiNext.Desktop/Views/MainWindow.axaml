@@ -7,9 +7,6 @@
         Background="{DynamicResource PreviewBackground}">
   <DockPanel>
     <common:WindowTitleBar Name="TitleBar" DockPanel.Dock="Top"/>
-    <Border Name="ErrorPanel" DockPanel.Dock="Bottom" IsVisible="{Binding HasError}" Margin="{StaticResource WorkbenchInset}" Padding="0,0,0,6">
-      <TextBlock Name="ErrorText" Text="{Binding Error}" Foreground="{DynamicResource PreviewError}" TextWrapping="Wrap" MaxHeight="60" TextTrimming="CharacterEllipsis"/>
-    </Border>
-    <ContentControl Name="WorkspaceHost" IsEnabled="{Binding !IsBusy}" Margin="{StaticResource WorkbenchInset}"/>
+    <ContentControl Name="WorkspaceHost" Margin="{StaticResource WorkbenchInset}"/>
   </DockPanel>
 </Window>

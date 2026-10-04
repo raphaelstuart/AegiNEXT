@@ -119,7 +119,25 @@ public sealed class TextShaper : IDisposable
             RenderValidation.Finite(bounds.Top, nameof(fontSize));
             RenderValidation.Finite(bounds.Right, nameof(fontSize));
             RenderValidation.Finite(bounds.Bottom, nameof(fontSize));
-            return new(blob, glyphs, result.Width);
+            _ = font.GetGlyphWidths(ids.AsSpan(), out var glyphBounds);
+            var inkBounds = SKRect.Empty;
+            for (var index = 0; index < glyphBounds.Length; index++)
+            {
+                var glyphBound = glyphBounds[index];
+                if (glyphBound.IsEmpty)
+                {
+                    continue;
+                }
+
+                glyphBound.Offset(result.Points[index]);
+                RenderValidation.Finite(glyphBound.Left, nameof(fontSize));
+                RenderValidation.Finite(glyphBound.Top, nameof(fontSize));
+                RenderValidation.Finite(glyphBound.Right, nameof(fontSize));
+                RenderValidation.Finite(glyphBound.Bottom, nameof(fontSize));
+                inkBounds = inkBounds.IsEmpty ? glyphBound : SKRect.Union(inkBounds, glyphBound);
+            }
+
+            return new(blob, glyphs, result.Width, inkBounds);
         }
         catch
         {

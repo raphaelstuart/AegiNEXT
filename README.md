@@ -1,93 +1,74 @@
-# AegiNEXT
+# AegiNext
 
+跨平台字幕打轴、可视化特效与视频压制软件。
 
+当前为 **开发预览**：已贯通影音播放、逐行字幕编辑、快捷键打轴、波形／语谱图时间线、工程保存与撤销重做、可视化关键帧／路径／蒙版／分组合成，以及独立进程视频压制。支持字体、字号、颜色、描边、逐字高亮、可复用特效预设与可迁移字幕样式预设；提供标准菜单、切页设置窗口、可自定义应用内快捷键、深浅色及主色、中文／英文界面。
 
-## Getting started
+工作区支持七个固定面板的停靠、浮动、隐藏和命名布局；顶部“布局”与“视图”菜单提供切换入口。字幕采用多个有名称的轨道，同轨 Clip 不允许重叠；时间线上方概览条与触控板／滚轮管理视口。选中 Clip 或关键帧后，在视频预览中操作画面，在特效面板编辑对应属性。字幕按文字自然伸展，位置控件提供九宫格 Anchor、Pivot 和像素偏移；日志为独立可停靠面板。工程读写基线为 **v3**，明确拒绝 v1／v2 工程；个人布局和旧快捷键独立迁移。行为、自动证据及人工验收边界见 [多轨工作区实施记录](docs/multitrack-workspace-checkpoints.md)。
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+编辑预览统一显示 SDR；PQ／HLG 压制从原始高精度视频帧合成并输出 HEVC 10-bit，保留 HDR 高光与受支持的色彩信息，不使用预览截图编码。当前开发机已进行真实影音播放和 SDR／HDR 导出回读验证；Windows、最低 macOS 版本和发行包仍需实机验收。使用方法与边界见 [工作台](docs/workbench.md)、[导出](docs/export.md)和 [Checkpoint](docs/checkpoints.md)。
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## 开发环境
 
-## Add your files
+- .NET SDK `10.0.401`，允许同一 feature band 的稳定补丁更新。
+- Avalonia `12.1.3`；依赖版本集中于 `Directory.Packages.props`，传递依赖由各项目的 `packages.lock.json` 锁定。
+- SkiaSharp / SkiaSharp.HarfBuzz `3.119.4`；HarfBuzzSharp 及已使用平台的原生包通过集中传递依赖锁定统一为 `8.3.1.5`。
+- 首版目标：Apple Silicon macOS 14+、Windows 11 x64。当前验收状态见 [Checkpoint](docs/checkpoints.md)。
+- PowerShell 7.2+。macOS 使用 Homebrew，Windows 使用 Scoop；缺少包管理器时脚本提供引导，不自动执行远程安装脚本。
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+在仓库根目录执行：
 
+```powershell
+pwsh -NoProfile -File ./build.ps1 -Target Workbench -CheckEnvironment
+pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Release
+pwsh -NoProfile -File ./build.ps1 -Target Workbench -InstallDependencies
+pwsh -NoProfile -File ./build.ps1 -RunTests -TestProjects Application,Desktop
+dotnet run --project src/AegiNext.Desktop/AegiNext.Desktop.csproj --configuration Release --no-build
 ```
-cd existing_repo
-git remote add origin https://git.crestruction.org/yosymph/aegi-next.git
-git branch -M main
-git push -uf origin main
+
+`Workbench` 检查并顺序构建 Decoder、Audio、Export 和 Managed，生成完整开发工作台。未指定目标时仍为 `Managed / Release`；普通构建只检查环境，缺项返回非零退出码，只有显式 `-InstallDependencies` 才安装缺失依赖。`-RunTests` 可按项目筛选测试。完整参数、固定 SDK 版本、依赖检查和平台边界见 [构建说明](docs/building.md)。
+
+运行时关闭主窗口即退出进程。也可以在 Rider 中打开 `AegiNext.sln`，选择 `AegiNext.Desktop` 启动。
+
+影音播放和压制使用独立 FFmpeg／SDL3 原生库，不依赖 macOS HDR 显示后端。打开视频需要固定版本 FFprobe，压制需要同一 SDK 的 FFmpeg；开发运行时可将工具放在 PATH，或设置 `AEGINEXT_FFPROBE_PATH`、`AEGINEXT_FFMPEG_PATH` 为绝对路径。显式路径无效时报告错误，不回退到其它版本。可选 HDR 诊断使用 `-Target All`，该目标不包含 Workbench；现有 HDR 显示后端仅支持 macOS。当前原生库链接本机 Homebrew，尚不是可分发应用包；本机依赖要求 macOS 27，不能据此宣称已支持 macOS 14。
+
+## 结构
+
+- `src/AegiNext.Core`：纯 C# 领域层；有理时间、媒体事实、自有工程、字幕／图层／动画／蒙版／路径模型与严格验证。
+- `src/AegiNext.Application`：编辑命令、撤销重做、裁剪／拉伸／拆分／合并、原子工程保存、资源导入／迁移、SRT／TXT 适配。
+- `src/AegiNext.Desktop`：Avalonia 字幕工作台、播放控制器、时间线与画布编辑、主题／语言／音量设置、独立 HDR 诊断窗口。
+- `src/AegiNext.Rendering`：不依赖 Avalonia 的 Skia/HarfBuzz 适配层，提供工程求值、文字／图形／图片、线性 F16 蒙版与复杂合成；见 [渲染契约](docs/rendering.md)。
+- `src/AegiNext.ExportWorker`：独立导出进程，读取工程快照，复用场景渲染，保持源时间戳和受支持的 HDR 信号。
+- `Tests/AegiNext.Core.Tests`：xUnit 行为测试。
+- `Tests/AegiNext.Rendering.Tests`：实际调用 Skia/HarfBuzz 原生库的离屏测试，包含锁定字节与授权文件的测试字体。
+- `src/AegiNext.Media`：F16 帧边界校验、C ABI 绑定、原生会话／帧所有权、独立 FFprobe 探测、软件解码／精确定位、播放会话与独立 SDR 显示派生；见 [媒体探测](docs/media-probing.md)、[视频解码](docs/video-decoding.md)、[播放基础](docs/video-playback.md)和[SDR 预览](docs/video-preview.md)。
+- `Tests/AegiNext.Media.Tests`：帧输入、ABI、探测解析、子进程行为及显式启用的真实媒体测试；`AegiNext.Media.TestHost` 为测试专用子进程。
+- `Tests/AegiNext.Desktop.Tests`：不依赖窗口系统的预览控制器生命周期、迟到画面和关闭测试。
+- `native/`：C++ / Objective-C++ 原生 HDR 实现与 C ABI，使用锁定版本的 libplacebo、MoltenVK；包含原生契约测试。
+- `native/decoder`：独立 FFmpeg 软件解码与 CPU SDR 转换 C ABI 和契约测试，不依赖 HDR 显示后端。
+- `native/audio`：FFmpeg 音频解码／重采样与 SDL3 输出；`Media/Analysis` 使用独立只读解码生成波形与语谱图。
+- `native/export`：独立 SDR／PQ／HLG 高精度合成与编码 C ABI、色彩数值和真实文件回读测试。
+- `build.ps1`、`scripts/build/`：跨平台环境检测、显式安装、构建和测试编排；`Tests/Build` 覆盖脚本行为。
+- `docs/architecture.md`：已确定的模块边界、产品范围和 HDR 路线。
+- `docs/checkpoints.md`：分步验收记录与下一步范围。
+
+## 工程约定
+
+- C# 使用 Allman 花括号、文件级命名空间、单文件单类型，优先 `var` 与目标类型 `new()`。
+- 开启可空检查、.NET 推荐分析器和警告视为错误。枚举常量按项目规则使用 `ALL_UPPER`；仅在对应枚举文件中覆盖冲突的 CA1707 命名建议。
+- 编译产物、测试结果与本地验证截图放在已忽略目录中，依赖锁文件纳入版本管理。
+- 阶段开始前明确 Checkpoint，记录定向测试和实机验收边界。本轮按用户“继续执行全部”连续实施，见 [实施记录](docs/continuous-implementation.md)。
+
+## Git 提交规范
+
+参考 Nano Life 的提交习惯，标题采用 `type: summary`，冒号后保留一个空格，使用简短英文说明实际变更。功能提交使用 `feat`，缺陷修复使用 `fix`，纯维护使用 `chore`；例如：
+
+```text
+feat: modernize workbench menus, settings and style presets
+fix: restore keyframe selection and parameter editing
 ```
 
-## Integrate with your tools
-
-* [Set up project integrations](https://git.crestruction.org/yosymph/aegi-next/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- 一次提交围绕明确的功能或修复，提交前检查暂存范围，不混入无关改动。需要说明原因、验证或限制时，在空行后补充正文。
+- 源码、文档、对应测试和依赖锁文件需要提交。AegiNext 的 `.sln` 与 `.csproj` 是手工维护的工程入口，需要纳入版本管理；Nano Life 的 Unity 自动生成工程文件规则不适用于这些文件。
+- 不提交 `bin/`、`obj/`、`TestResults/`、`testResults.xml`、`artifacts/`、IDE 配置或本地截图，生成结果保留在本地并由 `.gitignore` 排除。
+- 提交前执行 `git diff --check` 和受影响的构建／测试；验收记录区分自动测试、实际运行及尚未验证的平台。

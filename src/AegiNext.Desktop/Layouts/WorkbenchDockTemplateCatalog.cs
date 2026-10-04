@@ -17,10 +17,10 @@ internal static class WorkbenchDockTemplateCatalog
     {
         host.AutoCreateDataTemplates = false;
         host.DataTemplates.Add(new WorkbenchDockPanelTemplate());
-        host.DataTemplates.Add(new FuncDataTemplate<IRootDock>((_, _) => new RootDockControl()));
-        host.DataTemplates.Add(new FuncDataTemplate<IProportionalDock>((_, _) => new ProportionalDockControl()));
-        host.DataTemplates.Add(new FuncDataTemplate<IToolDock>((_, _) => CreateToolDockControl()));
-        host.DataTemplates.Add(new FuncDataTemplate<IProportionalDockSplitter>((_, _) => new ProportionalStackPanelSplitter
+        host.DataTemplates.Add(new FuncDataTemplate<IRootDock>(value => value is not null, (_, _) => new RootDockControl()));
+        host.DataTemplates.Add(new FuncDataTemplate<IProportionalDock>(value => value is not null, (_, _) => new ProportionalDockControl()));
+        host.DataTemplates.Add(new FuncDataTemplate<IToolDock>(value => value is not null, (_, _) => CreateToolDockControl()));
+        host.DataTemplates.Add(new FuncDataTemplate<IProportionalDockSplitter>(value => value is not null, (_, _) => new ProportionalStackPanelSplitter
         {
             [!ProportionalStackPanelSplitter.IsResizingEnabledProperty] = new Binding(nameof(IProportionalDockSplitter.CanResize)),
             [!ProportionalStackPanelSplitter.PreviewResizeProperty] = new Binding(nameof(IProportionalDockSplitter.ResizePreview))

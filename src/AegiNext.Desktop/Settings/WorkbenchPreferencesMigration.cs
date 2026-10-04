@@ -13,15 +13,15 @@ internal static class WorkbenchPreferencesMigration
         }
 
         ShortcutConfiguration.Validate(value.ShortcutBindings);
-        var previousCommands = Enum.GetValues<WorkbenchCommand>()
-            .Where(command => command <= WorkbenchCommand.VIEW_TIMELINE).ToArray();
-        if (value.ShortcutBindings.Length != previousCommands.Length ||
-            !previousCommands.All(command => value.ShortcutBindings.Any(binding => binding.Command == command)))
+        var present = value.ShortcutBindings.Select(binding => binding.Command).ToHashSet();
+        var commands = Enum.GetValues<WorkbenchCommand>();
+        var legacy = commands.Where(command => command <= WorkbenchCommand.VIEW_TIMELINE);
+        var previous = commands.Where(command => command <= WorkbenchCommand.LAYOUT_RESTORE_DEFAULT);
+        if (!present.SetEquals(legacy) && !present.SetEquals(previous))
         {
             return value;
         }
 
-        var present = value.ShortcutBindings.Select(binding => binding.Command).ToHashSet();
         var additions = ShortcutDefaults.CreateBindings().Where(binding => !present.Contains(binding.Command));
         return value with { ShortcutBindings = value.ShortcutBindings.Concat(additions).ToImmutableArray() };
     }

@@ -7,7 +7,7 @@ using AegiNext.Core.Timing;
 namespace AegiNext.Application;
 
 /// <summary>不可变快照编辑服务；一次 Apply 对应一个可撤销事务，校验失败不入历史。</summary>
-public sealed class ProjectEditor
+public sealed partial class ProjectEditor
 {
     private readonly Lock gate = new();
     private readonly int historyLimit;
@@ -198,9 +198,9 @@ public sealed class ProjectEditor
     }
 
     /// <summary>新增字幕行及同标识字幕层，作为一个事务。</summary>
-    public Guid AddSubtitle(MediaTime start, MediaTime end, string text)
+    public Guid AddSubtitle(MediaTime start, MediaTime end, string text, Guid? trackId = null)
     {
-        var line = new SubtitleLine { Start = start, End = end, Text = text };
+        var line = new SubtitleLine { Start = start, End = end, Text = text, TrackId = trackId ?? Snapshot.SubtitleTracks[0].Id };
         AddSubtitles([line]);
         return line.Id;
     }
@@ -214,6 +214,26 @@ public sealed class ProjectEditor
         {
             Subtitles = document.Subtitles.AddRange(imported),
             Layers = document.Layers.AddRange(imported.Select(CreateSubtitleLayer))
+        });
+    }
+
+    /// <summary>将整批导入字幕放入指定轨道；任一碰撞或非法项都会拒绝整个导入。</summary>
+    public void AddSubtitles(IEnumerable<SubtitleLine> lines, Guid trackId)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        var imported = lines.Select(line => line with { TrackId = trackId }).ToImmutableArray();
+        Apply("Import subtitles", document =>
+        {
+            if (!document.SubtitleTracks.Any(track => track.Id == trackId))
+            {
+                throw new KeyNotFoundException("字幕轨道不存在。");
+            }
+
+            return document with
+            {
+                Subtitles = document.Subtitles.AddRange(imported),
+                Layers = document.Layers.AddRange(imported.Select(CreateSubtitleLayer))
+            };
         });
     }
 
@@ -239,10 +259,10 @@ public sealed class ProjectEditor
             return document with
             {
                 Subtitles = document.Subtitles.SetItem(index, after),
-                Layers = MapLayers(document.Layers, layer => layer.SubtitleId == id ? layer with
+                Layers = MapLayers(document.Layers, layer => layer.SubtitleId == id ? LayerAnimationTiming.Clip(layer with
                 {
                     Start = after.Start, End = after.End, AnimationOffset = layer.AnimationOffset + after.Start - before.Start
-                } : layer)
+                }) : layer)
             };
         });
     }
@@ -306,20 +326,40 @@ public sealed class ProjectEditor
             return document with
             {
                 Subtitles = document.Subtitles.SetItem(index, line with { Start = start, End = end, Karaoke = karaoke }),
-                Layers = MapLayers(document.Layers, layer => layer.SubtitleId != id ? layer : layer with
-                {
-                    Start = start, End = end,
-                    AnimationOffset = mode == TimelineEditMode.CROP ? layer.AnimationOffset + start - line.Start :
-                        Scale(layer.AnimationOffset, newDuration, oldDuration),
-                    Tracks = mode == TimelineEditMode.CROP ? layer.Tracks : layer.Tracks.Select(track => track with
-                    {
-                        Keyframes = track.Keyframes.Select(frame => frame with { Time = Scale(frame.Time, newDuration, oldDuration) }).ToImmutableArray()
-                    }).ToImmutableArray(),
-                    MotionPath = mode == TimelineEditMode.STRETCH && layer.MotionPath is { } path ?
-                        path with { Duration = Scale(path.Duration, newDuration, oldDuration) } : layer.MotionPath
-                })
+                Layers = MapLayers(document.Layers, layer => layer.SubtitleId != id ? layer : LayerAnimationTiming.Retime(layer, start, end, mode))
             };
         });
+    }
+
+    /// <summary>整体移动片段，保留动画的局部内容时间；字幕层同步其字幕行。</summary>
+    public void ShiftLayer(Guid id, MediaTime offset)
+    {
+        var layer = FindLayer(Snapshot.Layers, id);
+        if (layer.SubtitleId is { } subtitleId)
+        {
+            ShiftSubtitle(subtitleId, offset);
+            return;
+        }
+
+        UpdateLayer(id, value => value with { Start = value.Start + offset, End = value.End + offset });
+    }
+
+    /// <summary>按裁剪或拉伸语义修改图层区间；字幕层同步其字幕行。</summary>
+    public void SetLayerTiming(Guid id, MediaTime start, MediaTime end, TimelineEditMode mode)
+    {
+        if (start >= end || !Enum.IsDefined(mode))
+        {
+            throw new ArgumentException("图层时间或编辑模式无效。", nameof(end));
+        }
+
+        var layer = FindLayer(Snapshot.Layers, id);
+        if (layer.SubtitleId is { } subtitleId)
+        {
+            SetSubtitleTiming(subtitleId, start, end, mode);
+            return;
+        }
+
+        UpdateLayer(id, value => LayerAnimationTiming.Retime(value, start, end, mode));
     }
 
     /// <summary>添加独立根图层；分组可在一次 Apply 中重组。</summary>
@@ -350,6 +390,11 @@ public sealed class ProjectEditor
                     throw new InvalidOperationException("图层不能为空或改变标识。");
                 }
 
+                if (next.Start != layer.Start || next.End != layer.End || next.AnimationOffset != layer.AnimationOffset)
+                {
+                    next = LayerAnimationTiming.Clip(next);
+                }
+
                 return next == layer ? layer : next;
             });
             if (!found)
@@ -367,6 +412,11 @@ public sealed class ProjectEditor
         ArgumentNullException.ThrowIfNull(keyframe);
         UpdateLayer(layerId, layer =>
         {
+            if (LayerAnimationTiming.ClampTime(layer, keyframe.Time) != keyframe.Time)
+            {
+                throw new ArgumentOutOfRangeException(nameof(keyframe), "关键帧必须位于图层片段内。");
+            }
+
             var existing = layer.Tracks.FirstOrDefault(track => track.Property == property);
             if (existing?.Keyframes.FirstOrDefault(frame => frame.Time == keyframe.Time) == keyframe)
             {
@@ -386,9 +436,16 @@ public sealed class ProjectEditor
     public void ApplyPreset(Guid layerId, EffectPreset preset)
     {
         ArgumentNullException.ThrowIfNull(preset);
-        UpdateLayer(layerId, layer => layer with
+        UpdateLayer(layerId, layer =>
         {
-            Tracks = preset.Tracks, MotionPath = preset.MotionPath, Mask = preset.Mask, Blend = preset.Blend
+            var origin = LayerAnimationTiming.GetRange(layer).Minimum;
+            return LayerAnimationTiming.Clip(layer with
+            {
+                Tracks = preset.Tracks.Select(track => track with
+                {
+                    Keyframes = track.Keyframes.Select(frame => frame with { Time = frame.Time + origin }).ToImmutableArray()
+                }).ToImmutableArray(), MotionPath = preset.MotionPath, Mask = preset.Mask, Blend = preset.Blend
+            });
         });
     }
 
@@ -417,6 +474,26 @@ public sealed class ProjectEditor
 
         throw new KeyNotFoundException("字幕不存在。");
     }
+
+    private static ProjectLayer FindLayer(ImmutableArray<ProjectLayer> layers, Guid id)
+    {
+        foreach (var layer in layers)
+        {
+            if (layer.Id == id)
+            {
+                return layer;
+            }
+
+            if (layer.Children.Any(child => ContainsLayer(child, id)))
+            {
+                return FindLayer(layer.Children, id);
+            }
+        }
+
+        throw new KeyNotFoundException("图层不存在。");
+    }
+
+    private static bool ContainsLayer(ProjectLayer layer, Guid id) => layer.Id == id || layer.Children.Any(child => ContainsLayer(child, id));
 
     private static ImmutableArray<ProjectLayer> MapLayers(ImmutableArray<ProjectLayer> layers, Func<ProjectLayer, ProjectLayer> map)
     {

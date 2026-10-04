@@ -114,6 +114,20 @@ internal sealed class ExportPanelViewModel : ObservableObject
         set => SetProperty(ref status, value);
     }
 
+    internal void RefreshChoices(string[] codecOptions, string[] speedOptions, string[] audioOptions)
+    {
+        var selection = (Codec, Speed, AudioMode);
+        Codecs = codecOptions;
+        Speeds = speedOptions;
+        AudioModes = audioOptions;
+        codec = selection.Codec;
+        speed = selection.Speed;
+        audioMode = selection.AudioMode;
+        OnPropertyChanged(nameof(Codec));
+        OnPropertyChanged(nameof(Speed));
+        OnPropertyChanged(nameof(AudioMode));
+    }
+
     public ICommand EncodeCommand => session.ViewModel.GetCommand(AegiNext.Desktop.Shortcuts.WorkbenchCommand.EXPORT_VIDEO);
 
     public ICommand CancelEncodeCommand { get; }

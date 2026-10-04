@@ -27,16 +27,15 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     private ProjectDocument document = new();
     private ProjectLayer? selectedLayer;
     private MediaTime position = MediaTime.Zero;
-    private CanvasEditMode editMode = CanvasEditMode.POSITION;
     private LayerListItem[] layers = [];
     private LayerListItem? selectedItem;
-    private Guid[] selectedIds = [];
     private string? layerName;
     private string layerStart = string.Empty;
     private string layerEnd = string.Empty;
     private decimal? layerWidth = 300;
     private decimal? layerHeight = 180;
     private bool canResizeLayer;
+    private bool canEditPosition;
     private decimal? positionX = 0;
     private decimal? positionY = 0;
     private decimal? scaleX = 1;
@@ -48,7 +47,6 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     private string[] blends = [];
     private bool? invertMask = false;
     private bool? orientPath = false;
-    private int property;
     private string[] properties = [];
     private decimal? keyframeValue = 1;
     private decimal keyframeMinimum = -65504;
@@ -105,8 +103,15 @@ internal sealed class EffectsPanelViewModel : ObservableObject
 
     public CanvasEditMode EditMode
     {
-        get => editMode;
-        set => SetProperty(ref editMode, value);
+        get => session.SceneEditing.Mode;
+        set
+        {
+            if (session.SceneEditing.Mode != value)
+            {
+                session.SceneEditing.Mode = value;
+                OnPropertyChanged();
+            }
+        }
     }
 
     public LayerListItem[] Layers
@@ -123,8 +128,15 @@ internal sealed class EffectsPanelViewModel : ObservableObject
 
     public Guid[] SelectedIds
     {
-        get => selectedIds;
-        set => SetProperty(ref selectedIds, value);
+        get => session.SceneEditing.SelectedLayerIds;
+        set
+        {
+            if (!session.SceneEditing.SelectedLayerIds.SequenceEqual(value))
+            {
+                session.SceneEditing.SelectedLayerIds = value;
+                OnPropertyChanged();
+            }
+        }
     }
 
     public string? LayerName
@@ -167,6 +179,12 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     {
         get => positionX;
         set => SetProperty(ref positionX, value);
+    }
+
+    public bool CanEditPosition
+    {
+        get => canEditPosition;
+        set => SetProperty(ref canEditPosition, value);
     }
 
     public decimal? PositionY
@@ -229,10 +247,26 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         set => SetProperty(ref orientPath, value);
     }
 
+    private string editTargetLabel = string.Empty;
+
+    public string EditTargetLabel
+    {
+        get => editTargetLabel;
+        set => SetProperty(ref editTargetLabel, value);
+    }
+
     public int Property
     {
-        get => property;
-        set => SetProperty(ref property, value);
+        get => (int)session.SceneEditing.Property;
+        set
+        {
+            if (Property == value || !session.IsUpdating && !session.TryCommitDrafts())
+            {
+                return;
+            }
+            session.SceneEditing.Property = (AnimationProperty)value;
+            OnPropertyChanged();
+        }
     }
 
     public string[] Properties
@@ -341,10 +375,11 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     /// <summary>同步图层及多选标识。</summary>
     public void SelectLayer(Guid id, Guid[] selectedIds) => session.SelectLayer(id, selectedIds);
     /// <summary>提交画布完成后的变换与路径参数。</summary>
-    public Task CommitCanvasAsync(CanvasLayerEditEventArgs value) => session.RunCommandAsync(() => session.EditAsync(() =>
-        session.Editor.UpdateLayer(value.LayerId, layer => layer with { Transform = value.Transform, MotionPath = value.Path, Mask = value.Mask })));
+    public Task CommitCanvasAsync(CanvasLayerEditEventArgs value) => session.CommitCanvasAsync(value);
     /// <summary>提交所有面板的有效草稿。</summary>
     public void CommitDrafts() => session.TryCommitDrafts();
+    /// <summary>向工作台报告画布资源或工程渲染失败。</summary>
+    public void ReportRenderingError(Exception error) => session.ShowError(error);
     public string LayerWidthText
     {
         get => layerWidthText;

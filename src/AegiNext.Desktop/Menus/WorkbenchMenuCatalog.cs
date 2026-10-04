@@ -16,7 +16,7 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
             WorkbenchCommand.EXIT]),
         new("Edit", [WorkbenchCommand.UNDO, WorkbenchCommand.REDO, null, WorkbenchCommand.OPEN_SETTINGS]),
         new("View", [WorkbenchCommand.VIEW_PREVIEW, WorkbenchCommand.VIEW_TIMELINE, WorkbenchCommand.VIEW_SUBTITLES,
-            WorkbenchCommand.VIEW_STYLES, WorkbenchCommand.VIEW_EFFECTS, WorkbenchCommand.VIEW_EXPORT]),
+            WorkbenchCommand.VIEW_STYLES, WorkbenchCommand.VIEW_EFFECTS, WorkbenchCommand.VIEW_EXPORT, WorkbenchCommand.VIEW_LOG]),
         new("Layouts", [WorkbenchCommand.LAYOUT_SAVE, WorkbenchCommand.LAYOUT_SAVE_AS,
             WorkbenchCommand.LAYOUT_MANAGE, WorkbenchCommand.LAYOUT_RESTORE_DEFAULT]),
         new("Playback", [WorkbenchCommand.PLAY_PAUSE, WorkbenchCommand.SEEK_BACKWARD, WorkbenchCommand.SEEK_FORWARD]),
@@ -28,10 +28,28 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
     private WorkbenchPreferences preferences = new();
     internal IReadOnlyList<LayoutMenuChoice> LayoutChoices { get; private set; } = [];
     internal bool IsLayoutModified { get; private set; }
+    internal int UnreadLogErrorCount { get; private set; }
     internal event EventHandler? Changed;
 
     internal ICommand GetCommand(WorkbenchCommand command) => commandProvider(command);
     internal static string GetLabel(WorkbenchCommand command) => SettingsText.Get(command.ToString());
+
+    internal string GetDisplayLabel(WorkbenchCommand command)
+    {
+        var label = GetLabel(command);
+        return command == WorkbenchCommand.VIEW_LOG && UnreadLogErrorCount > 0
+            ? $"{label} ({UnreadLogErrorCount})" : label;
+    }
+
+    internal void UpdateUnreadLogErrors(int count)
+    {
+        if (UnreadLogErrorCount == count)
+        {
+            return;
+        }
+        UnreadLogErrorCount = count;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
 
     internal KeyGesture? GetGesture(WorkbenchCommand command)
     {

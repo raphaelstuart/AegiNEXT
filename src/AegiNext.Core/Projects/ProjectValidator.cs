@@ -9,7 +9,7 @@ namespace AegiNext.Core.Projects;
 public static class ProjectValidator
 {
     /// <summary>验证版本、资源引用、合成树、关键帧与文本区间，不修改输入。</summary>
-    public static void Validate(ProjectDocument document)
+    public static void Validate(ProjectDocument document, bool enforceAnimationRange = true)
     {
         ArgumentNullException.ThrowIfNull(document);
         Require(document.Version == ProjectDocument.CURRENT_VERSION, "不支持的工程版本。");
@@ -21,6 +21,7 @@ public static class ProjectValidator
             (double)document.FrameRate.Numerator / document.FrameRate.Denominator <= 1000, "工程帧率无效。");
         Number(document.ReferenceWhiteNits, 0.001, 10000, "参考白");
         Require(!document.Assets.IsDefault && document.Assets.Length <= 10000 &&
+            !document.SubtitleTracks.IsDefaultOrEmpty && document.SubtitleTracks.Length <= 10000 &&
             !document.Subtitles.IsDefault && document.Subtitles.Length <= 100000 &&
             !document.Layers.IsDefault && !document.Presets.IsDefault, "工程集合无效或过大。");
         var assets = new Dictionary<Guid, ProjectAsset>();
@@ -47,12 +48,22 @@ public static class ProjectValidator
             Require(media.VideoStreamIndex >= 0 && media.AudioStreamIndex is null or >= 0, "媒体流索引无效。");
         }
 
+        var trackIds = new HashSet<Guid>();
+        foreach (var track in document.SubtitleTracks)
+        {
+            NotNull(track, "字幕轨道不能为 null。");
+            Require(track.Id != Guid.Empty && trackIds.Add(track.Id) && !string.IsNullOrWhiteSpace(track.Name) &&
+                track.Name.Length <= 128 && !track.Name.Any(char.IsControl), "字幕轨道标识或名称无效。");
+            ValidateText(track.Name);
+        }
+
         var subtitles = new Dictionary<Guid, SubtitleLine>();
         long totalText = 0;
         foreach (var line in document.Subtitles)
         {
             NotNull(line, "数据项不能为 null。");
             Require(line.Id != Guid.Empty && subtitles.TryAdd(line.Id, line), "字幕标识为空或重复。");
+            Require(trackIds.Contains(line.TrackId), "字幕引用不存在的轨道。");
             Require(line.Start < line.End && line.Text is { Length: <= 1000000 } && !line.Karaoke.IsDefault, "字幕区间或文本无效。");
             ValidateText(line.Text);
             totalText += line.Text.Length;
@@ -75,11 +86,21 @@ public static class ProjectValidator
             }
         }
 
+        foreach (var track in document.Subtitles.GroupBy(line => line.TrackId))
+        {
+            SubtitleLine? previous = null;
+            foreach (var line in track.OrderBy(line => line.Start))
+            {
+                Require(previous is null || previous.End <= line.Start, "同一字幕轨道的片段不能重叠。");
+                previous = line;
+            }
+        }
+
         var ids = new HashSet<Guid>();
         var referenced = new HashSet<Guid>();
         foreach (var layer in document.Layers)
         {
-            Layer(layer, 0, assets, subtitles, ids, referenced);
+            Layer(layer, 0, assets, subtitles, ids, referenced, enforceAnimationRange);
         }
 
         Require(referenced.Count == subtitles.Count, "每个字幕必须由唯一字幕层引用。");
@@ -123,7 +144,7 @@ public static class ProjectValidator
     }
 
     private static void Layer(ProjectLayer? layer, int depth, Dictionary<Guid, ProjectAsset> assets,
-        Dictionary<Guid, SubtitleLine> subtitles, HashSet<Guid> ids, HashSet<Guid> referenced)
+        Dictionary<Guid, SubtitleLine> subtitles, HashSet<Guid> ids, HashSet<Guid> referenced, bool enforceAnimationRange)
     {
         Require(depth <= 32 && layer is not null && layer.Id != Guid.Empty && ids.Add(layer.Id) && ids.Count <= 10000,
             "合成树过深、过大或存在重复节点。");
@@ -145,6 +166,12 @@ public static class ProjectValidator
         Color(layer.Fill);
         Color(layer.Stroke);
         Tracks(layer.Tracks);
+        if (enforceAnimationRange)
+        {
+            var (minimumKeyTime, maximumKeyTime) = Editing.LayerAnimationTiming.GetRange(layer);
+            Require(layer.Tracks.All(track => track.Keyframes.All(frame => frame.Time >= minimumKeyTime && frame.Time <= maximumKeyTime)),
+                "关键帧必须位于图层片段时间内。");
+        }
         Motion(layer.MotionPath);
         if (layer.Mask is { } mask)
         {
@@ -183,7 +210,7 @@ public static class ProjectValidator
 
         foreach (var child in layer.Children)
         {
-            Layer(child, depth + 1, assets, subtitles, ids, referenced);
+            Layer(child, depth + 1, assets, subtitles, ids, referenced, enforceAnimationRange);
         }
     }
 
@@ -197,6 +224,14 @@ public static class ProjectValidator
         Number(style.Margin, 0, 32768, "字幕边距");
         Number(style.LineHeight, 0.1, 10, "行高");
         Number(style.ShadowBlur, 0, 512, "阴影模糊");
+        if (style.Position is { } position)
+        {
+            Number(position.Anchor.X, 0, 1, "字幕 Anchor X");
+            Number(position.Anchor.Y, 0, 1, "字幕 Anchor Y");
+            Number(position.Pivot.X, 0, 1, "字幕 Pivot X");
+            Number(position.Pivot.Y, 0, 1, "字幕 Pivot Y");
+            Point(position.Offset);
+        }
         Point(style.ShadowOffset);
         Color(style.Fill);
         Color(style.Stroke);
@@ -227,6 +262,9 @@ public static class ProjectValidator
                 NotNull(frame, "数据项不能为 null。");
                 Require(frame.Time >= Timing.MediaTime.Zero &&
                     (!previous.HasValue || frame.Time > previous.Value) && Enum.IsDefined(frame.Interpolation), "关键帧时间必须非负且严格递增。");
+                Require(double.IsFinite(frame.CurveStart) && double.IsFinite(frame.CurveEnd) &&
+                    frame.CurveStart >= 0 && frame.CurveStart < frame.CurveEnd && frame.CurveEnd <= 1,
+                    "关键帧插值参数区间必须位于零到一之间。");
                 var limits = track.Property switch
                 {
                     AnimationProperty.OPACITY or AnimationProperty.FILL_ALPHA or AnimationProperty.STROKE_ALPHA or AnimationProperty.PATH_PROGRESS => (0d, 1d),

@@ -3,6 +3,7 @@ using System.Globalization;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.Editing;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ProjectTextAlignment = AegiNext.Core.Projects.TextAlignment;
@@ -38,10 +39,19 @@ public sealed class StyleSettingsViewModel : ObservableObject
     private string shadowXText = string.Empty;
     private string shadowYText = string.Empty;
     private string? invalidFieldKey;
+    private Func<SubtitleStylePreset, SubtitlePositionMeasurement>? measurePosition;
+    private string? positionMeasurementError;
 
     /// <summary>创建样式命令；工程和存储操作交由会话处理。</summary>
     public StyleSettingsViewModel()
     {
+        Position.Changed += (_, _) =>
+        {
+            if (Position.Validate() is null)
+            {
+                ChangeStyle(style => style with { Position = Position.CreatePosition() });
+            }
+        };
         AddCommand = new(Add, () => !IsBusy);
         DuplicateCommand = new(Duplicate, () => HasDraft && !IsBusy);
         DeleteCommand = new(() => DeleteRequested?.Invoke(this, new(draft!.Preset.Id)), () => CanDelete);
@@ -69,6 +79,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public RelayCommand ImportCommand { get; }
     public RelayCommand ExportCommand { get; }
     public ImmutableArray<SubtitleStylePreset> Styles => styles;
+    public SubtitlePositionDraft Position { get; } = new();
+    public string? PositionMeasurementError => positionMeasurementError;
+    public bool HasPositionMeasurementError => positionMeasurementError is not null;
     public SubtitleStylePreset? Draft => draft?.Preset;
     public bool HasDraft => draft is not null;
     public bool IsEmpty => styles.IsEmpty;
@@ -324,6 +337,14 @@ public sealed class StyleSettingsViewModel : ObservableObject
         Error = null;
     }
 
+    /// <summary>注入组合根提供的纯测量入口；页面模型不拥有字体或原生渲染器。</summary>
+    public void SetPositionMeasurement(Func<SubtitleStylePreset, SubtitlePositionMeasurement> measure)
+    {
+        ArgumentNullException.ThrowIfNull(measure);
+        measurePosition = measure;
+        RefreshPositionMeasurement(true);
+    }
+
     /// <summary>提交局部字体控件已确认的字体名。</summary>
     public void CommitFont(string familyName)
     {
@@ -391,6 +412,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         if (!loading && draft is not null)
         {
             draft.UpdateStyle(change(draft.Preset.Style));
+            RefreshPositionMeasurement(!Position.IsExplicit);
             OnPropertyChanged(nameof(FontSource));
         }
     }
@@ -447,6 +469,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
             ShadowBlurText = FormatNumber(ShadowBlur);
             ShadowXText = FormatNumber(ShadowX);
             ShadowYText = FormatNumber(ShadowY);
+            RefreshPositionMeasurement(true);
             foreach (var property in new[]
                      {
                          nameof(Bold), nameof(Italic), nameof(Fill), nameof(Stroke), nameof(ShadowColor),
@@ -468,6 +491,22 @@ public sealed class StyleSettingsViewModel : ObservableObject
         Error = null;
         InvalidFieldKey = null;
         RefreshActions();
+    }
+
+    private void RefreshPositionMeasurement(bool reload)
+    {
+        var measurement = draft is not null ? measurePosition?.Invoke(draft.Preset) : null;
+        positionMeasurementError = measurement?.Error;
+        OnPropertyChanged(nameof(PositionMeasurementError));
+        OnPropertyChanged(nameof(HasPositionMeasurementError));
+        if (reload)
+        {
+            Position.Load(draft?.Preset.Style ?? new(), measurement?.Position, true, measurement?.Geometry);
+        }
+        else
+        {
+            Position.UpdateGeometry(measurement?.Geometry);
+        }
     }
 
     private void RefreshActions()
@@ -496,6 +535,12 @@ public sealed class StyleSettingsViewModel : ObservableObject
         }
 
         var preset = draft.Preset;
+        if (Position.Validate() is { } positionKey)
+        {
+            InvalidFieldKey = positionKey;
+            SetError("StyleValidation");
+            return;
+        }
         if (string.IsNullOrWhiteSpace(preset.Name))
         {
             InvalidFieldKey = "StyleNameInput";

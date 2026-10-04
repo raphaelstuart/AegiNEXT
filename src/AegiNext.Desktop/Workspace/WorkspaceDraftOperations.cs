@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Editing;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -17,17 +18,17 @@ internal static class WorkspaceDraftOperations
         return document with
         {
             Subtitles = document.Subtitles.SetItem(document.Subtitles.IndexOf(original), changed),
-            Layers = MapLayers(document.Layers, layer => layer.SubtitleId == id ? layer with
+            Layers = MapLayers(document.Layers, layer => layer.SubtitleId == id ? LayerAnimationTiming.Clip(layer with
             {
                 Start = changed.Start, End = changed.End,
                 AnimationOffset = layer.AnimationOffset + changed.Start - original.Start
-            } : layer)
+            }) : layer)
         };
     }
 
     internal static ProjectDocument UpdateLayer(ProjectDocument document, Guid id, Func<ProjectLayer, ProjectLayer> edit)
     {
-        return document with { Layers = MapLayers(document.Layers, layer => layer.Id == id ? edit(layer) : layer) };
+        return document with { Layers = MapLayers(document.Layers, layer => layer.Id == id ? LayerAnimationTiming.Clip(edit(layer)) : layer) };
     }
 
     internal static ProjectDocument SetKeyframe(ProjectDocument document, Guid id, AnimationProperty property, Keyframe keyframe)

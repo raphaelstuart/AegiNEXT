@@ -33,5 +33,6 @@ public enum WorkbenchCommand
     LAYOUT_SAVE,
     LAYOUT_SAVE_AS,
     LAYOUT_MANAGE,
-    LAYOUT_RESTORE_DEFAULT
+    LAYOUT_RESTORE_DEFAULT,
+    VIEW_LOG
 }

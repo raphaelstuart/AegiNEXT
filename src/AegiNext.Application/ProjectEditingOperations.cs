@@ -1,12 +1,13 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Timing;
 
 namespace AegiNext.Application;
 
 /// <summary>字幕拆合及合成树整理的纯不可变事务，可直接传给 ProjectEditor.Apply。</summary>
-public static class ProjectEditingOperations
+public static partial class ProjectEditingOperations
 {
     /// <summary>在严格内部播放头与字素边界拆分；左句保留标识，右句新建标识并延续原动画相位。</summary>
     public static ProjectDocument SplitSubtitle(ProjectDocument document, Guid subtitleId, MediaTime playhead, int utf16Offset)
@@ -58,12 +59,12 @@ public static class ProjectEditingOperations
         var right = original with { Id = Guid.NewGuid(), Start = playhead, Text = rightText, Karaoke = rightKaraoke.ToImmutable() };
         var found = false;
         var layers = RewriteSiblings(document.Layers, layer.Id, (siblings, layerIndex) => siblings
-            .SetItem(layerIndex, layer with { End = playhead })
-            .Insert(layerIndex + 1, layer with
+            .SetItem(layerIndex, LayerAnimationTiming.Clip(layer with { End = playhead }))
+            .Insert(layerIndex + 1, LayerAnimationTiming.Clip(layer with
             {
                 Id = right.Id, SubtitleId = right.Id, Start = playhead,
                 AnimationOffset = contentTime
-            }), ref found);
+            })), ref found);
         return Verified(document with { Subtitles = document.Subtitles.SetItem(index, left).Insert(index + 1, right), Layers = layers });
     }
 
@@ -75,13 +76,14 @@ public static class ProjectEditingOperations
         ProjectValidator.ValidateText(separator);
         var firstIndex = SubtitleIndex(document, firstId);
         var secondIndex = SubtitleIndex(document, secondId);
-        if (secondIndex != firstIndex + 1)
-        {
-            throw new InvalidOperationException("只能按字幕表顺序合并相邻两句。");
-        }
-
         var first = document.Subtitles[firstIndex];
         var second = document.Subtitles[secondIndex];
+        var next = document.Subtitles.Where(line => line.TrackId == first.TrackId && line.Start > first.Start)
+            .OrderBy(line => line.Start).FirstOrDefault();
+        if (first.TrackId != second.TrackId || next?.Id != secondId)
+        {
+            throw new InvalidOperationException("只能合并同一字幕轨道按时间相邻的两句。");
+        }
         if (first.End > second.Start)
         {
             throw new InvalidOperationException("重叠字幕不能合并为单个连续句。");

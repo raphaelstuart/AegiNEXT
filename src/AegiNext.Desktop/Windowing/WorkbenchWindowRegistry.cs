@@ -133,7 +133,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         entry.NativeMenu.SetEnabled(!OperatingSystem.IsMacOS() || !prefersWindowMenu);
         entry.NativeMenu.Update(key => key == "Layouts" && catalog.IsLayoutModified
             ? $"{WorkbenchText.Get(key)} ({WorkbenchText.Get("LayoutModified")})"
-            : WorkbenchText.Get(key), WorkbenchMenuCatalog.GetLabel, catalog.GetGestureLabel);
+            : WorkbenchText.Get(key), catalog.GetDisplayLabel, catalog.GetGestureLabel);
         entry.NativeMenu.UpdateLayouts(catalog.LayoutChoices);
         UpdateMenuWidth(entry);
     }

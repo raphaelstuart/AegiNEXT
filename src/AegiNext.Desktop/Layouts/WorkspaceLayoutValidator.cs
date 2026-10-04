@@ -4,13 +4,23 @@ internal static class WorkspaceLayoutValidator
 {
     internal static void Validate(WorkspaceLayoutSnapshot layout)
     {
-        if (layout.Version != WorkspaceLayoutSnapshot.CURRENT_VERSION)
+        Validate(layout, WorkspaceLayoutSnapshot.CURRENT_VERSION, WorkbenchPanelIds.All);
+    }
+
+    internal static void ValidateLegacy(WorkspaceLayoutSnapshot layout, IReadOnlyList<string> panelIds)
+    {
+        Validate(layout, 1, panelIds);
+    }
+
+    private static void Validate(WorkspaceLayoutSnapshot layout, int version, IReadOnlyList<string> panelIds)
+    {
+        if (layout.Version != version)
         {
             throw new InvalidDataException($"Unsupported layout version: {layout.Version}.");
         }
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
-        ValidateNode(layout.Main, ids, 0);
+        ValidateNode(layout.Main, ids, panelIds, 0);
         foreach (var floating in layout.Floating)
         {
             if (!double.IsFinite(floating.X) || !double.IsFinite(floating.Y)
@@ -21,26 +31,26 @@ internal static class WorkspaceLayoutValidator
                 throw new InvalidDataException("Invalid floating window bounds.");
             }
 
-            ValidateNode(floating.Content, ids, 0);
+            ValidateNode(floating.Content, ids, panelIds, 0);
         }
 
         foreach (var id in layout.HiddenPanelIds)
         {
-            ValidatePanel(id, ids);
+            ValidatePanel(id, ids, panelIds);
         }
 
-        if (!ids.SetEquals(WorkbenchPanelIds.All))
+        if (!ids.SetEquals(panelIds))
         {
             throw new InvalidDataException("The layout must account for every workspace panel exactly once.");
         }
 
-        if (layout.FocusedPanelId is { } focused && !WorkbenchPanelIds.All.Contains(focused))
+        if (layout.FocusedPanelId is { } focused && !panelIds.Contains(focused))
         {
             throw new InvalidDataException("Unknown focused panel.");
         }
     }
 
-    private static void ValidateNode(LayoutNodeSnapshot node, HashSet<string> ids, int depth)
+    private static void ValidateNode(LayoutNodeSnapshot node, HashSet<string> ids, IReadOnlyList<string> panelIds, int depth)
     {
         if (depth > 32 || !double.IsFinite(node.Proportion) || node.Proportion <= 0 || node.Proportion > 1000)
         {
@@ -50,7 +60,7 @@ internal static class WorkspaceLayoutValidator
         switch (node.Kind)
         {
             case "panel":
-                ValidatePanel(node.PanelId, ids);
+                ValidatePanel(node.PanelId, ids, panelIds);
                 if (node.Children.Count != 0)
                 {
                     throw new InvalidDataException("Panels cannot own child nodes.");
@@ -75,7 +85,7 @@ internal static class WorkspaceLayoutValidator
 
                 foreach (var child in node.Children)
                 {
-                    ValidateNode(child, ids, depth + 1);
+                    ValidateNode(child, ids, panelIds, depth + 1);
                 }
                 break;
             default:
@@ -83,9 +93,9 @@ internal static class WorkspaceLayoutValidator
         }
     }
 
-    private static void ValidatePanel(string? id, HashSet<string> ids)
+    private static void ValidatePanel(string? id, HashSet<string> ids, IReadOnlyList<string> panelIds)
     {
-        if (id is null || !WorkbenchPanelIds.All.Contains(id) || !ids.Add(id))
+        if (id is null || !panelIds.Contains(id) || !ids.Add(id))
         {
             throw new InvalidDataException($"Unknown or duplicated panel: {id}.");
         }

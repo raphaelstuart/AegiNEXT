@@ -34,6 +34,7 @@ internal sealed class WorkspaceLayoutStore
             }
             var result = JsonSerializer.Deserialize<WorkspaceLayoutFile>(File.ReadAllText(path), jsonOptions)
                 ?? throw new InvalidDataException("The layout file is empty.");
+            result = WorkspaceLayoutMigration.Upgrade(result);
             ValidateFile(result);
             return result;
         }

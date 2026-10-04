@@ -14,6 +14,7 @@ namespace AegiNext.Desktop.Panels.Preview;
 internal sealed class PreviewPanelViewModel : ObservableObject
 {
     private readonly WorkbenchSession session;
+    private ScenePreviewState scene = new(new(), null, MediaTime.Zero, CanvasEditMode.POSITION, Path.GetTempPath(), false);
     private string fileTitle = string.Empty;
     private string timeLabel = string.Empty;
     private string playLabel = string.Empty;
@@ -31,6 +32,33 @@ internal sealed class PreviewPanelViewModel : ObservableObject
     internal PreviewPanelViewModel(WorkbenchSession session)
     {
         this.session = session;
+    }
+
+    public ScenePreviewState Scene
+    {
+        get => scene;
+        set => SetProperty(ref scene, value);
+    }
+
+    internal bool BeginCanvasGesture() => session.BeginCanvasGesture();
+    internal void CancelCanvasGesture() => session.CancelCanvasGesture();
+    internal Task CommitCanvasAsync(CanvasLayerEditEventArgs value) => session.CommitCanvasAsync(value);
+    internal void ReportRenderingError(Exception error)
+    {
+        if (session.IsClosing)
+        {
+            return;
+        }
+
+        session.SetDiagnosticError("Video editing preview", error);
+        session.ShowError(error, false);
+    }
+    internal void ReportRenderingRecovery()
+    {
+        if (!session.IsClosing)
+        {
+            session.SetDiagnosticError("Video editing preview", null);
+        }
     }
 
     public string FileTitle

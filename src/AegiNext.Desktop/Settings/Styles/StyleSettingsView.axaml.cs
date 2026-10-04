@@ -11,9 +11,10 @@ public sealed partial class StyleSettingsView : UserControl
 {
     private StyleSettingsViewModel? model;
 
-    /// <summary>创建编译绑定页面；本地控件仅提交字体语义值。</summary>
+    /// <summary>先隔离父级上下文，再加载编译绑定；本地控件仅提交字体语义值。</summary>
     public StyleSettingsView()
     {
+        DataContext = null;
         AvaloniaXamlLoader.Load(this);
         DataContextChanged += (_, _) => ChangeModel();
         this.FindControl<FontFamilyPicker>("FontInput")!.FamilyCommitted +=
@@ -45,6 +46,11 @@ public sealed partial class StyleSettingsView : UserControl
         else if (e.PropertyName == nameof(StyleSettingsViewModel.DraftVersion))
         {
             LoadFont();
+        }
+        else if (e.PropertyName == nameof(StyleSettingsViewModel.AlignmentIndex))
+        {
+            this.FindControl<ComboBox>("AlignmentCombo")!.SetCurrentValue(
+                ComboBox.SelectedIndexProperty, model!.AlignmentIndex);
         }
     }
 
@@ -98,7 +104,10 @@ public sealed partial class StyleSettingsView : UserControl
 
         if (model.Error is not null && model.InvalidFieldKey is { } fieldKey)
         {
-            this.FindControl<Control>(fieldKey)!.Focus();
+            if (!this.FindControl<SubtitlePositionEditor>("PositionEditor")!.FocusInvalidField(fieldKey))
+            {
+                this.FindControl<Control>(fieldKey)!.Focus();
+            }
         }
     }
 }

@@ -23,4 +23,6 @@ public sealed class TimelineTimingEventArgs : EventArgs
     public MediaTime End { get; }
     public TimelineEditMode Mode { get; }
     public bool IsMove { get; }
+    public Guid? SubtitleId { get; init; }
+    public Guid? TrackId { get; init; }
 }

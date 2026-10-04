@@ -11,6 +11,10 @@ internal static class ControlLocalization
     {
         foreach (var control in root.GetLogicalDescendants().OfType<Control>())
         {
+            if (control is AnchorPresetPicker presets)
+            {
+                presets.RefreshLanguage();
+            }
             if (control.Tag is not string key)
             {
                 continue;

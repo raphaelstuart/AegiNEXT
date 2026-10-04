@@ -46,19 +46,30 @@ public static class SceneEvaluator
             var first = frames[index - 1];
             var second = frames[index];
             var fraction = Fraction(time - first.Time, second.Time - first.Time);
-            fraction = first.Interpolation switch
-            {
-                KeyframeInterpolation.HOLD => 0,
-                KeyframeInterpolation.LINEAR => fraction,
-                KeyframeInterpolation.EASE_IN => fraction * fraction,
-                KeyframeInterpolation.EASE_OUT => 1 - (1 - fraction) * (1 - fraction),
-                KeyframeInterpolation.EASE_IN_OUT => fraction * fraction * (3 - 2 * fraction),
-                _ => throw new InvalidDataException("未知关键帧插值。")
-            };
+            fraction = CurveFraction(first, fraction);
             return first.Value + (second.Value - first.Value) * fraction;
         }
 
         return frames[^1].Value;
+    }
+
+    private static double CurveFraction(Keyframe frame, double fraction)
+    {
+        var start = frame.CurveStart;
+        var range = frame.CurveEnd - start;
+        var offset = range * fraction;
+        return frame.Interpolation switch
+        {
+            KeyframeInterpolation.HOLD => 0,
+            KeyframeInterpolation.LINEAR => fraction,
+            KeyframeInterpolation.EASE_IN => fraction * (2 * start + offset) / (2 * start + range),
+            KeyframeInterpolation.EASE_OUT => fraction * (2 * (1 - frame.CurveEnd) + range * (2 - fraction)) /
+                (2 * (1 - frame.CurveEnd) + range),
+            KeyframeInterpolation.EASE_IN_OUT => fraction *
+                (6 * start * (1 - start) + 3 * offset * (1 - 2 * start) - 2 * offset * offset) /
+                (6 * start * (1 - start) + 3 * range * (1 - 2 * start) - 2 * range * range),
+            _ => throw new InvalidDataException("未知关键帧插值。")
+        };
     }
 
     /// <summary>以 [0,1] 段参数求路径位置，超界参数夹在首尾。</summary>

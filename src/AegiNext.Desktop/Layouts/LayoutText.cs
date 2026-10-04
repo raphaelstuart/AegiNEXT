@@ -12,6 +12,7 @@ internal static class LayoutText
         ["preview"] = ("视频预览", "Video preview"), ["timeline"] = ("时间线", "Timeline"),
         ["subtitles"] = ("字幕列表", "Subtitles"), ["styles"] = ("样式", "Styles"),
         ["export"] = ("压制", "Encoding"),
+        ["log"] = ("日志", "Log"),
         ["Modified"] = ("已修改", "Modified"), ["Save"] = ("保存布局", "Save layout"),
         ["SaveAs"] = ("布局另存为…", "Save layout as…"), ["Manage"] = ("管理布局…", "Manage layouts…"),
         ["Restore"] = ("恢复默认布局", "Restore default layout"), ["Name"] = ("布局名称", "Layout name"),

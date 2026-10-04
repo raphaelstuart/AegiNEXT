@@ -17,6 +17,7 @@
               </Grid>
               <StackPanel Orientation="Horizontal" Spacing="16"><CheckBox Name="BoldCheck" Tag="Bold" IsChecked="{Binding Bold, Mode=TwoWay}" IsEnabled="{Binding HasCue}" /><CheckBox Name="ItalicCheck" Tag="Italic" IsChecked="{Binding Italic, Mode=TwoWay}" IsEnabled="{Binding HasCue}" /></StackPanel>
               <TextBlock Tag="Alignment" Classes="field" /><ComboBox Name="AlignmentCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Alignment, Mode=TwoWay}" ItemsSource="{Binding Alignments}" IsEnabled="{Binding HasCue}" />
+              <StackPanel IsEnabled="{Binding HasCue}"><controls:SubtitlePositionEditor Name="PositionEditor" DataContext="{Binding Position}" /></StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="8"><Button Name="KaraokeButton" Tag="Karaoke" Command="{Binding KaraokeCommand}" IsEnabled="{Binding HasCue}" /><Button Name="ClearKaraokeButton" Tag="ClearKaraoke" Command="{Binding ClearKaraokeCommand}" IsEnabled="{Binding HasCue}" /></StackPanel>
             </StackPanel></ScrollViewer>
           

@@ -90,7 +90,7 @@ internal sealed class WindowMenuBar : UserControl, IDisposable
             item.Items.Add(command is { } id
                 ? new MenuItem
                 {
-                    Header = WorkbenchMenuCatalog.GetLabel(id), Command = catalog.GetCommand(id),
+                    Header = catalog.GetDisplayLabel(id), Command = catalog.GetCommand(id),
                     InputGesture = catalog.GetGesture(id), Icon = WorkbenchIcon.Create(id.ToString())
                 }
                 : new Separator());

@@ -2,10 +2,10 @@
 
 `WorkbenchLayoutController` 只拥有工作区空间。它不拥有工程、媒体控制器、Undo 栈、业务 ViewModel 或导出任务。
 
-- 六个稳定 Panel ID 定义于 `WorkbenchPanelIds`。组合根提供六个固定 View 实例，`WorkbenchDockPanel` 仅连接稳定 ID、标题与 View。
+- 七个稳定 Panel ID 定义于 `WorkbenchPanelIds`。组合根提供七个固定 View 实例，`WorkbenchDockPanel` 仅连接稳定 ID、标题与 View。Log 的会话缓冲不属于布局数据。
 - `WorkbenchDockFactory` 和 `WorkbenchDockSnapshotCodec` 是 Dock 的薄适配层；业务层不传递 Dock 类型。
 - `WorkbenchDockPanelTemplate` 总是返回已提供的 View。切换预设或重新停靠不重新创建 View、ViewModel 或工程会话。
-- 工作区根、分割、标签组和面板适配实现 Dock 的 `IDeferredContentPresentation`，声明不延迟呈现：六个 View 已由组合根创建，挂接时立即 materialize，不依赖分帧创建或计时器才能收到真实输入。
+- 工作区根、分割、标签组和面板适配实现 Dock 的 `IDeferredContentPresentation`，声明不延迟呈现：七个 View 已由组合根创建，挂接时立即 materialize，不依赖分帧创建或计时器才能收到真实输入。
 - Tool 标签的中间呈现控件 `WorkbenchToolControl` 也声明不延迟呈现。空间模板保留 Dock 的跟踪、标题、菜单、标签与拖拽行为，避免冷启动时 ToolChrome 将现成的 ToolControl 排入后台队列导致正文短暂为空。
 - `WorkbenchDockTemplateCatalog` 在宿主设置布局前安装全部空间模板。首次创建窗口时，根、分割和标签模板已可用，避免模板应用过程中添加目录造成初始布局退化为文本占位。
 - `Controls/Common` 等子控件不引用此目录。空间操作只取消指针手势；草稿提交仅在切换预设前调用注入的统一事务边界。
@@ -20,7 +20,9 @@
 
 ## 持久化
 
-个人目录中的 `layouts.json` 保存应用自己的版本 1 快照，不序列化 Dock 对象。快照记录分割比例、方向、标签顺序、活动面板、焦点面板、隐藏 Panel ID，以及浮窗物理位置、逻辑尺寸和显示缩放。
+个人目录中的 `layouts.json` 保存应用自己的版本 2 快照，不序列化 Dock 对象。快照记录分割比例、方向、标签顺序、活动面板、焦点面板、隐藏 Panel ID，以及浮窗物理位置、逻辑尺寸和显示缩放。
+
+版本 1 的当前布局和全部个人预设在严格验证旧六面板集合后迁移。自定义拓扑、活动标签、浮窗和名称保持不变，新 Log 初始加入隐藏集合；与旧内置布局完全一致的当前布局升级到对应新版布局，Log 为非活动标签。迁移结果沿用正常原子保存入口，在自动记忆或关闭前刷新时写回版本 2。
 
 当前布局通过 UI 线程上的合并计时器写入。文件写入串行排队，使用同目录临时文件、刷盘和原子替换；关闭前等待最终写入。当前布局和命名预设属于不同字段，自动记忆不会更新命名预设。四个内置布局只读，用户显式另存为后可保存、重命名和删除。
 

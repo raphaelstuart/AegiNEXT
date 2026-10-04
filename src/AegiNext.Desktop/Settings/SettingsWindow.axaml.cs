@@ -1,4 +1,5 @@
 using AegiNext.Core.Presets;
+using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia.Controls;
@@ -97,6 +98,12 @@ public sealed partial class SettingsWindow : Window
     public void UpdateStyles(IEnumerable<SubtitleStylePreset> presets, Guid? selectedId = null)
     {
         ViewModel.Styles.UpdateStyles(presets, selectedId);
+    }
+
+    /// <summary>为模板位置编辑注入真实字体测量，不将渲染资源交给设置页面。</summary>
+    public void SetSubtitlePositionMeasurement(Func<SubtitleStylePreset, SubtitlePositionMeasurement> measure)
+    {
+        ViewModel.Styles.SetPositionMeasurement(measure);
     }
 
     /// <summary>工程流程执行期间禁止继续改变样式草稿。</summary>

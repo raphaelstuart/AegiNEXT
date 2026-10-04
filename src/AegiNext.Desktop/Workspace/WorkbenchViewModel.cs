@@ -5,6 +5,7 @@ using AegiNext.Desktop.Panels.Subtitles;
 using AegiNext.Desktop.Panels.Styles;
 using AegiNext.Desktop.Panels.Effects;
 using AegiNext.Desktop.Panels.Export;
+using AegiNext.Desktop.Panels.Log;
 using AegiNext.Desktop.Shortcuts;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -30,6 +31,7 @@ internal sealed class WorkbenchViewModel : ObservableObject
         Styles = new(session);
         Effects = new(session);
         Export = new(session);
+        Log = new(session.Journal);
         foreach (var command in Enum.GetValues<WorkbenchCommand>())
         {
             commands.Add(command, new(() => ExecuteCommandAsync(command), () => session.CanExecuteCommand(command),
@@ -47,6 +49,7 @@ internal sealed class WorkbenchViewModel : ObservableObject
     public StylesPanelViewModel Styles { get; }
     public EffectsPanelViewModel Effects { get; }
     public ExportPanelViewModel Export { get; }
+    public LogPanelViewModel Log { get; }
     public string Title
     {
         get => title;

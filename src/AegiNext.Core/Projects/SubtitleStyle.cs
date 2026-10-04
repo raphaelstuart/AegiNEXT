@@ -13,6 +13,7 @@ public sealed record SubtitleStyle
     public bool Italic { get; init; }
     public TextAlignment Alignment { get; init; } = TextAlignment.BOTTOM_CENTER;
     public double Margin { get; init; } = 40;
+    public SubtitlePosition? Position { get; init; }
     public double LineHeight { get; init; } = 1.2;
     public ScenePoint ShadowOffset { get; init; } = new(2, 2);
     public double ShadowBlur { get; init; } = 2;

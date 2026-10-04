@@ -18,6 +18,7 @@ public sealed partial class MainWindow
 
         var window = new SettingsWindow(Session.Preferences);
         settingsWindow = window;
+        window.SetSubtitlePositionMeasurement(Session.MeasureStylePosition);
         window.UpdateShortcuts(Session.Preferences.ShortcutBindings);
         window.UpdateStyles(Session.StyleLibrary.Snapshot.Presets);
         window.UpdateSelectionAvailability(Session.HasSelectedCue && !Session.IsProjectBusy);

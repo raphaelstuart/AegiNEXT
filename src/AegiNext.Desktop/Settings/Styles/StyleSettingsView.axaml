@@ -87,6 +87,9 @@
             <ComboBox Name="AlignmentCombo" ItemsSource="{Binding Alignments}"
                       SelectedIndex="{Binding AlignmentIndex, Mode=TwoWay}" />
           </StackPanel>
+          <controls:SubtitlePositionEditor Name="PositionEditor" DataContext="{Binding Position}" />
+          <TextBlock Text="{Binding PositionMeasurementError}" IsVisible="{Binding HasPositionMeasurementError}"
+                     TextWrapping="Wrap" Classes="field" />
           <Expander Tag="Advanced" HorizontalAlignment="Stretch">
             <StackPanel Spacing="12" Margin="0,12,0,0">
               <StackPanel Spacing="8">

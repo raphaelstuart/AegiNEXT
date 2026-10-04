@@ -9,7 +9,7 @@
             <TextBlock Name="ModeLabel" Grid.Column="1" Classes="field" Text="SDR" />
           </Grid>
           <Grid Grid.Row="1" Background="#080A0E" MinHeight="250">
-            <controls:VideoFramePresenter Name="VideoImage" Stretch="Uniform" />
+            <controls:EffectCanvasControl Name="EffectCanvas" />
             <StackPanel Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" IsVisible="{Binding !HasFrame, Mode=OneWay}">
               <TextBlock Text="▷" FontSize="42" Foreground="#7C8AA6" HorizontalAlignment="Center" />
               <TextBlock Name="EmptyLabel" Foreground="#A5ADBD" FontSize="13" Text="{Binding EmptyLabel, Mode=OneWay}" />

@@ -12,5 +12,13 @@ internal sealed class WorkspaceProbeReport
     public List<WorkspaceProbeSample> Samples { get; } = [];
     public List<WorkspaceDockProbeSample> DockSamples { get; } = [];
     public bool Completed { get; set; }
+    public bool SourceProfileCopied { get; set; }
+    public int LoadedStylePresetCount { get; set; }
+    public int SettingsBindingExceptionCount { get; set; }
+    public int ExportBindingExceptionCount { get; set; }
+    public int GetBindingExceptionCount { get; set; }
+    public int ExportCodecChoiceCount { get; set; }
+    public int ExportSpeedChoiceCount { get; set; }
+    public int ExportAudioModeChoiceCount { get; set; }
     public string ManualInteractionStatus { get; } = "Native button clicks, dragging, fullscreen and cross-display DPI require manual acceptance.";
 }

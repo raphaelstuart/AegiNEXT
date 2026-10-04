@@ -14,10 +14,18 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         PendingPosition = null;
     }
 
-    internal async Task SeekAsync(MediaTime position)
+    internal async Task SeekAsync(MediaTime position, bool clearEditingTarget = true)
     {
         session.InvalidateTimingSession();
-        session.ClearKeyframeSelection();
+        if (clearEditingTarget)
+        {
+            if (!session.TryCommitDrafts())
+            {
+                return;
+            }
+            session.CancelSceneGesture();
+            session.ClearKeyframeSelection();
+        }
         var snapshot = controller.Snapshot;
         var start = snapshot.Start ?? MediaTime.Zero;
         var target = position < start ? start : position;

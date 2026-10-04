@@ -8,7 +8,8 @@ internal static class WorkbenchPanelIds
     public const string STYLES = "styles";
     public const string EFFECTS = "effects";
     public const string EXPORT = "export";
+    public const string LOG = "log";
 
     public static IReadOnlyList<string> All { get; } =
-        [PREVIEW, TIMELINE, SUBTITLES, STYLES, EFFECTS, EXPORT];
+        [PREVIEW, TIMELINE, SUBTITLES, STYLES, EFFECTS, EXPORT, LOG];
 }

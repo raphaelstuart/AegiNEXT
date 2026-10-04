@@ -1,4 +1,5 @@
 using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Styling;
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
@@ -11,6 +12,10 @@ internal static class SettingsViewLocalization
     {
         foreach (var control in root.GetLogicalDescendants().OfType<Control>())
         {
+            if (control is AnchorPresetPicker presets)
+            {
+                presets.RefreshLanguage();
+            }
             if (control.Tag is not string key)
             {
                 continue;

@@ -18,12 +18,12 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private Guid? selectedCueId;
     private ProjectLayer? selectedLayer;
     private MediaTime position = MediaTime.Zero;
-    private double pixelsPerSecond = 48;
-    private double viewStart;
-    private double visibleDuration = 10;
+    private TimelineViewport viewport = new();
+    private double mediaDuration;
+    private double documentDuration = 10;
+    private IReadOnlyList<Guid> selectedLayerIds = [];
     private double scrollMaximum = 1;
     private double viewportSize = 10;
-    private bool showEffects;
     private bool isSeeking;
     private AnimationProperty effectProperty = AnimationProperty.OPACITY;
     private SpectrogramData? spectrogram;
@@ -32,14 +32,20 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     internal TimelinePanelViewModel(WorkbenchSession session)
     {
         this.session = session;
-        SubtitleTimelineCommand = new RelayCommand(() => ShowEffects = false);
-        EffectTimelineCommand = new RelayCommand(() => ShowEffects = true);
     }
 
     public ProjectDocument Document
     {
         get => document;
-        set => SetProperty(ref document, value);
+        set
+        {
+            if (SetProperty(ref document, value))
+            {
+                documentDuration = Math.Max(1, Flatten(value.Layers).Select(layer => Seconds(layer.End))
+                    .Concat(value.Subtitles.Select(cue => Seconds(cue.End))).DefaultIfEmpty(1).Max());
+                OnPropertyChanged(nameof(FullDuration));
+            }
+        }
     }
 
     public Guid? SelectedCueId
@@ -62,21 +68,55 @@ internal sealed class TimelinePanelViewModel : ObservableObject
 
     public double PixelsPerSecond
     {
-        get => pixelsPerSecond;
-        set => SetProperty(ref pixelsPerSecond, value);
+        get => viewport.PixelsPerSecond;
+        set => Viewport = viewport with { PixelsPerSecond = value };
     }
 
     public double ViewStart
     {
-        get => viewStart;
-        set => SetProperty(ref viewStart, value);
+        get => viewport.StartSeconds;
+        set => Viewport = viewport with { StartSeconds = value };
     }
 
     public double VisibleDuration
     {
-        get => visibleDuration;
-        set => SetProperty(ref visibleDuration, value);
+        get => viewport.VisibleDuration;
+        set => Viewport = viewport with { Width = Math.Max(0, value) * viewport.PixelsPerSecond };
     }
+
+    public TimelineViewport Viewport
+    {
+        get => viewport;
+        set
+        {
+            if (SetProperty(ref viewport, value))
+            {
+                OnPropertyChanged(nameof(PixelsPerSecond));
+                OnPropertyChanged(nameof(ViewStart));
+                OnPropertyChanged(nameof(VisibleDuration));
+            }
+        }
+    }
+
+    public IReadOnlyList<Guid> SelectedLayerIds
+    {
+        get => selectedLayerIds;
+        set => SetProperty(ref selectedLayerIds, value);
+    }
+
+    public double MediaDuration
+    {
+        get => mediaDuration;
+        set
+        {
+            if (SetProperty(ref mediaDuration, value))
+            {
+                OnPropertyChanged(nameof(FullDuration));
+            }
+        }
+    }
+
+    public double FullDuration => Math.Max(Math.Max(1, mediaDuration), documentDuration);
 
     public double ScrollMaximum
     {
@@ -88,12 +128,6 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     {
         get => viewportSize;
         set => SetProperty(ref viewportSize, value);
-    }
-
-    public bool ShowEffects
-    {
-        get => showEffects;
-        set => SetProperty(ref showEffects, value);
     }
 
     public bool IsSeeking
@@ -120,29 +154,54 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         set => SetProperty(ref analysisStatus, value);
     }
 
-    public ICommand SubtitleTimelineCommand { get; }
-
-    public ICommand EffectTimelineCommand { get; }
     /// <summary>提交时间线上的播放定位请求。</summary>
     public Task SeekAsync(MediaTime time) => session.RunCommandAsync(() => session.SeekProjectTimeAsync(time));
     /// <summary>同步字幕选择。</summary>
     public void SelectCue(Guid id) => session.SelectCue(id);
+    /// <summary>同步非字幕片段对应的图层选择。</summary>
+    public void SelectLayer(Guid id) => session.SelectLayer(id, [id]);
+    /// <summary>将时间线的主层和多选集合同步到同一会话选择。</summary>
+    public void SelectLayers(TimelineSelectionEventArgs value) => session.SelectLayer(value.Id, value.SelectedIds.ToArray());
+    /// <summary>切换当前字幕轨道，不改变工程合成顺序。</summary>
+    public void SelectTrack(Guid id) => session.SelectTrack(id);
     /// <summary>一次完成的时间线手势对应一次工程事务。</summary>
-    public Task CommitTimingAsync(TimelineTimingEventArgs value) => session.RunCommandAsync(() => session.EditAsync(() =>
+    public Task CommitTimingAsync(TimelineTimingEventArgs value)
     {
-        if (value.IsMove)
+        if (value.SubtitleId is { } cueId && value.TrackId is { } trackId)
         {
-            session.Editor.ShiftSubtitle(value.Id, value.Start - value.OriginalStart);
+            return session.CommitSubtitleClipMoveAsync(cueId, trackId, value.Start, value.End, value.Mode, value.IsMove);
         }
-        else
+
+        return session.RunCommandAsync(() => session.EditAsync(() =>
         {
-            session.Editor.SetSubtitleTiming(value.Id, value.Start, value.End, value.Mode);
-        }
-    }));
+            if (value.IsMove)
+            {
+                session.Editor.ShiftLayer(value.Id, value.Start - value.OriginalStart);
+            }
+            else
+            {
+                session.Editor.SetLayerTiming(value.Id, value.Start, value.End, value.Mode);
+            }
+        }));
+    }
     /// <summary>选择关键帧并同步属性检查器。</summary>
     public void SelectKeyframe(TimelineKeyframeEventArgs value) => session.SelectKeyframe(value);
     /// <summary>提交完成的关键帧手势。</summary>
     public Task MoveKeyframeAsync(TimelineKeyframeEventArgs value) => session.RunCommandAsync(() => session.EditAsync(() => session.MoveKeyframe(value)));
     /// <summary>视口尺寸改变后重新计算滚动范围。</summary>
     public void RefreshViewport() => session.Tick();
+
+    private static IEnumerable<ProjectLayer> Flatten(IEnumerable<ProjectLayer> layers)
+    {
+        foreach (var layer in layers)
+        {
+            yield return layer;
+            foreach (var child in Flatten(layer.Children))
+            {
+                yield return child;
+            }
+        }
+    }
+
+    private static double Seconds(MediaTime value) => (double)value.Numerator / value.Denominator;
 }

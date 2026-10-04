@@ -12,7 +12,7 @@ internal sealed partial class WorkbenchSession
     internal void AddCue()
     {
         var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
-        var id = editor.AddSubtitle(start, start + new MediaTime(2), string.Empty);
+        var id = editor.AddSubtitle(start, start + new MediaTime(2), string.Empty, CurrentTrackId);
         SelectCue(id);
     }
 
@@ -28,7 +28,7 @@ internal sealed partial class WorkbenchSession
         editor.AddSubtitles([
             new()
             {
-                Id = entered.CueId, Start = entered.Start, End = entered.Start + new MediaTime(2),
+                Id = entered.CueId, TrackId = CurrentTrackId, Start = entered.Start, End = entered.Start + new MediaTime(2),
                 Text = string.Empty
             }
         ]);
@@ -71,13 +71,13 @@ internal sealed partial class WorkbenchSession
     internal void MergeCue()
     {
         var cue = SelectedCue ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
-        var index = editor.Snapshot.Subtitles.IndexOf(cue);
-        if (index + 1 >= editor.Snapshot.Subtitles.Length)
+        var next = editor.Snapshot.Subtitles.Where(line => line.TrackId == cue.TrackId && line.Start > cue.Start)
+            .OrderBy(line => line.Start).FirstOrDefault();
+        if (next is null)
         {
             return;
         }
 
-        var next = editor.Snapshot.Subtitles[index + 1];
         editor.Apply("Merge subtitles", document => ProjectEditingOperations.MergeSubtitles(document, cue.Id, next.Id));
     }
 

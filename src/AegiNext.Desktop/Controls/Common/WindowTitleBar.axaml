@@ -6,19 +6,22 @@
              x:DataType="local:WindowTitleBar"
              x:Name="Root"
              Height="40"
-             chrome:WindowDecorationProperties.ElementRole="TitleBar">
+             chrome:WindowDecorationProperties.ElementRole="User">
   <Border Background="{DynamicResource PreviewSurface}"
-          Padding="{Binding CaptionInsets, ElementName=Root}">
-    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="8,0">
-      <ContentControl Name="MenuPresenter"
-                      Content="{Binding MenuContent, ElementName=Root}"
-                      VerticalContentAlignment="Center"
-                      chrome:WindowDecorationProperties.ElementRole="User"/>
-      <TextBlock Name="TitleText" Grid.Column="1"
-                 Text="{Binding Title, ElementName=Root}"
-                 VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"
-                 TextTrimming="CharacterEllipsis"
-                 chrome:WindowDecorationProperties.ElementRole="TitleBar"/>
-    </Grid>
+          Padding="{Binding CaptionInsets, ElementName=Root}"
+          chrome:WindowDecorationProperties.ElementRole="User">
+    <Border Background="Transparent" chrome:WindowDecorationProperties.ElementRole="TitleBar">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="8,0">
+        <ContentControl Name="MenuPresenter"
+                        Content="{Binding MenuContent, ElementName=Root}"
+                        VerticalContentAlignment="Center"
+                        chrome:WindowDecorationProperties.ElementRole="User"/>
+        <TextBlock Name="TitleText" Grid.Column="1"
+                   Text="{Binding Title, ElementName=Root}"
+                   VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"
+                   TextTrimming="CharacterEllipsis"
+                   chrome:WindowDecorationProperties.ElementRole="TitleBar"/>
+      </Grid>
+    </Border>
   </Border>
 </UserControl>

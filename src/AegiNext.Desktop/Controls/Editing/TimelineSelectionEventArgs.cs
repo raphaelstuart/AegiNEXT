@@ -4,7 +4,12 @@ namespace AegiNext.Desktop.Controls;
 public sealed class TimelineSelectionEventArgs : EventArgs
 {
     /// <summary>创建选择请求。</summary>
-    public TimelineSelectionEventArgs(Guid id) => Id = id;
+    public TimelineSelectionEventArgs(Guid id, IReadOnlyList<Guid>? selectedIds = null)
+    {
+        Id = id;
+        SelectedIds = selectedIds ?? [id];
+    }
 
     public Guid Id { get; }
+    public IReadOnlyList<Guid> SelectedIds { get; }
 }

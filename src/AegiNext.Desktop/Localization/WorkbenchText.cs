@@ -7,6 +7,16 @@ internal static class WorkbenchText
 {
     private static readonly Dictionary<string, (string Chinese, string English)> entries = new(StringComparer.Ordinal)
     {
+        ["EditKeyframeTarget"] = ("编辑关键帧", "Editing keyframe"),
+        ["EditPlayheadTarget"] = ("编辑播放头时刻", "Editing playhead time"),
+        ["SubtitleTrack"] = ("字幕轨道", "Subtitle track"),
+        ["AddTrack"] = ("新增轨道", "Add track"),
+        ["RenameTrack"] = ("重命名轨道", "Rename track"),
+        ["DeleteTrack"] = ("删除空轨道", "Delete empty track"),
+        ["MoveTrackUp"] = ("轨道上移", "Move track up"),
+        ["MoveTrackDown"] = ("轨道下移", "Move track down"),
+        ["MoveToTrack"] = ("移动至轨道", "Move to track"),
+        ["Open"] = ("打开视频", "Open video"),
         ["New"] = ("新建", "New"), ["OpenProject"] = ("打开工程", "Open project"),
         ["File"] = ("文件", "File"), ["Edit"] = ("编辑", "Edit"), ["View"] = ("视图", "View"),
         ["Playback"] = ("播放", "Playback"), ["Settings"] = ("设置", "Settings"),
@@ -35,6 +45,15 @@ internal static class WorkbenchText
         ["EaseIn"] = ("缓入", "Ease in"), ["EaseOut"] = ("缓出", "Ease out"), ["NoAudio"] = ("无音频", "No audio"),
         ["Fill"] = ("颜色", "Color"), ["Stroke"] = ("描边", "Outline"),
         ["StrokeWidth"] = ("描边宽度", "Outline width"), ["Alignment"] = ("对齐", "Alignment"),
+        ["ExplicitPosition"] = ("自定义锚点位置", "Custom anchored position"),
+        ["AnchorPreset"] = ("锚点预设", "Anchor presets"),
+        ["AnchorPresetHint"] = ("点击保留文字位置；Shift 同时设置轴心；Alt 将偏移归零。", "Click preserves the text position; Shift also sets the pivot; Alt resets offsets to zero."),
+        ["SubtitlePreviewText"] = ("字幕预览", "Subtitle Preview"),
+        ["SubtitlePositionUnavailable"] = ("字幕位置无法测量，请修复字体资源或文字后重试", "Subtitle position cannot be measured. Repair the font asset or text to continue"),
+        ["SubtitlePositionHint"] = ("锚点相对画布，轴心相对实际文字。0 为左／上，1 为右／下；偏移单位为像素。", "Anchor follows the canvas; pivot follows the glyph bounds. 0 is left/top, 1 is right/bottom; offsets use pixels."),
+        ["AnchorX"] = ("锚点 X", "Anchor X"), ["AnchorY"] = ("锚点 Y", "Anchor Y"),
+        ["PivotX"] = ("轴心 X", "Pivot X"), ["PivotY"] = ("轴心 Y", "Pivot Y"),
+        ["OffsetX"] = ("偏移 X（像素）", "Offset X (pixels)"), ["OffsetY"] = ("偏移 Y（像素）", "Offset Y (pixels)"),
         ["Bold"] = ("粗体", "Bold"), ["Italic"] = ("斜体", "Italic"),
         ["Karaoke"] = ("逐字高亮", "Karaoke"), ["ClearKaraoke"] = ("清除高亮", "Clear karaoke"),
         ["AddLayer"] = ("字幕图层", "Subtitle layer"), ["Rectangle"] = ("矩形", "Rectangle"),
@@ -83,6 +102,9 @@ internal static class WorkbenchText
         ["StrokeBlue"] = ("描边 B", "Outline B"), ["StrokeAlpha"] = ("描边 Alpha", "Outline alpha"),
         ["PathProgress"] = ("路径进度", "Path progress"),
         ["BottomCenter"] = ("底部居中", "Bottom center"), ["TopCenter"] = ("顶部居中", "Top center"),
+        ["TopLeft"] = ("顶部左侧", "Top left"), ["TopRight"] = ("顶部右侧", "Top right"),
+        ["MiddleLeft"] = ("中部左侧", "Middle left"), ["MiddleCenter"] = ("中部居中", "Middle center"),
+        ["MiddleRight"] = ("中部右侧", "Middle right"),
         ["Center"] = ("居中", "Center"), ["BottomLeft"] = ("底部左侧", "Bottom left"),
         ["BottomRight"] = ("底部右侧", "Bottom right")
     };

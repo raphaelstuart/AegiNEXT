@@ -13,13 +13,15 @@ internal sealed partial class WorkbenchSession
 {
     private static readonly HashSet<string> styleDraftProperties =
     [
-        "FontFamily", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "Bold", "Italic", "Alignment"
+        "FontFamily", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "Bold", "Italic", "Alignment", "Position"
     ];
     private static readonly HashSet<string> effectDraftProperties =
     [
         "LayerName", "LayerStart", "LayerEnd", "LayerWidth", "LayerWidthText", "LayerHeight", "LayerHeightText", "PositionX", "PositionXText", "PositionY", "PositionYText", "ScaleX", "ScaleXText", "ScaleY", "ScaleYText",
         "Rotation", "RotationText", "Opacity", "OpacityText", "Blur", "BlurText", "Blend", "InvertMask", "OrientPath", "KeyframeValue", "KeyframeValueText", "Interpolation"
     ];
+
+    private readonly HashSet<string> changedEffectFields = [];
 
     internal bool TryCommitDrafts()
     {
@@ -67,34 +69,43 @@ internal sealed partial class WorkbenchSession
                 {
                     var line = prepared.Subtitles.Single(value => value.Id == id);
                     var fontSize = ReadNumber(vm.FontSizeText, line.Style.FontSize, "Size", "FontSizeInput");
-                    var strokeWidth = ReadNumber(vm.StrokeWidthText, line.Style.StrokeWidth, "StrokeWidth", "StrokeWidthInput");
+                    var strokeWidth = PrepareStrokeWidth(ref prepared, selected, line.Style.StrokeWidth, vm.StrokeWidthText);
+                    var fill = PrepareColor(ref prepared, selected, vm.Fill, line.Style.Fill, false);
+                    var stroke = PrepareColor(ref prepared, selected, vm.Stroke, line.Style.Stroke, true);
                     if (fontSize <= 0 || strokeWidth < 0 || string.IsNullOrWhiteSpace(vm.FontFamily))
                     {
                         throw new InvalidDataException(WorkbenchText.Get("Font") + ": " + WorkbenchText.Get("Size"));
                     }
 
                     var familyChanged = family != line.Style.FontFamily;
+                    if (vm.Position.Validate() is { } positionKey)
+                    {
+                        ViewModel.InvalidFieldKey = positionKey;
+                        throw new InvalidDataException(WorkbenchText.Get("ExplicitPosition"));
+                    }
                     var style = line.Style with
                     {
                         FontFamily = family,
                         FontAssetId = familyChanged ? null : line.Style.FontAssetId,
                         FontSize = fontSize,
                         StrokeWidth = strokeWidth,
-                        Fill = PreserveColor(vm.Fill, line.Style.Fill),
-                        Stroke = PreserveColor(vm.Stroke, line.Style.Stroke),
+                        Fill = fill,
+                        Stroke = stroke,
                         Bold = vm.Bold == true,
                         Italic = vm.Italic == true,
-                        Alignment = alignments[Math.Clamp(vm.Alignment, 0, alignments.Length - 1)]
+                        Alignment = alignments[Math.Clamp(vm.Alignment, 0, alignments.Length - 1)],
+                        Position = vm.Position.CreatePosition()
                     };
                     prepared = WorkspaceDraftOperations.UpdateSubtitle(prepared, id, cue => cue with { Style = style });
                 }
                 else
                 {
+                    var fill = PrepareColor(ref prepared, selected, vm.Fill, selected.Fill, false);
+                    var stroke = PrepareColor(ref prepared, selected, vm.Stroke, selected.Stroke, true);
+                    var width = PrepareStrokeWidth(ref prepared, selected, selected.StrokeWidth, vm.StrokeWidthText);
                     prepared = WorkspaceDraftOperations.UpdateLayer(prepared, selected.Id, layer => layer with
                     {
-                        Fill = PreserveColor(vm.Fill, layer.Fill),
-                        Stroke = PreserveColor(vm.Stroke, layer.Stroke),
-                        StrokeWidth = ReadNumber(vm.StrokeWidthText, layer.StrokeWidth, "StrokeWidth", "StrokeWidthInput")
+                        Fill = fill, Stroke = stroke, StrokeWidth = width
                     });
                 }
             }
@@ -118,6 +129,33 @@ internal sealed partial class WorkbenchSession
                     prepared = WorkspaceDraftOperations.UpdateSubtitle(prepared, id, line => line with { Start = start, End = end });
                 }
 
+                var originalPlacement = ResolvePlacement(document, selected);
+                var preparedLayer = Flatten(prepared.Layers).Single(value => value.Id == selected.Id);
+                var preparedPlacement = ResolvePlacement(prepared, preparedLayer);
+                var target = AnimationTarget!;
+                var positionX = InspectorValue(selected, AnimationProperty.POSITION_X, selected.Transform.X);
+                var positionY = InspectorValue(selected, AnimationProperty.POSITION_Y, selected.Transform.Y);
+                if (originalPlacement.BasePosition is { } originalBase)
+                {
+                    var displayedX = originalBase.X + positionX;
+                    var displayedY = originalBase.Y + positionY;
+                    var requestedX = ReadNumber(vm.PositionXText, displayedX, "PositionX", "PositionXInput");
+                    var requestedY = ReadNumber(vm.PositionYText, displayedY, "PositionY", "PositionYInput");
+                    if (requestedX != displayedX || requestedY != displayedY)
+                    {
+                        if (preparedPlacement.BasePosition is not { } preparedBase)
+                        {
+                            throw new InvalidDataException(WorkbenchText.Get("SubtitlePositionUnavailable"), preparedPlacement.Error);
+                        }
+                        positionX = requestedX == displayedX ? positionX : requestedX - preparedBase.X;
+                        positionY = requestedY == displayedY ? positionY : requestedY - preparedBase.Y;
+                    }
+                }
+                else if (!string.IsNullOrEmpty(vm.PositionXText) || !string.IsNullOrEmpty(vm.PositionYText))
+                {
+                    throw new InvalidDataException(WorkbenchText.Get("SubtitlePositionUnavailable"), originalPlacement.Error);
+                }
+
                 prepared = WorkspaceDraftOperations.UpdateLayer(prepared, selected.Id, layer => layer with
                 {
                     Name = vm.LayerName ?? string.Empty,
@@ -132,23 +170,43 @@ internal sealed partial class WorkbenchSession
                     {
                         Width = ReadNumber(vm.LayerWidthText, image.Width, "Size", "LayerWidthInput"), Height = ReadNumber(vm.LayerHeightText, image.Height, "Size", "LayerHeightInput")
                     } : null,
-                    Transform = layer.Transform with
-                    {
-                        X = ReadNumber(vm.PositionXText, layer.Transform.X, "PositionX", "PositionXInput"), Y = ReadNumber(vm.PositionYText, layer.Transform.Y, "PositionY", "PositionYInput"),
-                        ScaleX = ReadNumber(vm.ScaleXText, layer.Transform.ScaleX, "ScaleX", "ScaleXInput"), ScaleY = ReadNumber(vm.ScaleYText, layer.Transform.ScaleY, "ScaleY", "ScaleYInput"),
-                        Rotation = ReadNumber(vm.RotationText, layer.Transform.Rotation, "Rotation", "RotationInput")
-                    },
-                    Opacity = ReadNumber(vm.OpacityText, layer.Opacity, "Opacity", "OpacityInput"), Blur = ReadNumber(vm.BlurText, layer.Blur, "Blur", "BlurInput"),
                     Blend = (BlendMode)vm.Blend,
                     MotionPath = layer.MotionPath is { } path ? path with { OrientToPath = vm.OrientPath == true } : null,
                     Mask = layer.Mask is { } mask ? mask with { Inverted = vm.InvertMask == true } : null
                 });
-                if (SelectedKeyframe is { } frame)
+                foreach (var (property, text, fallback, label, field) in new[]
                 {
+                    (AnimationProperty.SCALE_X, vm.ScaleXText, selected.Transform.ScaleX, "ScaleX", "ScaleXInput"),
+                    (AnimationProperty.SCALE_Y, vm.ScaleYText, selected.Transform.ScaleY, "ScaleY", "ScaleYInput"),
+                    (AnimationProperty.ROTATION, vm.RotationText, selected.Transform.Rotation, "Rotation", "RotationInput"),
+                    (AnimationProperty.OPACITY, vm.OpacityText, selected.Opacity, "Opacity", "OpacityInput"),
+                    (AnimationProperty.BLUR, vm.BlurText, selected.Blur, "Blur", "BlurInput")
+                })
+                {
+                    var original = InspectorValue(selected, property, fallback);
+                    var requested = ReadNumber(text, original, label, field);
+                    if (requested != original)
+                    {
+                        prepared = AnimationEditOperations.SetValue(prepared, target, property, requested);
+                    }
+                }
+                if (positionX != InspectorValue(selected, AnimationProperty.POSITION_X, selected.Transform.X))
+                {
+                    prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.POSITION_X, positionX);
+                }
+                if (positionY != InspectorValue(selected, AnimationProperty.POSITION_Y, selected.Transform.Y))
+                {
+                    prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.POSITION_Y, positionY);
+                }
+                if (SelectedKeyTime is { } keyTime && (changedEffectFields.Contains("KeyframeValueText") || changedEffectFields.Contains("KeyframeValue") || changedEffectFields.Contains("Interpolation")))
+                {
+                    var frame = SelectedKeyframe ?? new Keyframe(keyTime, keyframeValue);
                     prepared = WorkspaceDraftOperations.SetKeyframe(prepared, selected.Id, ActiveProperty, frame with
                     {
-                        Value = keyframeValue,
-                        Interpolation = (KeyframeInterpolation)vm.Interpolation
+                        Value = changedEffectFields.Contains("KeyframeValueText") || changedEffectFields.Contains("KeyframeValue") ? keyframeValue : frame.Value,
+                        Interpolation = (KeyframeInterpolation)vm.Interpolation,
+                        CurveStart = vm.Interpolation == (int)frame.Interpolation ? frame.CurveStart : 0,
+                        CurveEnd = vm.Interpolation == (int)frame.Interpolation ? frame.CurveEnd : 1
                     });
                 }
             }
@@ -176,6 +234,10 @@ internal sealed partial class WorkbenchSession
             var originalEffectsDirty = effectsDirty;
             stylesDirty = false;
             effectsDirty = false;
+            var originalFields = changedEffectFields.ToArray();
+            var originalTarget = SceneEditing.DraftTarget;
+            SceneEditing.DraftTarget = null;
+            changedEffectFields.Clear();
             try
             {
                 if (prepared != document)
@@ -192,6 +254,8 @@ internal sealed partial class WorkbenchSession
             {
                 stylesDirty = originalStylesDirty;
                 effectsDirty = originalEffectsDirty;
+                changedEffectFields.UnionWith(originalFields);
+                SceneEditing.DraftTarget = originalTarget;
                 throw;
             }
 
@@ -232,7 +296,7 @@ internal sealed partial class WorkbenchSession
             "FontSizeInput" => (0.01m, 4096m),
             "StrokeWidthInput" => (0m, 4096m),
             "LayerWidthInput" or "LayerHeightInput" => (1m, 32768m),
-            "PositionXInput" or "PositionYInput" => (-32768m, 32768m),
+            "PositionXInput" or "PositionYInput" => (-2000032768m, 2000032768m),
             "ScaleXInput" or "ScaleYInput" => (0.001m, 100m),
             "RotationInput" => (-36000m, 36000m),
             "OpacityInput" => (0m, 1m),
@@ -273,6 +337,7 @@ internal sealed partial class WorkbenchSession
         if (!updatingWorkbench && e.PropertyName is { } name && styleDraftProperties.Contains(name))
         {
             stylesDirty = true;
+            FreezeDraftTarget();
         }
     }
 
@@ -320,13 +385,26 @@ internal sealed partial class WorkbenchSession
         if (effectDraftProperties.Contains(e.PropertyName))
         {
             effectsDirty = true;
+            FreezeDraftTarget();
+            changedEffectFields.Add(e.PropertyName);
+        }
+        else if (e.PropertyName == "EditMode")
+        {
+            RefreshEditingPreview();
         }
         else if (e.PropertyName == "Property")
         {
-            ViewModel.Timeline.EffectProperty = ActiveProperty;
-            ViewModel.Timeline.ShowEffects = true;
-            ClearKeyframeSelection();
-            RefreshKeyframeInspector();
+            updatingWorkbench = true;
+            try
+            {
+                ViewModel.Timeline.EffectProperty = ActiveProperty;
+                RefreshKeyframeInspector();
+                RefreshInspector();
+            }
+            finally
+            {
+                updatingWorkbench = false;
+            }
         }
     }
 
@@ -337,6 +415,7 @@ internal sealed partial class WorkbenchSession
         try
         {
             var document = editor.Snapshot;
+            RefreshSubtitleTracks();
             Volatile.Write(ref previewState, new(document, projectDirectory));
             var oldRows = ViewModel.Subtitles.Rows.ToDictionary(value => value.Id);
             var rows = document.Subtitles.Select((line, index) =>
@@ -358,31 +437,43 @@ internal sealed partial class WorkbenchSession
                 ViewModel.Subtitles.Rows = rows;
             }
 
-            if (!document.Subtitles.Any(value => value.Id == selectedCueId))
+            if (!document.Subtitles.Any(value => value.Id == SelectedCueId))
             {
-                selectedCueId = document.Subtitles.FirstOrDefault()?.Id;
+                SelectedCueId = document.Subtitles.FirstOrDefault(value => value.TrackId == CurrentTrackId)?.Id;
             }
 
-            ViewModel.Subtitles.SelectedRow = rows.FirstOrDefault(value => value.Id == selectedCueId);
+            ViewModel.Subtitles.SelectedRow = rows.FirstOrDefault(value => value.Id == SelectedCueId);
             var layers = LayerItems(document.Layers, 0).ToArray();
             if (!ViewModel.Effects.Layers.SequenceEqual(layers))
             {
                 ViewModel.Effects.Layers = layers;
             }
 
-            if (!layers.Any(value => value.Id == selectedLayerId))
+            if (!layers.Any(value => value.Id == SelectedLayerId))
             {
-                selectedLayerId = Flatten(document.Layers).FirstOrDefault(layer => layer.SubtitleId == selectedCueId)?.Id ?? layers.FirstOrDefault()?.Id;
+                SelectedLayerId = Flatten(document.Layers).FirstOrDefault(layer => layer.SubtitleId == SelectedCueId)?.Id ?? (SelectedCueId is null ? null : layers.FirstOrDefault()?.Id);
             }
 
-            ViewModel.Effects.SelectedItem = layers.FirstOrDefault(value => value.Id == selectedLayerId);
+            if (SelectedKeyTime is { } selectedTime && SelectedLayer?.Tracks.Any(track => track.Keyframes.Any(frame => frame.Time == selectedTime)) != true)
+            {
+                SelectedKeyTime = null;
+            }
+            ViewModel.Effects.SelectedItem = layers.FirstOrDefault(value => value.Id == SelectedLayerId);
             ViewModel.Title = (document.Name == "Untitled" ? WorkbenchText.Get("Untitled") : document.Name) +
                               (editor.HasUnsavedChanges ? " •" : string.Empty) + " — AegiNext";
             ViewModel.Timeline.Document = document;
-            ViewModel.Timeline.SelectedCueId = selectedCueId;
+            ViewModel.Timeline.SelectedCueId = SelectedCueId;
             ViewModel.Timeline.SelectedLayer = SelectedLayer;
+            var selectedIds = ViewModel.Effects.SelectedIds.Where(id => layers.Any(layer => layer.Id == id)).ToArray();
+            if (SelectedLayerId is { } primary && !selectedIds.Contains(primary))
+            {
+                selectedIds = [primary];
+            }
+            ViewModel.Effects.SelectedIds = selectedIds;
+            ViewModel.Timeline.SelectedLayerIds = selectedIds;
             ViewModel.Effects.Document = document;
             ViewModel.Effects.SelectedLayer = SelectedLayer;
+            SyncCurrentTrackForSelection();
             RefreshInspector();
             ViewModel.Styles.CanApplyPreset = SelectedCue is not null && !projectBusy && !closing && ViewModel.Styles.SelectedPreset is not null;
             Tick();
@@ -399,6 +490,7 @@ internal sealed partial class WorkbenchSession
         var layer = SelectedLayer;
         var cue = layer?.SubtitleId is { } id ? editor.Snapshot.Subtitles.First(value => value.Id == id) : null;
         var style = cue?.Style ?? new();
+        var placement = ResolvePlacement(editor.Snapshot, layer);
         var vm = ViewModel.Styles;
         vm.HasCue = cue is not null;
         if (!stylesDirty)
@@ -406,25 +498,51 @@ internal sealed partial class WorkbenchSession
             vm.FontFamily = style.FontFamily;
             vm.FontDraft = style.FontFamily;
             vm.FontSize = (decimal)style.FontSize;
-            vm.StrokeWidth = (decimal)(cue is null ? layer?.StrokeWidth ?? 0 : style.StrokeWidth);
-            vm.Fill = SceneColorConversion.ToColor(cue is null ? layer?.Fill ?? SceneColor.White : style.Fill);
-            vm.Stroke = SceneColorConversion.ToColor(cue is null ? layer?.Stroke ?? SceneColor.Black : style.Stroke);
+            vm.StrokeWidth = (decimal)(layer is null ? 0 : InspectorValue(layer, AnimationProperty.STROKE_WIDTH, cue is null ? layer.StrokeWidth : style.StrokeWidth));
+            vm.Fill = SceneColorConversion.ToColor(layer is null ? SceneColor.White : InspectorColor(layer, cue is null ? layer.Fill : style.Fill, false));
+            vm.Stroke = SceneColorConversion.ToColor(layer is null ? SceneColor.Black : InspectorColor(layer, cue is null ? layer.Stroke : style.Stroke, true));
             vm.Bold = style.Bold;
             vm.Italic = style.Italic;
             vm.Alignment = Array.IndexOf(alignments, style.Alignment);
+            var positionGeometry = placement.Geometry;
+            if (positionGeometry is not null && layer is not null)
+            {
+                positionGeometry = positionGeometry with
+                {
+                    Transform = layer.Transform with
+                    {
+                        ScaleX = InspectorValue(layer, AnimationProperty.SCALE_X, layer.Transform.ScaleX),
+                        ScaleY = InspectorValue(layer, AnimationProperty.SCALE_Y, layer.Transform.ScaleY),
+                        Rotation = InspectorValue(layer, AnimationProperty.ROTATION, layer.Transform.Rotation)
+                    }
+                };
+            }
+            vm.Position.Load(style, placement.Position, placement.BasePosition is not null, positionGeometry);
         }
 
         var effects = ViewModel.Effects;
         if (!effectsDirty)
         {
             var transform = layer?.Transform ?? new();
-            effects.PositionX = (decimal)transform.X;
-            effects.PositionY = (decimal)transform.Y;
+            if (layer is not null)
+            {
+                transform = transform with
+                {
+                    X = InspectorValue(layer, AnimationProperty.POSITION_X, transform.X),
+                    Y = InspectorValue(layer, AnimationProperty.POSITION_Y, transform.Y),
+                    ScaleX = InspectorValue(layer, AnimationProperty.SCALE_X, transform.ScaleX),
+                    ScaleY = InspectorValue(layer, AnimationProperty.SCALE_Y, transform.ScaleY),
+                    Rotation = InspectorValue(layer, AnimationProperty.ROTATION, transform.Rotation)
+                };
+            }
+            effects.CanEditPosition = layer is not null && placement.BasePosition is not null;
+            effects.PositionX = placement.BasePosition is { } baseX ? (decimal)(baseX.X + transform.X) : null;
+            effects.PositionY = placement.BasePosition is { } baseY ? (decimal)(baseY.Y + transform.Y) : null;
             effects.ScaleX = (decimal)transform.ScaleX;
             effects.ScaleY = (decimal)transform.ScaleY;
             effects.Rotation = (decimal)transform.Rotation;
-            effects.Opacity = (decimal)(layer?.Opacity ?? 1);
-            effects.Blur = (decimal)(layer?.Blur ?? 0);
+            effects.Opacity = (decimal)(layer is null ? 1 : InspectorValue(layer, AnimationProperty.OPACITY, layer.Opacity));
+            effects.Blur = (decimal)(layer is null ? 0 : InspectorValue(layer, AnimationProperty.BLUR, layer.Blur));
             effects.LayerWidth = (decimal)(layer?.Shape?.Width ?? layer?.Image?.Width ?? 300);
             effects.LayerHeight = (decimal)(layer?.Shape?.Height ?? layer?.Image?.Height ?? 180);
             effects.CanResizeLayer = layer?.Shape is not null || layer?.Image is not null;
@@ -437,6 +555,7 @@ internal sealed partial class WorkbenchSession
             RefreshKeyframeInspector();
         }
 
+        RefreshEditingTargetLabel();
         var names = editor.Snapshot.Presets.Select(value => value.Name).ToArray();
         if (!effects.Presets.SequenceEqual(names))
         {
@@ -446,9 +565,43 @@ internal sealed partial class WorkbenchSession
         effects.Preset = names.Length == 0 ? -1 : Math.Clamp(effects.Preset, 0, names.Length - 1);
     }
 
+    private Rendering.LayerPlacementResolution ResolvePlacement(ProjectDocument document, ProjectLayer? layer)
+    {
+        var result = layerPlacement.Resolve(document, projectDirectory, layer);
+        if (result.Error is { } error)
+        {
+            placementDiagnostic = new InvalidDataException($"{WorkbenchText.Get("SubtitlePositionUnavailable")}: {error.Message}", error);
+            SetDiagnosticError("Subtitle placement", placementDiagnostic);
+            ShowError(placementDiagnostic, false);
+        }
+        else if (placementDiagnostic is not null)
+        {
+            var source = placementDiagnostic.InnerException;
+            if (ReferenceEquals(LastError, placementDiagnostic) ||
+                source is not null && LastError is { } previous && previous.GetType() == source.GetType() && previous.Message == source.Message)
+            {
+                LastError = null;
+                ViewModel.Error = null;
+            }
+
+            placementDiagnostic = null;
+            SetDiagnosticError("Subtitle placement", null);
+        }
+
+        return result;
+    }
+
+    private void RestorePlacementDiagnostic()
+    {
+        if (LastError is null && placementDiagnostic is { } error)
+        {
+            ShowError(error, false);
+        }
+    }
+
     internal void SelectCue(Guid id)
     {
-        if (updatingWorkbench || projectBusy || id == selectedCueId)
+        if (updatingWorkbench || projectBusy || id == SelectedCueId && SelectedLayer?.SubtitleId == id)
         {
             return;
         }
@@ -459,9 +612,11 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
-        selectedCueId = id;
-        selectedLayerId = Flatten(editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == id)?.Id;
-        selectedKeyTime = null;
+        ViewModel.CancelGestures();
+        SelectedCueId = id;
+        ViewModel.Effects.SelectedIds = [];
+        SelectedLayerId = Flatten(editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == id)?.Id;
+        SelectedKeyTime = null;
         ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
         RefreshDocument();
     }
@@ -473,19 +628,20 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
-        if (id != selectedLayerId && !TryCommitDrafts())
+        if (id != SelectedLayerId && !TryCommitDrafts())
         {
             RefreshDocument();
             return;
         }
 
-        selectedLayerId = id;
+        ViewModel.CancelGestures();
+        SelectedLayerId = id;
         ViewModel.Effects.SelectedIds = selectedIds;
-        selectedKeyTime = null;
+        SelectedKeyTime = null;
         ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
         if (SelectedLayer?.SubtitleId is { } cueId)
         {
-            selectedCueId = cueId;
+            SelectedCueId = cueId;
         }
 
         RefreshDocument();

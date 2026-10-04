@@ -36,6 +36,9 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         this.FindControl<ColorPicker>("StrokePicker")!.ColorChanged += (_, e) => viewModel.CommitStroke(e.NewColor);
         var alignment = this.FindControl<ComboBox>("AlignmentCombo")!;
         alignment.SelectionChanged += (_, _) => viewModel.CommitAlignment(alignment.SelectedIndex);
+        var position = this.FindControl<SubtitlePositionEditor>("PositionEditor")!;
+        position.ExplicitPositionChanged += (_, _) => viewModel.CommitDrafts();
+        position.PresetPositionChanged += (_, _) => viewModel.CommitDrafts();
         viewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(viewModel.FontFamily))
@@ -82,6 +85,11 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     }
     public void FocusInvalidField(string? fieldKey)
     {
+        if (fieldKey is not null && this.FindControl<SubtitlePositionEditor>("PositionEditor")!.FocusInvalidField(fieldKey))
+        {
+            return;
+        }
+
         var control = fieldKey is null ? fonts : this.FindControl<Control>(fieldKey) ?? fonts;
         control.Focus();
     }

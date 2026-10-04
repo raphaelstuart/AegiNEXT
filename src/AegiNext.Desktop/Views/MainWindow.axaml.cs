@@ -12,12 +12,14 @@ using AegiNext.Desktop.Panels.Subtitles;
 using AegiNext.Desktop.Panels.Styles;
 using AegiNext.Desktop.Panels.Effects;
 using AegiNext.Desktop.Panels.Export;
+using AegiNext.Desktop.Panels.Log;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Windowing;
 using AegiNext.Desktop.Workspace;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -43,7 +45,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private Task? disposeTask;
     private SettingsWindow? settingsWindow;
 
-    /// <summary>通过显式组合根创建唯一工作台会话和六个长生命周期面板。</summary>
+    /// <summary>通过显式组合根创建唯一工作台会话和固定长生命周期面板。</summary>
     public MainWindow() : this(null)
     {
     }
@@ -61,7 +63,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             ["subtitles"] = new SubtitlesPanelView(ViewModel.Subtitles, Session),
             ["styles"] = new StylesPanelView(ViewModel.Styles, Session),
             ["effects"] = new EffectsPanelView(ViewModel.Effects, Session),
-            ["export"] = new ExportPanelView(ViewModel.Export, Session)
+            ["export"] = new ExportPanelView(ViewModel.Export, Session),
+            [WorkbenchPanelIds.LOG] = new LogPanelView(ViewModel.Log, Session.Journal, () => Session.IsClosing)
         };
         workspaceHost = this.FindControl<ContentControl>("WorkspaceHost")!;
         menuCatalog = new(ViewModel.GetCommand);
@@ -75,6 +78,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         layouts.FloatingWindowTitleChanged += OnFloatingWindowTitleChanged;
         ViewModel.HostCommandHandler = HandleHostCommandAsync;
         ViewModel.PropertyChanged += OnViewModelChanged;
+        ViewModel.Log.PropertyChanged += OnLogChanged;
         ViewModel.DraftErrorFocusRequested += OnDraftErrorFocusRequested;
         Session.PreferencesChanged += OnPreferencesChanged;
         Session.StyleLibraryChanged += OnStyleLibraryChanged;
@@ -83,6 +87,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         Opened += (_, _) => clockTimer.Start();
         Closed += (_, _) => clockTimer.Stop();
         ApplyWindowPreferences();
+        RefreshPanelAvailability();
+        RefreshLogIndicator();
         if (layouts.LastError is { } layoutError)
         {
             Session.ShowError(new InvalidOperationException(layoutError));
@@ -142,6 +148,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
     private async Task DisposeCoreAsync()
     {
+        ViewModel.Log.PropertyChanged -= OnLogChanged;
+        workspaceHost.IsEnabled = false;
         clockTimer.Stop();
         settingsWindow?.Close();
         try
@@ -224,7 +232,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             {
                 WorkbenchCommand.VIEW_PREVIEW => "preview", WorkbenchCommand.VIEW_TIMELINE => "timeline",
                 WorkbenchCommand.VIEW_SUBTITLES => "subtitles", WorkbenchCommand.VIEW_STYLES => "styles",
-                WorkbenchCommand.VIEW_EFFECTS => "effects", WorkbenchCommand.VIEW_EXPORT => "export", _ => null
+                WorkbenchCommand.VIEW_EFFECTS => "effects", WorkbenchCommand.VIEW_EXPORT => "export",
+                WorkbenchCommand.VIEW_LOG => WorkbenchPanelIds.LOG, _ => null
             };
             if (id is not null)
             {
@@ -234,6 +243,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     }
 
     private void OnLayoutChanged(object? sender, EventArgs e) => RefreshLayoutMenu();
+    private void OnLogChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(LogPanelViewModel.UnreadErrorCount))
+        {
+            RefreshLogIndicator();
+        }
+    }
+
+    private void RefreshLogIndicator()
+    {
+        var count = ViewModel.Log.UnreadErrorCount;
+        layouts.SetPanelUnreadCount(WorkbenchPanelIds.LOG, count);
+        menuCatalog.UpdateUnreadLogErrors(count);
+    }
     private void OnLayoutError(object? sender, EventArgs e)
     {
         if (layouts.LastError is { } error)
@@ -277,6 +300,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
         else if (e.PropertyName == nameof(ViewModel.IsBusy))
         {
+            RefreshPanelAvailability();
             foreach (var command in presetCommands.Values.OfType<AsyncRelayCommand>())
             {
                 command.NotifyCanExecuteChanged();
@@ -292,6 +316,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             input.FocusInvalidField(ViewModel.InvalidFieldKey);
         }
     }
+    private void RefreshPanelAvailability()
+    {
+        foreach (var pair in panels)
+        {
+            if (pair.Key != WorkbenchPanelIds.LOG)
+            {
+                pair.Value.SetCurrentValue(InputElement.IsEnabledProperty, !ViewModel.IsBusy);
+            }
+        }
+    }
+
     private void OnPreferencesChanged(object? sender, EventArgs e) => ApplyWindowPreferences();
     private void OnStyleLibraryChanged(object? sender, EventArgs e)
     {
@@ -325,5 +360,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             }
         }
         settingsWindow?.UpdatePreferences(preferences);
+        ViewModel.Log.RefreshLanguage();
     }
 }

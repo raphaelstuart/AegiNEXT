@@ -8,7 +8,7 @@ internal sealed partial class WorkbenchSession
 {
     internal bool CanExecuteCommand(WorkbenchCommand command)
     {
-        if (closing || projectBusy)
+        if (closing || projectBusy && command != WorkbenchCommand.VIEW_LOG)
         {
             return false;
         }
@@ -41,6 +41,7 @@ internal sealed partial class WorkbenchSession
 
         await RunCommandAsync(async () =>
         {
+            LogInfo("Command", command.ToString());
             switch (command)
             {
                 case WorkbenchCommand.NEW_PROJECT: await workflow.NewProjectAsync(); break;
@@ -58,6 +59,12 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.EXPORT_SUBTITLES: await workflow.ExportSubtitlesAsync(); break;
                 case WorkbenchCommand.EXPORT_VIDEO: await export.EncodeAsync(); break;
                 case WorkbenchCommand.PLAY_PAUSE:
+                    if (!TryCommitDrafts())
+                    {
+                        break;
+                    }
+                    ViewModel.CancelGestures();
+                    ClearKeyframeSelection();
                     if (controller.Snapshot.State == VideoPlaybackState.PLAYING)
                     {
                         await controller.PauseAsync();
@@ -76,6 +83,7 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.UNDO:
                     if (TryCommitDrafts())
                     {
+                        ViewModel.CancelGestures();
                         ResetTiming();
                         editor.Undo();
                     }
@@ -83,6 +91,7 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.REDO:
                     if (TryCommitDrafts())
                     {
+                        ViewModel.CancelGestures();
                         ResetTiming();
                         editor.Redo();
                     }

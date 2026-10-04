@@ -81,6 +81,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         vm.IsRunning = true;
         vm.ProgressVisible = true;
         vm.ProgressIndeterminate = true;
+        session.LogInfo("Export", WorkbenchText.Get("Export"));
         var duration = session.Controller.Snapshot.Duration;
         var exportRevision = revision;
         var progress = new Progress<VideoExportProgress>(value =>
@@ -104,11 +105,13 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
                 vm.ProgressIndeterminate = false;
                 vm.Progress = 1;
                 vm.Status = WorkbenchText.Get("Exported");
+                session.LogInfo("Export", vm.Status);
             }
         }
         catch (OperationCanceledException)
         {
             vm.Status = WorkbenchText.Get("Cancelled");
+            session.LogInfo("Export", vm.Status);
             vm.ProgressVisible = false;
         }
         catch (Exception error)

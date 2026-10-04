@@ -34,6 +34,7 @@ internal sealed class StylesPanelViewModel : ObservableObject
     internal StylesPanelViewModel(WorkbenchSession session)
     {
         this.session = session;
+        Position.Changed += (_, _) => OnPropertyChanged(nameof(Position));
         ApplyStyleCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ApplySelectedStyleAsync()));
         ManageStylesCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.RequestSettingsAsync(AegiNext.Desktop.Settings.SettingsPage.STYLES)));
         ImportFontCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ImportFontAsync()));
@@ -126,6 +127,7 @@ internal sealed class StylesPanelViewModel : ObservableObject
     }
 
     public ICommand ApplyStyleCommand { get; }
+    public SubtitlePositionDraft Position { get; } = new();
 
     public ICommand ManageStylesCommand { get; }
 

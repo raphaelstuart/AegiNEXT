@@ -31,6 +31,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
     private readonly List<Window> auxiliaryWindows = [];
     private readonly Dictionary<IDockWindow, double> restoredWindowScales = [];
     private readonly List<WorkspaceLayoutPreset> userPresets;
+    private readonly Dictionary<string, int> unreadCounts = new(StringComparer.Ordinal);
     private IRootDock root = null!;
     private CultureInfo culture;
     private bool applying;
@@ -42,7 +43,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
     {
         if (!panelViews.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(WorkbenchPanelIds.All))
         {
-            throw new ArgumentException("Exactly six stable workspace panel views are required.", nameof(panelViews));
+            throw new ArgumentException("Every stable workspace panel view is required exactly once.", nameof(panelViews));
         }
 
         this.owner = owner;
@@ -283,10 +284,31 @@ internal sealed class WorkbenchLayoutController : IDisposable
         culture = selectedCulture;
         foreach (var panel in panels.Values)
         {
-            panel.Title = LayoutText.Get(panel.Id, culture);
+            panel.Title = GetPanelTitle(panel.Id);
         }
         RefreshFloatingTitles();
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal void SetPanelUnreadCount(string panelId, int count)
+    {
+        EnsureUsable();
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        var panel = GetPanel(panelId);
+        if (unreadCounts.GetValueOrDefault(panelId) == count)
+        {
+            return;
+        }
+        unreadCounts[panelId] = count;
+        panel.Title = GetPanelTitle(panelId);
+        RefreshFloatingTitles();
+    }
+
+    private string GetPanelTitle(string panelId)
+    {
+        var title = LayoutText.Get(panelId, culture);
+        var count = unreadCounts.GetValueOrDefault(panelId);
+        return count == 0 ? title : $"{title} ({count})";
     }
 
     internal async Task ShowManagerAsync()

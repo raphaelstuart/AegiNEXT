@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Controllers;
@@ -13,15 +14,25 @@ namespace AegiNext.Desktop.Panels.Preview;
 internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelView
 {
     private readonly WorkbenchSession session;
-    private readonly VideoFramePresenter presenter;
+    private readonly PreviewPanelViewModel viewModel;
+    private readonly EffectCanvasControl canvas;
     private readonly Slider positionSlider;
     private bool disposed;
     internal PreviewPanelView(PreviewPanelViewModel viewModel, WorkbenchSession session)
     {
         this.session = session;
+        this.viewModel = viewModel;
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
-        presenter = this.FindControl<VideoFramePresenter>("VideoImage")!;
+        canvas = this.FindControl<EffectCanvasControl>("EffectCanvas")!;
+        canvas.GestureStarting += (_, e) => e.Cancel = !viewModel.BeginCanvasGesture();
+        canvas.GestureCancelled += (_, _) => viewModel.CancelCanvasGesture();
+        canvas.LayerEdited += async (_, e) => await viewModel.CommitCanvasAsync(e);
+        canvas.RenderingFailed += (_, e) => viewModel.ReportRenderingError(e.Error);
+        canvas.RenderingRecovered += (_, _) => viewModel.ReportRenderingRecovery();
+        viewModel.PropertyChanged += OnSceneChanged;
+        session.SceneGestureCancellationRequested += OnGesturesCancelled;
+        ApplyScene();
         positionSlider = this.FindControl<Slider>("PositionSlider")!;
         positionSlider.AddHandler(PointerPressedEvent, (_, e) =>
         {
@@ -51,18 +62,37 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
     }
 
     public string PanelId => "preview";
-    public void CancelGestures() => session.ViewModel.Preview.IsScrubbing = false;
+    public void CancelGestures()
+    {
+        viewModel.IsScrubbing = false;
+        canvas.CancelGesture();
+        viewModel.CancelCanvasGesture();
+    }
     public void FocusInvalidField(string? fieldKey) => positionSlider.Focus();
     private void OnPreviewUpdated(object? sender, VideoPreviewUpdate update)
     {
         if (update.ClearFrame)
         {
-            presenter.Clear();
+            canvas.ClearVideo();
         }
         if (update.Frame is { } frame)
         {
-            presenter.Present(frame);
+            canvas.PresentComposite(frame, update.BackgroundFrame ?? frame);
+            ApplyScene();
         }
+    }
+    private void OnSceneChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PreviewPanelViewModel.Scene))
+        {
+            ApplyScene();
+        }
+    }
+    private void ApplyScene()
+    {
+        var scene = viewModel.Scene;
+        canvas.EditMode = scene.Mode;
+        canvas.SetScene(scene.Document, scene.SelectedLayer, scene.Position, scene.AssetDirectory, scene.IsEditingPose);
     }
     private void OnPreferencesChanged(object? sender, EventArgs e) => ControlLocalization.Apply(this);
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
@@ -74,7 +104,9 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
             session.PreviewUpdated -= OnPreviewUpdated;
             session.PreferencesChanged -= OnPreferencesChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
-            presenter.Dispose();
+            viewModel.PropertyChanged -= OnSceneChanged;
+            session.SceneGestureCancellationRequested -= OnGesturesCancelled;
+            canvas.Dispose();
         }
     }
 }

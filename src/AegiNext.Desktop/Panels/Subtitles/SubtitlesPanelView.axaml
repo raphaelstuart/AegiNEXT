@@ -1,17 +1,33 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
+    xmlns:projects="using:AegiNext.Core.Projects"
     xmlns:vm="using:AegiNext.Desktop.Panels.Subtitles" x:DataType="vm:SubtitlesPanelViewModel"
     x:Class="AegiNext.Desktop.Panels.Subtitles.SubtitlesPanelView">
 <Border Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" CornerRadius="10" ClipToBounds="True">
-      <Grid RowDefinitions="Auto,Auto,*">
+      <Grid RowDefinitions="Auto,Auto,Auto,*">
         <Grid ColumnDefinitions="*,Auto" Margin="12,8">
           <TextBlock Name="PreviewLabel" Tag="Subtitles" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"><Button Name="AddCueButton" Tag="Add" Command="{Binding AddCueCommand}" /><Button Name="DeleteCueButton" Tag="Delete" Command="{Binding DeleteCueCommand}" /><Button Name="SplitCueButton" Tag="Split" Command="{Binding SplitCueCommand}" /><Button Name="MergeCueButton" Tag="Merge" Command="{Binding MergeCueCommand}" /></StackPanel>
         </Grid>
-        <Grid Grid.Row="1" ColumnDefinitions="36,112,112,70,*" Margin="20,0,20,4" ColumnSpacing="8">
+        <WrapPanel Grid.Row="1" Margin="12,0,12,8">
+          <ComboBox Name="SubtitleTrackCombo" Width="160" Margin="0,0,8,4" ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=OneWay}">
+            <ComboBox.ItemTemplate><DataTemplate x:DataType="projects:SubtitleTrack"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBox Name="SubtitleTrackNameInput" Width="160" Margin="0,0,8,4" Text="{Binding TrackName, Mode=TwoWay}" MaxLength="128" />
+          <Button Name="AddSubtitleTrackButton" Margin="0,0,8,4" Tag="AddTrack" Command="{Binding AddTrackCommand}" />
+          <Button Name="RenameSubtitleTrackButton" Margin="0,0,8,4" Tag="RenameTrack" Command="{Binding RenameTrackCommand}" />
+          <Button Name="DeleteSubtitleTrackButton" Margin="0,0,8,4" Tag="DeleteTrack" Command="{Binding DeleteTrackCommand}" IsEnabled="{Binding CanDeleteTrack}" />
+          <Button Name="MoveSubtitleTrackUpButton" Margin="0,0,8,4" Tag="MoveTrackUp" Command="{Binding MoveTrackUpCommand}" IsEnabled="{Binding CanMoveTrackUp}" />
+          <Button Name="MoveSubtitleTrackDownButton" Margin="0,0,8,4" Tag="MoveTrackDown" Command="{Binding MoveTrackDownCommand}" IsEnabled="{Binding CanMoveTrackDown}" />
+          <ComboBox Name="SubtitleTargetTrackCombo" Width="160" Margin="0,0,8,4" ItemsSource="{Binding Tracks}" SelectedItem="{Binding TargetTrack, Mode=TwoWay}">
+            <ComboBox.ItemTemplate><DataTemplate x:DataType="projects:SubtitleTrack"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Name="MoveSubtitleToTrackButton" Margin="0,0,0,4" Tag="MoveToTrack" Command="{Binding MoveToTrackCommand}" IsEnabled="{Binding CanMoveToTrack}" />
+        </WrapPanel>
+        <Grid Grid.Row="2" ColumnDefinitions="36,112,112,70,*" Margin="20,0,20,4" ColumnSpacing="8">
           <TextBlock Text="#" Classes="field" HorizontalAlignment="Center" /><TextBlock Grid.Column="1" Tag="Start" Classes="field" HorizontalAlignment="Center" /><TextBlock Grid.Column="2" Tag="End" Classes="field" HorizontalAlignment="Center" /><TextBlock Grid.Column="3" Tag="Duration" Classes="field" HorizontalAlignment="Center" /><TextBlock Grid.Column="4" Tag="Text" Classes="field" />
         </Grid>
-        <ListBox Name="SubtitleList" Grid.Row="2" SelectionMode="Single" Background="Transparent" ItemsSource="{Binding Rows, Mode=OneWay}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}">
+        <ListBox Name="SubtitleList" Grid.Row="3" SelectionMode="Single" Background="Transparent" ItemsSource="{Binding VisibleRows, Mode=OneWay}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="editing:SubtitleRow">
               <Grid ColumnDefinitions="36,112,112,70,*" ColumnSpacing="8" Margin="4,0">

@@ -14,7 +14,7 @@ public sealed class ProjectSceneRenderer : IDisposable
     private const float PREVIEW_REFERENCE_WHITE_NITS = 203;
     private readonly IProjectAssetResolver assets;
     private readonly Dictionary<ProjectAsset, SKImage> images = [];
-    private readonly Dictionary<(string Text, SubtitleStyle Style, int Width), SubtitleLayout> layouts = [];
+    private readonly Dictionary<(string Text, SubtitleStyle Style, int Width, int Height), SubtitleLayout> layouts = [];
     private readonly SKColorSpace linear = SKColorSpace.CreateSrgbLinear();
     private PreparedProjectScene? prepared;
     private bool isDisposed;
@@ -70,8 +70,57 @@ public sealed class ProjectSceneRenderer : IDisposable
         }
     }
 
+    /// <summary>返回当前可见图层与实际渲染一致的字形边界及变换；找不到或图层在当前时间不可见时返回 null。</summary>
+    public ProjectLayerGeometry? GetLayerGeometry(ProjectDocument document, MediaTime time, Guid layerId)
+    {
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+        ArgumentNullException.ThrowIfNull(document);
+        Prepare(document);
+        return FindGeometry(document, SceneEvaluator.Evaluate(prepared!, time), layerId, SKMatrix.Identity);
+    }
+
+    /// <summary>将自动对齐转换为保持实际字形位置的显式锚点，不要求字幕在当前播放时间可见。</summary>
+    public SubtitlePosition ResolveSubtitlePosition(ProjectDocument document, SubtitleLine subtitle)
+    {
+        return MeasureSubtitlePlacement(document, subtitle).Position;
+    }
+
+    /// <summary>测量任意字幕的真实字形及自动布局锚点，不依赖当前播放时间或图层可见性。</summary>
+    public SubtitlePlacementMeasurement MeasureSubtitlePlacement(ProjectDocument document, SubtitleLine subtitle)
+    {
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(subtitle);
+        Prepare(document);
+        var layout = Layout(document, subtitle);
+        var resolved = subtitle.Style.Position ?? SubtitlePosition.FromAlignment(subtitle.Style.Alignment, subtitle.Style.Margin);
+        if (subtitle.Style.Position is null)
+        {
+            resolved = resolved with
+            {
+                Offset = new(layout.BasePosition.X - resolved.Anchor.X * document.Width,
+                    layout.BasePosition.Y - resolved.Anchor.Y * document.Height)
+            };
+        }
+
+        return new(resolved, layout.Bounds, layout.HasInk);
+    }
+
     /// <summary>将工程叠层重标到 203 nit 名义白，与 sRGB BGRA 背景在线性光合成；只缩放叠层 RGB，不改变 alpha 或导出表面。</summary>
     public byte[] ComposePreview(ProjectDocument document, MediaTime time, ReadOnlySpan<byte> bgra, int width, int height, int rowBytes)
+    {
+        return ComposePreviewCore(document, time, bgra, width, height, rowBytes, width, height, false);
+    }
+
+    /// <summary>将视频等比例放入指定的工程预览表面，保持工程叠层的坐标与宽高比，并使用 203 nit SDR 名义白。</summary>
+    public byte[] ComposePreview(ProjectDocument document, MediaTime time, ReadOnlySpan<byte> bgra,
+        int width, int height, int rowBytes, int outputWidth, int outputHeight)
+    {
+        return ComposePreviewCore(document, time, bgra, width, height, rowBytes, outputWidth, outputHeight, true);
+    }
+
+    private byte[] ComposePreviewCore(ProjectDocument document, MediaTime time, ReadOnlySpan<byte> bgra,
+        int width, int height, int rowBytes, int outputWidth, int outputHeight, bool projectViewport)
     {
         ObjectDisposedException.ThrowIf(isDisposed, this);
         ArgumentNullException.ThrowIfNull(document);
@@ -80,12 +129,18 @@ public sealed class ProjectSceneRenderer : IDisposable
             throw new ArgumentException("无效的预览缓冲。", nameof(bgra));
         }
 
+        if (outputWidth is <= 0 or > 32768 || outputHeight is <= 0 or > 32768 ||
+            (long)outputWidth * outputHeight > 33177600)
+        {
+            throw new ArgumentOutOfRangeException(nameof(outputWidth), "预览表面超过像素预算。");
+        }
+
         Prepare(document);
         previewScene ??= new(new(document.Width, document.Height, (float)document.ReferenceWhiteNits));
-        if (previewTarget is null || previewTarget.Info.Width != width || previewTarget.Info.Height != height)
+        if (previewTarget is null || previewTarget.Info.Width != outputWidth || previewTarget.Info.Height != outputHeight)
         {
             previewTarget?.Dispose();
-            previewTarget = new(new(width, height, PREVIEW_REFERENCE_WHITE_NITS));
+            previewTarget = new(new(outputWidth, outputHeight, PREVIEW_REFERENCE_WHITE_NITS));
         }
 
         var layers = SceneEvaluator.Evaluate(prepared!, time);
@@ -106,7 +161,10 @@ public sealed class ProjectSceneRenderer : IDisposable
         using var srgb = SKColorSpace.CreateSrgb();
         using var background = SKImage.FromPixelCopy(new(width, height, SKColorType.Bgra8888, SKAlphaType.Opaque, srgb), bgra, rowBytes)
             ?? throw new InvalidOperationException("无法读取视频预览。");
-        result.Canvas.DrawImage(background, 0, 0);
+        result.Canvas.Clear(SKColors.Black);
+        var output = new SKRect(0, 0, outputWidth, outputHeight);
+        var videoBounds = projectViewport ? FitPreview(width, height, outputWidth, outputHeight) : output;
+        result.Canvas.DrawImage(background, videoBounds, new SKSamplingOptions(SKFilterMode.Linear));
         using var layer = scene.Snapshot();
         if (document.ReferenceWhiteNits != PREVIEW_REFERENCE_WHITE_NITS)
         {
@@ -114,8 +172,19 @@ public sealed class ProjectSceneRenderer : IDisposable
         }
 
         using var layerPaint = new SKPaint { ColorFilter = previewWhiteFilter };
-        result.Canvas.DrawImage(layer, new SKRect(0, 0, width, height), new SKSamplingOptions(SKFilterMode.Linear), layerPaint);
+        var sceneBounds = projectViewport ? FitPreview(document.Width, document.Height, outputWidth, outputHeight) : output;
+        result.Canvas.DrawImage(layer, sceneBounds, new SKSamplingOptions(SKFilterMode.Linear), layerPaint);
         return result.CopySrgbBgra();
+    }
+
+    private static SKRect FitPreview(int width, int height, int outputWidth, int outputHeight)
+    {
+        var scale = Math.Min((double)outputWidth / width, (double)outputHeight / height);
+        var fittedWidth = (float)(width * scale);
+        var fittedHeight = (float)(height * scale);
+        var left = (outputWidth - fittedWidth) / 2;
+        var top = (outputHeight - fittedHeight) / 2;
+        return new(left, top, left + fittedWidth, top + fittedHeight);
     }
 
     /// <inheritdoc />
@@ -198,11 +267,8 @@ public sealed class ProjectSceneRenderer : IDisposable
         var saved = canvas.Save();
         try
         {
-            var transform = layer.Transform;
-            canvas.Translate((float)transform.X, (float)transform.Y);
-            canvas.RotateDegrees((float)transform.Rotation);
-            canvas.Scale((float)transform.ScaleX, (float)transform.ScaleY);
-            canvas.Translate((float)-transform.AnchorX, (float)-transform.AnchorY);
+            var geometry = Geometry(document, layer, parent.TotalMatrix);
+            canvas.SetMatrix(geometry.LocalToWorld);
             if (layer.Source.Mask is { } mask)
             {
                 using var path = Path(mask.Path);
@@ -331,10 +397,6 @@ public sealed class ProjectSceneRenderer : IDisposable
         var subtitle = layer.Subtitle!;
         var style = subtitle.Style;
         var layout = Layout(document, subtitle);
-        var lineHeight = (float)(style.FontSize * style.LineHeight);
-        var blockHeight = (float)style.FontSize + Math.Max(0, layout.Lines.Count - 1) * lineHeight;
-        var vertical = (int)style.Alignment / 3;
-        var top = vertical == 0 ? (float)style.Margin : vertical == 1 ? (document.Height - blockHeight) / 2 : document.Height - (float)style.Margin - blockHeight;
         for (var index = 0; index < layout.Lines.Count; index++)
         {
             var line = layout.Lines[index];
@@ -343,9 +405,8 @@ public sealed class ProjectSceneRenderer : IDisposable
                 continue;
             }
 
-            var horizontal = (int)style.Alignment % 3;
-            var x = horizontal == 0 ? (float)style.Margin : horizontal == 1 ? (document.Width - run.AdvanceWidth) / 2 : document.Width - (float)style.Margin - run.AdvanceWidth;
-            var y = top + (float)style.FontSize + index * lineHeight;
+            var x = line.Position.X;
+            var y = line.Position.Y;
             if (style.ShadowColor.Alpha > 0)
             {
                 using var shadow = Paint(style.ShadowColor);
@@ -418,7 +479,7 @@ public sealed class ProjectSceneRenderer : IDisposable
 
     private SubtitleLayout Layout(ProjectDocument document, SubtitleLine subtitle)
     {
-        var key = (subtitle.Text, subtitle.Style, document.Width);
+        var key = (subtitle.Text, subtitle.Style, document.Width, document.Height);
         if (layouts.TryGetValue(key, out var existing))
         {
             return existing;
@@ -484,7 +545,7 @@ public sealed class ProjectSceneRenderer : IDisposable
                 offset += paragraph.Length + 1;
             }
 
-            var result = new SubtitleLayout(lines);
+            var result = PositionLayout(document, subtitle.Style, lines);
             layouts.Add(key, result);
             return result;
         }
@@ -497,6 +558,138 @@ public sealed class ProjectSceneRenderer : IDisposable
 
             throw;
         }
+    }
+
+    private static SubtitleLayout PositionLayout(ProjectDocument document, SubtitleStyle style,
+        List<SubtitleLayoutLine> lines)
+    {
+        var horizontal = (int)style.Alignment % 3;
+        var vertical = (int)style.Alignment / 3;
+        var lineHeight = (float)(style.FontSize * style.LineHeight);
+        var blockHeight = (float)style.FontSize + Math.Max(0, lines.Count - 1) * lineHeight;
+        var advance = lines.Max(line => line.Run?.AdvanceWidth ?? 0);
+        var top = vertical switch
+        {
+            0 => (float)style.Margin,
+            1 => (document.Height - blockHeight) / 2,
+            _ => document.Height - (float)style.Margin - blockHeight
+        };
+        var ink = SKRect.Empty;
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var line = lines[index];
+            var width = line.Run?.AdvanceWidth ?? 0;
+            var x = horizontal switch
+            {
+                0 => (float)style.Margin,
+                1 => (document.Width - width) / 2,
+                _ => document.Width - (float)style.Margin - width
+            };
+            var position = new SKPoint(x, top + (float)style.FontSize + index * lineHeight);
+            lines[index] = line with { Position = position };
+            if (line.Run is { InkBounds.IsEmpty: false } run)
+            {
+                var bound = run.InkBounds;
+                bound.Offset(position);
+                ink = ink.IsEmpty ? bound : SKRect.Union(ink, bound);
+            }
+        }
+
+        var hasInk = !ink.IsEmpty;
+        if (!hasInk)
+        {
+            var width = Math.Max(1, advance);
+            var x = horizontal switch
+            {
+                0 => (float)style.Margin,
+                1 => (document.Width - width) / 2,
+                _ => document.Width - (float)style.Margin - width
+            };
+            ink = new(x, top, x + width, top + blockHeight);
+        }
+
+        var normalized = style.Position ?? SubtitlePosition.FromAlignment(style.Alignment, style.Margin);
+        var pivot = new SKPoint(ink.Left + (float)normalized.Pivot.X * ink.Width,
+            ink.Top + (float)normalized.Pivot.Y * ink.Height);
+        var basePosition = style.Position is not null
+            ? new SKPoint((float)(normalized.Anchor.X * document.Width + normalized.Offset.X),
+                (float)(normalized.Anchor.Y * document.Height + normalized.Offset.Y))
+            : pivot;
+        return new(lines, ink, basePosition, pivot, hasInk);
+    }
+
+    private ProjectLayerGeometry? FindGeometry(ProjectDocument document, ImmutableArray<EvaluatedLayer> layers,
+        Guid id, SKMatrix parentToWorld)
+    {
+        foreach (var layer in layers)
+        {
+            var geometry = Geometry(document, layer, parentToWorld);
+            if (layer.Source.Id == id)
+            {
+                return geometry;
+            }
+
+            if (FindGeometry(document, layer.Children, id, geometry.LocalToWorld) is { } child)
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private ProjectLayerGeometry Geometry(ProjectDocument document, EvaluatedLayer layer, SKMatrix parentToWorld)
+    {
+        var bounds = SKRect.Empty;
+        var pivot = SKPoint.Empty;
+        var basePosition = SKPoint.Empty;
+        var hasInk = true;
+        switch (layer.Source.Kind)
+        {
+            case LayerKind.SUBTITLE:
+                var layout = Layout(document, layer.Subtitle!);
+                bounds = layout.Bounds;
+                pivot = layout.Pivot;
+                basePosition = layout.BasePosition;
+                hasInk = layout.HasInk;
+                break;
+            case LayerKind.SHAPE:
+                var shape = layer.Source.Shape!;
+                if (shape.Path is { } geometry)
+                {
+                    using var path = Path(geometry);
+                    bounds = path.TightBounds;
+                }
+                else
+                {
+                    bounds = new(0, 0, (float)shape.Width, (float)shape.Height);
+                }
+
+                break;
+            case LayerKind.IMAGE:
+                var image = layer.Source.Image!;
+                bounds = new(0, 0, (float)image.Width, (float)image.Height);
+                break;
+            case LayerKind.GROUP:
+                foreach (var child in layer.Children)
+                {
+                    var childGeometry = Geometry(document, child, SKMatrix.Identity);
+                    var childBounds = childGeometry.LocalToWorld.MapRect(childGeometry.LocalBounds);
+                    bounds = bounds.IsEmpty ? childBounds : SKRect.Union(bounds, childBounds);
+                }
+
+                break;
+            default:
+                throw new InvalidDataException("未知图层类型。");
+        }
+
+        var transform = layer.Transform;
+        var effectivePivot = new SKPoint(pivot.X + (float)transform.AnchorX, pivot.Y + (float)transform.AnchorY);
+        var local = SKMatrix.CreateTranslation(basePosition.X + (float)transform.X, basePosition.Y + (float)transform.Y);
+        local = SKMatrix.Concat(local, SKMatrix.CreateRotationDegrees((float)transform.Rotation));
+        local = SKMatrix.Concat(local, SKMatrix.CreateScale((float)transform.ScaleX, (float)transform.ScaleY));
+        local = SKMatrix.Concat(local, SKMatrix.CreateTranslation(-effectivePivot.X, -effectivePivot.Y));
+        return new(bounds, effectivePivot, basePosition, SKMatrix.Concat(parentToWorld, local), parentToWorld, hasInk);
     }
 
     private SKTypeface Typeface(ProjectDocument document, SubtitleStyle style, string text)

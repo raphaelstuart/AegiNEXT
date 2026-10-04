@@ -92,6 +92,14 @@ public static class ProjectStore
         {
             using var parsed = JsonDocument.Parse(json.ToArray(), new() { MaxDepth = 128 });
             RejectDuplicateKeys(parsed.RootElement);
+            if (parsed.RootElement.ValueKind != JsonValueKind.Object ||
+                !parsed.RootElement.TryGetProperty("version", out var version) ||
+                version.ValueKind != JsonValueKind.Number ||
+                !version.TryGetInt32(out var number) || number != ProjectDocument.CURRENT_VERSION)
+            {
+                throw new InvalidDataException($"只支持工程版本 {ProjectDocument.CURRENT_VERSION}，旧工程需要使用对应版本打开。");
+            }
+
             var document = parsed.RootElement.Deserialize<ProjectDocument>(options) ?? throw new JsonException("工程不能为空。");
             ProjectValidator.Validate(document);
             return document;
