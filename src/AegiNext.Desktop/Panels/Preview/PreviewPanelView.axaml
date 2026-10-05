@@ -15,6 +15,10 @@
                     Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" IsHitTestVisible="False">
               <TextBlock Name="ModeLabel" Classes="field" Text="SDR" FontSize="11" />
             </Border>
+            <ComboBox Name="QualityCombo" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8,8,58,8"
+                      MinHeight="28" Height="28" Padding="6,2" FontSize="11" MaxWidth="160"
+                      ItemsSource="{Binding QualityChoices}" SelectedItem="{Binding SelectedQuality, Mode=TwoWay}"
+                      ToolTip.Tip="{Binding QualityLabel}" AutomationProperties.Name="{Binding QualityLabel}" />
           </Grid>
           <Grid Grid.Row="1" Margin="12,6" RowDefinitions="Auto,Auto" RowSpacing="2">
             <Grid.Resources>

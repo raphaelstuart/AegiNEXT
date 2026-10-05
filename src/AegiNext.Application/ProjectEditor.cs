@@ -198,10 +198,10 @@ public sealed partial class ProjectEditor
     }
 
     /// <summary>新增字幕行及同标识字幕层，作为一个事务。</summary>
-    public Guid AddSubtitle(MediaTime start, MediaTime end, string text, Guid? trackId = null)
+    public Guid AddSubtitle(MediaTime start, MediaTime end, string text, Guid? trackId = null, SubtitleStyle? fallbackStyle = null)
     {
         var line = new SubtitleLine { Start = start, End = end, Text = text, TrackId = trackId ?? Snapshot.SubtitleTracks[0].Id };
-        AddSubtitles([line], line.TrackId);
+        AddSubtitles([line], line.TrackId, fallbackStyle);
         return line.Id;
     }
 
@@ -218,24 +218,11 @@ public sealed partial class ProjectEditor
     }
 
     /// <summary>将整批导入字幕放入指定轨道；任一碰撞或非法项都会拒绝整个导入。</summary>
-    public void AddSubtitles(IEnumerable<SubtitleLine> lines, Guid trackId)
+    public void AddSubtitles(IEnumerable<SubtitleLine> lines, Guid trackId, SubtitleStyle? fallbackStyle = null)
     {
         ArgumentNullException.ThrowIfNull(lines);
-        var imported = lines.Select(line => line with { TrackId = trackId }).ToImmutableArray();
-        Apply("Import subtitles", document =>
-        {
-            var track = document.SubtitleTracks.FirstOrDefault(track => track.Id == trackId) ??
-                throw new KeyNotFoundException("字幕轨道不存在。");
-            var styled = track.DefaultStyle is { } style
-                ? imported.Select(line => line with { Style = style }).ToImmutableArray()
-                : imported;
-
-            return document with
-            {
-                Subtitles = document.Subtitles.AddRange(styled),
-                Layers = document.Layers.AddRange(styled.Select(CreateSubtitleLayer))
-            };
-        });
+        var imported = lines.ToImmutableArray();
+        Apply("Import subtitles", document => ProjectEditingOperations.CreateSubtitleClips(document, imported, trackId, fallbackStyle));
     }
 
     /// <summary>更新字幕内容或样式；直接修改时间按裁剪语义同步对应层。</summary>

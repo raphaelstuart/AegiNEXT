@@ -10,4 +10,5 @@ public sealed record SubtitleTrack
     public SubtitleStyle? DefaultStyle { get; init; }
     public Guid? StylePresetId { get; init; }
     public string? StylePresetName { get; init; }
+    public bool AutoApplyStyle { get; init; } = true;
 }

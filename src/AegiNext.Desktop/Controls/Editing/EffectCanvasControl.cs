@@ -33,6 +33,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
     private Guid? scheduledEditingLayerId;
     private bool scheduledInteractive;
     private bool interactivePreview;
+    private PixelSize maximumPreviewSize = new(960, 540);
     private string directory = Path.GetTempPath();
     private SdrVideoFrame? video;
     private SdrVideoFrame? compositeFrame;
@@ -552,6 +553,25 @@ public sealed class EffectCanvasControl : Control, IDisposable
         }
     }
 
+    internal PixelSize MaximumPreviewSize
+    {
+        get => maximumPreviewSize;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(value.Width);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(value.Height);
+            if (maximumPreviewSize != value)
+            {
+                maximumPreviewSize = value;
+                sceneRevision++;
+                previewSequence++;
+                compositeDocument = null;
+                renderedDocument = null;
+                InvalidateVisual();
+            }
+        }
+    }
+
     /// <summary>清除视频背景和当前呈现资源，工程底板随后重新绘制。</summary>
     public void ClearVideo()
     {
@@ -680,8 +700,8 @@ public sealed class EffectCanvasControl : Control, IDisposable
             return;
         }
         var interactive = interactivePreview || dragging;
-        var maximumWidth = interactive ? 960 : 1280;
-        var maximumHeight = interactive ? 540 : 720;
+        var maximumWidth = interactive ? Math.Min(960, maximumPreviewSize.Width) : maximumPreviewSize.Width;
+        var maximumHeight = interactive ? Math.Min(540, maximumPreviewSize.Height) : maximumPreviewSize.Height;
         var scale = Math.Min(1, Math.Min((double)maximumWidth / document.Width, (double)maximumHeight / document.Height));
         var size = new PixelSize(Math.Max(1, (int)Math.Round(document.Width * scale)), Math.Max(1, (int)Math.Round(document.Height * scale)));
         var editingLayerId = editingPose ? selected?.Id : null;

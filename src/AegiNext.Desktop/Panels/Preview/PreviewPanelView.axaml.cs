@@ -4,6 +4,8 @@ using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.Styling;
 using AegiNext.Desktop.Workspace;
+using AegiNext.Desktop.Rendering;
+using Avalonia;
 using AegiNext.Core.Timing;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -102,6 +104,8 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
     private void ApplyScene()
     {
         var scene = viewModel.Scene;
+        var quality = PreviewQualityOptions.Get(scene.Quality);
+        canvas.MaximumPreviewSize = new PixelSize(quality.MaximumWidth, quality.MaximumHeight);
         canvas.InteractivePreview = scene.IsInteractive;
         canvas.EditMode = scene.Mode;
         canvas.SetScene(scene.Document, scene.SelectedLayer, scene.Position, scene.AssetDirectory, scene.IsEditingPose);

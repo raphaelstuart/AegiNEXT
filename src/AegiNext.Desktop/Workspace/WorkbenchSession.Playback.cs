@@ -36,6 +36,11 @@ internal sealed partial class WorkbenchSession
             controller.SetMuted(ViewModel.Preview.IsMuted);
             ViewModel.Preview.MuteLabel = PreviewText.Get(ViewModel.Preview.IsMuted ? "Unmute" : "Mute", InterfaceCulture);
         }
+        else if (e.PropertyName == "SelectedQuality" && ViewModel.Preview.SelectedQuality is { } quality &&
+                 quality.Id != preferences.PreviewQuality)
+        {
+            UpdatePreferences(preferences with { PreviewQuality = quality.Id });
+        }
     }
     private void OnExportPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {

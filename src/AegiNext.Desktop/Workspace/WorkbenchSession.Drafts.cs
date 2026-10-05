@@ -475,7 +475,7 @@ internal sealed partial class WorkbenchSession
         {
             var document = editor.Snapshot;
             RefreshSubtitleTracks();
-            Volatile.Write(ref previewState, new(document, projectDirectory));
+            Volatile.Write(ref previewState, CreatePreviewState());
             var oldRows = ViewModel.Subtitles.Rows.ToDictionary(value => value.Id);
             var rows = document.Subtitles.Select((line, index) =>
             {

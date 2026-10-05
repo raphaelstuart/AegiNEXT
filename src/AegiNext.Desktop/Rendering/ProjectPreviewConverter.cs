@@ -3,19 +3,20 @@ using AegiNext.Core.Projects;
 using AegiNext.Media.Decoding;
 using AegiNext.Media.Preview;
 using AegiNext.Rendering.Projects;
+using AegiNext.Desktop.Settings;
 
 namespace AegiNext.Desktop.Rendering;
 
 internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
 {
-    private readonly SdrVideoConverter converter = new();
-    private SdrVideoConverter? interactiveConverter;
+    private readonly Dictionary<PreviewQuality, SdrVideoConverter> converters = [];
     private readonly Func<ProjectPreviewState> getState;
     private readonly Action<Exception?> reportError;
     private readonly PreviewFrameCatalog? previewFrames;
     private ProjectSceneRenderer? renderer;
     private string? directory;
     private AegiNext.Core.Projects.ProjectDocument? failedDocument;
+    private bool disposed;
 
     internal ProjectPreviewConverter(Func<ProjectPreviewState> getState, Action<Exception?>? reportError = null,
         PreviewFrameCatalog? previewFrames = null)
@@ -27,8 +28,14 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
 
     public SdrVideoFrame Convert(IVideoFrame frame, CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(disposed, this);
         var state = getState();
-        var activeConverter = state.IsInteractive ? interactiveConverter ??= new(new(960, 540)) : converter;
+        var quality = state.IsInteractive ? PreviewQuality.LOW : state.Quality;
+        if (!converters.TryGetValue(quality, out var activeConverter))
+        {
+            activeConverter = new(PreviewQualityOptions.Get(quality));
+            converters.Add(quality, activeConverter);
+        }
         var background = activeConverter.Convert(frame, cancellationToken);
         var document = state.Document;
         var timestamp = frame.Info.PresentationTimestamp ?? frame.Info.BestEffortTimestamp
@@ -72,14 +79,28 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
 
     private SdrVideoFrame CompleteFrame(SdrVideoFrame presented, SdrVideoFrame background, ProjectPreviewState state, MediaTime time)
     {
-        previewFrames?.Register(presented, background, ReferenceEquals(state.Document, failedDocument) ? null : state.Document, time, state.IsInteractive);
+        previewFrames?.Register(presented, background, ReferenceEquals(state.Document, failedDocument) ? null : state.Document,
+            time, state.IsInteractive, state.QualityRevision);
         return presented;
     }
 
     public void Dispose()
     {
-        renderer?.Dispose();
-        converter.Dispose();
-        interactiveConverter?.Dispose();
+        if (disposed)
+        {
+            return;
+        }
+        disposed = true;
+        try
+        {
+            renderer?.Dispose();
+        }
+        finally
+        {
+            foreach (var converter in converters.Values)
+            {
+                converter.Dispose();
+            }
+        }
     }
 }

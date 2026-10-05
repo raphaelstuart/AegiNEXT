@@ -4,4 +4,5 @@ using AegiNext.Media.Preview;
 
 namespace AegiNext.Desktop.Rendering;
 
-internal sealed record PreviewFrameRecord(SdrVideoFrame Background, ProjectDocument? Document, MediaTime? Time, bool Interactive);
+internal sealed record PreviewFrameRecord(SdrVideoFrame Background, ProjectDocument? Document, MediaTime? Time,
+    bool Interactive, long QualityRevision);

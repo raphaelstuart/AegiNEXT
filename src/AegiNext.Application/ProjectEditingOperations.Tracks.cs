@@ -8,9 +8,9 @@ namespace AegiNext.Application;
 
 public static partial class ProjectEditingOperations
 {
-    /// <summary>更新指定轨道的默认样式及现有全部字幕；效果层、时间和逐字高亮保持原样。</summary>
+    /// <summary>更新指定轨道的默认样式，可选择同步现有字幕；效果层、时间和逐字高亮保持原样。</summary>
     public static ProjectDocument SetSubtitleTrackStyle(ProjectDocument document, Guid trackId,
-        Guid presetId, string presetName, SubtitleStyle style)
+        Guid presetId, string presetName, SubtitleStyle style, bool updateExisting = false)
     {
         ProjectValidator.Validate(document);
         var index = TrackIndex(document, trackId);
@@ -21,7 +21,7 @@ public static partial class ProjectEditingOperations
             StylePresetName = presetName
         };
         if (track == document.SubtitleTracks[index] &&
-            document.Subtitles.Where(line => line.TrackId == trackId).All(line => line.Style == style))
+            (!updateExisting || document.Subtitles.Where(line => line.TrackId == trackId).All(line => line.Style == style)))
         {
             return document;
         }
@@ -29,31 +29,46 @@ public static partial class ProjectEditingOperations
         return Verified(document with
         {
             SubtitleTracks = document.SubtitleTracks.SetItem(index, track),
-            Subtitles = document.Subtitles.Select(line => line.TrackId == trackId
-                ? line with { Style = style } : line).ToImmutableArray()
+            Subtitles = updateExisting ? document.Subtitles.Select(line => line.TrackId == trackId
+                ? line with { Style = style } : line).ToImmutableArray() : document.Subtitles
         });
     }
 
-    /// <summary>原子设置工程全部字幕和全部轨道的默认样式，不修改合成顺序。</summary>
-    public static ProjectDocument SetAllSubtitleTrackStyles(ProjectDocument document,
-        Guid presetId, string presetName, SubtitleStyle style)
+    /// <summary>切换轨道新字幕的自动样式应用；不修改现有字幕或保存的默认样式。</summary>
+    public static ProjectDocument SetSubtitleTrackAutoApplyStyle(ProjectDocument document, Guid trackId, bool enabled)
     {
         ProjectValidator.Validate(document);
-        if (document.SubtitleTracks.All(track => track.DefaultStyle == style && track.StylePresetId == presetId &&
-                track.StylePresetName == presetName) && document.Subtitles.All(line => line.Style == style))
+        var index = TrackIndex(document, trackId);
+        var track = document.SubtitleTracks[index];
+        return track.AutoApplyStyle == enabled ? document : Verified(document with
+        {
+            SubtitleTracks = document.SubtitleTracks.SetItem(index, track with { AutoApplyStyle = enabled })
+        });
+    }
+
+    /// <summary>在一个已准备资源的快照中创建字幕片段，继承启用的轨道默认值或提供的备用样式。</summary>
+    public static ProjectDocument CreateSubtitleClips(ProjectDocument document, IEnumerable<SubtitleLine> lines,
+        Guid trackId, SubtitleStyle? fallbackStyle = null)
+    {
+        ProjectValidator.Validate(document);
+        ArgumentNullException.ThrowIfNull(lines);
+        var track = document.SubtitleTracks[TrackIndex(document, trackId)];
+        var style = track.AutoApplyStyle && track.DefaultStyle is { } defaultStyle
+            ? defaultStyle : fallbackStyle ?? new SubtitleStyle();
+        var imported = lines.Select(line => line with { TrackId = trackId, Style = style }).ToImmutableArray();
+        if (imported.IsEmpty)
         {
             return document;
         }
 
         return Verified(document with
         {
-            SubtitleTracks = document.SubtitleTracks.Select(track => track with
+            Subtitles = document.Subtitles.AddRange(imported),
+            Layers = document.Layers.AddRange(imported.Select(line => new ProjectLayer
             {
-                DefaultStyle = style,
-                StylePresetId = presetId,
-                StylePresetName = presetName
-            }).ToImmutableArray(),
-            Subtitles = document.Subtitles.Select(line => line with { Style = style }).ToImmutableArray()
+                Id = line.Id, Name = "Subtitle", Kind = LayerKind.SUBTITLE, SubtitleId = line.Id,
+                Start = line.Start, End = line.End
+            }))
         });
     }
 

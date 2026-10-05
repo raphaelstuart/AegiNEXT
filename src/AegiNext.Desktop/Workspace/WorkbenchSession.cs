@@ -144,9 +144,19 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal void UpdatePreferences(WorkbenchPreferences value)
     {
         value.Validate();
+        var qualityChanged = preferences.PreviewQuality != value.PreviewQuality;
         preferences = value;
+        if (qualityChanged)
+        {
+            previewQualityRevision++;
+            controller.InvalidatePreview();
+        }
         ApplyPreferences();
         QueuePreferencesWrite();
+        if (qualityChanged)
+        {
+            _ = RunCommandAsync(controller.RefreshPausedPreviewAsync);
+        }
     }
 
     internal void ShowError(Exception error, bool recordLog = true)
@@ -315,6 +325,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             ViewModel.Preview.Volume = preferences.Volume;
             controller.SetVolume(preferences.Volume);
             ViewModel.Preview.EmptyLabel = PreviewText.Get("Empty", InterfaceCulture);
+            ViewModel.Preview.RefreshQualities(preferences.PreviewQuality, InterfaceCulture);
             ViewModel.Styles.Alignments = alignments.Select(value => SettingsText.Get(value.ToString())).ToArray();
             ViewModel.Effects.Blends = blendKeys.Select(WorkbenchText.Get).ToArray();
             ViewModel.Effects.Properties = AnimationPropertyMetadata.CurrentProperties.Select(value => new AnimationPropertyChoice(value, WorkbenchText.Property(value))).ToArray();
@@ -360,6 +371,12 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     {
         if (!closing)
         {
+            var identity = update.Frame is { } presentedFrame ? previewFrames.FindIdentity(presentedFrame) : null;
+            if (identity is not null && identity.QualityRevision != previewQualityRevision)
+            {
+                Tick();
+                return;
+            }
             if (update.ClearFrame)
             {
                 ViewModel.Preview.HasFrame = false;
@@ -369,7 +386,6 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
                 ViewModel.Preview.HasFrame = true;
             }
 
-            var identity = update.Frame is { } presentedFrame ? previewFrames.FindIdentity(presentedFrame) : null;
             var presented = update.Frame is { } frame
                 ? update with { BackgroundFrame = update.BackgroundFrame ?? identity?.Background ?? frame, CompositionDocument = identity?.Document, CompositionTime = identity?.Time, IsInteractiveComposition = identity?.Interactive ?? false }
                 : update;

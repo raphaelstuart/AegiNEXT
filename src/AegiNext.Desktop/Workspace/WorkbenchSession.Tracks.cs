@@ -12,9 +12,18 @@ internal sealed partial class WorkbenchSession
     internal Guid CurrentTrackId => editor.Snapshot.SubtitleTracks.Any(track => track.Id == currentTrackId)
         ? currentTrackId : editor.Snapshot.SubtitleTracks[0].Id;
 
-    internal Task ApplySubtitleTrackStyleAsync(Guid? trackId, Guid presetId)
+    internal Task ApplySubtitleTrackStyleAsync(Guid trackId, Guid presetId)
     {
         return RunCommandAsync(() => styles.ApplyTrackAsync(trackId, presetId));
+    }
+
+    internal Task ToggleTrackAutoApplyStyleAsync(Guid trackId)
+    {
+        return RunCommandAsync(() => EditAsync(() =>
+        {
+            var track = editor.Snapshot.SubtitleTracks.Single(value => value.Id == trackId);
+            editor.SetSubtitleTrackAutoApplyStyle(trackId, !track.AutoApplyStyle);
+        }));
     }
 
     internal bool SelectTrack(Guid trackId)

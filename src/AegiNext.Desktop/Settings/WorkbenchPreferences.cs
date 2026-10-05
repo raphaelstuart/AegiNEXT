@@ -16,12 +16,13 @@ public sealed record WorkbenchPreferences
     public ImmutableArray<ShortcutBinding> ShortcutBindings { get; init; } = ShortcutDefaults.CreateBindings();
     public float Volume { get; init; } = 1;
     public bool WindowMenuOnMac { get; init; }
+    public PreviewQuality PreviewQuality { get; init; } = PreviewQuality.LOW;
 
     /// <summary>拒绝未知设置版本、语言、主题或非法音量。</summary>
     public void Validate()
     {
         if (Version != 1 || Language is not ("system" or "zh-CN" or "en-US") ||
-            !Enum.IsDefined(Theme) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
+            !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
             AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
             AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null)
         {
@@ -40,7 +41,7 @@ public sealed record WorkbenchPreferences
     public bool Equals(WorkbenchPreferences? other)
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
-               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac &&
+               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality &&
                ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
     }
 
@@ -55,6 +56,7 @@ public sealed record WorkbenchPreferences
         hash.Add(AudioGraph);
         hash.Add(Volume);
         hash.Add(WindowMenuOnMac);
+        hash.Add(PreviewQuality);
         foreach (var binding in ShortcutBindings)
         {
             hash.Add(binding);

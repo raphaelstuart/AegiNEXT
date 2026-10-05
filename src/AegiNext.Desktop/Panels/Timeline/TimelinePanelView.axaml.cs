@@ -22,7 +22,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private readonly TimelineOverviewControl overview;
     private readonly MenuItem collapseTrackItem;
     private readonly MenuItem trackStyleItem;
-    private readonly MenuItem allTrackStylesItem;
+    private readonly MenuItem autoTrackStyleItem;
     private readonly ToggleButton snapButton;
     private readonly ToggleButton stepButton;
     private readonly ToggleButton spectrumButton;
@@ -64,9 +64,13 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         TrackMenu.Items.Add(collapseTrackItem);
         TrackMenu.Items.Add(new Separator());
         trackStyleItem = new() { Name = "SubtitleTrackStyleMenuItem", Tag = "TrackSubtitleStyle" };
-        allTrackStylesItem = new() { Name = "AllSubtitleTracksStyleMenuItem", Tag = "AllTracksSubtitleStyle" };
+        autoTrackStyleItem = new()
+        {
+            Name = "AutoApplySubtitleTrackStyleMenuItem", Tag = "TrackStyleAutoApply", ToggleType = MenuItemToggleType.CheckBox,
+            Command = viewModel.ToggleTrackAutoStyleCommand
+        };
         TrackMenu.Items.Add(trackStyleItem);
-        TrackMenu.Items.Add(allTrackStylesItem);
+        TrackMenu.Items.Add(autoTrackStyleItem);
         timeline.TrackContextRequested += OnTrackContextRequested;
         timeline.SeekRequested += async (_, e) => await viewModel.SeekAsync(e.Time);
         timeline.ClipSelectionChanged += (_, e) => viewModel.SelectLayers(e);
@@ -119,6 +123,10 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
         ApplyState();
+        if (e.PropertyName is nameof(viewModel.Document) or nameof(viewModel.SelectedTrackId))
+        {
+            RefreshTrackMenu();
+        }
         if (e.PropertyName == nameof(viewModel.IsRenamingTrack) && viewModel.IsRenamingTrack)
         {
             Dispatcher.UIThread.Post(() =>
@@ -208,33 +216,29 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private void RefreshStylePresets()
     {
         trackStyleItem.Items.Clear();
-        allTrackStylesItem.Items.Clear();
         var presets = viewModel.StylePresets;
         trackStyleItem.IsEnabled = viewModel.SelectedTrackId.HasValue && presets.Length > 0;
-        allTrackStylesItem.IsEnabled = presets.Length > 0;
         var currentTrack = viewModel.Document.SubtitleTracks.FirstOrDefault(track => track.Id == viewModel.SelectedTrackId);
+        autoTrackStyleItem.IsEnabled = currentTrack is not null;
+        autoTrackStyleItem.IsChecked = currentTrack?.AutoApplyStyle == true;
+        autoTrackStyleItem.CommandParameter = currentTrack?.Id;
         foreach (var preset in presets)
         {
+            if (currentTrack is null)
+            {
+                break;
+            }
             trackStyleItem.Items.Add(new MenuItem
             {
                 Header = preset.Name,
                 ToggleType = MenuItemToggleType.CheckBox,
-                IsChecked = currentTrack?.StylePresetId == preset.Id,
+                IsChecked = currentTrack.StylePresetId == preset.Id,
                 Command = viewModel.ApplyTrackStyleCommand,
-                CommandParameter = new TrackStylePresetRequest(viewModel.SelectedTrackId, preset.Id)
-            });
-            allTrackStylesItem.Items.Add(new MenuItem
-            {
-                Header = preset.Name,
-                ToggleType = MenuItemToggleType.CheckBox,
-                IsChecked = viewModel.Document.SubtitleTracks.All(track => track.StylePresetId == preset.Id),
-                Command = viewModel.ApplyTrackStyleCommand,
-                CommandParameter = new TrackStylePresetRequest(null, preset.Id)
+                CommandParameter = new TrackStylePresetRequest(currentTrack.Id, preset.Id)
             });
         }
 
         ToolTip.SetTip(trackStyleItem, presets.Length == 0 ? WorkbenchText.Get("NoStylePresets") : currentTrack?.StylePresetName);
-        ToolTip.SetTip(allTrackStylesItem, presets.Length == 0 ? WorkbenchText.Get("NoStylePresets") : null);
     }
     private void OnStyleLibraryChanged(object? sender, EventArgs e)
     {

@@ -116,8 +116,9 @@ internal sealed partial class WorkbenchSession
     private void RefreshEditingPreview()
     {
         ViewModel.Preview.Scene = new(DocumentSnapshot, SelectedLayer, EditingPosition, SceneEditing.Mode,
-            ProjectDirectory, SelectedKeyTime is not null || SceneEditing.GestureTarget is not null, playback.IsInteractive);
-        Volatile.Write(ref previewState, new(DocumentSnapshot, ProjectDirectory, ProjectPosition, playback.IsInteractive));
+            ProjectDirectory, SelectedKeyTime is not null || SceneEditing.GestureTarget is not null, playback.IsInteractive,
+            preferences.PreviewQuality);
+        Volatile.Write(ref previewState, CreatePreviewState());
     }
 
     private double InspectorValue(ProjectLayer layer, AnimationProperty property, double fallback) =>

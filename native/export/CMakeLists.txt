@@ -40,6 +40,18 @@ foreach(COMPONENT avformat avcodec avutil swscale)
 endforeach()
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/export_versions.h" "${VERSION_HEADER}")
 add_library(aeginext_export SHARED src/export_api.cpp src/color_pipeline.cpp)
+set(EXPORT_CONTRACT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/include/aeginext_export.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${EXPORT_CONTRACT_HEADER}")
+file(SHA256 "${EXPORT_CONTRACT_HEADER}" EXPORT_CONTRACT_HASH)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/export_contract.sha256" "${EXPORT_CONTRACT_HASH}\n")
+add_custom_command(OUTPUT "${AEGINEXT_NATIVE_OUTPUT_DIR}/aeginext_export.contract.sha256"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_CURRENT_BINARY_DIR}/export_contract.sha256"
+        "${AEGINEXT_NATIVE_OUTPUT_DIR}/aeginext_export.contract.sha256"
+    DEPENDS aeginext_export "$<TARGET_FILE:aeginext_export>" "${CMAKE_CURRENT_BINARY_DIR}/export_contract.sha256"
+    VERBATIM)
+add_custom_target(aeginext_export_contract ALL
+    DEPENDS "${AEGINEXT_NATIVE_OUTPUT_DIR}/aeginext_export.contract.sha256")
 target_include_directories(aeginext_export PUBLIC include PRIVATE src "${FFMPEG_INCLUDE}" "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(aeginext_export PRIVATE ${FFMPEG_LIBRARIES})
 target_compile_definitions(aeginext_export PRIVATE AEGINEXT_EXPORT_BUILD)

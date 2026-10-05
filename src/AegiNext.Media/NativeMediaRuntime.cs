@@ -14,6 +14,13 @@ internal static class NativeMediaRuntime
     {
     }
 
+    internal static string GetLibraryPath(string name)
+    {
+        var filename = OperatingSystem.IsWindows() ? name + ".dll"
+            : OperatingSystem.IsMacOS() ? "lib" + name + ".dylib" : "lib" + name + ".so";
+        return Path.Combine(AppContext.BaseDirectory, filename);
+    }
+
     private static nint Resolve(string name, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (name is not ("aeginext_decode" or "aeginext_audio" or "aeginext_export" or "aeginext_media"))
@@ -21,9 +28,8 @@ internal static class NativeMediaRuntime
             return 0;
         }
 
-        var filename = OperatingSystem.IsWindows() ? name + ".dll"
-            : OperatingSystem.IsMacOS() ? "lib" + name + ".dylib" : "lib" + name + ".so";
-        var path = Path.Combine(AppContext.BaseDirectory, filename);
+        var path = GetLibraryPath(name);
+        var filename = Path.GetFileName(path);
         try
         {
             return NativeLibrary.Load(path);

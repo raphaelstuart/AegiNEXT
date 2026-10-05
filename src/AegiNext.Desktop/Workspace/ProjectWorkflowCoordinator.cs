@@ -273,6 +273,10 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             return;
         }
 
+        var trackId = session.CurrentTrackId;
+        var presetId = session.ViewModel.Styles.SelectedPreset?.Id;
+        var importStart = session.ProjectPosition;
+        Guid? firstCueId = null;
         session.SetProjectBusy(true);
         try
         {
@@ -284,17 +288,19 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             var text = await File.ReadAllTextAsync(path, new UTF8Encoding(false, true));
             var lines = Path.GetExtension(path).Equals(".srt", StringComparison.OrdinalIgnoreCase)
                 ? SubtitleTextFormat.ParseSrt(text)
-                : SubtitleTextFormat.ImportText(text, start: session.ProjectPosition);
-            session.Editor.AddSubtitles(lines, session.CurrentTrackId);
-            if (!lines.IsEmpty)
-            {
-                session.SelectCue(lines[0].Id);
-            }
+                : SubtitleTextFormat.ImportText(text, start: importStart);
+            await session.CreateSubtitleClipsAsync(lines, trackId, presetId);
+            firstCueId = lines.IsEmpty ? null : lines[0].Id;
             session.LogInfo("Subtitles", $"{WorkflowLogText.Get("SubtitlesImported", session.InterfaceCulture)} ({lines.Length})", path);
         }
         finally
         {
             session.SetProjectBusy(false);
+        }
+
+        if (firstCueId is { } id)
+        {
+            session.SelectCue(id);
         }
     }
 

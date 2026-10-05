@@ -9,9 +9,10 @@ internal sealed class PreviewFrameCatalog
 {
     private readonly ConditionalWeakTable<SdrVideoFrame, PreviewFrameRecord> backgrounds = new();
 
-    internal void Register(SdrVideoFrame presented, SdrVideoFrame background, ProjectDocument? document = null, MediaTime? time = null, bool interactive = false)
+    internal void Register(SdrVideoFrame presented, SdrVideoFrame background, ProjectDocument? document = null,
+        MediaTime? time = null, bool interactive = false, long qualityRevision = 0)
     {
-        backgrounds.Add(presented, new(background, document, time, interactive));
+        backgrounds.Add(presented, new(background, document, time, interactive, qualityRevision));
     }
 
     internal SdrVideoFrame? FindBackground(SdrVideoFrame presented)

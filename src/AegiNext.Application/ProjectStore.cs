@@ -123,7 +123,7 @@ public static class ProjectStore
                     property.IsRequired = (property.Get is not null || property.Set is not null) &&
                         !(info.Type == typeof(Keyframe) && property.Name == "componentCurves") &&
                         !(info.Type == typeof(SubtitleLine) && property.Name == "karaokeStyle") &&
-                        !(info.Type == typeof(SubtitleTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName");
+                        !(info.Type == typeof(SubtitleTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName" or "autoApplyStyle");
                 }
             }
         });

@@ -48,6 +48,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         CancelTrackRenameCommand = new(CancelTrackRename);
         ApplyTrackStyleCommand = new(request => request is null
             ? Task.CompletedTask : session.ApplySubtitleTrackStyleAsync(request.TrackId, request.PresetId));
+        ToggleTrackAutoStyleCommand = new(session.ToggleTrackAutoApplyStyleAsync);
     }
 
     public ProjectDocument Document
@@ -86,6 +87,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     public AsyncRelayCommand ConfirmTrackRenameCommand { get; }
     public RelayCommand CancelTrackRenameCommand { get; }
     public AsyncRelayCommand<TrackStylePresetRequest> ApplyTrackStyleCommand { get; }
+    public AsyncRelayCommand<Guid> ToggleTrackAutoStyleCommand { get; }
     public StylePresetListItem[] StylePresets => session.StyleLibrary.Snapshot.Presets
         .Select(preset => new StylePresetListItem(preset.Id, preset.Name)).ToArray();
     public bool CanDeleteTrack => Document.SubtitleTracks.Length > 1 && SelectedTrackId is { } id &&

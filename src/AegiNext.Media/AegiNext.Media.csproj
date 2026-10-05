@@ -36,6 +36,11 @@
     <None Include="$(AegiNextNativeDirectory)/libaeginext_decode.so"
           Link="libaeginext_decode.so"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
-          Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('linux-')) And Exists('$(AegiNextNativeDirectory)/libaeginext_decode.so')" />
+           Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('linux-')) And Exists('$(AegiNextNativeDirectory)/libaeginext_decode.so')" />
+    <None Include="$(AegiNextNativeDirectory)/aeginext_export.contract.sha256"
+          Link="aeginext_export.contract.sha256"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          Condition="Exists('$(AegiNextNativeDirectory)/aeginext_export.contract.sha256')" />
   </ItemGroup>
+  <Import Project="../../scripts/build/ValidateExportContract.targets" />
 </Project>

@@ -127,7 +127,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         }
     }
 
-    internal async Task ApplyTrackAsync(Guid? trackId, Guid presetId)
+    internal async Task ApplyTrackAsync(Guid trackId, Guid presetId)
     {
         if (session.IsProjectBusy || !session.TryCommitDrafts())
         {
@@ -139,13 +139,22 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         session.SetProjectBusy(true);
         try
         {
+            var track = session.Editor.Snapshot.SubtitleTracks.FirstOrDefault(value => value.Id == trackId) ??
+                throw new KeyNotFoundException("字幕轨道不存在。");
+            var count = session.Editor.Snapshot.Subtitles.Count(line => line.TrackId == trackId);
+            var decision = count == 0 ? TrackStyleUpdateDecision.DEFAULT_ONLY :
+                await dialogs.ConfirmTrackStyleChangeAsync(track.Name, preset.Name, count);
+            if (decision == TrackStyleUpdateDecision.CANCEL)
+            {
+                return;
+            }
+
             var prepared = await SubtitleStylePresetService.PrepareAsync(preset, session.Editor.Snapshot, session.ProjectDirectory);
-            session.Editor.Apply(trackId.HasValue ? "Apply subtitle track style" : "Apply all subtitle track styles", _ =>
-                trackId is { } id
-                    ? AegiNext.Application.ProjectEditingOperations.SetSubtitleTrackStyle(prepared.Project, id, preset.Id, preset.Name, prepared.Style)
-                    : AegiNext.Application.ProjectEditingOperations.SetAllSubtitleTrackStyles(prepared.Project, preset.Id, preset.Name, prepared.Style));
-            Refresh(preset.Id);
-            session.LogInfo("Styles", WorkbenchText.Get(trackId.HasValue ? "TrackStyleApplied" : "AllTrackStylesApplied"), preset.Name);
+            session.Editor.Apply("Apply subtitle track style", _ =>
+                AegiNext.Application.ProjectEditingOperations.SetSubtitleTrackStyle(prepared.Project, trackId, preset.Id,
+                    preset.Name, prepared.Style, decision == TrackStyleUpdateDecision.UPDATE_EXISTING));
+            Refresh();
+            session.LogInfo("Styles", WorkbenchText.Get("TrackStyleApplied"), preset.Name);
         }
         finally
         {
@@ -156,6 +165,21 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         {
             await session.Controller.SeekAsync(session.Controller.Snapshot.Position);
         }
+    }
+
+    internal Task<PreparedSubtitleStyle> PrepareCreationAsync(Guid trackId, Guid? fallbackPresetId)
+    {
+        var project = session.Editor.Snapshot;
+        var track = project.SubtitleTracks.FirstOrDefault(value => value.Id == trackId) ??
+            throw new KeyNotFoundException("字幕轨道不存在。");
+        if (track.AutoApplyStyle && track.DefaultStyle is { } defaultStyle)
+        {
+            return Task.FromResult(new PreparedSubtitleStyle(project, defaultStyle));
+        }
+
+        var preset = session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == fallbackPresetId);
+        return preset is null ? Task.FromResult(new PreparedSubtitleStyle(project, new())) :
+            SubtitleStylePresetService.PrepareAsync(preset, project, session.ProjectDirectory);
     }
 
     internal async Task ImportAsync()

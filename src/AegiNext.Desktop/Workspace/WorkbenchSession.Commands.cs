@@ -8,7 +8,8 @@ internal sealed partial class WorkbenchSession
 {
     internal bool CanExecuteCommand(WorkbenchCommand command)
     {
-        if (closing || projectBusy && command != WorkbenchCommand.VIEW_LOG)
+        if (closing || projectBusy && command != WorkbenchCommand.VIEW_LOG &&
+            !(command == WorkbenchCommand.TIMING_EXIT && pendingTimingEntry is not null && pendingTimingEnd is null))
         {
             return false;
         }
@@ -20,7 +21,7 @@ internal sealed partial class WorkbenchSession
             WorkbenchCommand.PLAY_PAUSE or WorkbenchCommand.SEEK_BACKWARD or WorkbenchCommand.SEEK_FORWARD =>
                 controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
             WorkbenchCommand.TIMING_ENTER => playback.PendingPosition is null && controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
-            WorkbenchCommand.TIMING_EXIT => timingSession.ActiveCueId is not null,
+            WorkbenchCommand.TIMING_EXIT => timingSession.ActiveCueId is not null || pendingTimingEntry is not null,
             WorkbenchCommand.DELETE_SUBTITLE or WorkbenchCommand.SPLIT_SUBTITLE or WorkbenchCommand.MERGE_SUBTITLE => SelectedCue is not null,
             WorkbenchCommand.EXPORT_VIDEO => editor.Snapshot.Media is not null && export.CanStart,
             _ => true
@@ -31,6 +32,13 @@ internal sealed partial class WorkbenchSession
     {
         if (!CanExecuteCommand(command))
         {
+            return;
+        }
+
+        if (command == WorkbenchCommand.TIMING_EXIT && pendingTimingEntry is not null)
+        {
+            pendingTimingEnd ??= ProjectPosition;
+            ViewModel.RefreshCommands();
             return;
         }
 
@@ -96,7 +104,7 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.TIMING_ENTER:
                     if (TryCommitDrafts())
                     {
-                        SetCueStart();
+                        await SetCueStartAsync();
                     }
                     break;
                 case WorkbenchCommand.TIMING_EXIT:
@@ -108,7 +116,7 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.ADD_SUBTITLE:
                     if (TryCommitDrafts())
                     {
-                        AddCue();
+                        await AddCueAsync();
                     }
                     break;
                 case WorkbenchCommand.DELETE_SUBTITLE:

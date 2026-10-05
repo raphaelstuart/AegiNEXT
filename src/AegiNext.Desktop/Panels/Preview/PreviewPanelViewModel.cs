@@ -7,6 +7,9 @@ using AegiNext.Desktop.Controls;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Media.Analysis;
+using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.Settings;
+using System.Globalization;
 
 namespace AegiNext.Desktop.Panels.Preview;
 
@@ -30,6 +33,9 @@ internal sealed class PreviewPanelViewModel : ObservableObject
     private string muteLabel = string.Empty;
     private string volumeLabel = string.Empty;
     private bool isScrubbing;
+    private PreviewQualityChoice[] qualityChoices = [];
+    private PreviewQualityChoice? selectedQuality;
+    private string qualityLabel = string.Empty;
 
     internal PreviewPanelViewModel(WorkbenchSession session)
     {
@@ -40,6 +46,36 @@ internal sealed class PreviewPanelViewModel : ObservableObject
     {
         get => scene;
         set => SetProperty(ref scene, value);
+    }
+
+    public PreviewQualityChoice[] QualityChoices
+    {
+        get => qualityChoices;
+        private set => SetProperty(ref qualityChoices, value);
+    }
+
+    public PreviewQualityChoice? SelectedQuality
+    {
+        get => selectedQuality;
+        set => SetProperty(ref selectedQuality, value);
+    }
+
+    public string QualityLabel
+    {
+        get => qualityLabel;
+        private set => SetProperty(ref qualityLabel, value);
+    }
+
+    internal void RefreshQualities(PreviewQuality quality, CultureInfo culture)
+    {
+        QualityChoices =
+        [
+            new(PreviewQuality.LOW, PreviewText.Get("QualityLow", culture)),
+            new(PreviewQuality.STANDARD, PreviewText.Get("QualityStandard", culture)),
+            new(PreviewQuality.HIGH, PreviewText.Get("QualityHigh", culture))
+        ];
+        SelectedQuality = QualityChoices.Single(choice => choice.Id == quality);
+        QualityLabel = PreviewText.Get("Quality", culture);
     }
 
     internal bool BeginCanvasGesture() => session.BeginCanvasGesture();

@@ -1,10 +1,19 @@
 using System.Globalization;
+using System.Collections.Concurrent;
+using System.Text;
 using AegiNext.Core.Projects;
 
 namespace AegiNext.Desktop.Localization;
 
 internal static class WorkbenchText
 {
+    private static readonly ConcurrentDictionary<string, CompositeFormat> formats = new(StringComparer.Ordinal);
+
+    internal static string Format(string key, params object[] arguments)
+    {
+        return string.Format(CultureInfo.CurrentCulture, formats.GetOrAdd(Get(key), CompositeFormat.Parse), arguments);
+    }
+
     private static readonly Dictionary<string, (string Chinese, string English)> entries = new(StringComparer.Ordinal)
     {
         ["CollapseTrack"] = ("折叠轨道", "Collapse track"),
@@ -20,10 +29,13 @@ internal static class WorkbenchText
         ["MoveTrackDown"] = ("轨道下移", "Move track down"),
         ["MoveToTrack"] = ("移动至轨道", "Move to track"),
         ["TrackSubtitleStyle"] = ("轨道字幕样式", "Track subtitle style"),
-        ["AllTracksSubtitleStyle"] = ("全部轨道字幕样式", "All tracks subtitle style"),
+        ["TrackStyleAutoApply"] = ("自动应用轨道样式", "Automatically apply track style"),
+        ["TrackStyleChangeTitle"] = ("更新轨道字幕样式？", "Update track subtitle styles?"),
+        ["TrackStyleChangeText"] = ("将轨道“{0}”的预设更换为“{1}”。\n\n是否同时更新本轨已有的 {2} 条字幕？\n选择“否”只修改后续新建字幕使用的样式。", "Change the preset on “{0}” to “{1}”.\n\nAlso update the {2} existing subtitles on this track?\nChoose No to update only the style used by future subtitles."),
+        ["Yes"] = ("是", "Yes"),
+        ["No"] = ("否", "No"),
         ["NoStylePresets"] = ("暂无样式预设", "No style presets"),
         ["TrackStyleApplied"] = ("已设置轨道字幕样式", "Track subtitle style applied"),
-        ["AllTrackStylesApplied"] = ("已设置全部轨道字幕样式", "All track subtitle styles applied"),
         ["Open"] = ("打开视频", "Open video"),
         ["New"] = ("新建", "New"), ["OpenProject"] = ("打开工程", "Open project"),
         ["File"] = ("文件", "File"), ["Edit"] = ("编辑", "Edit"), ["View"] = ("视图", "View"),

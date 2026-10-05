@@ -12,6 +12,7 @@ internal sealed class TimelineDrawingPalette
         Grid = new(Brush(dark ? "#334155" : "#C4CEDC"));
         Track = Brush(dark ? "#202C40" : "#E2E9F3");
         SelectedTrack = Brush(dark ? "#354C73" : "#BED5F4");
+        StyleBadge = Brush(dark ? "#415B86" : "#C9DAEF");
         ActiveClip = Brush(dark ? "#B84568DC" : "#E4BCD2FA");
         SubtitleClip = Brush(dark ? "#865F90C4" : "#E4D7E5FA");
         SceneClip = Brush(dark ? "#864FB3AB" : "#E4CAE8E5");
@@ -37,6 +38,7 @@ internal sealed class TimelineDrawingPalette
     internal Pen Grid { get; }
     internal SolidColorBrush Track { get; }
     internal SolidColorBrush SelectedTrack { get; }
+    internal SolidColorBrush StyleBadge { get; }
     internal SolidColorBrush ActiveClip { get; }
     internal SolidColorBrush SubtitleClip { get; }
     internal SolidColorBrush SceneClip { get; }

@@ -9,14 +9,29 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class WorkbenchSession
 {
-    internal void AddCue()
+    private Shortcuts.TimingEnterResult? pendingTimingEntry;
+    private MediaTime? pendingTimingEnd;
+
+    internal async Task AddCueAsync()
     {
         var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
-        var id = editor.AddSubtitle(start, start + new MediaTime(2), string.Empty, CurrentTrackId);
-        SelectCue(id);
+        var trackId = CurrentTrackId;
+        var presetId = ViewModel.Styles.SelectedPreset?.Id;
+        var cue = new SubtitleLine { Start = start, End = start + new MediaTime(2), Text = string.Empty, TrackId = trackId };
+        SetProjectBusy(true);
+        try
+        {
+            await CreateSubtitleClipsAsync([cue], trackId, presetId);
+        }
+        finally
+        {
+            SetProjectBusy(false);
+        }
+
+        SelectCue(cue.Id);
     }
 
-    internal void SetCueStart()
+    internal async Task SetCueStartAsync()
     {
         var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
         var entered = timingSession.Enter(start);
@@ -25,23 +40,65 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
-        editor.AddSubtitles([
-            new()
-            {
-                Id = entered.CueId, TrackId = CurrentTrackId, Start = entered.Start, End = entered.Start + new MediaTime(2),
-                Text = string.Empty
-            }
-        ], CurrentTrackId);
+        var trackId = CurrentTrackId;
+        var presetId = ViewModel.Styles.SelectedPreset?.Id;
+        pendingTimingEntry = entered;
+        pendingTimingEnd = null;
+        SetProjectBusy(true);
+        try
+        {
+            await CreateSubtitleClipsAsync([
+                new()
+                {
+                    Id = entered.CueId, TrackId = trackId, Start = entered.Start, End = entered.Start + new MediaTime(2),
+                    Text = string.Empty
+                }
+            ], trackId, presetId);
+        }
+        catch
+        {
+            pendingTimingEnd = null;
+            throw;
+        }
+        finally
+        {
+            pendingTimingEntry = null;
+            SetProjectBusy(false);
+        }
 
         SelectCue(entered.CueId);
         SubtitleScrollRequested?.Invoke(this, EventArgs.Empty);
         timingSession = entered.Session;
+        if (pendingTimingEnd is { } end)
+        {
+            pendingTimingEnd = null;
+            SetCueEndAt(end);
+        }
+
         ViewModel.RefreshCommands();
+    }
+
+    internal async Task CreateSubtitleClipsAsync(IEnumerable<SubtitleLine> lines, Guid trackId, Guid? fallbackPresetId)
+    {
+        var imported = lines.ToArray();
+        if (imported.Length == 0)
+        {
+            return;
+        }
+
+        var prepared = await styles.PrepareCreationAsync(trackId, fallbackPresetId);
+        editor.Apply("Create subtitle clips", _ =>
+            ProjectEditingOperations.CreateSubtitleClips(prepared.Project, imported, trackId, prepared.Style));
     }
 
     internal void SetCueEnd()
     {
-        if (timingSession.Exit(ProjectPosition) is not { } exited)
+        SetCueEndAt(ProjectPosition);
+    }
+
+    private void SetCueEndAt(MediaTime end)
+    {
+        if (timingSession.Exit(end) is not { } exited)
         {
             return;
         }
@@ -51,6 +108,7 @@ internal sealed partial class WorkbenchSession
         SelectCue(exited.CueId);
         ViewModel.RefreshCommands();
     }
+
 
     internal void SplitCue()
     {

@@ -11,10 +11,7 @@ internal static class NativeVideoExport
     internal static unsafe NativeVideoExportResult Run(VideoExportRequest request, string videoOutput, IProgress<VideoExportProgress>? progress, CancellationToken cancellationToken)
     {
         VideoExporter.Validate(request);
-        if (NativeExportMethods.AbiVersion() != 2 || Marshal.SizeOf<NativeExportRequest>() != 72)
-        {
-            throw new NotSupportedException("原生导出 ABI 不匹配。");
-        }
+        NativeExportAbi.Validate(NativeExportMethods.AbiVersion(), NativeMediaRuntime.GetLibraryPath("aeginext_export"));
 
         var inputAsset = request.Project.Assets.Single(asset => asset.Id == request.Project.Media!.AssetId);
         var input = ProjectAssetLocation.Resolve(inputAsset, request.ProjectDirectory);
@@ -22,7 +19,7 @@ internal static class NativeVideoExport
         var handle = GCHandle.Alloc(render);
         var arguments = new NativeExportRequest
         {
-            StructSize = 72, AbiVersion = 2, VideoStreamIndex = request.Project.Media!.VideoStreamIndex,
+            StructSize = NativeExportAbi.REQUEST_SIZE, AbiVersion = NativeExportAbi.VERSION, VideoStreamIndex = request.Project.Media!.VideoStreamIndex,
             Codec = (int)request.Codec, Crf = request.EncodingMode == VideoEncodingMode.SOFTWARE ? request.Crf : 20,
             Width = (uint)request.Project.Width, Height = (uint)request.Project.Height,
             ReferenceWhiteNits = (float)request.Project.ReferenceWhiteNits,

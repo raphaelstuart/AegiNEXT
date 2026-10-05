@@ -39,4 +39,12 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
         registerWindow?.Invoke(dialog);
         return dialog.ShowDialog<int>(owner);
     }
+
+    /// <summary>决定是否将更换的轨道预设同步到现有片段；默认仅更新后续创建样式。</summary>
+    public Task<TrackStyleUpdateDecision> ConfirmTrackStyleChangeAsync(string trackName, string presetName, int subtitleCount)
+    {
+        var dialog = new TrackStyleChangeDialog(trackName, presetName, subtitleCount);
+        registerWindow?.Invoke(dialog);
+        return dialog.ShowDialog<TrackStyleUpdateDecision>(owner);
+    }
 }

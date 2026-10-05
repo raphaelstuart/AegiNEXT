@@ -111,6 +111,33 @@ public sealed class VideoPreviewController : IAsyncDisposable
         }
     }
 
+    internal void InvalidatePreview()
+    {
+        lock (gate)
+        {
+            if (!closed)
+            {
+                revision++;
+                pendingSeek = null;
+                current?.ConversionCancellation?.Cancel();
+            }
+        }
+    }
+
+    internal Task RefreshPausedPreviewAsync()
+    {
+        lock (gate)
+        {
+            if (closed || opening || current is not { Error: null, Session: { } session } ||
+                session.Snapshot.State != VideoPlaybackState.PAUSED)
+            {
+                return Task.CompletedTask;
+            }
+
+            return SeekAsync(session.Snapshot.Position);
+        }
+    }
+
     /// <summary>
     /// 立即使旧文件输出失效，等待旧资源回收，再探测并打开新文件。
     /// </summary>

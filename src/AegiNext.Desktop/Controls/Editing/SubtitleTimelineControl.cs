@@ -402,6 +402,17 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 {
                     DrawText(context, row.Name, new(46 + row.Depth * 8, y + 5), foreground, 11);
                 }
+                if (row.StyleBadgeRectangle(y, HeaderWidth) is { } badge)
+                {
+                    using (context.PushOpacity(row.AutoApplyStyle ? 1 : 0.5))
+                    {
+                        context.DrawRectangle(drawingPalette.StyleBadge, null, badge, 3, 3);
+                        using (context.PushClip(badge.Deflate(new Thickness(4, 0))))
+                        {
+                            DrawText(context, row.StylePresetName!, new(badge.X + 4, badge.Y + 2), foreground, 10);
+                        }
+                    }
+                }
             }
         }
 
@@ -1306,6 +1317,13 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             ? new Rect(0, RowY(value), HeaderWidth, value.Height) : null;
     }
 
+    /// <summary>取得与轨道头绘制共用的样式预设徽章几何；点击此区域仍选择所属轨道。</summary>
+    public Rect? GetTrackStyleBadgeRectangle(Guid trackId)
+    {
+        return rows.FirstOrDefault(row => row.TrackId == trackId) is { } row
+            ? row.StyleBadgeRectangle(RowY(row), HeaderWidth) : null;
+    }
+
     /// <summary>取得字幕轨道的紧凑显示状态。</summary>
     public bool IsTrackCollapsed(Guid trackId) => collapsedTracks.Contains(trackId);
 
@@ -1356,8 +1374,9 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             var animations = !collapsed && !collapsedAnimations.Contains(track.Id)
                 ? CreateAnimationRows(displayedClips) : [];
             var curve = animations.Sum(animation => animation.Height);
-            var height = 28 + curve;
-            result.Add(new(track.Id, track.Id, track.Name, clips, 0, false, collapsed, top, height, animations));
+            var height = (track.StylePresetName is null ? 28 : 48) + curve;
+            result.Add(new(track.Id, track.Id, track.Name, clips, 0, false, collapsed, top, height, animations,
+                track.StylePresetName, track.AutoApplyStyle));
             top += height;
         }
 

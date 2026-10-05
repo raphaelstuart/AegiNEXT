@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <AegiNextExportLibraryName Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('osx-'))">libaeginext_export.dylib</AegiNextExportLibraryName>
+    <AegiNextExportLibraryName Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('win-'))">aeginext_export.dll</AegiNextExportLibraryName>
+    <AegiNextExportLibraryName Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('linux-'))">libaeginext_export.so</AegiNextExportLibraryName>
+    <AegiNextExportContractHeader>$(MSBuildThisFileDirectory)../../native/export/include/aeginext_export.h</AegiNextExportContractHeader>
+    <AegiNextExportContractStamp>$(AegiNextNativeDirectory)/aeginext_export.contract.sha256</AegiNextExportContractStamp>
+  </PropertyGroup>
+  <Target Name="ValidateAegiNextExportContract" BeforeTargets="PrepareForBuild"
+          Condition="'$(DesignTimeBuild)' != 'true' And '$(AegiNextExportLibraryName)' != '' And Exists('$(AegiNextNativeDirectory)/$(AegiNextExportLibraryName)')">
+    <Error Code="ANX1001" Condition="!Exists('$(AegiNextExportContractStamp)')"
+           Text="The $(Configuration) native export library has no current ABI contract stamp: $(AegiNextNativeDirectory)/$(AegiNextExportLibraryName). Run pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration $(Configuration) -RuntimeIdentifier $(AegiNextNativeRuntimeIdentifier)." />
+    <GetFileHash Files="$(AegiNextExportContractHeader)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_AegiNextExportContractHash" />
+    </GetFileHash>
+    <ReadLinesFromFile File="$(AegiNextExportContractStamp)">
+      <Output TaskParameter="Lines" ItemName="_AegiNextExportBuiltContract" />
+    </ReadLinesFromFile>
+    <Error Code="ANX1002" Condition="'@(_AegiNextExportBuiltContract)' != '$(_AegiNextExportContractHash)'"
+           Text="The $(Configuration) native export library was built against an outdated ABI contract: $(AegiNextNativeDirectory)/$(AegiNextExportLibraryName). Run pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration $(Configuration) -RuntimeIdentifier $(AegiNextNativeRuntimeIdentifier)." />
+  </Target>
+</Project>
