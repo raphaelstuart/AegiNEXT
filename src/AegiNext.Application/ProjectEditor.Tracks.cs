@@ -20,6 +20,20 @@ public sealed partial class ProjectEditor
         Apply("Rename subtitle track", document => ProjectEditingOperations.RenameSubtitleTrack(document, trackId, name));
     }
 
+    /// <summary>将已准备的样式一次套用至轨道字幕并保存后续创建默认值。</summary>
+    public void SetSubtitleTrackStyle(Guid trackId, Guid presetId, string presetName, SubtitleStyle style)
+    {
+        Apply("Apply subtitle track style", document =>
+            ProjectEditingOperations.SetSubtitleTrackStyle(document, trackId, presetId, presetName, style));
+    }
+
+    /// <summary>一次套用所有字幕与轨道默认样式，保留字幕内容及全部效果。</summary>
+    public void SetAllSubtitleTrackStyles(Guid presetId, string presetName, SubtitleStyle style)
+    {
+        Apply("Apply all subtitle track styles", document =>
+            ProjectEditingOperations.SetAllSubtitleTrackStyles(document, presetId, presetName, style));
+    }
+
     /// <summary>删除空字幕轨道；最后一条轨道及含片段轨道明确拒绝。</summary>
     public void RemoveSubtitleTrack(Guid trackId)
     {

@@ -127,6 +127,37 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         }
     }
 
+    internal async Task ApplyTrackAsync(Guid? trackId, Guid presetId)
+    {
+        if (session.IsProjectBusy || !session.TryCommitDrafts())
+        {
+            return;
+        }
+
+        var preset = session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == presetId) ??
+            throw new KeyNotFoundException("字幕样式预设不存在。");
+        session.SetProjectBusy(true);
+        try
+        {
+            var prepared = await SubtitleStylePresetService.PrepareAsync(preset, session.Editor.Snapshot, session.ProjectDirectory);
+            session.Editor.Apply(trackId.HasValue ? "Apply subtitle track style" : "Apply all subtitle track styles", _ =>
+                trackId is { } id
+                    ? AegiNext.Application.ProjectEditingOperations.SetSubtitleTrackStyle(prepared.Project, id, preset.Id, preset.Name, prepared.Style)
+                    : AegiNext.Application.ProjectEditingOperations.SetAllSubtitleTrackStyles(prepared.Project, preset.Id, preset.Name, prepared.Style));
+            Refresh(preset.Id);
+            session.LogInfo("Styles", WorkbenchText.Get(trackId.HasValue ? "TrackStyleApplied" : "AllTrackStylesApplied"), preset.Name);
+        }
+        finally
+        {
+            session.SetProjectBusy(false);
+        }
+
+        if (session.Controller.Snapshot.State == AegiNext.Media.Playback.VideoPlaybackState.PAUSED)
+        {
+            await session.Controller.SeekAsync(session.Controller.Snapshot.Position);
+        }
+    }
+
     internal async Task ImportAsync()
     {
         var path = await dialogs.OpenFileAsync("ImportStyles", "StyleFiles", ["*.aegistyles"]);

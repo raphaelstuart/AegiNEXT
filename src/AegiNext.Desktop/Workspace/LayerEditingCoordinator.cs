@@ -150,9 +150,23 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         }
     }
 
-    internal void CreateKaraoke()
+    internal void CreateKaraoke(Guid? presetId)
     {
         var cue = session.SelectedCue ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
+        var preset = presetId is { } id
+            ? session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == id)
+            : null;
+        var highlightStyle = preset is not null
+            ? KaraokeHighlightStyle.FromStyle(preset.Id, preset.Name, preset.Style)
+            : presetId is { } existingId && cue.KaraokeStyle?.PresetId == existingId
+                ? cue.KaraokeStyle
+                : null;
+        if (!cue.Karaoke.IsEmpty)
+        {
+            session.Editor.UpdateSubtitle(cue.Id, value => value with { KaraokeStyle = highlightStyle });
+            return;
+        }
+
         var boundaries = StringInfo.ParseCombiningCharacters(cue.Text);
         if (boundaries.Length == 0)
         {
@@ -178,7 +192,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
                 start < MediaTime.Zero ? MediaTime.Zero : start, end, new(1, 0.6, 0)));
         }
 
-        session.Editor.UpdateSubtitle(cue.Id, value => value with { Karaoke = segments.ToImmutable() });
+        session.Editor.UpdateSubtitle(cue.Id, value => value with { Karaoke = segments.ToImmutable(), KaraokeStyle = highlightStyle });
     }
 
     internal void ClearKeyframeSelection()
@@ -380,7 +394,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
     {
         if (session.SelectedCue is { } cue)
         {
-            session.Editor.UpdateSubtitle(cue.Id, line => line with { Karaoke = [] });
+            session.Editor.UpdateSubtitle(cue.Id, line => line with { Karaoke = [], KaraokeStyle = null });
         }
     }
 }

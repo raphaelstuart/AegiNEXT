@@ -21,6 +21,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private readonly SubtitleTimelineControl timeline;
     private readonly TimelineOverviewControl overview;
     private readonly MenuItem collapseTrackItem;
+    private readonly MenuItem trackStyleItem;
+    private readonly MenuItem allTrackStylesItem;
     private readonly ToggleButton snapButton;
     private readonly ToggleButton stepButton;
     private readonly ToggleButton spectrumButton;
@@ -60,6 +62,11 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             }
         };
         TrackMenu.Items.Add(collapseTrackItem);
+        TrackMenu.Items.Add(new Separator());
+        trackStyleItem = new() { Name = "SubtitleTrackStyleMenuItem", Tag = "TrackSubtitleStyle" };
+        allTrackStylesItem = new() { Name = "AllSubtitleTracksStyleMenuItem", Tag = "AllTracksSubtitleStyle" };
+        TrackMenu.Items.Add(trackStyleItem);
+        TrackMenu.Items.Add(allTrackStylesItem);
         timeline.TrackContextRequested += OnTrackContextRequested;
         timeline.SeekRequested += async (_, e) => await viewModel.SeekAsync(e.Time);
         timeline.ClipSelectionChanged += (_, e) => viewModel.SelectLayers(e);
@@ -78,6 +85,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         };
         viewModel.PropertyChanged += OnViewModelChanged;
         session.PreferencesChanged += OnPreferencesChanged;
+        session.StyleLibraryChanged += OnStyleLibraryChanged;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
         ApplyState();
         ControlLocalization.Apply(this);
@@ -195,6 +203,45 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         collapseTrackItem.IsEnabled = viewModel.SelectedTrackId.HasValue;
         collapseTrackItem.Header = WorkbenchText.Get(viewModel.SelectedTrackId is { } id && timeline.IsTrackCollapsed(id)
             ? "ExpandTrack" : "CollapseTrack");
+        RefreshStylePresets();
+    }
+    private void RefreshStylePresets()
+    {
+        trackStyleItem.Items.Clear();
+        allTrackStylesItem.Items.Clear();
+        var presets = viewModel.StylePresets;
+        trackStyleItem.IsEnabled = viewModel.SelectedTrackId.HasValue && presets.Length > 0;
+        allTrackStylesItem.IsEnabled = presets.Length > 0;
+        var currentTrack = viewModel.Document.SubtitleTracks.FirstOrDefault(track => track.Id == viewModel.SelectedTrackId);
+        foreach (var preset in presets)
+        {
+            trackStyleItem.Items.Add(new MenuItem
+            {
+                Header = preset.Name,
+                ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = currentTrack?.StylePresetId == preset.Id,
+                Command = viewModel.ApplyTrackStyleCommand,
+                CommandParameter = new TrackStylePresetRequest(viewModel.SelectedTrackId, preset.Id)
+            });
+            allTrackStylesItem.Items.Add(new MenuItem
+            {
+                Header = preset.Name,
+                ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = viewModel.Document.SubtitleTracks.All(track => track.StylePresetId == preset.Id),
+                Command = viewModel.ApplyTrackStyleCommand,
+                CommandParameter = new TrackStylePresetRequest(null, preset.Id)
+            });
+        }
+
+        ToolTip.SetTip(trackStyleItem, presets.Length == 0 ? WorkbenchText.Get("NoStylePresets") : currentTrack?.StylePresetName);
+        ToolTip.SetTip(allTrackStylesItem, presets.Length == 0 ? WorkbenchText.Get("NoStylePresets") : null);
+    }
+    private void OnStyleLibraryChanged(object? sender, EventArgs e)
+    {
+        if (!disposed)
+        {
+            RefreshTrackMenu();
+        }
     }
     private void OnPreferencesChanged(object? sender, EventArgs e)
     {
@@ -211,6 +258,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             disposed = true;
             viewModel.PropertyChanged -= OnViewModelChanged;
             session.PreferencesChanged -= OnPreferencesChanged;
+            session.StyleLibraryChanged -= OnStyleLibraryChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
             timeline.ViewportChanged -= OnViewportChanged;
             overview.ViewportChanged -= OnViewportChanged;

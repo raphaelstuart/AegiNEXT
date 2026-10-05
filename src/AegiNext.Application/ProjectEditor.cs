@@ -201,7 +201,7 @@ public sealed partial class ProjectEditor
     public Guid AddSubtitle(MediaTime start, MediaTime end, string text, Guid? trackId = null)
     {
         var line = new SubtitleLine { Start = start, End = end, Text = text, TrackId = trackId ?? Snapshot.SubtitleTracks[0].Id };
-        AddSubtitles([line]);
+        AddSubtitles([line], line.TrackId);
         return line.Id;
     }
 
@@ -224,15 +224,16 @@ public sealed partial class ProjectEditor
         var imported = lines.Select(line => line with { TrackId = trackId }).ToImmutableArray();
         Apply("Import subtitles", document =>
         {
-            if (!document.SubtitleTracks.Any(track => track.Id == trackId))
-            {
+            var track = document.SubtitleTracks.FirstOrDefault(track => track.Id == trackId) ??
                 throw new KeyNotFoundException("字幕轨道不存在。");
-            }
+            var styled = track.DefaultStyle is { } style
+                ? imported.Select(line => line with { Style = style }).ToImmutableArray()
+                : imported;
 
             return document with
             {
-                Subtitles = document.Subtitles.AddRange(imported),
-                Layers = document.Layers.AddRange(imported.Select(CreateSubtitleLayer))
+                Subtitles = document.Subtitles.AddRange(styled),
+                Layers = document.Layers.AddRange(styled.Select(CreateSubtitleLayer))
             };
         });
     }

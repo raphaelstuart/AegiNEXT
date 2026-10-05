@@ -8,6 +8,55 @@ namespace AegiNext.Application;
 
 public static partial class ProjectEditingOperations
 {
+    /// <summary>更新指定轨道的默认样式及现有全部字幕；效果层、时间和逐字高亮保持原样。</summary>
+    public static ProjectDocument SetSubtitleTrackStyle(ProjectDocument document, Guid trackId,
+        Guid presetId, string presetName, SubtitleStyle style)
+    {
+        ProjectValidator.Validate(document);
+        var index = TrackIndex(document, trackId);
+        var track = document.SubtitleTracks[index] with
+        {
+            DefaultStyle = style,
+            StylePresetId = presetId,
+            StylePresetName = presetName
+        };
+        if (track == document.SubtitleTracks[index] &&
+            document.Subtitles.Where(line => line.TrackId == trackId).All(line => line.Style == style))
+        {
+            return document;
+        }
+
+        return Verified(document with
+        {
+            SubtitleTracks = document.SubtitleTracks.SetItem(index, track),
+            Subtitles = document.Subtitles.Select(line => line.TrackId == trackId
+                ? line with { Style = style } : line).ToImmutableArray()
+        });
+    }
+
+    /// <summary>原子设置工程全部字幕和全部轨道的默认样式，不修改合成顺序。</summary>
+    public static ProjectDocument SetAllSubtitleTrackStyles(ProjectDocument document,
+        Guid presetId, string presetName, SubtitleStyle style)
+    {
+        ProjectValidator.Validate(document);
+        if (document.SubtitleTracks.All(track => track.DefaultStyle == style && track.StylePresetId == presetId &&
+                track.StylePresetName == presetName) && document.Subtitles.All(line => line.Style == style))
+        {
+            return document;
+        }
+
+        return Verified(document with
+        {
+            SubtitleTracks = document.SubtitleTracks.Select(track => track with
+            {
+                DefaultStyle = style,
+                StylePresetId = presetId,
+                StylePresetName = presetName
+            }).ToImmutableArray(),
+            Subtitles = document.Subtitles.Select(line => line with { Style = style }).ToImmutableArray()
+        });
+    }
+
     /// <summary>新增字幕轨道并验证完整快照，不重新创建任何图层。</summary>
     public static ProjectDocument AddSubtitleTrack(ProjectDocument document, SubtitleTrack track)
     {

@@ -236,8 +236,8 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
 
     private static bool HasOpenKeyboardSurface(Window window, Visual? source)
     {
-        if (source is MenuItem or MenuBase or PopupRoot ||
-            source?.GetVisualAncestors().Any(value => value is MenuItem or MenuBase or PopupRoot) == true)
+        if (source is PopupRoot ||
+            source?.GetVisualAncestors().Any(value => value is PopupRoot) == true)
         {
             return true;
         }

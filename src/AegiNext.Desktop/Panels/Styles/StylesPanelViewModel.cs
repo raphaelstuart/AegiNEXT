@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Localization;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Media.Analysis;
@@ -28,6 +29,10 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private StylePresetListItem[] presets = [];
     private StylePresetListItem? selectedPreset;
     private bool canApplyPreset;
+    private StylePresetListItem[] karaokePresets = [];
+    private StylePresetListItem? selectedKaraokePreset;
+    private Guid? loadedKaraokeCueId;
+    private KaraokeHighlightStyle? loadedKaraokeStyle;
 
     internal StylesPanelViewModel(WorkbenchSession session)
     {
@@ -38,8 +43,11 @@ internal sealed class StylesPanelViewModel : ObservableObject
         ApplyStyleCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ApplySelectedStyleAsync()));
         ManageStylesCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.RequestSettingsAsync(AegiNext.Desktop.Settings.SettingsPage.STYLES)));
         RestoreAutomaticPositionCommand = new AsyncRelayCommand(RestoreAutomaticPositionAsync);
-        KaraokeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.CreateKaraoke)));
+        KaraokeCommand = new AsyncRelayCommand(ApplyKaraokeAsync);
         ClearKaraokeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ClearKaraoke)));
+        session.SelectionChanged += (_, _) => RefreshKaraokePresets(true);
+        session.PreferencesChanged += (_, _) => RefreshKaraokePresets(false);
+        RefreshKaraokePresets(false);
     }
 
     public string FontFamily
@@ -126,7 +134,25 @@ internal sealed class StylesPanelViewModel : ObservableObject
     public StylePresetListItem[] Presets
     {
         get => presets;
-        set => SetProperty(ref presets, value);
+        set
+        {
+            if (SetProperty(ref presets, value))
+            {
+                RefreshKaraokePresets(false);
+            }
+        }
+    }
+
+    public StylePresetListItem[] KaraokePresets
+    {
+        get => karaokePresets;
+        private set => SetProperty(ref karaokePresets, value);
+    }
+
+    public StylePresetListItem? SelectedKaraokePreset
+    {
+        get => selectedKaraokePreset;
+        set => SetProperty(ref selectedKaraokePreset, value);
     }
 
     public StylePresetListItem? SelectedPreset
@@ -202,5 +228,33 @@ internal sealed class StylesPanelViewModel : ObservableObject
     {
         Alignment = value;
         session.TryCommitDrafts();
+    }
+
+    private Task ApplyKaraokeAsync()
+    {
+        var presetId = SelectedKaraokePreset is { Id: var id } && id != Guid.Empty ? id : (Guid?)null;
+        return session.RunCommandAsync(() => session.EditAsync(() => session.CreateKaraoke(presetId)));
+    }
+
+    private void RefreshKaraokePresets(bool loadSelection)
+    {
+        var cue = session.SelectedCue;
+        var style = cue?.KaraokeStyle;
+        var targetChanged = loadSelection && (cue?.Id != loadedKaraokeCueId || style != loadedKaraokeStyle);
+        var id = targetChanged ? style?.PresetId ?? Guid.Empty : SelectedKaraokePreset?.Id ?? style?.PresetId ?? Guid.Empty;
+        if (loadSelection)
+        {
+            loadedKaraokeCueId = cue?.Id;
+            loadedKaraokeStyle = style;
+        }
+        var options = new List<StylePresetListItem> { new(Guid.Empty, WorkbenchText.Get("DefaultKaraokeStyle")) };
+        options.AddRange(Presets);
+        if (style is not null && options.All(value => value.Id != style.PresetId))
+        {
+            options.Add(new(style.PresetId, style.PresetName));
+        }
+
+        KaraokePresets = options.ToArray();
+        SelectedKaraokePreset = KaraokePresets.FirstOrDefault(value => value.Id == id) ?? KaraokePresets[0];
     }
 }

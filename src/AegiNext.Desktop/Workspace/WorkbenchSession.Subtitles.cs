@@ -31,7 +31,7 @@ internal sealed partial class WorkbenchSession
                 Id = entered.CueId, TrackId = CurrentTrackId, Start = entered.Start, End = entered.Start + new MediaTime(2),
                 Text = string.Empty
             }
-        ]);
+        ], CurrentTrackId);
 
         SelectCue(entered.CueId);
         SubtitleScrollRequested?.Invoke(this, EventArgs.Empty);

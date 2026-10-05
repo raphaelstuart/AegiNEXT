@@ -12,6 +12,11 @@ internal sealed partial class WorkbenchSession
     internal Guid CurrentTrackId => editor.Snapshot.SubtitleTracks.Any(track => track.Id == currentTrackId)
         ? currentTrackId : editor.Snapshot.SubtitleTracks[0].Id;
 
+    internal Task ApplySubtitleTrackStyleAsync(Guid? trackId, Guid presetId)
+    {
+        return RunCommandAsync(() => styles.ApplyTrackAsync(trackId, presetId));
+    }
+
     internal bool SelectTrack(Guid trackId)
     {
         if (updatingWorkbench || projectBusy)

@@ -97,7 +97,7 @@ public sealed class ProjectSceneRenderer : IDisposable
         {
             resolved = resolved with
             {
-                Offset = new(layout.BasePosition.X - resolved.Anchor.X * document.Width,
+                Offset = new(resolved.Offset.X,
                     layout.BasePosition.Y - resolved.Anchor.Y * document.Height)
             };
         }
@@ -422,74 +422,131 @@ public sealed class ProjectSceneRenderer : IDisposable
 
             var x = line.Position.X;
             var y = line.Position.Y;
-            if (style.ShadowColor.Alpha > 0)
+            if (subtitle.KaraokeStyle is { } highlightStyle)
             {
-                using var shadow = Paint(style.ShadowColor);
-                using var filter = style.ShadowBlur > 0 ? SKMaskFilter.CreateBlur(SKBlurStyle.Normal, (float)style.ShadowBlur) : null;
-                shadow.MaskFilter = filter;
-                canvas.DrawText(run.GetBlob(), x + (float)style.ShadowOffset.X, y + (float)style.ShadowOffset.Y, shadow);
+                using var highlightPath = new SKPath();
+                var padding = Math.Max(layer.StrokeWidth, highlightStyle.StrokeWidth) +
+                    Math.Max(Math.Max(Math.Abs(style.ShadowOffset.X), Math.Abs(style.ShadowOffset.Y)),
+                        Math.Max(Math.Abs(highlightStyle.ShadowOffset.X), Math.Abs(highlightStyle.ShadowOffset.Y))) +
+                    Math.Max(style.ShadowBlur, highlightStyle.ShadowBlur) * 4 + 1;
+                foreach (var karaoke in subtitle.Karaoke)
+                {
+                    if (KaraokeClipBounds(line, run, karaoke, layer.LocalTime, style.FontSize, (float)padding) is { } bounds)
+                    {
+                        highlightPath.AddRect(bounds);
+                    }
+                }
+
+                var save = canvas.Save();
+                canvas.ClipPath(highlightPath, SKClipOperation.Difference, true);
+                DrawSubtitleRun(canvas, run, x, y, layer.Fill, layer.Stroke, layer.StrokeWidth,
+                    style.ShadowColor, style.ShadowOffset, style.ShadowBlur);
+                canvas.RestoreToCount(save);
+                save = canvas.Save();
+                canvas.ClipPath(highlightPath, SKClipOperation.Intersect, true);
+                DrawSubtitleRun(canvas, run, x, y, highlightStyle.Fill, highlightStyle.Stroke, highlightStyle.StrokeWidth,
+                    highlightStyle.ShadowColor, highlightStyle.ShadowOffset, highlightStyle.ShadowBlur);
+                canvas.RestoreToCount(save);
+                continue;
             }
 
-            if (layer.StrokeWidth > 0)
-            {
-                using var stroke = Paint(layer.Stroke);
-                stroke.Style = SKPaintStyle.Stroke;
-                stroke.StrokeWidth = (float)layer.StrokeWidth * 2;
-                stroke.StrokeJoin = SKStrokeJoin.Round;
-                canvas.DrawText(run.GetBlob(), x, y, stroke);
-            }
-
-            using var fill = Paint(layer.Fill);
-            canvas.DrawText(run.GetBlob(), x, y, fill);
+            DrawSubtitleRun(canvas, run, x, y, layer.Fill, layer.Stroke, layer.StrokeWidth,
+                style.ShadowColor, style.ShadowOffset, style.ShadowBlur);
             foreach (var karaoke in subtitle.Karaoke)
             {
-                if (layer.LocalTime <= karaoke.Start)
+                if (KaraokeClipBounds(line, run, karaoke, layer.LocalTime, style.FontSize) is not { } bounds)
                 {
                     continue;
                 }
-
-                var start = Math.Max(0, karaoke.Utf16Start - line.Utf16Offset);
-                var end = Math.Min(line.Text.Length, karaoke.Utf16Start + karaoke.Utf16Length - line.Utf16Offset);
-                if (end <= start)
-                {
-                    continue;
-                }
-
-                var min = float.MaxValue;
-                var max = float.MinValue;
-                foreach (var glyph in run.Glyphs)
-                {
-                    if (glyph.Utf16Cluster >= start && glyph.Utf16Cluster < end)
-                    {
-                        min = Math.Min(min, glyph.Position.X);
-                        max = Math.Max(max, glyph.Position.X);
-                    }
-                }
-
-                if (min == float.MaxValue)
-                {
-                    continue;
-                }
-
-                var right = run.AdvanceWidth;
-                foreach (var glyph in run.Glyphs)
-                {
-                    if (glyph.Position.X > max)
-                    {
-                        right = Math.Min(right, glyph.Position.X);
-                    }
-                }
-
-                var elapsed = layer.LocalTime - karaoke.Start;
-                var duration = karaoke.End - karaoke.Start;
-                var progress = Math.Clamp(((double)elapsed.Numerator / elapsed.Denominator) / ((double)duration.Numerator / duration.Denominator), 0, 1);
                 var save = canvas.Save();
-                canvas.ClipRect(new(x + min, y - (float)style.FontSize * 1.5f, x + min + (right - min) * (float)progress, y + (float)style.FontSize), SKClipOperation.Intersect, true);
+                canvas.ClipRect(bounds, SKClipOperation.Intersect, true);
                 using var highlight = Paint(karaoke.HighlightColor);
                 canvas.DrawText(run.GetBlob(), x, y, highlight);
                 canvas.RestoreToCount(save);
             }
         }
+    }
+
+    private static SKRect? KaraokeClipBounds(SubtitleLayoutLine line, ShapedTextRun run, KaraokeSegment karaoke,
+        MediaTime localTime, double fontSize, float padding = 0)
+    {
+        if (localTime <= karaoke.Start)
+        {
+            return null;
+        }
+
+        var start = Math.Max(0, karaoke.Utf16Start - line.Utf16Offset);
+        var end = Math.Min(line.Text.Length, karaoke.Utf16Start + karaoke.Utf16Length - line.Utf16Offset);
+        if (end <= start)
+        {
+            return null;
+        }
+
+        var min = float.MaxValue;
+        var max = float.MinValue;
+        foreach (var glyph in run.Glyphs)
+        {
+            if (glyph.Utf16Cluster >= start && glyph.Utf16Cluster < end)
+            {
+                min = Math.Min(min, glyph.Position.X);
+                max = Math.Max(max, glyph.Position.X);
+            }
+        }
+
+        if (min == float.MaxValue)
+        {
+            return null;
+        }
+
+        var right = run.AdvanceWidth;
+        foreach (var glyph in run.Glyphs)
+        {
+            if (glyph.Position.X > max)
+            {
+                right = Math.Min(right, glyph.Position.X);
+            }
+        }
+
+        var elapsed = localTime - karaoke.Start;
+        var duration = karaoke.End - karaoke.Start;
+        var progress = Math.Clamp(((double)elapsed.Numerator / elapsed.Denominator) / ((double)duration.Numerator / duration.Denominator), 0, 1);
+        var left = line.Position.X + min;
+        right = line.Position.X + min + (right - min) * (float)progress;
+        if (padding > 0 && start == 0)
+        {
+            left = Math.Min(left, line.Position.X + run.InkBounds.Left) - padding;
+        }
+        if (padding > 0 && progress >= 1 && end == line.Text.Length)
+        {
+            right = Math.Max(right, line.Position.X + run.InkBounds.Right) + padding;
+        }
+
+        return new(left, line.Position.Y - (float)fontSize * 1.5f - padding,
+            right, line.Position.Y + (float)fontSize + padding);
+    }
+
+    private void DrawSubtitleRun(SKCanvas canvas, ShapedTextRun run, float x, float y, SceneColor fillColor,
+        SceneColor strokeColor, double strokeWidth, SceneColor shadowColor, ScenePoint shadowOffset, double shadowBlur)
+    {
+        if (shadowColor.Alpha > 0)
+        {
+            using var shadow = Paint(shadowColor);
+            using var filter = shadowBlur > 0 ? SKMaskFilter.CreateBlur(SKBlurStyle.Normal, (float)shadowBlur) : null;
+            shadow.MaskFilter = filter;
+            canvas.DrawText(run.GetBlob(), x + (float)shadowOffset.X, y + (float)shadowOffset.Y, shadow);
+        }
+
+        if (strokeWidth > 0)
+        {
+            using var stroke = Paint(strokeColor);
+            stroke.Style = SKPaintStyle.Stroke;
+            stroke.StrokeWidth = (float)strokeWidth * 2;
+            stroke.StrokeJoin = SKStrokeJoin.Round;
+            canvas.DrawText(run.GetBlob(), x, y, stroke);
+        }
+
+        using var fill = Paint(fillColor);
+        canvas.DrawText(run.GetBlob(), x, y, fill);
     }
 
     private SubtitleLayout Layout(ProjectDocument document, SubtitleLine subtitle)
@@ -594,11 +651,17 @@ public sealed class ProjectSceneRenderer : IDisposable
         {
             var line = lines[index];
             var width = line.Run?.AdvanceWidth ?? 0;
+            var left = 0f;
+            if (line.Run is { InkBounds.IsEmpty: false } measuredRun)
+            {
+                left = measuredRun.InkBounds.Left;
+                width = measuredRun.InkBounds.Width;
+            }
             var x = horizontal switch
             {
-                0 => (float)style.Margin,
-                1 => (document.Width - width) / 2,
-                _ => document.Width - (float)style.Margin - width
+                0 => (float)style.Margin - left,
+                1 => (document.Width - width) / 2 - left,
+                _ => document.Width - (float)style.Margin - width - left
             };
             var position = new SKPoint(x, top + (float)style.FontSize + index * lineHeight);
             lines[index] = line with { Position = position };
@@ -629,7 +692,7 @@ public sealed class ProjectSceneRenderer : IDisposable
         var basePosition = style.Position is not null
             ? new SKPoint((float)(normalized.Anchor.X * document.Width + normalized.Offset.X),
                 (float)(normalized.Anchor.Y * document.Height + normalized.Offset.Y))
-            : pivot;
+            : new SKPoint((float)(normalized.Anchor.X * document.Width + normalized.Offset.X), pivot.Y);
         return new(lines, ink, basePosition, pivot, hasInk);
     }
 

@@ -12,13 +12,27 @@
                                        Geometry="{Binding Geometry, Mode=OneWay}" Position="{Binding DiagramPosition, Mode=OneWay}" />
     </WrapPanel>
     <TextBlock Tag="AnchorPresetHint" TextWrapping="Wrap" Classes="field" />
-    <Grid Name="PositionFields" IsEnabled="{Binding IsExplicit}" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
-      <StackPanel Spacing="4"><TextBlock Tag="AnchorX" Classes="field" /><controls:NumericDraftInput Name="AnchorXInput" RawText="{Binding AnchorX.RawText, Mode=TwoWay}" Value="{Binding AnchorX.Value, Mode=TwoWay}" Minimum="0" Maximum="1" Increment="0.1" /></StackPanel>
-      <StackPanel Grid.Column="1" Spacing="4"><TextBlock Tag="AnchorY" Classes="field" /><controls:NumericDraftInput Name="AnchorYInput" RawText="{Binding AnchorY.RawText, Mode=TwoWay}" Value="{Binding AnchorY.Value, Mode=TwoWay}" Minimum="0" Maximum="1" Increment="0.1" /></StackPanel>
-      <StackPanel Grid.Row="1" Spacing="4"><TextBlock Tag="PivotX" Classes="field" /><controls:NumericDraftInput Name="PivotXInput" RawText="{Binding PivotX.RawText, Mode=TwoWay}" Value="{Binding PivotX.Value, Mode=TwoWay}" Minimum="0" Maximum="1" Increment="0.1" /></StackPanel>
-      <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4"><TextBlock Tag="PivotY" Classes="field" /><controls:NumericDraftInput Name="PivotYInput" RawText="{Binding PivotY.RawText, Mode=TwoWay}" Value="{Binding PivotY.Value, Mode=TwoWay}" Minimum="0" Maximum="1" Increment="0.1" /></StackPanel>
-      <StackPanel Grid.Row="2" Spacing="4"><TextBlock Tag="OffsetX" Classes="field" /><controls:NumericDraftInput Name="OffsetXInput" RawText="{Binding OffsetX.RawText, Mode=TwoWay}" Value="{Binding OffsetX.Value, Mode=TwoWay}" Minimum="-1000000000" Maximum="1000000000" /></StackPanel>
-      <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4"><TextBlock Tag="OffsetY" Classes="field" /><controls:NumericDraftInput Name="OffsetYInput" RawText="{Binding OffsetY.RawText, Mode=TwoWay}" Value="{Binding OffsetY.Value, Mode=TwoWay}" Minimum="-1000000000" Maximum="1000000000" /></StackPanel>
-    </Grid>
+    <StackPanel Name="PositionFields" IsEnabled="{Binding IsExplicit}" Spacing="8">
+      <StackPanel Spacing="4">
+        <TextBlock Tag="Anchor" Classes="field" />
+        <controls:VectorDraftInput Name="AnchorInput" XFieldKey="AnchorXInput" YFieldKey="AnchorYInput"
+                                  XText="{Binding AnchorX.RawText, Mode=TwoWay}" YText="{Binding AnchorY.RawText, Mode=TwoWay}"
+                                  X="{Binding AnchorX.Value, Mode=TwoWay}" Y="{Binding AnchorY.Value, Mode=TwoWay}"
+                                  Minimum="0" Maximum="1" Increment="0.1" />
+      </StackPanel>
+      <StackPanel Spacing="4">
+        <TextBlock Tag="Pivot" Classes="field" />
+        <controls:VectorDraftInput Name="PivotInput" XFieldKey="PivotXInput" YFieldKey="PivotYInput"
+                                  XText="{Binding PivotX.RawText, Mode=TwoWay}" YText="{Binding PivotY.RawText, Mode=TwoWay}"
+                                  X="{Binding PivotX.Value, Mode=TwoWay}" Y="{Binding PivotY.Value, Mode=TwoWay}"
+                                  Minimum="0" Maximum="1" Increment="0.1" />
+      </StackPanel>
+      <StackPanel Spacing="4">
+        <TextBlock Tag="Offset" Classes="field" />
+        <controls:VectorDraftInput Name="OffsetInput" XFieldKey="OffsetXInput" YFieldKey="OffsetYInput"
+                                  XText="{Binding OffsetX.RawText, Mode=TwoWay}" YText="{Binding OffsetY.RawText, Mode=TwoWay}"
+                                  X="{Binding OffsetX.Value, Mode=TwoWay}" Y="{Binding OffsetY.Value, Mode=TwoWay}" />
+      </StackPanel>
+    </StackPanel>
   </StackPanel>
 </UserControl>

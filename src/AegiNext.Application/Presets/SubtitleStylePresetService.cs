@@ -63,6 +63,23 @@ public static class SubtitleStylePresetService
             return project;
         }
 
+        var prepared = await PrepareAsync(preset, project, projectDirectory, cancellationToken).ConfigureAwait(false);
+        var result = prepared.Project with
+        {
+            Subtitles = prepared.Project.Subtitles.Select(line => selection.Contains(line.Id) ? line with { Style = prepared.Style } : line).ToImmutableArray()
+        };
+        ProjectValidator.Validate(result);
+        return result;
+    }
+
+    /// <summary>导入或复用便携样式字体并返回可提交的样式；不要求工程已有字幕，也不修改编辑历史。</summary>
+    public static async Task<PreparedSubtitleStyle> PrepareAsync(SubtitleStylePreset preset, ProjectDocument project,
+        string projectDirectory, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectDirectory);
+        cancellationToken.ThrowIfCancellationRequested();
+        SubtitleStylePresetValidator.Validate(preset);
+        ProjectValidator.Validate(project);
         var assets = project.Assets;
         var style = preset.Style;
         if (preset.Font is { } font)
@@ -93,13 +110,10 @@ public static class SubtitleStylePresetService
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var result = project with
-        {
-            Assets = assets,
-            Subtitles = project.Subtitles.Select(line => selection.Contains(line.Id) ? line with { Style = style } : line).ToImmutableArray()
-        };
+        var result = assets == project.Assets ? project : project with { Assets = assets };
         ProjectValidator.Validate(result);
-        return result;
+        ProjectValidator.ValidateSubtitleStyle(style);
+        return new(result, style);
     }
 
     private static async Task<ProjectAsset> ImportFontAsync(EmbeddedSubtitleFont font, string projectDirectory,

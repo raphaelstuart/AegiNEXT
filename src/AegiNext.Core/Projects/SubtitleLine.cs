@@ -13,4 +13,5 @@ public sealed record SubtitleLine
     public string Text { get; init; } = string.Empty;
     public SubtitleStyle Style { get; init; } = new();
     public ImmutableArray<KaraokeSegment> Karaoke { get; init; } = [];
+    public KaraokeHighlightStyle? KaraokeStyle { get; init; }
 }

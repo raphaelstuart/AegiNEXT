@@ -55,8 +55,16 @@ public static partial class ProjectEditingOperations
             }
         }
 
-        var left = original with { End = playhead, Text = leftText, Karaoke = leftKaraoke.ToImmutable() };
-        var right = original with { Id = Guid.NewGuid(), Start = playhead, Text = rightText, Karaoke = rightKaraoke.ToImmutable() };
+        var left = original with
+        {
+            End = playhead, Text = leftText, Karaoke = leftKaraoke.ToImmutable(),
+            KaraokeStyle = leftKaraoke.Count > 0 ? original.KaraokeStyle : null
+        };
+        var right = original with
+        {
+            Id = Guid.NewGuid(), Start = playhead, Text = rightText, Karaoke = rightKaraoke.ToImmutable(),
+            KaraokeStyle = rightKaraoke.Count > 0 ? original.KaraokeStyle : null
+        };
         var found = false;
         var layers = RewriteSiblings(document.Layers, layer.Id, (siblings, layerIndex) => siblings
             .SetItem(layerIndex, LayerAnimationTiming.Clip(layer with { End = playhead }))
@@ -103,11 +111,19 @@ public static partial class ProjectEditingOperations
         var firstKaraoke = RebaseKaraoke(first, firstLayer, mergedOrigin, 0);
         var secondKaraoke = RebaseKaraoke(second, secondLayer, mergedOrigin,
             checked(first.Text.Length + separator.Length));
+        var compatibleKaraokeStyles = first.KaraokeStyle is null
+            ? second.KaraokeStyle is null
+            : first.KaraokeStyle.VisuallyEquals(second.KaraokeStyle);
+        if (!firstKaraoke.IsEmpty && !secondKaraoke.IsEmpty && !compatibleKaraokeStyles)
+        {
+            throw new InvalidOperationException("使用不同逐字高亮样式的字幕不能无损合并。");
+        }
         var merged = first with
         {
             End = second.End,
             Text = first.Text + separator + second.Text,
-            Karaoke = firstKaraoke.AddRange(secondKaraoke)
+            Karaoke = firstKaraoke.AddRange(secondKaraoke),
+            KaraokeStyle = firstKaraoke.IsEmpty ? second.KaraokeStyle : first.KaraokeStyle
         };
         var found = false;
         var layers = RewriteSiblings(document.Layers, firstLayer.Id, (siblings, layerIndex) =>

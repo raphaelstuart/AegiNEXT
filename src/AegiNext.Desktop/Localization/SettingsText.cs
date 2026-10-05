@@ -110,6 +110,7 @@ internal static class SettingsText
         ["AnchorPresetHint"] = ("点击保留文字位置；Shift 同时设置轴心；Alt 将偏移归零。", "Click preserves the text position; Shift also sets the pivot; Alt resets offsets to zero."),
         ["SubtitlePositionHint"] = ("锚点相对画布，轴心相对实际文字。0 为左／上，1 为右／下；偏移单位为像素。", "Anchor follows the canvas; pivot follows the glyph bounds. 0 is left/top, 1 is right/bottom; offsets use pixels."),
         ["AnchorX"] = ("锚点 X", "Anchor X"), ["AnchorY"] = ("锚点 Y", "Anchor Y"),
+        ["Anchor"] = ("锚点", "Anchor"), ["Pivot"] = ("轴心", "Pivot"), ["Offset"] = ("偏移（像素）", "Offset (pixels)"),
         ["PivotX"] = ("轴心 X", "Pivot X"), ["PivotY"] = ("轴心 Y", "Pivot Y"),
         ["OffsetX"] = ("偏移 X（像素）", "Offset X (pixels)"), ["OffsetY"] = ("偏移 Y（像素）", "Offset Y (pixels)"),
         ["Advanced"] = ("排版与阴影", "Layout and shadow"),

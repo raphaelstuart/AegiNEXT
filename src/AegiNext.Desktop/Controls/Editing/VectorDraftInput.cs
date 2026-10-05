@@ -13,6 +13,7 @@ public sealed class VectorDraftInput : UserControl
     public static readonly StyledProperty<string> YTextProperty = AvaloniaProperty.Register<VectorDraftInput, string>(nameof(YText), string.Empty, defaultBindingMode: BindingMode.TwoWay);
     public static readonly StyledProperty<decimal> MinimumProperty = AvaloniaProperty.Register<VectorDraftInput, decimal>(nameof(Minimum), -1000000000m);
     public static readonly StyledProperty<decimal> MaximumProperty = AvaloniaProperty.Register<VectorDraftInput, decimal>(nameof(Maximum), 1000000000m);
+    public static readonly StyledProperty<decimal> IncrementProperty = AvaloniaProperty.Register<VectorDraftInput, decimal>(nameof(Increment), 1m);
     private readonly NumericDraftInput xInput;
     private readonly NumericDraftInput yInput;
 
@@ -39,8 +40,22 @@ public sealed class VectorDraftInput : UserControl
     public string YText { get => GetValue(YTextProperty); set => SetValue(YTextProperty, value); }
     public decimal Minimum { get => GetValue(MinimumProperty); set => SetValue(MinimumProperty, value); }
     public decimal Maximum { get => GetValue(MaximumProperty); set => SetValue(MaximumProperty, value); }
+    public decimal Increment { get => GetValue(IncrementProperty); set => SetValue(IncrementProperty, value); }
     public string? XFieldKey { get => xInput.Name; set => xInput.Name = value; }
     public string? YFieldKey { get => yInput.Name; set => yInput.Name = value; }
+
+    /// <summary>按稳定分量字段标识定位输入；不依赖宿主 XAML 的名称范围。</summary>
+    public bool FocusField(string fieldKey)
+    {
+        var input = fieldKey == XFieldKey ? xInput : fieldKey == YFieldKey ? yInput : null;
+        if (input is null)
+        {
+            return false;
+        }
+
+        input.BringIntoView();
+        return input.Focus();
+    }
 
     private NumericDraftInput CreateInput(string valueProperty, string textProperty)
     {
@@ -49,6 +64,7 @@ public sealed class VectorDraftInput : UserControl
         input.Bind(NumericDraftInput.RawTextProperty, new Binding(textProperty) { Source = this, Mode = BindingMode.TwoWay });
         input.Bind(NumericUpDown.MinimumProperty, new Binding(nameof(Minimum)) { Source = this });
         input.Bind(NumericUpDown.MaximumProperty, new Binding(nameof(Maximum)) { Source = this });
+        input.Bind(NumericUpDown.IncrementProperty, new Binding(nameof(Increment)) { Source = this });
         return input;
     }
 }

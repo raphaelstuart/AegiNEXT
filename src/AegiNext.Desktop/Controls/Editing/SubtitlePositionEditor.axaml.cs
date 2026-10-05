@@ -2,7 +2,10 @@ using AegiNext.Desktop.Editing;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Controls;
 
@@ -63,6 +66,7 @@ public sealed partial class SubtitlePositionEditor : UserControl
                 ExplicitPositionChanged?.Invoke(this, EventArgs.Empty);
             }
         };
+        AddHandler(KeyDownEvent, RestoreField, RoutingStrategies.Tunnel);
     }
 
     /// <summary>用户切换显式位置且纯草稿已经同步后，通知父面板提交；模型加载不触发此事件。</summary>
@@ -77,6 +81,14 @@ public sealed partial class SubtitlePositionEditor : UserControl
     /// <summary>将验证焦点定位到该编辑器内部的数值字段。</summary>
     public bool FocusInvalidField(string fieldKey)
     {
+        foreach (var vector in new[] { "AnchorInput", "PivotInput", "OffsetInput" })
+        {
+            if (this.FindControl<VectorDraftInput>(vector)!.FocusField(fieldKey))
+            {
+                return true;
+            }
+        }
+
         var control = this.FindControl<Control>(fieldKey);
         if (control is null)
         {
@@ -85,6 +97,20 @@ public sealed partial class SubtitlePositionEditor : UserControl
 
         control.BringIntoView();
         return control.Focus();
+    }
+
+    private void RestoreField(object? sender, KeyEventArgs args)
+    {
+        if (args.Key != Key.Escape || args.Source is not Control source || model is null)
+        {
+            return;
+        }
+
+        var input = source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault();
+        if (input?.Name is { } fieldKey && model.RestoreField(fieldKey))
+        {
+            args.Handled = true;
+        }
     }
 
     private void ChangeModel()

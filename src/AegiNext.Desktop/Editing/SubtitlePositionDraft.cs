@@ -169,6 +169,37 @@ public sealed class SubtitlePositionDraft : ObservableObject
         return null;
     }
 
+    /// <summary>恢复指定位置分量到最近加载的值，保留其他字段的未完成输入。</summary>
+    public bool RestoreField(string fieldKey)
+    {
+        var field = fieldKey switch
+        {
+            "AnchorXInput" => (AnchorX, source.Anchor.X),
+            "AnchorYInput" => (AnchorY, source.Anchor.Y),
+            "PivotXInput" => (PivotX, source.Pivot.X),
+            "PivotYInput" => (PivotY, source.Pivot.Y),
+            "OffsetXInput" => (OffsetX, source.Offset.X),
+            "OffsetYInput" => (OffsetY, source.Offset.Y),
+            _ => ((NumericValueDraft?)null, 0d)
+        };
+        if (field.Item1 is null)
+        {
+            return false;
+        }
+
+        loading = true;
+        try
+        {
+            field.Item1.Load(field.Item2);
+        }
+        finally
+        {
+            loading = false;
+        }
+        RaiseChanged();
+        return true;
+    }
+
     /// <summary>创建验证后的持久化位置；未编辑的双精度值保持原值。</summary>
     public SubtitlePosition? CreatePosition()
     {

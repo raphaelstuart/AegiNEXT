@@ -55,6 +55,15 @@ public static class ProjectValidator
             Require(track.Id != Guid.Empty && trackIds.Add(track.Id) && !string.IsNullOrWhiteSpace(track.Name) &&
                 track.Name.Length <= 128 && !track.Name.Any(char.IsControl), "字幕轨道标识或名称无效。");
             ValidateText(track.Name);
+            Require(track.DefaultStyle is null
+                ? track.StylePresetId is null && track.StylePresetName is null
+                : track.StylePresetId is { } presetId && presetId != Guid.Empty &&
+                    track.StylePresetName is { Length: > 0 and <= 1024 }, "轨道样式预设来源不完整。");
+            if (track.DefaultStyle is { } defaultStyle)
+            {
+                Style(defaultStyle, assets);
+                ValidateText(track.StylePresetName!);
+            }
         }
 
         var subtitles = new Dictionary<Guid, SubtitleLine>();
@@ -69,6 +78,18 @@ public static class ProjectValidator
             totalText += line.Text.Length;
             Require(totalText <= 8 * 1024 * 1024, "工程文本总量超过预算。");
             Style(line.Style, assets);
+            if (line.KaraokeStyle is { } karaokeStyle)
+            {
+                Require(karaokeStyle.PresetId != Guid.Empty && karaokeStyle.PresetName is { Length: > 0 and <= 1024 },
+                    "逐字高亮样式预设来源无效。");
+                ValidateText(karaokeStyle.PresetName);
+                Number(karaokeStyle.StrokeWidth, 0, 4096, "高亮描边");
+                Number(karaokeStyle.ShadowBlur, 0, 512, "高亮阴影模糊");
+                Point(karaokeStyle.ShadowOffset);
+                Color(karaokeStyle.Fill);
+                Color(karaokeStyle.Stroke);
+                Color(karaokeStyle.ShadowColor);
+            }
             var boundaries = StringInfo.ParseCombiningCharacters(line.Text).ToHashSet();
             boundaries.Add(line.Text.Length);
             var previousEnd = 0;

@@ -121,7 +121,9 @@ public static class ProjectStore
                 foreach (var property in info.Properties)
                 {
                     property.IsRequired = (property.Get is not null || property.Set is not null) &&
-                        !(info.Type == typeof(Keyframe) && property.Name == "componentCurves");
+                        !(info.Type == typeof(Keyframe) && property.Name == "componentCurves") &&
+                        !(info.Type == typeof(SubtitleLine) && property.Name == "karaokeStyle") &&
+                        !(info.Type == typeof(SubtitleTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName");
                 }
             }
         });

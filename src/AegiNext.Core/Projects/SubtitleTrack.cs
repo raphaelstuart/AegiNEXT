@@ -7,4 +7,7 @@ public sealed record SubtitleTrack
     public static SubtitleTrack Default { get; } = new() { Id = DEFAULT_TRACK_ID, Name = "Subtitles" };
     public Guid Id { get; init; } = Guid.NewGuid();
     public string Name { get; init; } = "Subtitles";
+    public SubtitleStyle? DefaultStyle { get; init; }
+    public Guid? StylePresetId { get; init; }
+    public string? StylePresetName { get; init; }
 }

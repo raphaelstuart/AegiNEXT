@@ -18,7 +18,8 @@ internal sealed partial class WorkbenchSession
     internal void RefreshKeyframeInspector() => layerEditing.RefreshKeyframeInspector();
     internal void AddKeyframe() => layerEditing.AddKeyframe();
     internal void DeleteKeyframe() => layerEditing.DeleteKeyframe();
-    internal void CreateKaraoke() => layerEditing.CreateKaraoke();
+    internal void CreateKaraoke() => layerEditing.CreateKaraoke(null);
+    internal void CreateKaraoke(Guid? presetId) => layerEditing.CreateKaraoke(presetId);
     internal void ResetAutomaticPosition() => layerEditing.ResetAutomaticPosition();
     internal void AddPathPoint() => layerEditing.AddPathPoint();
     internal void RemovePathPoint() => layerEditing.RemovePathPoint();
