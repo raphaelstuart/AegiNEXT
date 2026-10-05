@@ -69,6 +69,22 @@ Managed `-RunTests` defaults to Core/Application/Rendering/Media/Desktop. Filter
 
 Workbench checks the entire dependency set and builds Decoder → Audio → Export → Managed. Tests run the three native CTest suites before selected managed projects. Checks include FFmpeg/swresample, SDL3, SDK/native RID agreement, plus the selected SDK's actual libx264/yuv420p, libx265/yuv420p10le, AAC/fltp, MP4, and Matroska capabilities. Missing capability is Invalid, not silently replaced. Only Missing items are installable with the explicit switch. Workbench supports macOS/Windows x64; Linux is deferred. Windows native/audio/worker/cancellation evidence is in the [historical interaction release checkpoint](README.md#implementation-evidence).
 
+### Debug/Release native export compatibility
+
+Native outputs are isolated by RID **and configuration**. Rebuilding Release does not update the libraries used by a Debug session in Rider. The GPU export request uses ABI 2 for both CPU and GPU encoding; an old ABI 1 library fails before either encoder can start.
+
+For a Debug session, rebuild the matching workbench before launching it:
+
+```powershell
+pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug
+# Windows, including ARM64 hosts:
+pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug -RuntimeIdentifier win-x64
+```
+
+The export CMake build writes `aeginext_export.contract.sha256` only after its native library has built successfully. Managed builds compare this fingerprint with the current public export header before copying native output. `ANX1001` means the library lacks current contract metadata; `ANX1002` means the interface has changed since that library was built. Both errors include the RID, configuration, library path, and repair command. A managed-only checkout without a native export library can still compile, but needs a complete Workbench build for export.
+
+The worker also checks the actual loaded ABI and managed request size. Its mismatch error reports both ABI versions, structure sizes, process architecture, and the exact library path. Do not bypass this check or mix native files between Debug/Release or platforms.
+
 `Directory.Build.props` fixes product version `0.1.0` and assembly/file version `0.1.0.0`. RIDs are `osx-arm64`, `osx-x64`, `win-x64` and must match the platform. macOS uses host architecture; Windows always targets x64. ARM64 Windows .NET/PowerShell hosts can generate x64, but native compilation requires x64 MinGW. Windows executes x64 through OS emulation.
 
 ## Checks and installation

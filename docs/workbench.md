@@ -14,6 +14,8 @@ A compact transport has 32×32 play/pause and mute/unmute icon buttons, centered
 
 Preview has no duplicate inner title. File information stays in the picture hint; the SDR/HDR badge is fixed at upper right and does not intercept editing input. Composed editing output is SDR, regardless of source HDR tags.
 
+The quality selector and SDR/HDR badge share one 32-DIP overlay row. Dragging either the timeline playhead or preview progress bar requests video frames while the pointer is held, including a return to the starting position. Release performs an exact seek and restores the selected preview quality. Scrubbing uses a paused preview; it does not start normal playback.
+
 Select preview quality: Low **540p (960×540)** is the default, Standard is **720p**, and High is **1080p**. Small videos are not enlarged. The choice is a personal preference, independent of project data, and is restored after restart. During interaction the cap is 540p and never exceeds the selected quality; release restores that choice. Quality does not change export resolution or HDR processing.
 
 Dock titles/content/floating panels use shared rounded corners and theme borders. Layout owns the outer frame; panels do not draw duplicate outlines. Tabs have no filler dividers or item borders: selection uses accent text and a translucent background.
@@ -37,6 +39,8 @@ Space plays/pauses. F8 always creates a new sentence; F9 only finishes the still
 Drag a clip body to move it, an edge to trim, or Ctrl+edge to stretch time explicitly. Snap defaults on and aligns to other clip boundaries. Step quantizes to the viewport's smallest division. Without Step, dragging uses project-frame precision; Alt bypasses Snap/Step and uses milliseconds. A completed gesture creates one Undo. Edge hover/drag uses a horizontal resize cursor.
 
 The minimap shows viewport and playhead. Drag its viewport, edges, or click to navigate without seeking. Wheel scrolls tracks; Shift+wheel pans; Ctrl/Cmd+wheel and pinch zoom around the pointer; horizontal touchpad gestures pan.
+
+The single triangle in a track heading expands/collapses all its existing animation-property rows. There is no separate diamond expansion button. Collapsing keeps the subtitle clips visible and does not remove animation. The track name and style badge use the shared mixed-text font chain and centered line boxes.
 
 To split, place the text caret and playback position inside the sentence. Split inherits its track. Merge requires same track and compatible timing, layer order, and effects; it never silently discards differing effects. Save/Save As/Open use Cmd/Ctrl+S, Shift+S, and O; outside text editors, Z and Shift+Z undo/redo.
 

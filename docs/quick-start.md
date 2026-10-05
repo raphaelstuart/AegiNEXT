@@ -33,6 +33,8 @@ Click a track heading or empty track area to choose the destination track. Add a
 
 Create, rename, reorder, collapse, and delete empty tracks through the timeline context menu. The Subtitles panel's top selector filters the visible list.
 
+The triangle beside a track name expands/collapses all its existing keyframe-property rows while leaving clips visible. Dragging the timeline playhead or preview progress bar shows video frames before mouse release; release restores the selected preview quality.
+
 Save reusable styles under Settings → Subtitle Styles, then choose a preset from the target track's context menu. The track stores a project-local style snapshot and its source name; subsequent changes to the personal library do not silently rewrite the project. Track styling preserves timing and effects, and is undoable. Split and cross-track moves preserve each existing clip's own style. The current track-style interaction is described in the [workbench guide](workbench.md).
 
 ### Add manually

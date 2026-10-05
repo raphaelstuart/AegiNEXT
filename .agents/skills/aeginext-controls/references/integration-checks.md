@@ -12,6 +12,7 @@ Paths are relative to the AegiNext checkout. Use them as current examples, not a
 | Anchor/pivot/offset, no rectangle sizing | `src/AegiNext.Desktop/Controls/Editing/SubtitlePositionEditor.axaml` and `.axaml.cs` |
 | Panel-local deferred commit cancellation | `src/AegiNext.Desktop/Panels/Effects/EffectsPanelView.axaml.cs` |
 | Pure geometry and timeline interaction | `src/AegiNext.Desktop/Controls/Editing/SubtitleTimelineControl.cs` |
+| Shared body line boxes and centered drawing | `src/AegiNext.Desktop/Styling/WorkbenchTheme.axaml` and `WorkbenchTextFormatting.cs` |
 | Single video editing surface | `src/AegiNext.Desktop/Controls/Editing/EffectCanvasControl.cs` |
 | Presenting/disposal | `src/AegiNext.Desktop/Controls/Media/VideoFrameSurface.cs` |
 | Panel cancellation/disposal interface | `src/AegiNext.Desktop/Panels/IWorkbenchPanelView.cs` |
@@ -32,6 +33,8 @@ Settings pages use compiled bindings to their own page ViewModels. Watch framewo
 | Page contexts and live refresh | `SettingsWindowUiTests` |
 | Shortcut full press/release | `WorkbenchShortcutInputUiTests`, `ShortcutSettingsRecordingUiTests` |
 | Track/menu/pointer geometry | `TimelineTracksAndNavigationUiTests`, `TimelineTrackManagementUiTests` |
+| Mixed-text inputs, headers, overlays and captions | `BusinessTypographyUiTests`, `SubtitleInputTypographyUiTests`, `TimelineHeaderTypographyUiTests`, `PreviewTransportUiTests` |
+| Live video while scrubbing, including return to start | `PreviewScrubbingLiveUiTests`, `InteractiveTimelineSeekingUiTests`, `MainWindowSeekSchedulingUiTests` |
 | Dock lifetime and fixed instances | `WorkbenchLayoutsUiTests`, `MainDockContentUiTests` |
 | Editor caret, IME, completion | `EffectScriptLanguageTests`, `EffectScriptSettingsUiTests` |
 

@@ -28,6 +28,24 @@ brew install powershell
 
 ## 常用命令
 
+### Debug／Release 原生压制兼容性
+
+原生产物按 RID **和构建配置**分别隔离。重建 Release 不会更新 Rider 中 Debug 会话使用的库。CPU 与 GPU 共用 ABI 2 压制请求；旧 ABI 1 库会在启动编码器之前失败。
+
+启动 Debug 工作台前，应重建对应配置：
+
+```powershell
+pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug
+# Windows，包括 ARM64 宿主：
+pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug -RuntimeIdentifier win-x64
+```
+
+压制 CMake 构建仅在原生库成功构建后写入 `aeginext_export.contract.sha256`。托管构建在复制原生产物前，将该指纹与当前公开压制头文件比较。`ANX1001` 表示原生库缺少当前接口元数据；`ANX1002` 表示库构建后接口已经变化。两类错误均包含 RID、配置、库路径和修复命令。未构建原生压制库的纯托管检出仍可编译，实际压制需要完整 Workbench 构建。
+
+worker 还会检查实际加载的 ABI 和托管请求结构大小。不匹配时报告所需及实际 ABI、结构大小、进程架构和准确的加载路径。请勿绕过检查，或混用不同平台和 Debug／Release 的原生文件。
+
+### 构建命令
+
 在仓库根目录运行：
 
 ```powershell
