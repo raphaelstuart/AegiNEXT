@@ -28,6 +28,10 @@ internal static partial class NativeExportMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void Cancel(nint context);
 
+    [LibraryImport(LIBRARY, EntryPoint = "an_export_encoder_name")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint EncoderName(nint context);
+
     [LibraryImport(LIBRARY, EntryPoint = "an_export_run")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe partial int Run(nint context, ref NativeExportRequest request,

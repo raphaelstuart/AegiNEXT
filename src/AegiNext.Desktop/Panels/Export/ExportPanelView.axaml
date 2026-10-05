@@ -2,15 +2,18 @@
     xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
     xmlns:vm="using:AegiNext.Desktop.Panels.Export" x:DataType="vm:ExportPanelViewModel"
     x:Class="AegiNext.Desktop.Panels.Export.ExportPanelView" Classes="business-surface">
-<StackPanel Margin="4" Spacing="8">
+<ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="4" Spacing="8">
               <TextBlock Tag="Codec" Classes="field" /><ComboBox Name="CodecCombo" ItemsSource="{Binding Codecs}" HorizontalAlignment="Stretch" SelectedIndex="{Binding Codec, Mode=TwoWay}" />
+              <CheckBox Name="HardwareEncoderToggle" Tag="HardwareEncoder" IsChecked="{Binding UseHardwareEncoder, Mode=TwoWay}" />
+              <TextBlock Tag="HardwareEncoderHint" Classes="field" TextWrapping="Wrap" FontSize="12" />
               <TextBlock Tag="Speed" Classes="field" /><ComboBox Name="SpeedCombo" ItemsSource="{Binding Speeds}" HorizontalAlignment="Stretch" SelectedIndex="{Binding Speed, Mode=TwoWay}" />
-              <TextBlock Tag="Quality" Classes="field" /><controls:NumericDraftInput Name="CrfInput" RawText="{Binding CrfText, Mode=TwoWay}" Minimum="0" Maximum="51" Value="{Binding Crf, Mode=TwoWay}" />
+              <StackPanel IsVisible="{Binding IsSoftwareEncoding}" Spacing="8"><TextBlock Tag="Quality" Classes="field" /><controls:NumericDraftInput Name="CrfInput" RawText="{Binding CrfText, Mode=TwoWay}" Minimum="0" Maximum="51" Value="{Binding Crf, Mode=TwoWay}" /></StackPanel>
+              <StackPanel IsVisible="{Binding UseHardwareEncoder}" Spacing="8"><TextBlock Tag="VideoBitrate" Classes="field" /><controls:NumericDraftInput Name="VideoBitrateInput" RawText="{Binding VideoBitrateText, Mode=TwoWay}" Minimum="0.1" Maximum="200" Value="{Binding VideoBitrate, Mode=TwoWay}" /></StackPanel>
               <TextBlock Tag="Audio" Classes="field" /><ComboBox Name="AudioModeCombo" ItemsSource="{Binding AudioModes}" HorizontalAlignment="Stretch" SelectedIndex="{Binding AudioMode, Mode=TwoWay}" />
               <TextBlock Tag="AudioBitrate" Classes="field" /><controls:NumericDraftInput Name="AudioBitrateInput" RawText="{Binding AudioBitrateText, Mode=TwoWay}" Minimum="32" Maximum="512" Value="{Binding AudioBitrate, Mode=TwoWay}" Increment="16" />
               <StackPanel Orientation="Horizontal" Spacing="8"><Button Name="EncodeButton" Tag="Export" Classes="accent" Command="{Binding EncodeCommand}" /><Button Name="CancelEncodeButton" Tag="Cancel" IsEnabled="{Binding IsRunning}" Command="{Binding CancelEncodeCommand}" /></StackPanel>
               <ProgressBar Name="EncodeProgress" Minimum="0" Maximum="1" IsVisible="{Binding ProgressVisible}" Value="{Binding Progress, Mode=OneWay}" IsIndeterminate="{Binding ProgressIndeterminate}" />
               <TextBlock Name="EncodeStatus" TextWrapping="Wrap" FontSize="12" Text="{Binding Status, Mode=OneWay}" />
-            </StackPanel>
+            </StackPanel></ScrollViewer>
           
 </UserControl>

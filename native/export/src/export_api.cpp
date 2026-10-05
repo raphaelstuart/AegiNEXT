@@ -20,6 +20,7 @@ extern "C"
 #include <libavutil/mastering_display_metadata.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
+#include <libavutil/hwcontext.h>
 #include <libswscale/swscale.h>
 }
 namespace
@@ -61,6 +62,7 @@ struct Context
     AVCodecContext *decoder = nullptr, *encoder = nullptr;
     AVPacket *packet = nullptr, *encoded = nullptr;
     SwsContext *upsample = nullptr, *downsample = nullptr;
+    std::string encoderName;
     ~Context()
     {
         sws_free_context(&upsample); sws_free_context(&downsample);
@@ -195,6 +197,126 @@ std::string MasteringOption(const AVFrame *f)
     s << "WP(" << q(m->white_point[0], 50000) << ',' << q(m->white_point[1], 50000) << ")L(" << q(m->max_luminance, 10000) << ',' << q(m->min_luminance, 10000) << ')';
     return s.str();
 }
+struct EncoderDeleter
+{
+    void operator()(AVCodecContext *value) const { avcodec_free_context(&value); }
+};
+using EncoderContext = std::unique_ptr<AVCodecContext, EncoderDeleter>;
+EncoderContext ConfigureEncoder(const AVCodec *encoder, const an_export_request &r, AVStream *source,
+    const AVFrame *frame, const AVFormatContext *output, AVPixelFormat format)
+{
+    EncoderContext value(avcodec_alloc_context3(encoder));
+    if (!value) throw std::bad_alloc();
+    value->width = r.width; value->height = r.height; value->pix_fmt = format;
+    value->time_base = source->time_base; value->sample_aspect_ratio = frame->sample_aspect_ratio;
+    value->color_range = frame->color_range; value->colorspace = frame->colorspace;
+    value->color_primaries = frame->color_primaries; value->color_trc = frame->color_trc;
+    value->chroma_sample_location = AVCHROMA_LOC_LEFT;
+    value->thread_count = 4; value->flags |= AV_CODEC_FLAG_FRAME_DURATION;
+    if (output->oformat->flags & AVFMT_GLOBALHEADER) value->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    return value;
+}
+const char *HardwareSpeed(const char *preset)
+{
+    if (!std::strcmp(preset, "slow") || !std::strcmp(preset, "slower") || !std::strcmp(preset, "veryslow")) return "slow";
+    if (!std::strcmp(preset, "medium")) return "medium";
+    return "fast";
+}
+bool SupportsPixelFormat(const AVCodec *encoder, AVPixelFormat format)
+{
+    const void *values = nullptr;
+    int count = 0;
+    if (avcodec_get_supported_config(nullptr, encoder, AV_CODEC_CONFIG_PIX_FORMAT, 0, &values, &count) < 0) return false;
+    if (!values) return false;
+    const auto *formats = static_cast<const AVPixelFormat *>(values);
+    return std::find(formats, formats + count, format) != formats + count;
+}
+AVCodecContext *OpenHardwareEncoder(Context &c, const an_export_request &r, AVStream *source,
+    const AVFrame *frame, int codec)
+{
+    const bool hdr = frame->color_trc == AVCOL_TRC_SMPTE2084 || frame->color_trc == AVCOL_TRC_ARIB_STD_B67;
+    Need(!hdr && !av_frame_get_side_data(frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA) &&
+        !av_frame_get_side_data(frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL),
+        "GPU encoding cannot yet preserve the verified HDR metadata contract; select CPU software encoding for HDR export");
+    const auto format = codec == 1 ? AV_PIX_FMT_NV12 : AV_PIX_FMT_P010LE;
+    std::vector<const char *> candidates;
+#if defined(__APPLE__)
+    candidates = codec == 1 ? std::vector<const char *>{"h264_videotoolbox"} : std::vector<const char *>{"hevc_videotoolbox"};
+#elif defined(_WIN32)
+    candidates = codec == 1 ? std::vector<const char *>{"h264_nvenc", "h264_qsv", "h264_amf"} :
+        std::vector<const char *>{"hevc_nvenc", "hevc_qsv", "hevc_amf"};
+#endif
+    std::ostringstream failures;
+    for (const auto *name : candidates)
+    {
+        c.CheckCancel();
+        const auto *encoder = avcodec_find_encoder_by_name(name);
+        if (!encoder)
+        {
+            failures << name << ": not compiled into this FFmpeg runtime; ";
+            continue;
+        }
+        if (!SupportsPixelFormat(encoder, format))
+        {
+            failures << name << ": required " << av_get_pix_fmt_name(format) << " format unsupported; ";
+            continue;
+        }
+        auto value = ConfigureEncoder(encoder, r, source, frame, c.output, format);
+        value->framerate = av_guess_frame_rate(c.input, source, const_cast<AVFrame *>(frame));
+        value->bit_rate = r.video_bitrate;
+        AVDictionary *options = nullptr;
+        const auto speed = std::string(HardwareSpeed(r.preset));
+        if (std::strstr(name, "videotoolbox"))
+        {
+            av_dict_set(&options, "allow_sw", "0", 0);
+            av_dict_set(&options, "require_sw", "0", 0);
+            av_dict_set(&options, "prio_speed", speed == "fast" ? "1" : "0", 0);
+            if (codec == 2) av_dict_set(&options, "profile", "main10", 0);
+        }
+        else if (std::strstr(name, "nvenc"))
+        {
+            av_dict_set(&options, "preset", speed == "fast" ? "p3" : speed == "slow" ? "p5" : "p4", 0);
+            av_dict_set(&options, "rc", "vbr", 0);
+            if (codec == 2) av_dict_set(&options, "profile", "main10", 0);
+        }
+        else if (std::strstr(name, "qsv"))
+        {
+            AVDictionary *deviceOptions = nullptr;
+            av_dict_set(&deviceOptions, "child_device_type", "d3d11va", 0);
+            const auto device = av_hwdevice_ctx_create(&value->hw_device_ctx, AV_HWDEVICE_TYPE_QSV,
+                "hw_any", deviceOptions, 0);
+            av_dict_free(&deviceOptions);
+            if (device < 0)
+            {
+                char reason[AV_ERROR_MAX_STRING_SIZE]{};
+                av_strerror(device, reason, sizeof(reason));
+                failures << name << ": hardware device initialization failed (" << reason << "); ";
+                av_dict_free(&options);
+                continue;
+            }
+            av_dict_set(&options, "preset", speed.c_str(), 0);
+        }
+        else if (std::strstr(name, "amf"))
+        {
+            av_dict_set(&options, "quality", speed == "fast" ? "speed" : speed == "slow" ? "quality" : "balanced", 0);
+            av_dict_set(&options, "rc", "vbr_peak", 0);
+        }
+        const auto opened = avcodec_open2(value.get(), encoder, &options);
+        const bool unusedOptions = av_dict_count(options) != 0;
+        av_dict_free(&options);
+        if (opened < 0 || unusedOptions)
+        {
+            char reason[AV_ERROR_MAX_STRING_SIZE]{};
+            av_strerror(opened, reason, sizeof(reason));
+            failures << name << ": initialization failed (" << (unusedOptions ? "unsupported encoder options" : reason) << "); ";
+            continue;
+        }
+        c.encoderName = name;
+        return value.release();
+    }
+    throw Failure(2, "GPU hardware video encoder unavailable; no CPU fallback. " +
+        (candidates.empty() ? std::string("No supported hardware backend on this platform") : failures.str()));
+}
 void Execute(Context &c, const an_export_request &r, an_export_render_callback render, void *user, uint64_t &frames)
 {
     Versions(); c.CheckCancel();
@@ -252,39 +374,39 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
             const bool hdr = decoded->color_trc == AVCOL_TRC_SMPTE2084 || decoded->color_trc == AVCOL_TRC_ARIB_STD_B67;
             const auto codec = r.codec == 0 ? (hdr ? 2 : 1) : r.codec;
             Need(!(hdr && codec == 1), "HDR requires HEVC 10-bit output");
-            const auto *encoder = avcodec_find_encoder_by_name(codec == 1 ? "libx264" : "libx265");
-            Need(encoder != nullptr, "Requested software encoder is unavailable");
             Check(avformat_alloc_output_context2(&c.output, nullptr, "nut", r.output_path), "create export container");
             c.output->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED;
             c.output->interrupt_callback = {Interrupt, &c};
-            c.encoder = avcodec_alloc_context3(encoder);
-            if (!c.encoder) throw std::bad_alloc();
-            c.encoder->width = r.width; c.encoder->height = r.height;
-            c.encoder->pix_fmt = codec == 1 ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_YUV420P10LE;
-            c.encoder->time_base = sourceStream->time_base;
-            c.encoder->framerate = av_guess_frame_rate(c.input, sourceStream, decoded.get());
-            c.encoder->sample_aspect_ratio = decoded->sample_aspect_ratio;
-            c.encoder->color_range = decoded->color_range; c.encoder->colorspace = decoded->colorspace;
-            c.encoder->color_primaries = decoded->color_primaries; c.encoder->color_trc = decoded->color_trc;
-            c.encoder->chroma_sample_location = AVCHROMA_LOC_LEFT;
-            c.encoder->thread_count = 4; c.encoder->flags |= AV_CODEC_FLAG_FRAME_DURATION;
-            if (c.output->oformat->flags & AVFMT_GLOBALHEADER) c.encoder->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-            AVDictionary *options = nullptr;
-            av_dict_set(&options, "preset", r.preset, 0);
-            av_dict_set(&options, "crf", std::to_string(r.crf).c_str(), 0);
-            if (codec == 2)
+            if (r.encoding_mode == 1)
             {
-                std::string params = "pools=none:frame-threads=4:log-level=error:colorprim=" + std::to_string(decoded->color_primaries) + ":transfer=" + std::to_string(decoded->color_trc) + ":colormatrix=" + std::to_string(decoded->colorspace);
-                if (r.crf == 0) params += ":lossless=1";
-                if (decoded->color_trc == AVCOL_TRC_SMPTE2084)
-                {
-                    mastering = MasteringOption(decoded.get());
-                    if (!mastering.empty()) params += ":master-display=" + mastering;
-                }
-                av_dict_set(&options, "x265-params", params.c_str(), 0);
+                c.encoder = OpenHardwareEncoder(c, r, sourceStream, decoded.get(), codec);
             }
-            const auto opened = avcodec_open2(c.encoder, encoder, &options);
-            av_dict_free(&options); Check(opened, "open video encoder");
+            else
+            {
+                const auto *encoder = avcodec_find_encoder_by_name(codec == 1 ? "libx264" : "libx265");
+                Need(encoder != nullptr, "Requested software encoder is unavailable");
+                auto value = ConfigureEncoder(encoder, r, sourceStream, decoded.get(), c.output,
+                    codec == 1 ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_YUV420P10LE);
+                value->framerate = av_guess_frame_rate(c.input, sourceStream, decoded.get());
+                AVDictionary *options = nullptr;
+                av_dict_set(&options, "preset", r.preset, 0);
+                av_dict_set(&options, "crf", std::to_string(r.crf).c_str(), 0);
+                if (codec == 2)
+                {
+                    std::string params = "pools=none:frame-threads=4:log-level=error:colorprim=" + std::to_string(decoded->color_primaries) + ":transfer=" + std::to_string(decoded->color_trc) + ":colormatrix=" + std::to_string(decoded->colorspace);
+                    if (r.crf == 0) params += ":lossless=1";
+                    if (decoded->color_trc == AVCOL_TRC_SMPTE2084)
+                    {
+                        mastering = MasteringOption(decoded.get());
+                        if (!mastering.empty()) params += ":master-display=" + mastering;
+                    }
+                    av_dict_set(&options, "x265-params", params.c_str(), 0);
+                }
+                const auto opened = avcodec_open2(value.get(), encoder, &options);
+                av_dict_free(&options); Check(opened, "open video encoder");
+                c.encoderName = encoder->name;
+                c.encoder = value.release();
+            }
             targetStream = avformat_new_stream(c.output, nullptr);
             if (!targetStream) throw std::bad_alloc();
             targetStream->time_base = sourceStream->time_base;
@@ -375,7 +497,12 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
 }
 extern "C"
 {
-uint32_t AN_EXPORT_CALL an_export_abi_version(void) { return 1; }
+uint32_t AN_EXPORT_CALL an_export_abi_version(void) { return 2; }
+const char *AN_EXPORT_CALL an_export_encoder_name(void *context)
+{
+    try { return Get(context)->encoderName.c_str(); }
+    catch (...) { return ""; }
+}
 int32_t AN_EXPORT_CALL an_export_create(void **context, char *error, uint32_t capacity)
 {
     try
@@ -408,12 +535,14 @@ int32_t AN_EXPORT_CALL an_export_run(void *context, const an_export_request *req
 {
     try
     {
-        if (!request || request->struct_size != sizeof(*request) || request->abi_version != 1 || !render || !frames ||
+        if (!request || request->struct_size != sizeof(*request) || request->abi_version != 2 || !render || !frames ||
             !request->input_path || !request->output_path || !request->preset || request->flags || request->reserved ||
             request->width == 0 || request->height == 0 || (request->width % 2) || (request->height % 2) ||
             static_cast<uint64_t>(request->width)*request->height > 33177600 || request->codec < 0 || request->codec > 2 ||
             request->crf < 0 || request->crf > 51 || !std::isfinite(request->reference_white_nits) || request->reference_white_nits <= 0)
             throw Failure(1, "Invalid export request ABI, dimensions, codec or reference white");
+        if (request->encoding_mode < 0 || request->encoding_mode > 1 || request->video_bitrate < 100000 || request->video_bitrate > 200000000)
+            throw Failure(1, "Invalid video encoding mode or target bitrate");
         *frames = 0; auto *value = Get(context); Execute(*value, *request, render, user, *frames);
         CopyError(error, capacity, ""); return 0;
     }

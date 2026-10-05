@@ -2,6 +2,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Settings.Colors;
 
@@ -17,6 +18,7 @@ public sealed class ColorsSettingsViewModel : ObservableObject
     /// <summary>从已验证的个人偏好构造颜色输入，不持有控件或工程。</summary>
     public ColorsSettingsViewModel(WorkbenchPreferences preferences)
     {
+        ResetColorsCommand = new(ResetColors);
         AccentDraft.Committed += (_, args) =>
         {
             accentColor = ColorHexCodec.Format(args.Value, false);
@@ -32,6 +34,7 @@ public sealed class ColorsSettingsViewModel : ObservableObject
     }
 
     public event EventHandler<SettingsColorsChangedEventArgs>? Changed;
+    public RelayCommand ResetColorsCommand { get; }
     public ColorDraft AccentDraft { get; } = new() { IsAlphaEnabled = false };
     public ColorDraft LowDraft { get; } = new() { IsAlphaEnabled = false };
     public ColorDraft MidDraft { get; } = new() { IsAlphaEnabled = false };
@@ -137,6 +140,29 @@ public sealed class ColorsSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AudioGraph));
         OnPropertyChanged(nameof(SchemeIndex));
         OnPropertyChanged(nameof(SelectedScheme));
+        NotifyChanged();
+    }
+
+    private void ResetColors()
+    {
+        var defaults = new WorkbenchPreferences();
+        updating = true;
+        try
+        {
+            accentColor = defaults.AccentColor;
+            audioGraph = defaults.AudioGraph;
+            AccentDraft.Load(Parse(accentColor));
+            LoadPalette(true);
+            OnPropertyChanged(nameof(AccentColor));
+            OnPropertyChanged(nameof(AudioGraph));
+            OnPropertyChanged(nameof(SchemeIndex));
+            OnPropertyChanged(nameof(SelectedScheme));
+        }
+        finally
+        {
+            updating = false;
+        }
+
         NotifyChanged();
     }
 

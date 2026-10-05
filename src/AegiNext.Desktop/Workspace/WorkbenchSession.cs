@@ -124,7 +124,9 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal MediaTime? SelectedKeyTime { get => SceneEditing.KeyframeTime; set => SceneEditing.KeyframeTime = value; }
     internal bool HasSelectedCue => SelectedCue is not null;
     internal string ProjectDirectory => projectDirectory;
-    internal string? ProjectPath { get => projectPath; set => projectPath = value; }
+    internal string? ProjectPath => projectPath;
+    internal string ProjectDisplayName => WorkbenchProjectTitle.GetDisplayName(editor.Snapshot, projectPath,
+        WorkbenchText.Get("Untitled"));
     internal string ScratchDirectory => scratchDirectory;
     internal MediaTime ProjectPosition => (playback.PendingPosition ?? controller.Snapshot.Position) - (controller.Snapshot.Start ?? MediaTime.Zero);
     internal ProjectLayer? SelectedLayer => Flatten(editor.Snapshot.Layers).FirstOrDefault(value => value.Id == SelectedLayerId);
@@ -455,6 +457,12 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     {
         projectPath = path;
         projectDirectory = directory;
+        RefreshTitle();
+    }
+
+    private void RefreshTitle()
+    {
+        ViewModel.Title = WorkbenchProjectTitle.Format(ProjectDisplayName, editor.HasUnsavedChanges);
     }
 
     internal void ResetSelection()

@@ -2,6 +2,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Rendering;
 using AegiNext.Rendering.Projects;
+using System.Runtime.InteropServices;
 
 namespace AegiNext.Media.Encoding;
 
@@ -26,6 +27,7 @@ internal sealed class ExportRenderContext : IDisposable
     }
 
     internal Exception? Failure { get; private set; }
+    internal nint NativeContext { get; set; }
 
     internal unsafe int Render(long pts, int timeBaseNumerator, int timeBaseDenominator, uint width, uint height, float* output, ulong channels)
     {
@@ -49,7 +51,8 @@ internal sealed class ExportRenderContext : IDisposable
             frames++;
             if (frames == 1 || frames % 10 == 0)
             {
-                progress?.Report(new(frames, time, null, "encoding"));
+                var encoder = Marshal.PtrToStringUTF8(NativeExportMethods.EncoderName(NativeContext));
+                progress?.Report(new(frames, time, null, "encoding", encoder));
             }
 
             return 0;

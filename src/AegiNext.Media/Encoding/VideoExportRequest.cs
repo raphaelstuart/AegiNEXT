@@ -6,6 +6,8 @@ namespace AegiNext.Media.Encoding;
 public sealed record VideoExportRequest(ProjectDocument Project, string ProjectDirectory, string OutputPath)
 {
     public VideoCodec Codec { get; init; } = VideoCodec.Auto;
+    public VideoEncodingMode EncodingMode { get; init; } = VideoEncodingMode.SOFTWARE;
+    public int VideoBitrate { get; init; } = 8000000;
     public string Preset { get; init; } = "medium";
     public int Crf { get; init; } = 20;
     public AudioExportMode AudioMode { get; init; } = AudioExportMode.Copy;

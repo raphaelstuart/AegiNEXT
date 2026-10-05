@@ -24,12 +24,13 @@ internal static class Program
             var request = new VideoExportRequest(document, job.ProjectDirectory, output)
             {
                 Codec = job.Codec, Preset = job.Preset, Crf = job.Crf, AudioMode = job.AudioMode,
-                AudioBitrate = job.AudioBitrate, FfmpegPath = job.FfmpegPath
+                AudioBitrate = job.AudioBitrate, FfmpegPath = job.FfmpegPath,
+                EncodingMode = job.EncodingMode, VideoBitrate = job.VideoBitrate
             };
             var progress = new WorkerProgress();
-            var frames = NativeVideoExport.Run(request, Path.Combine(job.TemporaryDirectory, "video.nut"), progress, CancellationToken.None);
+            var encoded = NativeVideoExport.Run(request, Path.Combine(job.TemporaryDirectory, "video.nut"), progress, CancellationToken.None);
             await ExportMuxer.RunAsync(request, Path.Combine(job.TemporaryDirectory, "video.nut"), CancellationToken.None).ConfigureAwait(false);
-            Send(new("complete", frames));
+            Send(new("complete", encoded.Frames, Encoder: encoded.Encoder));
             return 0;
         }
         catch (Exception error)

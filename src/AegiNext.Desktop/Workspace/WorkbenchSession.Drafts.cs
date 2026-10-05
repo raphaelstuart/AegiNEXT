@@ -218,8 +218,17 @@ internal sealed partial class WorkbenchSession
 
             ProjectValidator.Validate(prepared);
             ViewModel.InvalidPanelId = "export";
-            var crf = RequiredNumber(ViewModel.Export.CrfText, "Quality", "CrfInput");
-            if (crf is < 0 or > 51 || crf != Math.Truncate(crf))
+            var crf = ViewModel.Export.Crf ?? 20;
+            var videoBitrate = ViewModel.Export.VideoBitrate ?? 8;
+            if (ViewModel.Export.UseHardwareEncoder)
+            {
+                videoBitrate = (decimal)RequiredNumber(ViewModel.Export.VideoBitrateText, "VideoBitrate", "VideoBitrateInput");
+            }
+            else
+            {
+                crf = (decimal)RequiredNumber(ViewModel.Export.CrfText, "Quality", "CrfInput");
+            }
+            if (!ViewModel.Export.UseHardwareEncoder && (crf is < 0 or > 51 || crf != Math.Truncate(crf)))
             {
                 throw new InvalidDataException(WorkbenchText.Get("Quality"));
             }
@@ -234,6 +243,7 @@ internal sealed partial class WorkbenchSession
                 throw new InvalidDataException(WorkbenchText.Get("Codec"));
             }
             ViewModel.Export.Crf = (decimal)crf;
+            ViewModel.Export.VideoBitrate = videoBitrate;
             ViewModel.Export.AudioBitrate = (decimal)bitrate;
             var originalStylesDirty = stylesDirty;
             var originalEffectsDirty = effectsDirty;
@@ -346,6 +356,7 @@ internal sealed partial class WorkbenchSession
             "BlurInput" => (0m, 128m),
             "CrfInput" => (0m, 51m),
             "AudioBitrateInput" => (32m, 512m),
+            "VideoBitrateInput" => (0.1m, 200m),
             _ => (decimal.MinValue, decimal.MaxValue)
         };
         if (number < minimum || number > maximum)
@@ -507,8 +518,7 @@ internal sealed partial class WorkbenchSession
                 SelectedKeyTime = null;
             }
             ViewModel.Effects.SelectedItem = layers.FirstOrDefault(value => value.Id == SelectedLayerId);
-            ViewModel.Title = (document.Name == "Untitled" ? WorkbenchText.Get("Untitled") : document.Name) +
-                              (editor.HasUnsavedChanges ? " •" : string.Empty) + " — AegiNext";
+            RefreshTitle();
             ViewModel.Timeline.Document = document;
             ViewModel.Timeline.SelectedCueId = SelectedCueId;
             ViewModel.Timeline.SelectedLayer = SelectedLayer;

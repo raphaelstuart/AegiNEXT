@@ -18,4 +18,6 @@ internal struct NativeExportRequest
     internal nint Preset;
     internal float ReferenceWhiteNits;
     internal uint Reserved;
+    internal int EncodingMode;
+    internal int VideoBitrate;
 }

@@ -55,7 +55,8 @@ public sealed class VideoExporter
 
             var job = new ExportWorkerJob(JsonSerializer.SerializeToElement(request.Project, ExportWire.Options),
                 Path.GetFullPath(request.ProjectDirectory), temporary, Path.GetExtension(output).ToLowerInvariant(),
-                request.Codec, request.Preset, request.Crf, request.AudioMode, request.AudioBitrate, ffmpeg);
+                request.Codec, request.Preset, request.Crf, request.AudioMode, request.AudioBitrate, ffmpeg,
+                request.EncodingMode, request.VideoBitrate);
             var serializedJob = JsonSerializer.Serialize(job, ExportWire.Options);
             using var process = new Process { StartInfo = start };
             if (!process.Start())
@@ -82,7 +83,7 @@ public sealed class VideoExporter
                         ?? throw new InvalidDataException("导出 worker 返回空消息。");
                     if (message.Type == "progress")
                     {
-                        progress?.Report(new(message.Frames, new(message.PositionNumerator, message.PositionDenominator), null, "encoding"));
+                        progress?.Report(new(message.Frames, new(message.PositionNumerator, message.PositionDenominator), null, "encoding", message.Encoder));
                     }
                     else if (message.Type == "complete")
                     {
@@ -102,6 +103,8 @@ public sealed class VideoExporter
                     throw new InvalidOperationException(failure ?? $"压制失败：{diagnostics}");
                 }
 
+                ValidateCompletedEncoder(request, completed.Encoder);
+
                 var encoded = Path.Combine(temporary, "output" + job.Extension);
                 if (!File.Exists(encoded) || new FileInfo(encoded).Length == 0)
                 {
@@ -109,8 +112,8 @@ public sealed class VideoExporter
                 }
 
                 File.Move(encoded, output, false);
-                progress?.Report(new(completed.Frames, MediaTime.Zero, 1, "complete"));
-                return new(output, completed.Frames);
+                progress?.Report(new(completed.Frames, MediaTime.Zero, 1, "complete", completed.Encoder));
+                return new(output, completed.Frames, completed.Encoder);
             }
             finally
             {
@@ -146,11 +149,29 @@ public sealed class VideoExporter
             throw new ArgumentException("首版压制支持 MP4 或 MKV。", nameof(request));
         }
 
-        if (!Enum.IsDefined(request.Codec) || !Enum.IsDefined(request.AudioMode) || request.Crf is < 0 or > 51 ||
+        if (!Enum.IsDefined(request.Codec) || !Enum.IsDefined(request.AudioMode) || !Enum.IsDefined(request.EncodingMode) ||
+            (request.EncodingMode == VideoEncodingMode.HARDWARE && request.VideoBitrate is < 100000 or > 200000000) ||
+            (request.EncodingMode == VideoEncodingMode.SOFTWARE && request.Crf is < 0 or > 51) ||
             request.Preset is not "ultrafast" and not "superfast" and not "veryfast" and not "faster" and not "fast" and not "medium" and not "slow" and not "slower" and not "veryslow" ||
             request.AudioBitrate is < 32000 or > 512000)
         {
             throw new ArgumentException("不支持的编码参数。", nameof(request));
+        }
+    }
+
+    internal static void ValidateCompletedEncoder(VideoExportRequest request, string? encoder)
+    {
+        if (request.EncodingMode != VideoEncodingMode.HARDWARE)
+        {
+            return;
+        }
+
+        var prefix = request.Codec == VideoCodec.Hevc ? "hevc_" : request.Codec == VideoCodec.H264 ? "h264_" : null;
+        var hardware = encoder is "h264_videotoolbox" or "hevc_videotoolbox" or "h264_nvenc" or "hevc_nvenc" or
+            "h264_qsv" or "hevc_qsv" or "h264_amf" or "hevc_amf";
+        if (!hardware || (prefix is not null && !encoder!.StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            throw new InvalidDataException("GPU 导出 worker 未确认匹配的硬件编码器，可能部署了旧 worker；未提交成片，也不会回退 CPU。");
         }
     }
 

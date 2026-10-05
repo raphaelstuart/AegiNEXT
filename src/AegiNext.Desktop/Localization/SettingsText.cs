@@ -9,6 +9,7 @@ internal static class SettingsText
         ["Settings"] = ("设置", "Settings"),
         ["Appearance"] = ("外观与语言", "Appearance"),
         ["Colors"] = ("配色", "Colors"),
+        ["ResetColors"] = ("恢复默认配色", "Restore default colors"),
         ["AudioPalette"] = ("音频图配色方案", "Audio graph palette"),
         ["AudioPaletteHint"] = ("内置方案随深浅主题适配，自定义颜色保持原值。语谱图按能量显示低、中、高强度颜色；波形支持透明度。修改立即应用并保存为个人设置。", "Built-in palettes adapt to light and dark themes; custom colors stay unchanged. Spectrum colors represent low, medium and high energy. Waveform supports transparency. Changes apply immediately and are saved in personal settings."),
         ["AudioLow"] = ("低强度", "Low energy"),

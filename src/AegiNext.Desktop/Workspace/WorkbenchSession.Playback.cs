@@ -47,5 +47,9 @@ internal sealed partial class WorkbenchSession
         {
             ViewModel.Export.AudioBitrateText = ViewModel.Export.AudioBitrate?.ToString(InterfaceCulture) ?? string.Empty;
         }
+        else if (e.PropertyName == "VideoBitrate")
+        {
+            ViewModel.Export.VideoBitrateText = ViewModel.Export.VideoBitrate?.ToString(InterfaceCulture) ?? string.Empty;
+        }
     }
 }

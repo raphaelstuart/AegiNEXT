@@ -29,8 +29,10 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         var request = new VideoExportRequest(snapshot, directory, string.Empty)
         {
             Codec = vm.Codec switch { 1 => VideoCodec.H264, 2 => VideoCodec.Hevc, _ => VideoCodec.Auto },
+            EncodingMode = vm.UseHardwareEncoder ? VideoEncodingMode.HARDWARE : VideoEncodingMode.SOFTWARE,
+            VideoBitrate = vm.UseHardwareEncoder ? checked((int)((vm.VideoBitrate ?? 8) * 1000000)) : 8000000,
             Preset = vm.Speed switch { 0 => "fast", 2 => "slow", _ => "medium" },
-            Crf = checked((int)(vm.Crf ?? 20)),
+            Crf = vm.UseHardwareEncoder ? 20 : checked((int)(vm.Crf ?? 20)),
             AudioMode = vm.AudioMode switch { 1 => AudioExportMode.Aac, 2 => AudioExportMode.None, _ => AudioExportMode.Copy },
             AudioBitrate = checked((int)(vm.AudioBitrate ?? 192) * 1000)
         };
@@ -48,7 +50,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
     {
         try
         {
-            var path = await dialogs.SaveFileAsync("Export", "Videos", ["*.mp4", "*.mkv"], ".mp4", request.Project.Name + ".mp4");
+            var path = await dialogs.SaveFileAsync("Export", "Videos", ["*.mp4", "*.mkv"], ".mp4", session.ProjectDisplayName + ".mp4");
             if (path is null || session.IsClosing || token.IsCancellationRequested)
             {
                 return;
@@ -84,6 +86,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         session.LogInfo("Export", WorkbenchText.Get("Export"));
         var duration = session.Controller.Snapshot.Duration;
         var exportRevision = revision;
+        string? reportedEncoder = null;
         var progress = new Progress<VideoExportProgress>(value =>
         {
             if (session.IsClosing || token.IsCancellationRequested || !vm.IsRunning || exportRevision != revision)
@@ -96,15 +99,24 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
             vm.ProgressIndeterminate = fraction is null;
             vm.Progress = fraction is { } known ? Math.Clamp(known, 0, 1) : 0;
             vm.Status = $"{WorkbenchSession.FormatTime(value.Position)} · {value.FrameCount}";
+            if (!string.IsNullOrWhiteSpace(value.Encoder))
+            {
+                vm.Status += " · " + value.Encoder;
+                if (reportedEncoder != value.Encoder)
+                {
+                    reportedEncoder = value.Encoder;
+                    session.LogInfo("Export", WorkbenchText.Get("Codec") + ": " + value.Encoder);
+                }
+            }
         });
         try
         {
-            await exportService.ExportAsync(request, progress, token);
+            var result = await exportService.ExportAsync(request, progress, token);
             if (!session.IsClosing)
             {
                 vm.ProgressIndeterminate = false;
                 vm.Progress = 1;
-                vm.Status = WorkbenchText.Get("Exported");
+                vm.Status = WorkbenchText.Get("Exported") + (string.IsNullOrWhiteSpace(result.Encoder) ? string.Empty : " · " + result.Encoder);
                 session.LogInfo("Export", vm.Status);
             }
         }

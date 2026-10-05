@@ -15,6 +15,9 @@ internal sealed class ExportPanelViewModel : ObservableObject
 {
     private string crfText = "20";
     private string audioBitrateText = "192";
+    private string videoBitrateText = "8";
+    private decimal? videoBitrate = 8;
+    private bool useHardwareEncoder;
     private readonly WorkbenchSession session;
     private int codec;
     private string[] codecs = [];
@@ -40,6 +43,32 @@ internal sealed class ExportPanelViewModel : ObservableObject
     {
         get => codec;
         set => SetProperty(ref codec, value);
+    }
+
+    public bool UseHardwareEncoder
+    {
+        get => useHardwareEncoder;
+        set
+        {
+            if (SetProperty(ref useHardwareEncoder, value))
+            {
+                OnPropertyChanged(nameof(IsSoftwareEncoding));
+            }
+        }
+    }
+
+    public bool IsSoftwareEncoding => !UseHardwareEncoder;
+
+    public decimal? VideoBitrate
+    {
+        get => videoBitrate;
+        set => SetProperty(ref videoBitrate, value);
+    }
+
+    public string VideoBitrateText
+    {
+        get => videoBitrateText;
+        set => SetProperty(ref videoBitrateText, value);
     }
 
     public string[] Codecs

@@ -4,6 +4,7 @@
              Classes="business-surface">
   <ScrollViewer Name="ColorsPage" IsVisible="{Binding $parent[UserControl].IsVisible}">
     <StackPanel Spacing="16">
+      <Button Name="ResetColorsButton" Tag="ResetColors" HorizontalAlignment="Right" Command="{Binding ResetColorsCommand}" />
       <Border Classes="card">
         <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
           <TextBlock Tag="Accent" VerticalAlignment="Center" />

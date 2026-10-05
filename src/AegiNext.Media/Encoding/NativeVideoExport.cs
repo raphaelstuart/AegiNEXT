@@ -8,10 +8,10 @@ namespace AegiNext.Media.Encoding;
 
 internal static class NativeVideoExport
 {
-    internal static unsafe ulong Run(VideoExportRequest request, string videoOutput, IProgress<VideoExportProgress>? progress, CancellationToken cancellationToken)
+    internal static unsafe NativeVideoExportResult Run(VideoExportRequest request, string videoOutput, IProgress<VideoExportProgress>? progress, CancellationToken cancellationToken)
     {
         VideoExporter.Validate(request);
-        if (NativeExportMethods.AbiVersion() != 1 || Marshal.SizeOf<NativeExportRequest>() != 64)
+        if (NativeExportMethods.AbiVersion() != 2 || Marshal.SizeOf<NativeExportRequest>() != 72)
         {
             throw new NotSupportedException("原生导出 ABI 不匹配。");
         }
@@ -22,9 +22,12 @@ internal static class NativeVideoExport
         var handle = GCHandle.Alloc(render);
         var arguments = new NativeExportRequest
         {
-            StructSize = 64, AbiVersion = 1, VideoStreamIndex = request.Project.Media!.VideoStreamIndex,
-            Codec = (int)request.Codec, Crf = request.Crf, Width = (uint)request.Project.Width, Height = (uint)request.Project.Height,
-            ReferenceWhiteNits = (float)request.Project.ReferenceWhiteNits
+            StructSize = 72, AbiVersion = 2, VideoStreamIndex = request.Project.Media!.VideoStreamIndex,
+            Codec = (int)request.Codec, Crf = request.EncodingMode == VideoEncodingMode.SOFTWARE ? request.Crf : 20,
+            Width = (uint)request.Project.Width, Height = (uint)request.Project.Height,
+            ReferenceWhiteNits = (float)request.Project.ReferenceWhiteNits,
+            EncodingMode = (int)request.EncodingMode,
+            VideoBitrate = request.EncodingMode == VideoEncodingMode.HARDWARE ? request.VideoBitrate : 8000000
         };
         var error = stackalloc byte[1024];
         nint native = 0;
@@ -34,6 +37,7 @@ internal static class NativeVideoExport
             arguments.OutputPath = Marshal.StringToCoTaskMemUTF8(videoOutput);
             arguments.Preset = Marshal.StringToCoTaskMemUTF8(request.Preset);
             Check(NativeExportMethods.Create(out native, error, 1024), error, cancellationToken);
+            render.NativeContext = native;
             using var cancelled = cancellationToken.Register(() => NativeExportMethods.Cancel(native));
             var result = NativeExportMethods.Run(native, ref arguments, &Render, GCHandle.ToIntPtr(handle), out var frames, error, 1024);
             if (render.Failure is { } failure)
@@ -42,7 +46,7 @@ internal static class NativeVideoExport
             }
 
             Check(result, error, cancellationToken);
-            return frames;
+            return new(frames, Marshal.PtrToStringUTF8(NativeExportMethods.EncoderName(native)) ?? string.Empty);
         }
         finally
         {

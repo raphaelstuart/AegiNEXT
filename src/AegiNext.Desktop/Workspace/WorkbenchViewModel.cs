@@ -16,7 +16,7 @@ internal sealed class WorkbenchViewModel : ObservableObject
 {
     private readonly WorkbenchSession session;
     private readonly Dictionary<WorkbenchCommand, AsyncRelayCommand> commands = [];
-    private string title = "AegiNext";
+    private string title = "AegiNEXT";
     private string? error;
     private bool isBusy;
     private string? invalidPanelId;

@@ -228,7 +228,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         if (saveAs || destination is null)
         {
             destination = await dialogs.SaveFileAsync("Save", "Projects", ["*.aeginext"], ".aeginext",
-                session.Editor.Snapshot.Name + ".aeginext");
+                session.ProjectDisplayName + ".aeginext");
             if (destination is null)
             {
                 return false;
