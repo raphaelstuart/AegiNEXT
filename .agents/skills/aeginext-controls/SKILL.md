@@ -21,6 +21,8 @@ Read the actual consuming panel and the closest existing control before designin
 
 Controls must not access Dock, MainWindow, WorkbenchSession, ProjectEditor, personal libraries, or global services. A drawing control may consume immutable pure model data, but must not own the authoritative project. Business ViewModels must not hold controls, platform events, Dock objects, or bitmaps. Keep C# types top-level, one per file; preserve established namespaces without an unrelated mass rename.
 
+UI text may use the shared `AegiNext.Desktop.I18n.Localization` presentation service; language selection and preference persistence stay with their existing owners. For JSON language packs, live `Loc` bindings, or language refresh, use [aeginext-localization](../aeginext-localization/SKILL.md).
+
 ## Design a semantic contract
 
 - Prefer `StyledProperty`/`DirectProperty`, commands, and typed events carrying stable entity IDs, `MediaTime`, complete vectors/colors, or final gesture values. Declare ownership, two-way behavior, and the difference between user edits and synchronization.

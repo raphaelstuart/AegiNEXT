@@ -1,0 +1,4 @@
+interface:
+  display_name: "AegiNext Localization"
+  short_description: "Maintain AegiNext JSON languages and live Avalonia text bindings"
+  default_prompt: "Use $aeginext-localization to update AegiNext UI translations and verify live language switching."

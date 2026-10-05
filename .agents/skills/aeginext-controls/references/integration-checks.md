@@ -21,7 +21,7 @@ Paths are relative to the AegiNext checkout. Use them as current examples, not a
 
 Ordinary scalar/vector fields bind both parsed values and raw text. Report failure by stable component field key. A color consumer supplies a `ColorDraft`, configures its commit boundary, and listens to semantic changes; picker refresh must use a synchronization guard. Check that untouched HDR values survive refresh and that invalid HEX/byte text never coerces to a fallback color.
 
-Settings pages use compiled bindings to their own page ViewModels. Watch framework-handled binding exceptions during initialization, not merely the eventual DataContext. `ControlLocalization.Apply` updates local tagged labels; model selection refresh and translated item lists must preserve stable IDs without firing user actions.
+Settings pages use compiled bindings to their own page ViewModels. Watch framework-handled binding exceptions during initialization, not merely the eventual DataContext. Static labels use `{Loc Key=...}` and dynamic text uses the shared `AegiNext.Desktop.I18n.Localization` service. Model selection refresh and translated item lists must preserve stable IDs without firing user actions; language changes must not commit drafts. See [aeginext-localization](../../aeginext-localization/SKILL.md) for language-resource, binding, and subscription contracts.
 
 ## Useful scoped test groups
 
