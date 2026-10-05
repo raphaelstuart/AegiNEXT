@@ -30,24 +30,26 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
-  <Target Name="CopyExportWorker" AfterTargets="Build">
+  <Target Name="ResolveExportWorkerTarget">
     <MSBuild Projects="../AegiNext.ExportWorker/AegiNext.ExportWorker.csproj" Targets="GetTargetPath"
              Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier)">
       <Output TaskParameter="TargetOutputs" ItemName="_ExportWorkerTarget" />
     </MSBuild>
+  </Target>
+  <Target Name="CopyExportWorker" AfterTargets="Build" DependsOnTargets="ResolveExportWorkerTarget">
     <ItemGroup>
-      <_ExportWorkerFiles Include="$([System.IO.Path]::GetDirectoryName('%(_ExportWorkerTarget.Identity)'))/AegiNext.ExportWorker*" />
+      <_ExportWorkerFiles Include="$([System.IO.Path]::GetDirectoryName('%(_ExportWorkerTarget.Identity)'))/%(_ExportWorkerTarget.Filename)*" />
     </ItemGroup>
     <Copy SourceFiles="@(_ExportWorkerFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
-  <Target Name="PublishExportWorker" BeforeTargets="ComputeFilesToPublish" Condition="'$(AegiNextPublishWorkerSeparately)' != 'true'">
+  <Target Name="PublishExportWorker" BeforeTargets="ComputeFilesToPublish" DependsOnTargets="ResolveExportWorkerTarget" Condition="'$(AegiNextPublishWorkerSeparately)' != 'true'">
     <PropertyGroup>
       <_WorkerPublishDirectory>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'worker-publish', '$(Configuration)', '$(TargetFramework)', '$(RuntimeIdentifier)'))/</_WorkerPublishDirectory>
     </PropertyGroup>
     <MSBuild Projects="../AegiNext.ExportWorker/AegiNext.ExportWorker.csproj" Targets="Publish"
              Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishDir=$(_WorkerPublishDirectory);AegiNextPublishWorkerSeparately=true" />
     <ItemGroup>
-      <_WorkerPublishFile Include="$(_WorkerPublishDirectory)AegiNext.ExportWorker*" />
+      <_WorkerPublishFile Include="$(_WorkerPublishDirectory)%(_ExportWorkerTarget.Filename)*" />
     </ItemGroup>
     <ItemGroup>
       <ResolvedFileToPublish Include="@(_WorkerPublishFile)">

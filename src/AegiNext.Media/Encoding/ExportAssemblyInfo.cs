@@ -1,3 +1,3 @@
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("AegiNext.ExportWorker")]
+[assembly: InternalsVisibleTo("aegn-exporter")]

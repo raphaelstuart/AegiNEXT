@@ -2,7 +2,7 @@
 
 [English](../export.md) | [简体中文](export.md)
 
-工作台压制当前工程的不可变快照，独立 `AegiNext.ExportWorker` 进程共享 Core 场景求值和 Rendering 绘制。界面提供自动／H.264／HEVC、CPU 或 GPU 视频编码、原音轨复制／AAC／无音频、进度和取消，输出 MP4 或 Matroska。
+工作台压制当前工程的不可变快照，独立 `aegn-exporter` 进程共享 Core 场景求值和 Rendering 绘制。项目仍名为 `AegiNext.ExportWorker`；部署的 apphost／DLL 名称由 `AssemblyName` 决定。界面提供自动／H.264／HEVC、CPU 或 GPU 视频编码、原音轨复制／AAC／无音频、进度和取消，输出 MP4 或 Matroska。
 
 目标必须是新文件；worker 在输出目录的独立临时目录中编码，成功后原子提交，失败和取消清理本次临时文件，不能覆盖已有成片。导出期间继续编辑不会改变正在运行的快照。发布必须包含 worker apphost、DLL、deps／runtimeconfig、托管依赖与同版本原生库，不能只复制桌面可执行文件。
 

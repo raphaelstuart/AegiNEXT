@@ -32,7 +32,7 @@ function Get-AegiNextPublishedToolVersion
 function Get-AegiNextPublishedRuntimeFramework
 {
     param([string] $Payload)
-    foreach ($name in @('aegi-next', 'AegiNext.ExportWorker'))
+    foreach ($name in @('aegi-next', 'aegn-exporter'))
     {
         $filename = "$name.runtimeconfig.json"
         $configuration = Get-Content -LiteralPath (Join-Path $Payload $filename) -Raw | ConvertFrom-Json -AsHashtable

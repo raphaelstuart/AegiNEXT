@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <RootNamespace>aegn-exporter</RootNamespace>
+    <RootNamespace>AegiNext.ExportWorker</RootNamespace>
+    <AssemblyName>aegn-exporter</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../AegiNext.Application/AegiNext.Application.csproj" />

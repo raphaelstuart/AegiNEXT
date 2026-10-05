@@ -2,7 +2,7 @@
 
 [English](export.md) | [简体中文](zh-CN/export.md)
 
-The workbench exports an immutable snapshot in an independent AegiNext.ExportWorker process sharing Core evaluation and Rendering. UI options cover automatic/H.264/HEVC, CPU/GPU video encoding, source-audio copy/AAC/no audio, progress/cancel, and MP4/Matroska.
+The workbench exports an immutable snapshot in an independent `aegn-exporter` process sharing Core evaluation and Rendering. The project remains `AegiNext.ExportWorker`; its `AssemblyName` controls the deployed apphost/DLL name. UI options cover automatic/H.264/HEVC, CPU/GPU video encoding, source-audio copy/AAC/no audio, progress/cancel, and MP4/Matroska.
 
 Targets must be new files. Worker encodes in a private directory beside the destination; success atomically commits, failure/cancellation removes only this job's temporary output. Later edits do not affect a running snapshot. Packages must include worker apphost/DLL/deps/runtimeconfig/managed dependencies and matching native libraries, not just the desktop executable.
 
