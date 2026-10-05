@@ -54,167 +54,7 @@ internal sealed partial class WorkbenchSession
                 prepared = WorkspaceDraftOperations.UpdateSubtitle(prepared, change.Id, _ => change);
             }
 
-            var selected = SelectedLayer;
-            if (stylesDirty && selected is not null)
-            {
-                var vm = ViewModel.Styles;
-                ViewModel.InvalidPanelId = "styles";
-                ViewModel.InvalidFieldKey = "FontCombo";
-                var family = vm.FontDraft?.Trim() ?? string.Empty;
-                if (family.Length is 0 or > 512 || family.Any(char.IsControl))
-                {
-                    throw new InvalidDataException(WorkbenchText.Get("Font"));
-                }
-                if (selected.SubtitleId is { } id)
-                {
-                    var line = prepared.Subtitles.Single(value => value.Id == id);
-                    var fontSize = ReadNumber(vm.FontSizeText, line.Style.FontSize, "Size", "FontSizeInput");
-                    var strokeWidth = PrepareStrokeWidth(ref prepared, selected, line.Style.StrokeWidth, vm.StrokeWidthText);
-                    var fill = PrepareColor(ref prepared, selected, ReadColorDraft(vm.FillDraft, "FillPicker"), line.Style.Fill, false);
-                    var stroke = PrepareColor(ref prepared, selected, ReadColorDraft(vm.StrokeDraft, "StrokePicker"), line.Style.Stroke, true);
-                    if (fontSize <= 0 || strokeWidth < 0 || string.IsNullOrWhiteSpace(vm.FontFamily))
-                    {
-                        throw new InvalidDataException(WorkbenchText.Get("Font") + ": " + WorkbenchText.Get("Size"));
-                    }
-
-                    var familyChanged = family != line.Style.FontFamily;
-                    if (vm.Position.Validate() is { } positionKey)
-                    {
-                        ViewModel.InvalidFieldKey = positionKey;
-                        throw new InvalidDataException(WorkbenchText.Get("ExplicitPosition"));
-                    }
-                    var style = line.Style with
-                    {
-                        FontFamily = family,
-                        FontAssetId = familyChanged ? null : line.Style.FontAssetId,
-                        FontSize = fontSize,
-                        StrokeWidth = strokeWidth,
-                        Fill = fill,
-                        Stroke = stroke,
-                        Bold = vm.Bold == true,
-                        Italic = vm.Italic == true,
-                        Alignment = alignments[Math.Clamp(vm.Alignment, 0, alignments.Length - 1)],
-                        Position = vm.Position.CreatePosition()
-                    };
-                    prepared = WorkspaceDraftOperations.UpdateSubtitle(prepared, id, cue => cue with { Style = style });
-                }
-                else
-                {
-                    var fill = PrepareColor(ref prepared, selected, ReadColorDraft(vm.FillDraft, "FillPicker"), selected.Fill, false);
-                    var stroke = PrepareColor(ref prepared, selected, ReadColorDraft(vm.StrokeDraft, "StrokePicker"), selected.Stroke, true);
-                    var width = PrepareStrokeWidth(ref prepared, selected, selected.StrokeWidth, vm.StrokeWidthText);
-                    prepared = WorkspaceDraftOperations.UpdateLayer(prepared, selected.Id, layer => layer with
-                    {
-                        Fill = fill, Stroke = stroke, StrokeWidth = width
-                    });
-                }
-            }
-
-            if (effectsDirty && selected is not null)
-            {
-                var vm = ViewModel.Effects;
-                ViewModel.InvalidPanelId = "effects";
-                var keyframeChanged = changedEffectFields.Overlaps(["KeyframeValueText", "KeyframeValue", "KeyframeValueY", "KeyframeValueYText", "KeyframeColorDraft"]);
-                var keyframeValue = ReadKeyframeDraft(vm, keyframeChanged);
-                ViewModel.InvalidFieldKey = "LayerStartInput";
-                var start = vm.LayerStart == TimelineTimeText.Format(selected.Start) ? selected.Start : TimelineTimeText.Parse(vm.LayerStart);
-                ViewModel.InvalidFieldKey = "LayerEndInput";
-                var end = vm.LayerEnd == TimelineTimeText.Format(selected.End) ? selected.End : TimelineTimeText.Parse(vm.LayerEnd);
-                if (selected.SubtitleId is { } id && (start != selected.Start || end != selected.End))
-                {
-                    prepared = WorkspaceDraftOperations.UpdateSubtitle(prepared, id, line => line with { Start = start, End = end });
-                }
-
-                var originalPlacement = ResolvePlacement(document, selected);
-                var preparedLayer = Flatten(prepared.Layers).Single(value => value.Id == selected.Id);
-                var preparedPlacement = ResolvePlacement(prepared, preparedLayer);
-                var target = AnimationTarget!;
-                var positionX = InspectorVector(selected, AnimationProperty.POSITION, selected.Transform.Position).X;
-                var positionY = InspectorVector(selected, AnimationProperty.POSITION, selected.Transform.Position).Y;
-                if (originalPlacement.BasePosition is { } originalBase)
-                {
-                    var displayedX = originalBase.X + positionX;
-                    var displayedY = originalBase.Y + positionY;
-                    var requestedX = ReadEffectNumber(vm.PositionXText, displayedX, "PositionX", "PositionXInput", "PositionXText");
-                    var requestedY = ReadEffectNumber(vm.PositionYText, displayedY, "PositionY", "PositionYInput", "PositionYText");
-                    if (requestedX != displayedX || requestedY != displayedY)
-                    {
-                        if (preparedPlacement.BasePosition is not { } preparedBase)
-                        {
-                            throw new InvalidDataException(WorkbenchText.Get("SubtitlePositionUnavailable"), preparedPlacement.Error);
-                        }
-                        positionX = requestedX == displayedX ? positionX : requestedX - preparedBase.X;
-                        positionY = requestedY == displayedY ? positionY : requestedY - preparedBase.Y;
-                    }
-                }
-                else if (!string.IsNullOrEmpty(vm.PositionXText) || !string.IsNullOrEmpty(vm.PositionYText))
-                {
-                    throw new InvalidDataException(WorkbenchText.Get("SubtitlePositionUnavailable"), originalPlacement.Error);
-                }
-
-                prepared = WorkspaceDraftOperations.UpdateLayer(prepared, selected.Id, layer => layer with
-                {
-                    Start = start,
-                    End = end,
-                    AnimationOffset = layer.AnimationOffset + start - layer.Start,
-                    Shape = layer.Shape is { } shape ? shape with
-                    {
-                        Width = ReadNumber(vm.LayerWidthText, shape.Width, "Size", "LayerWidthInput"), Height = ReadNumber(vm.LayerHeightText, shape.Height, "Size", "LayerHeightInput")
-                    } : null,
-                    Image = layer.Image is { } image ? image with
-                    {
-                        Width = ReadNumber(vm.LayerWidthText, image.Width, "Size", "LayerWidthInput"), Height = ReadNumber(vm.LayerHeightText, image.Height, "Size", "LayerHeightInput")
-                    } : null,
-                    Blend = (BlendMode)vm.Blend,
-                    MotionPath = layer.MotionPath is { } path ? path with { OrientToPath = vm.OrientPath == true } : null,
-                    Mask = layer.Mask is { } mask ? mask with { Inverted = vm.InvertMask == true } : null
-                });
-                foreach (var (property, text, fallback, label, field) in new[]
-                {
-                    (AnimationProperty.ROTATION, vm.RotationText, selected.Transform.Rotation, "Rotation", "RotationInput"),
-                    (AnimationProperty.OPACITY, vm.OpacityText, selected.Opacity, "Opacity", "OpacityInput"),
-                    (AnimationProperty.BLUR, vm.BlurText, selected.Blur, "Blur", "BlurInput")
-                })
-                {
-                    var original = InspectorValue(selected, property, fallback);
-                    var requested = ReadEffectNumber(text, original, label, field, label + "Text");
-                    if (requested != original)
-                    {
-                        prepared = AnimationEditOperations.SetValue(prepared, target, property, requested);
-                    }
-                }
-                var originalPosition = InspectorVector(selected, AnimationProperty.POSITION, selected.Transform.Position);
-                var requestedPosition = new ScenePoint(positionX, positionY);
-                if (requestedPosition != originalPosition)
-                {
-                    prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.POSITION, requestedPosition);
-                }
-                var originalScale = InspectorVector(selected, AnimationProperty.SCALE, selected.Transform.Scale);
-                var requestedScale = new ScenePoint(
-                    ReadEffectNumber(vm.ScaleXText, originalScale.X, "ScaleX", "ScaleXInput", "ScaleXText"),
-                    ReadEffectNumber(vm.ScaleYText, originalScale.Y, "ScaleY", "ScaleYInput", "ScaleYText"));
-                if (requestedScale != originalScale)
-                {
-                    prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.SCALE, requestedScale);
-                }
-                if (keyframeChanged)
-                {
-                    prepared = AnimationEditOperations.SetValue(prepared, target, target.Property ?? ActiveProperty, keyframeValue);
-                }
-                if (target.IsKeyframe && (keyframeChanged || changedEffectFields.Contains("Interpolation")))
-                {
-                    var property = target.Property ?? ActiveProperty;
-                    var frame = selected.Tracks.FirstOrDefault(track => track.Property == property)?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime) ?? new Keyframe(target.LocalTime, keyframeValue);
-                    prepared = WorkspaceDraftOperations.SetKeyframe(prepared, selected.Id, property, frame with
-                    {
-                        Value = keyframeChanged ? keyframeValue : frame.Value,
-                        Interpolation = (KeyframeInterpolation)vm.Interpolation,
-                        CurveStart = vm.Interpolation == (int)frame.Interpolation ? frame.CurveStart : 0,
-                        CurveEnd = vm.Interpolation == (int)frame.Interpolation ? frame.CurveEnd : 1,
-                        ComponentCurves = vm.Interpolation == (int)frame.Interpolation ? frame.ComponentCurves : []
-                    });
-                }
-            }
+            prepared = PrepareInspectorDrafts(prepared, false);
 
             ProjectValidator.Validate(prepared);
             ViewModel.InvalidPanelId = "export";
@@ -253,6 +93,7 @@ internal sealed partial class WorkbenchSession
             var originalTarget = SceneEditing.DraftTarget;
             SceneEditing.DraftTarget = null;
             changedEffectFields.Clear();
+            ClearInspectorPreview();
             try
             {
                 if (prepared != document)
@@ -381,10 +222,10 @@ internal sealed partial class WorkbenchSession
         switch (e.PropertyName)
         {
             case "FontSize":
-                ViewModel.Styles.FontSizeText = ViewModel.Styles.FontSize?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Styles.FontSizeText = SynchronizeNumericText(ViewModel.Styles.FontSizeText, ViewModel.Styles.FontSize);
                 break;
             case "StrokeWidth":
-                ViewModel.Styles.StrokeWidthText = ViewModel.Styles.StrokeWidth?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Styles.StrokeWidthText = SynchronizeNumericText(ViewModel.Styles.StrokeWidthText, ViewModel.Styles.StrokeWidth);
                 break;
         }
 
@@ -393,6 +234,10 @@ internal sealed partial class WorkbenchSession
             stylesDirty = true;
             draftRevision++;
             FreezeDraftTarget();
+            if (name != "FontDraft")
+            {
+                QueueInspectorPreview();
+            }
         }
     }
 
@@ -401,37 +246,37 @@ internal sealed partial class WorkbenchSession
         switch (e.PropertyName)
         {
             case "LayerWidth":
-                ViewModel.Effects.LayerWidthText = ViewModel.Effects.LayerWidth?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.LayerWidthText = SynchronizeNumericText(ViewModel.Effects.LayerWidthText, ViewModel.Effects.LayerWidth);
                 break;
             case "LayerHeight":
-                ViewModel.Effects.LayerHeightText = ViewModel.Effects.LayerHeight?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.LayerHeightText = SynchronizeNumericText(ViewModel.Effects.LayerHeightText, ViewModel.Effects.LayerHeight);
                 break;
             case "PositionX":
-                ViewModel.Effects.PositionXText = ViewModel.Effects.PositionX?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.PositionXText = SynchronizeNumericText(ViewModel.Effects.PositionXText, ViewModel.Effects.PositionX);
                 break;
             case "PositionY":
-                ViewModel.Effects.PositionYText = ViewModel.Effects.PositionY?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.PositionYText = SynchronizeNumericText(ViewModel.Effects.PositionYText, ViewModel.Effects.PositionY);
                 break;
             case "ScaleX":
-                ViewModel.Effects.ScaleXText = ViewModel.Effects.ScaleX?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.ScaleXText = SynchronizeNumericText(ViewModel.Effects.ScaleXText, ViewModel.Effects.ScaleX);
                 break;
             case "ScaleY":
-                ViewModel.Effects.ScaleYText = ViewModel.Effects.ScaleY?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.ScaleYText = SynchronizeNumericText(ViewModel.Effects.ScaleYText, ViewModel.Effects.ScaleY);
                 break;
             case "Rotation":
-                ViewModel.Effects.RotationText = ViewModel.Effects.Rotation?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.RotationText = SynchronizeNumericText(ViewModel.Effects.RotationText, ViewModel.Effects.Rotation);
                 break;
             case "Opacity":
-                ViewModel.Effects.OpacityText = ViewModel.Effects.Opacity?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.OpacityText = SynchronizeNumericText(ViewModel.Effects.OpacityText, ViewModel.Effects.Opacity);
                 break;
             case "Blur":
-                ViewModel.Effects.BlurText = ViewModel.Effects.Blur?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.BlurText = SynchronizeNumericText(ViewModel.Effects.BlurText, ViewModel.Effects.Blur);
                 break;
             case "KeyframeValueY":
-                ViewModel.Effects.KeyframeValueYText = ViewModel.Effects.KeyframeValueY?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.KeyframeValueYText = SynchronizeNumericText(ViewModel.Effects.KeyframeValueYText, ViewModel.Effects.KeyframeValueY);
                 break;
             case "KeyframeValue":
-                ViewModel.Effects.KeyframeValueText = ViewModel.Effects.KeyframeValue?.ToString(InterfaceCulture) ?? string.Empty;
+                ViewModel.Effects.KeyframeValueText = SynchronizeNumericText(ViewModel.Effects.KeyframeValueText, ViewModel.Effects.KeyframeValue);
                 break;
         }
 
@@ -446,6 +291,7 @@ internal sealed partial class WorkbenchSession
             draftRevision++;
             FreezeDraftTarget();
             changedEffectFields.Add(e.PropertyName);
+            QueueInspectorPreview();
         }
         else if (e.PropertyName == "EditMode")
         {
@@ -532,6 +378,7 @@ internal sealed partial class WorkbenchSession
             ViewModel.Effects.Document = document;
             ViewModel.Effects.SelectedLayer = SelectedLayer;
             SyncCurrentTrackForSelection();
+            RefreshSubtitleSelection();
             RefreshInspector();
             ViewModel.Styles.CanApplyPreset = SelectedCue is not null && !projectBusy && !closing && ViewModel.Styles.SelectedPreset is not null;
             Tick();
@@ -649,7 +496,7 @@ internal sealed partial class WorkbenchSession
 
     internal void SelectCue(Guid id)
     {
-        if (updatingWorkbench || projectBusy || id == SelectedCueId && SelectedLayer?.SubtitleId == id)
+        if (updatingWorkbench || projectBusy || id == SelectedCueId && SelectedLayer?.SubtitleId == id && SelectedSubtitleIds.Count <= 1)
         {
             return;
         }
@@ -661,6 +508,7 @@ internal sealed partial class WorkbenchSession
         }
 
         ViewModel.CancelGestures();
+        ResetSubtitleSelection(id);
         SelectedCueId = id;
         ViewModel.Effects.SelectedIds = [];
         SelectedLayerId = Flatten(editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == id)?.Id;
@@ -692,6 +540,7 @@ internal sealed partial class WorkbenchSession
             SelectedCueId = cueId;
         }
 
+        SynchronizeSubtitleSelectionFromLayers();
         RefreshDocument();
     }
 

@@ -3,7 +3,7 @@
              x:Class="AegiNext.Desktop.Controls.SubtitlePositionEditor" x:DataType="editing:SubtitlePositionDraft">
   <StackPanel Spacing="8">
     <CheckBox Name="ExplicitPositionCheck" Tag="ExplicitPosition" IsChecked="{Binding IsExplicit, Mode=OneWay}" IsEnabled="{Binding CanCustomize}" />
-    <Button Name="AutomaticPositionButton" Tag="ResetAutomaticPosition" IsVisible="{Binding ShowAutomaticPositionAction, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}" />
+    <Button Name="AutomaticPositionButton" Tag="ResetPosition" IsVisible="{Binding ShowAutomaticPositionAction, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}" />
     <TextBlock Tag="SubtitlePositionHint" TextWrapping="Wrap" Classes="field" />
     <TextBlock Tag="AnchorPreset" Classes="field" />
     <WrapPanel>

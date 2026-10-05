@@ -84,6 +84,7 @@ internal static class WorkbenchText
         ["Up"] = ("上移", "Up"), ["Down"] = ("下移", "Down"),
         ["PositionVector"] = ("位置", "Position"), ["ScaleVector"] = ("缩放", "Scale"),
         ["ResetAutomaticPosition"] = ("恢复自动位置", "Restore automatic position"),
+        ["ResetPosition"] = ("重设位置", "Restore position"),
         ["AddPathPoint"] = ("添加路径点", "Add path point"), ["RemovePathPoint"] = ("删除末端路径点", "Remove last path point"),
         ["ImportEffectScripts"] = ("导入特效脚本", "Import effect script"), ["ExportEffectScripts"] = ("导出特效脚本", "Export effect script"),
         ["EffectScriptFiles"] = ("字幕特效脚本", "Subtitle effect scripts"),

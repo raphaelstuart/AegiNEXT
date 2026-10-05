@@ -74,7 +74,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         effectScriptLibrary = new(Path.Combine(this.preferencesStore.DirectoryPath, "effect-scripts.json"));
         ViewModel = new(this);
         controller = controllerFactory?.Invoke(ApplyUpdate) ?? new(this.dispatch, ApplyUpdate,
-            () => new ProjectPreviewConverter(() => Volatile.Read(ref previewState),
+            () => new ProjectPreviewConverter(GetPreviewState,
                 error => Volatile.Write(ref previewRenderError, error), previewFrames));
         workflow = new(this, dialogs);
         analysis = new(this);
@@ -286,6 +286,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private async Task DisposeCoreAsync()
     {
         closing = true;
+        ClearInspectorPreview();
         editor.Changed -= OnDocumentChanged;
         playback.Invalidate();
         ViewModel.CancelGestures();
@@ -446,6 +447,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private async void OnDocumentChanged(object? sender, EventArgs e)
     {
+        ClearInspectorPreview();
         RefreshDocument();
         if (projectBusy || closing)
         {
@@ -483,6 +485,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     internal void ResetSelection()
     {
+        ResetSubtitleSelection();
+        ClearInspectorPreview();
         SelectedCueId = null;
         SelectedLayerId = null;
         SelectedKeyTime = null;

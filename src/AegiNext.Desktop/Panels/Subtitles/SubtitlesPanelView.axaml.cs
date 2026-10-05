@@ -4,6 +4,7 @@ using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Localization;
 using AegiNext.Desktop.Styling;
 using Avalonia.Controls;
+using Avalonia.Controls.Selection;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -19,7 +20,10 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     private readonly SubtitlesPanelViewModel viewModel;
     private readonly HashSet<TextBox> caretInputs = [];
     private bool suppressFocusCommit;
+    private bool synchronizingSelection;
+    private bool disposed;
     private int focusCommitRevision;
+    private int errorFocusRevision;
     internal SubtitlesPanelView(SubtitlesPanelViewModel viewModel, WorkbenchSession session)
     {
         this.session = session;
@@ -35,24 +39,22 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
             }
         };
         list = this.FindControl<ListBox>("SubtitleList")!;
-        list.SelectionChanged += (_, _) =>
-        {
-            if (list.SelectedItem is SubtitleRow row)
-            {
-                viewModel.SelectCue(row.Id);
-            }
-        };
+        list.SelectionChanged += OnSelectionChanged;
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         list.AddHandler(GotFocusEvent, (_, e) =>
         {
-            if (e.Source is TextBox { AcceptsReturn: true, DataContext: SubtitleRow row } box)
+            if (e.Source is TextBox { DataContext: SubtitleRow row } box)
             {
-                viewModel.SetCaret(row.Id, box.CaretIndex);
-                if (caretInputs.Add(box))
+                viewModel.FocusRow(row.Id);
+                if (box.AcceptsReturn)
                 {
-                    box.PropertyChanged += OnTextBoxPropertyChanged;
-                    box.DetachedFromVisualTree += OnCaretInputDetached;
+                    viewModel.SetCaret(row.Id, box.CaretIndex);
+                    if (caretInputs.Add(box))
+                    {
+                        box.PropertyChanged += OnTextBoxPropertyChanged;
+                        box.DetachedFromVisualTree += OnCaretInputDetached;
+                    }
                 }
             }
         }, RoutingStrategies.Bubble);
@@ -66,9 +68,10 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
                 }
                 var root = TopLevel.GetTopLevel(this);
                 var suppressed = suppressFocusCommit;
+                var revision = focusCommitRevision;
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (!suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
+                    if (!disposed && revision == focusCommitRevision && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
                         this.IsAttachedToVisualTree())
                     {
                         viewModel.CommitRow(row);
@@ -78,11 +81,86 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         }, RoutingStrategies.Bubble);
         session.PreferencesChanged += OnPreferencesChanged;
         session.SubtitleScrollRequested += OnScrollRequested;
+        session.SelectionChanged += OnSessionSelectionChanged;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
         RefreshLocalization();
+        SynchronizeSelection();
     }
 
     public string PanelId => "subtitles";
+
+    private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (synchronizingSelection || session.IsUpdating || disposed)
+        {
+            return;
+        }
+
+        var selected = list.Selection.SelectedItems.OfType<SubtitleRow>().Select(row => row.Id).ToArray();
+        var primary = e.AddedItems.OfType<SubtitleRow>().LastOrDefault()?.Id ??
+            (viewModel.SelectedRow is { } current && selected.Contains(current.Id) ? current.Id : (list.SelectedItem as SubtitleRow)?.Id);
+        synchronizingSelection = true;
+        try
+        {
+            if (!viewModel.SelectRows(primary, selected) && viewModel.InvalidRowId is not null)
+            {
+                FocusInvalidField(session.ViewModel.InvalidFieldKey);
+            }
+        }
+        finally
+        {
+            synchronizingSelection = false;
+        }
+
+        SynchronizeSelection();
+    }
+
+    private void OnSessionSelectionChanged(object? sender, EventArgs e) => SynchronizeSelection();
+
+    private void SynchronizeSelection()
+    {
+        if (synchronizingSelection || disposed)
+        {
+            return;
+        }
+
+        var ids = viewModel.SelectedIds.ToHashSet();
+        var rows = list.Items.OfType<SubtitleRow>().ToArray();
+        var selected = list.Selection.SelectedItems.OfType<SubtitleRow>().Select(row => row.Id).ToHashSet();
+        if (ids.SetEquals(selected))
+        {
+            return;
+        }
+
+        var anchorId = list.Selection.AnchorIndex >= 0 && list.Selection.AnchorIndex < rows.Length
+            ? rows[list.Selection.AnchorIndex].Id : (Guid?)null;
+        synchronizingSelection = true;
+        try
+        {
+            using var update = list.Selection.BatchUpdate();
+            list.Selection.Clear();
+            var primaryIndex = Array.FindIndex(rows, row => row.Id == viewModel.SelectedRow?.Id && ids.Contains(row.Id));
+            if (primaryIndex >= 0)
+            {
+                list.Selection.Select(primaryIndex);
+            }
+
+            for (var index = 0; index < rows.Length; index++)
+            {
+                if (ids.Contains(rows[index].Id) && index != primaryIndex)
+                {
+                    list.Selection.Select(index);
+                }
+            }
+
+            var anchorIndex = Array.FindIndex(rows, row => row.Id == anchorId && ids.Contains(row.Id));
+            list.Selection.AnchorIndex = anchorIndex >= 0 ? anchorIndex : primaryIndex;
+        }
+        finally
+        {
+            synchronizingSelection = false;
+        }
+    }
     public void CancelGestures()
     {
         suppressFocusCommit = true;
@@ -103,13 +181,22 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
             list.Focus();
             return;
         }
-        list.ScrollIntoView(row);
+        var revision = ++errorFocusRevision;
+        var root = TopLevel.GetTopLevel(this);
         Dispatcher.UIThread.Post(() =>
         {
+            if (disposed || revision != errorFocusRevision || viewModel.InvalidRowId != row.Id ||
+                root is null || !ReferenceEquals(root, TopLevel.GetTopLevel(this)) || !this.IsAttachedToVisualTree())
+            {
+                return;
+            }
+
+            list.ScrollIntoView(row);
+            root.UpdateLayout();
             var column = fieldKey switch { "StartText" => 1, "EndText" => 2, _ => 4 };
             this.GetVisualDescendants().OfType<TextBox>().FirstOrDefault(box => ReferenceEquals(box.DataContext, row) &&
                 Grid.GetColumn(box) == column)?.Focus();
-        }, DispatcherPriority.Loaded);
+        }, DispatcherPriority.Background);
     }
     private void OnTextBoxPropertyChanged(object? sender, Avalonia.AvaloniaPropertyChangedEventArgs e)
     {
@@ -142,8 +229,11 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     public void Dispose()
     {
+        disposed = true;
+        list.SelectionChanged -= OnSelectionChanged;
         session.PreferencesChanged -= OnPreferencesChanged;
         session.SubtitleScrollRequested -= OnScrollRequested;
+        session.SelectionChanged -= OnSessionSelectionChanged;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
         foreach (var box in caretInputs)
         {

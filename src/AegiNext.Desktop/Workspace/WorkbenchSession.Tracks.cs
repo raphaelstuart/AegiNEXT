@@ -44,6 +44,7 @@ internal sealed partial class WorkbenchSession
 
         ViewModel.CancelGestures();
         currentTrackId = trackId;
+        ResetSubtitleSelection();
         SelectedCueId = null;
         SelectedLayerId = null;
         ViewModel.Effects.SelectedIds = [];
@@ -119,6 +120,7 @@ internal sealed partial class WorkbenchSession
     {
         editor.MoveSubtitleToTrack(subtitleId, trackId);
         currentTrackId = trackId;
+        ResetSubtitleSelection(subtitleId);
         SelectedCueId = subtitleId;
         SelectedLayerId = Flatten(editor.Snapshot.Layers).Single(layer => layer.SubtitleId == subtitleId).Id;
         SelectedKeyTime = null;
@@ -132,6 +134,7 @@ internal sealed partial class WorkbenchSession
         {
             editor.MoveSubtitleClip(subtitleId, trackId, start, end, mode, move);
             currentTrackId = trackId;
+            ResetSubtitleSelection(subtitleId);
             SelectedCueId = subtitleId;
             SelectedLayerId = Flatten(editor.Snapshot.Layers).Single(layer => layer.SubtitleId == subtitleId).Id;
             SelectedKeyTime = null;

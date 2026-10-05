@@ -35,6 +35,7 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         orientPath.IsCheckedChanged += (_, _) => viewModel.CommitOrientPath(orientPath.IsChecked == true);
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnCommitKeyDown, RoutingStrategies.Bubble);
         viewModel.KeyframeColorDraft.Committed += OnColorCommitted;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         AddHandler(LostFocusEvent, (_, e) =>
@@ -44,9 +45,12 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
                 var root = TopLevel.GetTopLevel(this);
                 var suppressed = suppressFocusCommit;
                 var revision = focusCommitRevision;
+                var document = session.DocumentSnapshot;
+                var layerId = session.SelectedLayerId;
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (!disposed && revision == focusCommitRevision && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
+                    if (!disposed && revision == focusCommitRevision && layerId == session.SelectedLayerId &&
+                        ReferenceEquals(document, session.DocumentSnapshot) && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
                         this.IsAttachedToVisualTree())
                     {
                         viewModel.CommitDrafts();
@@ -99,6 +103,16 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
     }
 
     private void OnColorCommitted(object? sender, ColorDraftCommittedEventArgs e) => viewModel.CommitDrafts();
+
+    private void OnCommitKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && e.Source is Control source &&
+            source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().Any())
+        {
+            viewModel.CommitDrafts();
+            e.Handled = true;
+        }
+    }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

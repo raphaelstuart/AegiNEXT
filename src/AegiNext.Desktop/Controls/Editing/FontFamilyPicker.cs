@@ -35,7 +35,7 @@ public sealed class FontFamilyPicker : AutoCompleteBox
             (showAllFamilies || family.Contains(query ?? string.Empty, StringComparison.OrdinalIgnoreCase));
         var toggle = new Button
         {
-            Name = "FontDropDownButton", Width = 28, MinHeight = 0, Padding = new(6, 0),
+            Name = "FontDropDownButton", Classes = { "icon-button" },
             Focusable = false, Background = Brushes.Transparent, BorderThickness = new(0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,

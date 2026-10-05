@@ -1,11 +1,16 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:AegiNext.Desktop.Panels.Log" xmlns:diagnostics="using:AegiNext.Desktop.Workspace.Diagnostics" xmlns:converters="using:Avalonia.Data.Converters"
-             x:Class="AegiNext.Desktop.Panels.Log.LogPanelView" x:DataType="vm:LogPanelViewModel" Classes="business-surface">
+             xmlns:vm="using:AegiNext.Desktop.Panels.Log"
+             xmlns:diagnostics="using:AegiNext.Desktop.Workspace.Diagnostics"
+             xmlns:converters="using:Avalonia.Data.Converters"
+             x:Class="AegiNext.Desktop.Panels.Log.LogPanelView" x:DataType="vm:LogPanelViewModel"
+             Classes="business-surface">
   <Grid RowDefinitions="Auto,*" Margin="4" RowSpacing="6">
     <Grid ColumnDefinitions="140,*,Auto,Auto,Auto" ColumnSpacing="6">
       <ComboBox Name="LogLevelFilter" ItemsSource="{Binding Levels}" SelectedIndex="{Binding FilterIndex, Mode=TwoWay}" />
-      <TextBox Name="LogSearch" Grid.Column="1" Text="{Binding FilterText, Mode=TwoWay}" PlaceholderText="{Binding SearchLabel}" />
-      <Button Name="CopyLogSelected" Grid.Column="2" Content="{Binding CopySelectedLabel}" IsEnabled="{Binding HasSelection}" Click="CopySelected" />
+      <TextBox Name="LogSearch" Grid.Column="1" Text="{Binding FilterText, Mode=TwoWay}"
+               PlaceholderText="{Binding SearchLabel}" />
+      <Button Name="CopyLogSelected" Grid.Column="2" Content="{Binding CopySelectedLabel}"
+              IsEnabled="{Binding HasSelection}" Click="CopySelected" />
       <Button Name="CopyLogVisible" Grid.Column="3" Content="{Binding CopyVisibleLabel}" Click="CopyVisible" />
       <Button Name="ClearLog" Grid.Column="4" Content="{Binding ClearLabel}" Command="{Binding ClearCommand}" />
     </Grid>
@@ -14,16 +19,23 @@
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="diagnostics:WorkbenchLogEntry">
             <StackPanel>
-              <TextBlock Text="{Binding Summary}" IsVisible="{Binding Details, Converter={x:Static converters:StringConverters.IsNullOrEmpty}}" TextWrapping="Wrap" FontFamily="monospace" />
-              <Expander IsVisible="{Binding Details, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                <Expander.Header><TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontFamily="monospace" /></Expander.Header>
+              <TextBlock Text="{Binding Summary}"
+                         IsVisible="{Binding Details, Converter={x:Static converters:StringConverters.IsNullOrEmpty}}"
+                         TextWrapping="Wrap" FontFamily="monospace" />
+              <Expander
+                IsVisible="{Binding Details, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                  <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontFamily="monospace" />
+                </Expander.Header>
                 <SelectableTextBlock Text="{Binding Details}" TextWrapping="Wrap" FontFamily="monospace" />
               </Expander>
             </StackPanel>
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
-      <TextBlock Text="{Binding EmptyLabel}" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+      <TextBlock Text="{Binding EmptyLabel}" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center"
+                 VerticalAlignment="Center" />
     </Grid>
   </Grid>
 </UserControl>

@@ -110,5 +110,6 @@ internal sealed partial class WorkbenchSession
         {
             updatingWorkbench = false;
         }
+        QueueInspectorPreview(true);
     }
 }

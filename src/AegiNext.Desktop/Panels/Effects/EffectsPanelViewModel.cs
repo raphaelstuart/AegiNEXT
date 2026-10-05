@@ -64,7 +64,7 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     {
         this.session = session;
         KeyframeColorDraft.Changed += (_, _) => OnPropertyChanged(nameof(KeyframeColorDraft));
-        ResetPositionCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ResetAutomaticPosition)));
+        ResetPositionCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ResetPositionEffects)));
         AddPathPointCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddPathPoint)));
         RemovePathPointCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.RemovePathPoint)));
         ManageEffectScriptsCommand = new AsyncRelayCommand(() => session.RequestSettingsAsync(AegiNext.Desktop.Settings.SettingsPage.EFFECTS));

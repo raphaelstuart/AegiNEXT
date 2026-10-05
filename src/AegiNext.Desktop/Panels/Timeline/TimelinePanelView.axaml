@@ -1,45 +1,48 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
-    xmlns:vm="using:AegiNext.Desktop.Panels.Timeline" x:DataType="vm:TimelinePanelViewModel"
-    x:Class="AegiNext.Desktop.Panels.Timeline.TimelinePanelView" Classes="business-surface">
-<Border Background="{DynamicResource PreviewSurface}" BorderThickness="0" CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
-      <Grid RowDefinitions="28,*" ColumnDefinitions="36,*">
-        <Border Grid.RowSpan="2" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,1,0">
-          <StackPanel Spacing="4" Margin="2,4">
-            <ToggleButton Name="TimelineSnapButton" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
-                IsChecked="{Binding IsSnapEnabled, Mode=TwoWay}">
-              <PathIcon Name="TimelineSnapIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
-            </ToggleButton>
-            <ToggleButton Name="TimelineSpectrumButton" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
-                IsChecked="{Binding IsSpectrumVisible, Mode=TwoWay}">
-              <PathIcon Name="TimelineSpectrumIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
-            </ToggleButton>
-            <ToggleButton Name="TimelineWaveformButton" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
-                IsChecked="{Binding IsWaveformVisible, Mode=TwoWay}">
-              <PathIcon Name="TimelineWaveformIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
-            </ToggleButton>
-            <ToggleButton Name="TimelineStepButton" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
-                IsChecked="{Binding IsStepEnabled, Mode=TwoWay}">
-              <Path Data="M 1,15 L 5,15 L 5,11 L 9,11 L 9,7 L 13,7 L 13,3 L 17,3 M 5,2 L 5,5 M 9,2 L 9,5 M 13,2 L 13,5"
-                  Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource PreviewMuted}" StrokeThickness="1.7" />
-            </ToggleButton>
+             xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
+             xmlns:vm="using:AegiNext.Desktop.Panels.Timeline" x:DataType="vm:TimelinePanelViewModel"
+             x:Class="AegiNext.Desktop.Panels.Timeline.TimelinePanelView" Classes="business-surface">
+  <Border Background="{DynamicResource PreviewSurface}" BorderThickness="0"
+          CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
+    <Grid RowDefinitions="28,*" ColumnDefinitions="36,*">
+      <Border Grid.RowSpan="2" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,1,0">
+        <StackPanel Spacing="4" Margin="2,4">
+          <ToggleButton Name="TimelineSnapButton" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
+                        IsChecked="{Binding IsSnapEnabled, Mode=TwoWay}">
+            <PathIcon Name="TimelineSnapIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
+          </ToggleButton>
+          <ToggleButton Name="TimelineSpectrumButton" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
+                        IsChecked="{Binding IsSpectrumVisible, Mode=TwoWay}">
+            <PathIcon Name="TimelineSpectrumIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
+          </ToggleButton>
+          <ToggleButton Name="TimelineWaveformButton" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
+                        IsChecked="{Binding IsWaveformVisible, Mode=TwoWay}">
+            <PathIcon Name="TimelineWaveformIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
+          </ToggleButton>
+          <ToggleButton Name="TimelineStepButton" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
+                        IsChecked="{Binding IsStepEnabled, Mode=TwoWay}">
+            <Path Data="M 1,15 L 5,15 L 5,11 L 9,11 L 9,7 L 13,7 L 13,3 L 17,3 M 5,2 L 5,5 M 9,2 L 9,5 M 13,2 L 13,5"
+                  Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource PreviewMuted}"
+                  StrokeThickness="1.7" />
+          </ToggleButton>
+        </StackPanel>
+      </Border>
+      <controls:TimelineOverviewControl Name="TimelineMinimap" Grid.Column="1" Margin="4,2" />
+      <controls:SubtitleTimelineControl Name="Timeline" Grid.Row="1" Grid.Column="1" />
+      <Border Name="TrackRenameEditor" Grid.Row="1" Grid.Column="1" Margin="8" Padding="12" Width="260"
+              HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource PreviewSurface}"
+              BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" CornerRadius="8"
+              IsVisible="{Binding IsRenamingTrack}">
+        <StackPanel Spacing="8">
+          <TextBlock Tag="RenameTrack" FontWeight="SemiBold" />
+          <TextBox Name="TimelineTrackNameInput" Text="{Binding TrackNameDraft, Mode=TwoWay}" MaxLength="128" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Name="ConfirmTrackRenameButton" Tag="Save" Command="{Binding ConfirmTrackRenameCommand}" />
+            <Button Name="CancelTrackRenameButton" Tag="Cancel" Command="{Binding CancelTrackRenameCommand}" />
           </StackPanel>
-        </Border>
-        <controls:TimelineOverviewControl Name="TimelineMinimap" Grid.Column="1" Margin="4,2" />
-        <controls:SubtitleTimelineControl Name="Timeline" Grid.Row="1" Grid.Column="1" />
-        <Border Name="TrackRenameEditor" Grid.Row="1" Grid.Column="1" Margin="8" Padding="12" Width="260"
-            HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource PreviewSurface}"
-            BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" CornerRadius="8" IsVisible="{Binding IsRenamingTrack}">
-          <StackPanel Spacing="8">
-            <TextBlock Tag="RenameTrack" FontWeight="SemiBold" />
-            <TextBox Name="TimelineTrackNameInput" Text="{Binding TrackNameDraft, Mode=TwoWay}" MaxLength="128" />
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <Button Name="ConfirmTrackRenameButton" Tag="Save" Command="{Binding ConfirmTrackRenameCommand}" />
-              <Button Name="CancelTrackRenameButton" Tag="Cancel" Command="{Binding CancelTrackRenameCommand}" />
-            </StackPanel>
-          </StackPanel>
-        </Border>
-      </Grid>
-    </Border>
-    
+        </StackPanel>
+      </Border>
+    </Grid>
+  </Border>
+
 </UserControl>

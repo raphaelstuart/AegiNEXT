@@ -1,39 +1,111 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing" xmlns:converters="using:Avalonia.Data.Converters"
-    xmlns:vm="using:AegiNext.Desktop.Panels.Effects" x:DataType="vm:EffectsPanelViewModel"
-    x:Class="AegiNext.Desktop.Panels.Effects.EffectsPanelView" Classes="business-surface">
-<ScrollViewer><StackPanel Name="EffectPanel" Margin="4" Spacing="8">
-              <TextBlock Name="ValidationMessage" Text="{Binding ValidationError}" IsVisible="{Binding ValidationError, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}" Foreground="Tomato" TextWrapping="Wrap" />
-              <TextBlock Name="EditingTarget" Text="{Binding EditTargetLabel}" IsVisible="{Binding EditTargetLabel, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" Classes="field" />
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                <StackPanel Spacing="4"><TextBlock Name="LayerStartLabel" Tag="Start" Classes="field" /><TextBox Name="LayerStartInput" Text="{Binding LayerStart, Mode=TwoWay}" /></StackPanel>
-                <StackPanel Grid.Column="1" Spacing="4"><TextBlock Name="LayerEndLabel" Tag="End" Classes="field" /><TextBox Name="LayerEndInput" Text="{Binding LayerEnd, Mode=TwoWay}" /></StackPanel>
-              </Grid>
-              <TextBlock Tag="PositionVector" Classes="field" />
-              <controls:VectorDraftInput Name="PositionInput" XFieldKey="PositionXInput" YFieldKey="PositionYInput" XText="{Binding PositionXText, Mode=TwoWay}" YText="{Binding PositionYText, Mode=TwoWay}" X="{Binding PositionX, Mode=TwoWay}" Y="{Binding PositionY, Mode=TwoWay}" Minimum="-2000032768" Maximum="2000032768" IsEnabled="{Binding CanEditPosition}" />
-              <Button Name="ResetPositionButton" Tag="ResetAutomaticPosition" Command="{Binding ResetPositionCommand}" IsEnabled="{Binding CanResetPosition}" />
-              <TextBlock Tag="ScaleVector" Classes="field" />
-              <controls:VectorDraftInput Name="ScaleInput" XFieldKey="ScaleXInput" YFieldKey="ScaleYInput" XText="{Binding ScaleXText, Mode=TwoWay}" YText="{Binding ScaleYText, Mode=TwoWay}" X="{Binding ScaleX, Mode=TwoWay}" Y="{Binding ScaleY, Mode=TwoWay}" Minimum="0.001" Maximum="100" />
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                <StackPanel><TextBlock Tag="Rotation" Classes="field" /><controls:NumericDraftInput Name="RotationInput" RawText="{Binding RotationText, Mode=TwoWay}" Minimum="-36000" Maximum="36000" Value="{Binding Rotation, Mode=TwoWay}" /></StackPanel>
-                <StackPanel Grid.Column="1"><TextBlock Tag="Opacity" Classes="field" /><controls:NumericDraftInput Name="OpacityInput" RawText="{Binding OpacityText, Mode=TwoWay}" Minimum="0" Maximum="1" Increment="0.05" Value="{Binding Opacity, Mode=TwoWay}" /></StackPanel>
-              </Grid>
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                <StackPanel><TextBlock Tag="Blend" Classes="field" /><ComboBox Name="BlendCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Blend, Mode=TwoWay}" ItemsSource="{Binding Blends}" /></StackPanel>
-                <StackPanel Grid.Column="1"><TextBlock Tag="Blur" Classes="field" /><controls:NumericDraftInput Name="BlurInput" RawText="{Binding BlurText, Mode=TwoWay}" Minimum="0" Maximum="128" Value="{Binding Blur, Mode=TwoWay}" /></StackPanel>
-              </Grid>
-              <WrapPanel><Button Name="PathButton" Tag="Path" Command="{Binding PathCommand}" /><Button Name="AddPathPointButton" Tag="AddPathPoint" Command="{Binding AddPathPointCommand}" /><Button Name="RemovePathPointButton" Tag="RemovePathPoint" Command="{Binding RemovePathPointCommand}" /><Button Name="ClearPathButton" Tag="ClearPath" Command="{Binding ClearPathCommand}" /></WrapPanel>
-              <StackPanel Orientation="Horizontal" Spacing="8"><CheckBox Name="OrientPathCheck" Tag="OrientPath" IsChecked="{Binding OrientPath, Mode=TwoWay}" /></StackPanel>
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                <StackPanel Spacing="4"><TextBlock Tag="Property" Classes="field" /><ComboBox Name="PropertyCombo" HorizontalAlignment="Stretch" SelectedItem="{Binding SelectedProperty, Mode=TwoWay}" ItemsSource="{Binding Properties}" /></StackPanel>
-                <StackPanel Grid.Column="1" Spacing="4"><TextBlock Tag="Interpolation" Classes="field" /><ComboBox Name="InterpolationCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Interpolation, Mode=TwoWay}" ItemsSource="{Binding Interpolations}" /></StackPanel>
-              </Grid>
-              <controls:VectorDraftInput Name="KeyframeVectorInput" IsVisible="{Binding IsVectorProperty}" XFieldKey="KeyframeValueXInput" YFieldKey="KeyframeValueYInput" XText="{Binding KeyframeValueText, Mode=TwoWay}" YText="{Binding KeyframeValueYText, Mode=TwoWay}" X="{Binding KeyframeValue, Mode=TwoWay}" Y="{Binding KeyframeValueY, Mode=TwoWay}" Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" />
-              <controls:ColorDraftInput Name="KeyframeColorInput" IsVisible="{Binding IsColorProperty}" Draft="{Binding KeyframeColorDraft}" />
-              <controls:NumericDraftInput Name="KeyframeValueInput" IsVisible="{Binding IsScalarProperty}" RawText="{Binding KeyframeValueText, Mode=TwoWay}" Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" Increment="0.1" Value="{Binding KeyframeValue, Mode=TwoWay}" />
-              <StackPanel Orientation="Horizontal" Spacing="4"><Button Name="KeyframeButton" Tag="Keyframe" Command="{Binding KeyframeCommand}" IsEnabled="{Binding CanAddKeyframe}" /><Button Name="DeleteKeyframeButton" Tag="DeleteKeyframe" Command="{Binding DeleteKeyframeCommand}" IsEnabled="{Binding CanDeleteKeyframe}" /></StackPanel>
-              <TextBlock Tag="Preset" Classes="field" /><ComboBox Name="PresetCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Preset, Mode=TwoWay}" ItemsSource="{Binding Presets}" />
-              <WrapPanel><Button Name="ApplyPresetButton" Tag="ApplyPreset" Command="{Binding ApplyPresetCommand}" /><Button Name="ManageEffectScriptsButton" Tag="ManageEffectScripts" Command="{Binding ManageEffectScriptsCommand}" /></WrapPanel>
-            </StackPanel></ScrollViewer>
-          
+             xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
+             xmlns:converters="using:Avalonia.Data.Converters"
+             xmlns:vm="using:AegiNext.Desktop.Panels.Effects" x:DataType="vm:EffectsPanelViewModel"
+             x:Class="AegiNext.Desktop.Panels.Effects.EffectsPanelView" Classes="business-surface">
+  <ScrollViewer>
+    <StackPanel Name="EffectPanel" Margin="4" Spacing="8">
+      <TextBlock Name="ValidationMessage" Text="{Binding ValidationError}"
+                 IsVisible="{Binding ValidationError, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
+                 Foreground="Tomato" TextWrapping="Wrap" />
+      <TextBlock Name="EditingTarget" Text="{Binding EditTargetLabel}"
+                 IsVisible="{Binding EditTargetLabel, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
+                 TextWrapping="Wrap" Classes="field" />
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+        <StackPanel Spacing="4">
+          <TextBlock Name="LayerStartLabel" Tag="Start" Classes="field" />
+          <TextBox Name="LayerStartInput" Text="{Binding LayerStart, Mode=TwoWay}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="4">
+          <TextBlock Name="LayerEndLabel" Tag="End" Classes="field" />
+          <TextBox Name="LayerEndInput" Text="{Binding LayerEnd, Mode=TwoWay}" />
+        </StackPanel>
+      </Grid>
+      <TextBlock Tag="PositionVector" Classes="field" />
+      <controls:VectorDraftInput Name="PositionInput" XFieldKey="PositionXInput" YFieldKey="PositionYInput"
+                                 XText="{Binding PositionXText, Mode=TwoWay}"
+                                 YText="{Binding PositionYText, Mode=TwoWay}" X="{Binding PositionX, Mode=TwoWay}"
+                                 Y="{Binding PositionY, Mode=TwoWay}" Minimum="-2000032768" Maximum="2000032768"
+                                 IsEnabled="{Binding CanEditPosition}" />
+      <Button Name="ResetPositionButton" Tag="ResetAutomaticPosition" Command="{Binding ResetPositionCommand}"
+              IsEnabled="{Binding CanResetPosition}" />
+      <TextBlock Tag="ScaleVector" Classes="field" />
+      <controls:VectorDraftInput Name="ScaleInput" XFieldKey="ScaleXInput" YFieldKey="ScaleYInput"
+                                 XText="{Binding ScaleXText, Mode=TwoWay}" YText="{Binding ScaleYText, Mode=TwoWay}"
+                                 X="{Binding ScaleX, Mode=TwoWay}" Y="{Binding ScaleY, Mode=TwoWay}" Minimum="0.001"
+                                 Maximum="100" />
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+        <StackPanel>
+          <TextBlock Tag="Rotation" Classes="field" />
+          <controls:NumericDraftInput Name="RotationInput" RawText="{Binding RotationText, Mode=TwoWay}"
+                                      Minimum="-36000" Maximum="36000" Value="{Binding Rotation, Mode=TwoWay}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1">
+          <TextBlock Tag="Opacity" Classes="field" />
+          <controls:NumericDraftInput Name="OpacityInput" RawText="{Binding OpacityText, Mode=TwoWay}" Minimum="0"
+                                      Maximum="1" Increment="0.05" Value="{Binding Opacity, Mode=TwoWay}" />
+        </StackPanel>
+      </Grid>
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+        <StackPanel>
+          <TextBlock Tag="Blend" Classes="field" />
+          <ComboBox Name="BlendCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Blend, Mode=TwoWay}"
+                    ItemsSource="{Binding Blends}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1">
+          <TextBlock Tag="Blur" Classes="field" />
+          <controls:NumericDraftInput Name="BlurInput" RawText="{Binding BlurText, Mode=TwoWay}" Minimum="0"
+                                      Maximum="128" Value="{Binding Blur, Mode=TwoWay}" />
+        </StackPanel>
+      </Grid>
+      <WrapPanel>
+        <Button Name="PathButton" Tag="Path" Command="{Binding PathCommand}" />
+        <Button Name="AddPathPointButton" Tag="AddPathPoint" Command="{Binding AddPathPointCommand}" />
+        <Button Name="RemovePathPointButton" Tag="RemovePathPoint" Command="{Binding RemovePathPointCommand}" />
+        <Button Name="ClearPathButton" Tag="ClearPath" Command="{Binding ClearPathCommand}" />
+      </WrapPanel>
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <CheckBox Name="OrientPathCheck" Tag="OrientPath" IsChecked="{Binding OrientPath, Mode=TwoWay}" />
+      </StackPanel>
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+        <StackPanel Spacing="4">
+          <TextBlock Tag="Property" Classes="field" />
+          <ComboBox Name="PropertyCombo" HorizontalAlignment="Stretch"
+                    SelectedItem="{Binding SelectedProperty, Mode=TwoWay}" ItemsSource="{Binding Properties}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="4">
+          <TextBlock Tag="Interpolation" Classes="field" />
+          <ComboBox Name="InterpolationCombo" HorizontalAlignment="Stretch"
+                    SelectedIndex="{Binding Interpolation, Mode=TwoWay}" ItemsSource="{Binding Interpolations}" />
+        </StackPanel>
+      </Grid>
+      <controls:VectorDraftInput Name="KeyframeVectorInput" IsVisible="{Binding IsVectorProperty}"
+                                 XFieldKey="KeyframeValueXInput" YFieldKey="KeyframeValueYInput"
+                                 XText="{Binding KeyframeValueText, Mode=TwoWay}"
+                                 YText="{Binding KeyframeValueYText, Mode=TwoWay}"
+                                 X="{Binding KeyframeValue, Mode=TwoWay}" Y="{Binding KeyframeValueY, Mode=TwoWay}"
+                                 Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" />
+      <controls:ColorDraftInput Name="KeyframeColorInput" IsVisible="{Binding IsColorProperty}"
+                                Draft="{Binding KeyframeColorDraft}" />
+      <controls:NumericDraftInput Name="KeyframeValueInput" IsVisible="{Binding IsScalarProperty}"
+                                  RawText="{Binding KeyframeValueText, Mode=TwoWay}"
+                                  Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}"
+                                  Increment="0.1" Value="{Binding KeyframeValue, Mode=TwoWay}" />
+      <StackPanel Orientation="Horizontal" Spacing="4">
+        <Button Name="KeyframeButton" Tag="Keyframe" Command="{Binding KeyframeCommand}"
+                IsEnabled="{Binding CanAddKeyframe}" />
+        <Button Name="DeleteKeyframeButton" Tag="DeleteKeyframe" Command="{Binding DeleteKeyframeCommand}"
+                IsEnabled="{Binding CanDeleteKeyframe}" />
+      </StackPanel>
+      <TextBlock Tag="Preset" Classes="field" />
+      <ComboBox Name="PresetCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Preset, Mode=TwoWay}"
+                ItemsSource="{Binding Presets}" />
+      <WrapPanel>
+        <Button Name="ApplyPresetButton" Tag="ApplyPreset" Command="{Binding ApplyPresetCommand}" />
+        <Button Name="ManageEffectScriptsButton" Tag="ManageEffectScripts"
+                Command="{Binding ManageEffectScriptsCommand}" />
+      </WrapPanel>
+    </StackPanel>
+  </ScrollViewer>
+
 </UserControl>

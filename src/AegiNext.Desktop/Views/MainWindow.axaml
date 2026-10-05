@@ -6,7 +6,7 @@
         Title="{Binding Title}" Width="1460" Height="1000" MinWidth="760" MinHeight="620"
         Background="{DynamicResource PreviewBackground}">
   <DockPanel>
-    <common:WindowTitleBar Name="TitleBar" DockPanel.Dock="Top"/>
-    <ContentControl Name="WorkspaceHost" Margin="{StaticResource WorkbenchInset}"/>
+    <common:WindowTitleBar Name="TitleBar" DockPanel.Dock="Top" />
+    <ContentControl Name="WorkspaceHost" Margin="{StaticResource WorkbenchInset}" />
   </DockPanel>
 </Window>

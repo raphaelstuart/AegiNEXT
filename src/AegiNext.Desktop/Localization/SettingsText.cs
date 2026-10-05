@@ -82,6 +82,7 @@ internal static class SettingsText
         ["Clear"] = ("清除", "Clear"),
         ["Reset"] = ("恢复默认", "Restore defaults"),
         ["ResetAutomaticPosition"] = ("恢复自动位置", "Restore automatic position"),
+        ["ResetPosition"] = ("重设位置", "Restore position"),
         ["Save"] = ("保存", "Save"),
         ["Saved"] = ("已保存", "Saved"),
         ["Name"] = ("名称", "Name"),

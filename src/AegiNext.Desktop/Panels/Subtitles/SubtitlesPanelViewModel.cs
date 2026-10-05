@@ -11,6 +11,7 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
 {
     private readonly WorkbenchSession session;
     private SubtitleRow[] rows = [];
+    private SubtitleRow[] visibleRows = [];
     private SubtitleRow? selectedRow;
     private string? validationError;
     private Guid? invalidRowId;
@@ -29,7 +30,7 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
         {
             if (SetProperty(ref rows, value))
             {
-                OnPropertyChanged(nameof(VisibleRows));
+                RefreshVisibleRows();
             }
         }
     }
@@ -40,19 +41,40 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
         set => SetProperty(ref selectedRow, value);
     }
 
-    public SubtitleRow[] VisibleRows => Rows.Where(row => row.Original.TrackId == SelectedTrack?.Id)
-        .OrderBy(row => row.Original.Start).ToArray();
+    public IReadOnlyList<Guid> SelectedIds => session.SelectedSubtitleIds;
+
+    internal void NotifySelectionChanged() => OnPropertyChanged(nameof(SelectedIds));
+
+    public SubtitleRow[] VisibleRows => visibleRows;
     public ImmutableArray<SubtitleTrack> Tracks => tracks;
     public SubtitleTrack? SelectedTrack => selectedTrack;
 
     internal void UpdateTracks(ImmutableArray<SubtitleTrack> values, Guid currentId)
     {
-        tracks = values;
-        selectedTrack = values.Single(track => track.Id == currentId);
+        if (!tracks.SequenceEqual(values))
+        {
+            tracks = values;
+            OnPropertyChanged(nameof(Tracks));
+        }
 
-        OnPropertyChanged(nameof(Tracks));
-        OnPropertyChanged(nameof(SelectedTrack));
-        OnPropertyChanged(nameof(VisibleRows));
+        var track = values.Single(value => value.Id == currentId);
+        if (selectedTrack != track)
+        {
+            selectedTrack = track;
+            OnPropertyChanged(nameof(SelectedTrack));
+        }
+
+        RefreshVisibleRows();
+    }
+
+    private void RefreshVisibleRows()
+    {
+        var values = Rows.Where(row => row.Original.TrackId == SelectedTrack?.Id).OrderBy(row => row.Original.Start).ToArray();
+        if (!visibleRows.SequenceEqual(values))
+        {
+            visibleRows = values;
+            OnPropertyChanged(nameof(VisibleRows));
+        }
     }
 
     /// <summary>切换当前字幕轨道，保留全部行草稿的统一提交边界。</summary>
@@ -79,6 +101,10 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
     public ICommand MergeCueCommand => session.ViewModel.GetCommand(AegiNext.Desktop.Shortcuts.WorkbenchCommand.MERGE_SUBTITLE);
     /// <summary>选择字幕，切换前统一验证待提交草稿。</summary>
     public void SelectCue(Guid id) => session.SelectCue(id);
+    /// <summary>同步字幕列表的主项与完整选择集合，切换前统一验证草稿。</summary>
+    public bool SelectRows(Guid? primaryId, IEnumerable<Guid> ids) => session.SelectSubtitleRows(primaryId, ids);
+    /// <summary>激活行内编辑目标，保留包含此行的多选集合。</summary>
+    public void FocusRow(Guid id) => session.FocusSubtitleRow(id);
     /// <summary>记录文本拆分的字素光标位置。</summary>
     public void SetCaret(Guid id, int index) => session.SetTextCaret(id, index);
     /// <summary>焦点提交使用统一的原子草稿边界。</summary>

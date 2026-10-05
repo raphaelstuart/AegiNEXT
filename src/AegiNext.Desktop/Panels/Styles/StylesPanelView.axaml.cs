@@ -16,6 +16,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     private readonly FontFamilyPicker fonts;
     private bool suppressFocusCommit;
     private int focusCommitRevision;
+    private bool disposed;
     internal StylesPanelView(StylesPanelViewModel viewModel, WorkbenchSession session)
     {
         this.session = session;
@@ -49,15 +50,28 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         };
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Key.Enter && e.Source is Control source &&
+                source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().Any())
+            {
+                viewModel.CommitDrafts();
+                e.Handled = true;
+            }
+        }, RoutingStrategies.Bubble);
         AddHandler(LostFocusEvent, (_, e) =>
         {
             if (e.Source is TextBox or NumericUpDown or FontFamilyPicker)
             {
                 var root = TopLevel.GetTopLevel(this);
                 var suppressed = suppressFocusCommit;
+                var revision = focusCommitRevision;
+                var document = session.DocumentSnapshot;
+                var layerId = session.SelectedLayerId;
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (!suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
+                    if (!disposed && revision == focusCommitRevision && layerId == session.SelectedLayerId &&
+                        ReferenceEquals(document, session.DocumentSnapshot) && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
                         this.IsAttachedToVisualTree())
                     {
                         viewModel.CommitDrafts();
@@ -107,6 +121,8 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     public void Dispose()
     {
+        disposed = true;
+        focusCommitRevision++;
         session.PreferencesChanged -= OnPreferencesChanged;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
     }

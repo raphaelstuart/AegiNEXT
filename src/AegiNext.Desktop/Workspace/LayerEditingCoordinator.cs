@@ -139,6 +139,17 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         UpdateLayer(layer => layer with { MotionPath = path with { Path = PathOperations.RemovePoint(path.Path, path.Path.Segments.Length) } });
     }
 
+    internal void ResetPositionEffects()
+    {
+        if (session.SelectedLayer?.SubtitleId is { } id)
+        {
+            session.ViewModel.CancelGestures();
+            ClearKeyframeSelection();
+            session.Editor.ResetSubtitlePositionEffects(id);
+            session.ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
+        }
+    }
+
     internal void ResetAutomaticPosition()
     {
         if (session.SelectedCue is { } cue)

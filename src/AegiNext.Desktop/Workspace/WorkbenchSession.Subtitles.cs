@@ -128,15 +128,16 @@ internal sealed partial class WorkbenchSession
 
     internal void MergeCue()
     {
-        var cue = SelectedCue ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
-        var next = editor.Snapshot.Subtitles.Where(line => line.TrackId == cue.TrackId && line.Start > cue.Start)
-            .OrderBy(line => line.Start).FirstOrDefault();
-        if (next is null)
+        var targets = MergeSubtitleTargets();
+        if (targets.Length < 2)
         {
             return;
         }
 
-        editor.Apply("Merge subtitles", document => ProjectEditingOperations.MergeSubtitles(document, cue.Id, next.Id));
+        var prepared = ProjectEditingOperations.MergeSubtitles(editor.Snapshot, targets);
+        var merged = prepared.Subtitles.First(line => targets.Contains(line.Id));
+        editor.Apply("Merge subtitles", _ => prepared);
+        SelectCue(merged.Id);
     }
 
 }
