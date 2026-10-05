@@ -1,6 +1,6 @@
 namespace AegiNext.Desktop.Controls;
 
-internal enum EffectScriptTokenKind
+internal enum SyntaxTokenKind
 {
     TEXT,
     KEYWORD,

@@ -34,22 +34,24 @@ internal sealed class WorkbenchLogJournal : IDisposable
         }
     }
 
-    internal void Append(WorkbenchLogLevel level, string source, string message, string? details = null)
+    internal WorkbenchLogEntry Append(WorkbenchLogLevel level, string source, string message, string? details = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
         ArgumentNullException.ThrowIfNull(message);
+        WorkbenchLogEntry entry;
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            AppendCore(level, source, message, details);
+            entry = AppendCore(level, source, message, details);
         }
         Changed?.Invoke(this, EventArgs.Empty);
+        return entry;
     }
 
-    internal void ReportError(string source, Exception error)
+    internal WorkbenchLogEntry ReportError(string source, Exception error)
     {
         ArgumentNullException.ThrowIfNull(error);
-        Append(WorkbenchLogLevel.ERROR, source, error.Message, error.ToString());
+        return Append(WorkbenchLogLevel.ERROR, source, error.Message, error.ToString());
     }
 
     internal void SetDiagnosticError(string source, Exception? error)
@@ -110,12 +112,14 @@ internal sealed class WorkbenchLogJournal : IDisposable
         }
     }
 
-    private void AppendCore(WorkbenchLogLevel level, string source, string message, string? details)
+    private WorkbenchLogEntry AppendCore(WorkbenchLogLevel level, string source, string message, string? details)
     {
-        entries.Enqueue(new(++sequence, DateTimeOffset.UtcNow, level, source, message, details));
+        var entry = new WorkbenchLogEntry(++sequence, DateTimeOffset.UtcNow, level, source, message, details);
+        entries.Enqueue(entry);
         while (entries.Count > CAPACITY)
         {
             entries.Dequeue();
         }
+        return entry;
     }
 }

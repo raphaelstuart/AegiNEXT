@@ -1,6 +1,9 @@
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Windowing;
+using AegiNext.Desktop.Layouts;
+using AegiNext.Desktop.Panels.Log;
+using AegiNext.Desktop.Workspace.Diagnostics;
 
 namespace AegiNext.Desktop.Views;
 
@@ -59,10 +62,11 @@ public sealed partial class MainWindow
         window.ApplyStyleRequested += (_, e) => Session.Styles.Queue(() => Session.Styles.ApplyAsync(e.Preset));
         window.ImportStylesRequested += (_, _) => Session.Styles.Queue(Session.Styles.ImportAsync);
         window.ExportStylesRequested += (_, _) => Session.Styles.Queue(Session.Styles.ExportAsync);
-        window.UpsertEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.UpsertAsync(e.Preset));
-        window.DeleteEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.DeleteAsync(e.Id));
-        window.ImportEffectRequested += (_, _) => Session.EffectScripts.Queue(Session.EffectScripts.ImportAsync);
-        window.ExportEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.ExportAsync(e.Preset));
+        window.EffectValidationFailed += (_, e) => RevealEffectScriptError(Session.LogError("Effects", e.Error));
+        window.UpsertEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.UpsertAsync(e.Preset), RevealEffectScriptError);
+        window.DeleteEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.DeleteAsync(e.Id), RevealEffectScriptError);
+        window.ImportEffectRequested += (_, _) => Session.EffectScripts.Queue(Session.EffectScripts.ImportAsync, RevealEffectScriptError);
+        window.ExportEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.ExportAsync(e.Preset), RevealEffectScriptError);
         window.Closed += (_, _) =>
         {
             Session.PreviewDecodeModeChanged -= OnPreviewDecodeModeChanged;
@@ -78,6 +82,18 @@ public sealed partial class MainWindow
             window.SelectPage(selected);
         }
         window.Show(this);
+    }
+
+    private void RevealEffectScriptError(WorkbenchLogEntry entry)
+    {
+        if (closing || disposeTask is not null || Session.IsClosing)
+        {
+            return;
+        }
+
+        Activate();
+        layouts.Activate(WorkbenchPanelIds.LOG);
+        ((LogPanelView)panels[WorkbenchPanelIds.LOG]).RevealEntry(entry);
     }
 
     private void RefreshMediaSettings(SettingsWindow window)

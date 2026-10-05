@@ -10,6 +10,7 @@ using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Rendering;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
+using AegiNext.Desktop.Workspace.Diagnostics;
 using AegiNext.Media.Playback;
 using Avalonia.Threading;
 
@@ -171,19 +172,17 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
     }
 
-    internal void ShowError(Exception error, bool recordLog = true)
+    internal WorkbenchLogEntry? ShowError(Exception error, bool recordLog = true)
     {
-        if (recordLog)
-        {
-            LogError("Workspace", error);
-        }
+        var entry = recordLog ? LogError("Workspace", error) : null;
         LastError = error;
         var text = error.Message;
         ViewModel.Error = text.Length > 700 ? text[..700] + "…" : text;
         ViewModel.RefreshCommands();
+        return entry;
     }
 
-    internal async Task RunCommandAsync(Func<Task> command)
+    internal async Task RunCommandAsync(Func<Task> command, Action<WorkbenchLogEntry>? onFailure = null)
     {
         if (closing)
         {
@@ -204,7 +203,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         {
             if (!closing)
             {
-                ShowError(error);
+                var entry = ShowError(error)!;
+                onFailure?.Invoke(entry);
             }
         }
         finally

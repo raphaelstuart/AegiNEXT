@@ -6,6 +6,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.VisualTree;
+using Avalonia.Threading;
 
 namespace AegiNext.Desktop.Panels.Log;
 
@@ -35,6 +36,31 @@ internal sealed partial class LogPanelView : UserControl, IWorkbenchPanelView
 
     public string PanelId => WorkbenchPanelIds.LOG;
     internal Task CopyCompletion { get; private set; } = Task.CompletedTask;
+
+    internal void RevealEntry(WorkbenchLogEntry entry)
+    {
+        viewModel.RevealEntry(entry);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (disposed || isClosing() || !ReferenceEquals(viewModel.SelectedEntry, entry))
+            {
+                return;
+            }
+
+            var list = this.FindControl<ListBox>("LogEntries")!;
+            list.ScrollIntoView(entry);
+            list.UpdateLayout();
+            if (list.ContainerFromItem(entry) is { } container)
+            {
+                var expander = container.GetVisualDescendants().OfType<Expander>().FirstOrDefault();
+                if (expander is not null)
+                {
+                    expander.IsExpanded = true;
+                }
+                container.BringIntoView();
+            }
+        }, DispatcherPriority.Loaded);
+    }
     public void CancelGestures()
     {
     }

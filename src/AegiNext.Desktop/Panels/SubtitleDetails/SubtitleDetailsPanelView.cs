@@ -83,6 +83,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         MinHeight = 220;
         Focusable = true;
         code.Classes.Add("multiline-input");
+        code.Bind(ThemeProperty, new DynamicResourceExtension("SubtitleCodeTextBoxTheme"));
         Classes.Add("business-surface");
         rich.TextEditRequested += OnTextEdit;
         rich.SelectionChanged += OnSelection;

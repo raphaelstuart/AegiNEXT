@@ -77,6 +77,13 @@ internal sealed class LogPanelViewModel : ObservableObject, IDisposable
 
     internal string CopyVisibleText() => string.Join(Environment.NewLine + Environment.NewLine, Entries.Select(entry => entry.FullText));
 
+    internal void RevealEntry(WorkbenchLogEntry entry)
+    {
+        FilterIndex = 0;
+        FilterText = string.Empty;
+        SelectedEntry = entry;
+    }
+
     internal void SetReadingState(Func<bool>? value)
     {
         readingState = value;

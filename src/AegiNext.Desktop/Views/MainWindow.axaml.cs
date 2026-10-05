@@ -369,10 +369,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     {
         settingsWindow?.UpdateEffects(Session.EffectScriptLibrary.Snapshot.Presets);
         settingsWindow?.SetEffectOperationBusy(Session.EffectScripts.IsBusy);
-        if (!Session.EffectScripts.IsBusy && Session.LastError is { } error)
-        {
-            settingsWindow?.ShowError(error.Message);
-        }
     }
     private void OnSelectionChanged(object? sender, EventArgs e) => settingsWindow?.UpdateSelectionAvailability(Session.HasSelectedCue && !Session.IsProjectBusy && !Session.IsClosing);
     private void ApplyWindowPreferences()

@@ -24,6 +24,7 @@ public sealed partial class EffectScriptEditor : UserControl
     private readonly ListBox completions;
     private readonly Popup completionPopup;
     private TextPresenter? presenter;
+    private ScriptLineNumberMargin? lineNumbers;
     private bool consumingSpace;
     private int completionRevision;
 
@@ -38,19 +39,7 @@ public sealed partial class EffectScriptEditor : UserControl
         AddHandler(KeyDownEvent, EditorKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, EditorKeyUp, RoutingStrategies.Tunnel);
         input.AddHandler(TextInputEvent, (_, _) => ScheduleCompletions(), RoutingStrategies.Bubble, true);
-        input.TemplateApplied += (_, args) =>
-        {
-            if (presenter is not null)
-            {
-                presenter.PropertyChanged -= PresenterPropertyChanged;
-            }
-
-            presenter = args.NameScope.Find<TextPresenter>("PART_TextPresenter");
-            if (presenter is not null)
-            {
-                presenter.PropertyChanged += PresenterPropertyChanged;
-            }
-        };
+        input.TemplateApplied += InputTemplateApplied;
         input.TextChanged += (_, _) =>
         {
             if (completionPopup.IsOpen)
@@ -115,6 +104,11 @@ public sealed partial class EffectScriptEditor : UserControl
     {
         base.OnAttachedToVisualTree(e);
         Localization.LanguageChanged += OnLanguageChanged;
+        if (presenter is not null)
+        {
+            presenter.PropertyChanged += PresenterPropertyChanged;
+        }
+
         RefreshLanguage();
     }
 
@@ -161,9 +155,31 @@ public sealed partial class EffectScriptEditor : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         Localization.LanguageChanged -= OnLanguageChanged;
+        if (presenter is not null)
+        {
+            presenter.PropertyChanged -= PresenterPropertyChanged;
+        }
+
         HideCompletions();
         consumingSpace = false;
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private void InputTemplateApplied(object? sender, TemplateAppliedEventArgs args)
+    {
+        if (presenter is not null)
+        {
+            presenter.PropertyChanged -= PresenterPropertyChanged;
+        }
+
+        lineNumbers?.Connect(null, null);
+        presenter = args.NameScope.Find<TextPresenter>("PART_TextPresenter");
+        lineNumbers = args.NameScope.Find<ScriptLineNumberMargin>("ScriptLineNumbers");
+        lineNumbers?.Connect(presenter, args.NameScope.Find<ScrollViewer>("PART_ScrollViewer"));
+        if (presenter is not null && this.IsAttachedToVisualTree())
+        {
+            presenter.PropertyChanged += PresenterPropertyChanged;
+        }
     }
 
     private void EditorKeyDown(object? sender, KeyEventArgs e)

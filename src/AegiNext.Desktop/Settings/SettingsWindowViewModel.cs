@@ -58,11 +58,10 @@ public sealed class SettingsWindowViewModel : ObservableObject
         _ => "Appearance"
     }));
 
-    public string? Error => externalError ?? (CurrentPage switch
+    public string? Error => CurrentPage == SettingsPage.EFFECTS ? null : externalError ?? (CurrentPage switch
     {
         SettingsPage.SHORTCUTS => Shortcuts.Error,
         SettingsPage.STYLES => Styles.Error,
-        SettingsPage.EFFECTS => Effects.Error,
         _ => null
     });
 

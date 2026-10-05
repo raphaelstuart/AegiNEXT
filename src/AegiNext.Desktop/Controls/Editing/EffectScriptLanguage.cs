@@ -11,22 +11,22 @@ internal static class EffectScriptLanguage
     private static readonly string[] properties = ["position", "scale", "rotation", "opacity", "blur", "stroke-width", "path-progress", "fill", "stroke"];
     private static readonly string[] interpolation = ["linear", "hold", "ease-in", "ease-out", "ease-in-out"];
 
-    internal static IReadOnlyList<EffectScriptToken> Tokenize(string source)
+    internal static IReadOnlyList<SyntaxToken> Tokenize(string source)
     {
-        var result = new List<EffectScriptToken>();
+        var result = new List<SyntaxToken>();
         foreach (Match match in tokens.Matches(source))
         {
             var value = match.Value;
             var kind = value[0] switch
             {
-                '#' => EffectScriptTokenKind.COMMENT,
-                '"' => EffectScriptTokenKind.STRING,
-                _ when keywords.Contains(value) => EffectScriptTokenKind.KEYWORD,
-                _ when properties.Contains(value, StringComparer.Ordinal) => EffectScriptTokenKind.PROPERTY,
-                _ when value is "base" or "offset" or "factor" or "rgba" => EffectScriptTokenKind.FUNCTION,
-                _ when interpolation.Contains(value, StringComparer.Ordinal) => EffectScriptTokenKind.INTERPOLATION,
-                _ when char.IsDigit(value[0]) || value[0] is '+' or '-' or '.' && value.Length > 1 => EffectScriptTokenKind.NUMBER,
-                _ => EffectScriptTokenKind.TEXT
+                '#' => SyntaxTokenKind.COMMENT,
+                '"' => SyntaxTokenKind.STRING,
+                _ when keywords.Contains(value) => SyntaxTokenKind.KEYWORD,
+                _ when properties.Contains(value, StringComparer.Ordinal) => SyntaxTokenKind.PROPERTY,
+                _ when value is "base" or "offset" or "factor" or "rgba" => SyntaxTokenKind.FUNCTION,
+                _ when interpolation.Contains(value, StringComparer.Ordinal) => SyntaxTokenKind.INTERPOLATION,
+                _ when char.IsDigit(value[0]) || value[0] is '+' or '-' or '.' && value.Length > 1 => SyntaxTokenKind.NUMBER,
+                _ => SyntaxTokenKind.TEXT
             };
             result.Add(new(match.Index, match.Length, kind));
         }

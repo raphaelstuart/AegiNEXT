@@ -9,15 +9,20 @@
           <Border Name="PART_BorderElement" Background="{TemplateBinding Background}"
                   BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
                   CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
-            <ScrollViewer Name="PART_ScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-              <controls:EffectScriptTextPresenter Name="PART_TextPresenter" Text="{TemplateBinding Text, Mode=TwoWay}"
-                    CaretBlinkInterval="{TemplateBinding CaretBlinkInterval}" CaretIndex="{TemplateBinding CaretIndex}"
-                    SelectionStart="{TemplateBinding SelectionStart}" SelectionEnd="{TemplateBinding SelectionEnd}"
-                    TextAlignment="{TemplateBinding TextAlignment}" TextWrapping="{TemplateBinding TextWrapping}"
-                    LineHeight="{TemplateBinding LineHeight}" LetterSpacing="{TemplateBinding LetterSpacing}"
-                    SelectionBrush="{TemplateBinding SelectionBrush}" SelectionForegroundBrush="{TemplateBinding SelectionForegroundBrush}"
-                    CaretBrush="{TemplateBinding CaretBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" />
-            </ScrollViewer>
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+              <controls:ScriptLineNumberMargin Name="ScriptLineNumbers" Opacity="0.6"
+                    IsHitTestVisible="False" ClipToBounds="True" AutomationProperties.AccessibilityView="Raw" />
+              <ScrollViewer Name="PART_ScrollViewer" Grid.Column="1"
+                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <controls:EffectScriptTextPresenter Name="PART_TextPresenter" Text="{TemplateBinding Text, Mode=TwoWay}"
+                      CaretBlinkInterval="{TemplateBinding CaretBlinkInterval}" CaretIndex="{TemplateBinding CaretIndex}"
+                      SelectionStart="{TemplateBinding SelectionStart}" SelectionEnd="{TemplateBinding SelectionEnd}"
+                      TextAlignment="{TemplateBinding TextAlignment}" TextWrapping="{TemplateBinding TextWrapping}"
+                      LineHeight="{TemplateBinding LineHeight}" LetterSpacing="{TemplateBinding LetterSpacing}"
+                      SelectionBrush="{TemplateBinding SelectionBrush}" SelectionForegroundBrush="{TemplateBinding SelectionForegroundBrush}"
+                      CaretBrush="{TemplateBinding CaretBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" />
+              </ScrollViewer>
+            </Grid>
           </Border>
         </ControlTemplate>
       </Setter>

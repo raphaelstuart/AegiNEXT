@@ -1,6 +1,7 @@
 using AegiNext.Application.Presets;
 using AegiNext.Core.Effects;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Workspace.Diagnostics;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -17,21 +18,21 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         RefreshChoices();
     });
 
-    internal void Queue(Func<Task> action)
+    internal void Queue(Func<Task> action, Action<WorkbenchLogEntry>? onFailure = null)
     {
         queuedOperations++;
-        Completion = RunAsync(Completion, action);
+        Completion = RunAsync(Completion, action, onFailure);
         session.NotifyEffectLibraryChanged();
     }
 
-    private async Task RunAsync(Task previous, Func<Task> action)
+    private async Task RunAsync(Task previous, Func<Task> action, Action<WorkbenchLogEntry>? onFailure)
     {
         try
         {
             await previous;
             if (!session.IsClosing)
             {
-                await session.RunCommandAsync(action);
+                await session.RunCommandAsync(action, onFailure);
             }
         }
         finally

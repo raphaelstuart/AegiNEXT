@@ -16,9 +16,9 @@ internal sealed partial class WorkbenchSession
         Journal.Append(WorkbenchLogLevel.WARNING, source, message, details);
     }
 
-    internal void LogError(string source, Exception error)
+    internal WorkbenchLogEntry LogError(string source, Exception error)
     {
-        Journal.ReportError(source, error);
+        return Journal.ReportError(source, error);
     }
 
     internal void SetDiagnosticError(string source, Exception? error)

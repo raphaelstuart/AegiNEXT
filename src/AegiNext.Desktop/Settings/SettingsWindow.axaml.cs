@@ -4,6 +4,7 @@ using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Settings.Effects;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
@@ -45,6 +46,7 @@ public sealed partial class SettingsWindow : Window
         viewModel.Effects.DeleteRequested += (_, value) => DeleteEffectRequested?.Invoke(this, value);
         viewModel.Effects.ImportRequested += (_, _) => ImportEffectRequested?.Invoke(this, EventArgs.Empty);
         viewModel.Effects.ExportRequested += (_, value) => ExportEffectRequested?.Invoke(this, value);
+        viewModel.Effects.ValidationFailed += OnEffectValidationFailed;
         Deactivated += (_, _) => viewModel.Shortcuts.CancelCapture();
         Closed += OnClosed;
         Localization.LanguageChanged += OnLanguageChanged;
@@ -65,6 +67,7 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler<SettingsEffectDeleteEventArgs>? DeleteEffectRequested;
     public event EventHandler? ImportEffectRequested;
     public event EventHandler<SettingsEffectEventArgs>? ExportEffectRequested;
+    public event EventHandler<EffectScriptValidationFailedEventArgs>? EffectValidationFailed;
     public SettingsWindowViewModel ViewModel { get; }
     public WindowTitleBar TitleBar { get; }
     public SettingsPage CurrentPage => ViewModel.CurrentPage;
@@ -112,7 +115,13 @@ public sealed partial class SettingsWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         Localization.LanguageChanged -= OnLanguageChanged;
+        ViewModel.Effects.ValidationFailed -= OnEffectValidationFailed;
         ViewModel.Shortcuts.CancelCapture();
+    }
+
+    private void OnEffectValidationFailed(object? sender, EffectScriptValidationFailedEventArgs e)
+    {
+        EffectValidationFailed?.Invoke(this, e);
     }
 
     /// <summary>同步已持久化快捷键。</summary>

@@ -37,13 +37,13 @@ public sealed class EffectSettingsViewModel : ObservableObject
         ExportCommand = new(() => Submit(false, ExportRequested), () => HasSelection && !IsBusy);
         ImportCommand = new(() => ImportRequested?.Invoke(this, EventArgs.Empty), () => !IsBusy);
         ValidateCommand = new(Validate, () => HasSelection && !IsBusy);
-        RestoreCommand = new(Restore, () => IsDirty && !IsBusy);
         UpdateEffects([]);
     }
 
     public event EventHandler<SettingsEffectEventArgs>? SaveRequested;
     public event EventHandler<SettingsEffectDeleteEventArgs>? DeleteRequested;
     public event EventHandler<SettingsEffectEventArgs>? ExportRequested;
+    public event EventHandler<EffectScriptValidationFailedEventArgs>? ValidationFailed;
     public event EventHandler? ImportRequested;
     public RelayCommand AddCommand { get; }
     public RelayCommand DuplicateCommand { get; }
@@ -52,7 +52,6 @@ public sealed class EffectSettingsViewModel : ObservableObject
     public RelayCommand ExportCommand { get; }
     public RelayCommand ImportCommand { get; }
     public RelayCommand ValidateCommand { get; }
-    public RelayCommand RestoreCommand { get; }
     public ImmutableArray<EffectScriptSettingsItem> Effects => items;
     public bool HasSelection => selectedEffect is not null;
     public bool IsReadOnly => selectedEffect?.IsBuiltin ?? true;
@@ -255,17 +254,6 @@ public sealed class EffectSettingsViewModel : ObservableObject
         RebuildItems(id);
     }
 
-    private void Restore()
-    {
-        if (selectedEffect is null)
-        {
-            return;
-        }
-
-        drafts.Remove(selectedEffect.Id);
-        RebuildItems(selectedEffect.Id);
-    }
-
     private string UniqueName(string proposed)
     {
         var names = items.Select(item => drafts.GetValueOrDefault(item.Id)?.Name ?? item.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -314,12 +302,14 @@ public sealed class EffectSettingsViewModel : ObservableObject
             DiagnosticLine = failure.Line;
             DiagnosticColumn = failure.Column;
             ValidationStatus = null;
+            ValidationFailed?.Invoke(this, new(failure));
             return false;
         }
         catch (InvalidDataException failure)
         {
             Error = failure.Message;
             ValidationStatus = null;
+            ValidationFailed?.Invoke(this, new(failure));
             return false;
         }
     }
@@ -347,7 +337,7 @@ public sealed class EffectSettingsViewModel : ObservableObject
             OnPropertyChanged(property);
         }
 
-        foreach (var command in new[] { AddCommand, DuplicateCommand, DeleteCommand, SaveCommand, ExportCommand, ImportCommand, ValidateCommand, RestoreCommand })
+        foreach (var command in new[] { AddCommand, DuplicateCommand, DeleteCommand, SaveCommand, ExportCommand, ImportCommand, ValidateCommand })
         {
             command.NotifyCanExecuteChanged();
         }
