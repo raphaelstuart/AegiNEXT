@@ -41,7 +41,11 @@ public static class ShortcutDefaults
             new(WorkbenchCommand.LAYOUT_SAVE_AS, ""),
             new(WorkbenchCommand.LAYOUT_MANAGE, ""),
             new(WorkbenchCommand.LAYOUT_RESTORE_DEFAULT, ""),
-            new(WorkbenchCommand.VIEW_LOG, "")
+            new(WorkbenchCommand.VIEW_LOG, ""),
+            new(WorkbenchCommand.IMPORT_ASS, ""),
+            new(WorkbenchCommand.EXPORT_ASS, ""),
+            new(WorkbenchCommand.OPEN_SUBTITLE_DETAILS, ""),
+            new(WorkbenchCommand.END_TEXT_INPUT, "Escape")
         ];
     }
 }

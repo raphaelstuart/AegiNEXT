@@ -62,6 +62,9 @@ public sealed class FontFamilyPicker : AutoCompleteBox
     public IReadOnlyList<string> FontFamilies { get; private set; } = [];
     public bool CommitOnLostFocus { get; set; } = true;
 
+    /// <summary>宿主接管输入完成命令时，可关闭未展开列表的本地 Esc 恢复。</summary>
+    public bool RestoreOnEscape { get; set; } = true;
+
     /// <inheritdoc />
     protected override Type StyleKeyOverride => typeof(AutoCompleteBox);
 
@@ -181,6 +184,11 @@ public sealed class FontFamilyPicker : AutoCompleteBox
 
         if (e.Key == Key.Escape)
         {
+            if (!RestoreOnEscape && !IsDropDownOpen)
+            {
+                e.Handled = true;
+                return;
+            }
             base.OnKeyDown(e);
             SetCurrentFamily(committedFamily);
             SetCurrentValue(IsDropDownOpenProperty, false);

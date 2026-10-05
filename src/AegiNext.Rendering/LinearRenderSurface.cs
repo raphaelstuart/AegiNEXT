@@ -75,7 +75,8 @@ public sealed class LinearRenderSurface : IDisposable
         }
     }
 
-    internal byte[] CopySrgbBgra()
+    /// <summary>复制紧密排列的预乘 sRGB BGRA 像素，保留透明度；调用方拥有返回的缓冲。</summary>
+    public byte[] CopySrgbBgra()
     {
         ObjectDisposedException.ThrowIf(isDisposed, this);
         using var srgb = SKColorSpace.CreateSrgb();

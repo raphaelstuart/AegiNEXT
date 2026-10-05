@@ -66,7 +66,8 @@ public static class SubtitleStylePresetService
         var prepared = await PrepareAsync(preset, project, projectDirectory, cancellationToken).ConfigureAwait(false);
         var result = prepared.Project with
         {
-            Subtitles = prepared.Project.Subtitles.Select(line => selection.Contains(line.Id) ? line with { Style = prepared.Style } : line).ToImmutableArray()
+            Subtitles = prepared.Project.Subtitles.Select(line => selection.Contains(line.Id)
+                ? line with { Style = prepared.Style, InlineSpans = [] } : line).ToImmutableArray()
         };
         ProjectValidator.Validate(result);
         return result;

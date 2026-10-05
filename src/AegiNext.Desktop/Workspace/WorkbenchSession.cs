@@ -76,6 +76,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
                 error => Volatile.Write(ref previewRenderError, error), previewFrames));
         controller.ConfigureDecodeMode(preferences.PreviewDecodeMode);
         workflow = new(this, dialogs);
+        Details = new(this);
+        Details.Changed += OnSubtitleDetailsChanged;
         analysis = new(this);
         export = new(this, dialogs, exportService ?? new VideoWorkbenchExportService(new AegiNext.Media.Encoding.VideoExporter()));
         styles = new(this, dialogs);
@@ -112,6 +114,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal WorkbenchViewModel ViewModel { get; }
     internal Exception? LastError { get; private set; }
     internal ProjectEditor Editor => editor;
+    internal SubtitleDetailsCoordinator Details { get; }
     internal VideoPreviewController Controller => controller;
     internal WorkbenchPreferences Preferences => preferences;
     internal WorkbenchPreferencesStore PreferencesStore => preferencesStore;
@@ -296,6 +299,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     {
         closing = true;
         Localization.LanguageChanged -= OnLanguageChanged;
+        Details.Changed -= OnSubtitleDetailsChanged;
+        Details.Dispose();
         ClearInspectorPreview();
         editor.Changed -= OnDocumentChanged;
         playback.Invalidate();
@@ -333,6 +338,14 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         PreferencesChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private void OnSubtitleDetailsChanged(object? sender, EventArgs e)
+    {
+        if (!closing && !updatingWorkbench)
+        {
+            RefreshEditingPreview();
+        }
+    }
+
     private void OnLanguageChanged(object? sender, EventArgs e)
     {
         RefreshLocalizedState();
@@ -347,7 +360,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             ViewModel.Preview.EmptyLabel = Localization.Get("Preview.Empty");
             ViewModel.Preview.RefreshQualities(preferences.PreviewQuality);
             ViewModel.Styles.RefreshAlignmentChoices(alignments.Select(value => Localization.Get("Settings." + value)).ToArray());
-            ViewModel.Styles.RefreshLanguage();
+            foreach (var row in ViewModel.Subtitles.Rows)
+            {
+                row.RefreshLanguage();
+            }
             ViewModel.Effects.RefreshChoices(blendKeys.Select(key => Localization.Get("Workbench." + key)).ToArray(),
                 AnimationPropertyMetadata.CurrentProperties.Select(value => new AnimationPropertyChoice(value, AnimationPropertyLocalization.Get(value))).ToArray(),
                 interpolationKeys.Select(key => Localization.Get("Workbench." + key)).ToArray());

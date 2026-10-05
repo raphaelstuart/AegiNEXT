@@ -2,52 +2,40 @@ namespace AegiNext.Desktop.Layouts;
 
 internal static class WorkspaceLayoutMigration
 {
-    private static readonly string[] legacyPanelIds =
-        [WorkbenchPanelIds.PREVIEW, WorkbenchPanelIds.TIMELINE, WorkbenchPanelIds.SUBTITLES,
-            WorkbenchPanelIds.STYLES, WorkbenchPanelIds.EFFECTS, WorkbenchPanelIds.EXPORT];
-
     internal static WorkspaceLayoutFile Upgrade(WorkspaceLayoutFile file)
     {
-        if (file.Version != 1)
+        if (file.Version is not (1 or 2))
         {
             return file;
         }
-
+        var previousIds = WorkbenchPanelIds.All.Where(id => id != WorkbenchPanelIds.SUBTITLE_DETAILS &&
+            (file.Version != 1 || id != WorkbenchPanelIds.LOG)).ToArray();
+        WorkspaceLayoutSnapshot UpgradeSnapshot(WorkspaceLayoutSnapshot layout)
+        {
+            WorkspaceLayoutValidator.ValidateLegacy(layout, previousIds, file.Version);
+            var additions = WorkbenchPanelIds.All.Where(id => !previousIds.Contains(id));
+            return layout with { Version = WorkspaceLayoutSnapshot.CURRENT_VERSION,
+                HiddenPanelIds = layout.HiddenPanelIds.Concat(additions).ToArray() };
+        }
         var current = UpgradeSnapshot(file.Current);
         var presets = file.Presets.Select(preset => preset with { Layout = UpgradeSnapshot(preset.Layout) }).ToArray();
         var builtIn = WorkspaceLayoutPresets.BuiltIn.FirstOrDefault(preset => preset.Id == file.CurrentPresetId);
         if (builtIn is not null)
         {
-            var legacy = builtIn.Layout with
-            {
-                Version = 1,
-                Main = RemoveLog(builtIn.Layout.Main),
-                HiddenPanelIds = builtIn.Layout.HiddenPanelIds.Where(id => id != WorkbenchPanelIds.LOG).ToArray()
-            };
+            var excluded = WorkbenchPanelIds.All.Where(id => !previousIds.Contains(id)).ToHashSet(StringComparer.Ordinal);
+            var legacy = builtIn.Layout with { Version = file.Version, Main = RemovePanels(builtIn.Layout.Main, excluded),
+                HiddenPanelIds = builtIn.Layout.HiddenPanelIds.Where(id => !excluded.Contains(id)).ToArray() };
             if (WorkspaceLayoutStore.Fingerprint(file.Current) == WorkspaceLayoutStore.Fingerprint(legacy))
             {
                 current = builtIn.Layout;
             }
         }
-
         return file with { Version = WorkspaceLayoutSnapshot.CURRENT_VERSION, Current = current, Presets = presets };
     }
 
-    private static WorkspaceLayoutSnapshot UpgradeSnapshot(WorkspaceLayoutSnapshot layout)
+    private static LayoutNodeSnapshot RemovePanels(LayoutNodeSnapshot node, HashSet<string> excluded)
     {
-        WorkspaceLayoutValidator.ValidateLegacy(layout, legacyPanelIds);
-        return layout with
-        {
-            Version = WorkspaceLayoutSnapshot.CURRENT_VERSION,
-            HiddenPanelIds = layout.HiddenPanelIds.Append(WorkbenchPanelIds.LOG).ToArray()
-        };
-    }
-
-    private static LayoutNodeSnapshot RemoveLog(LayoutNodeSnapshot node)
-    {
-        return node with
-        {
-            Children = node.Children.Where(child => child.PanelId != WorkbenchPanelIds.LOG).Select(RemoveLog).ToArray()
-        };
+        return node with { Children = node.Children.Where(child => child.PanelId is null || !excluded.Contains(child.PanelId))
+            .Select(child => RemovePanels(child, excluded)).ToArray() };
     }
 }

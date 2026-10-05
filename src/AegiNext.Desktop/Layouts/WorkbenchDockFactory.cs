@@ -8,11 +8,13 @@ internal sealed class WorkbenchDockFactory : Factory
 {
     private readonly Action cancelGestures;
     private readonly Action changed;
+    private readonly Func<bool> commitDrafts;
 
-    internal WorkbenchDockFactory(Func<IHostWindow?> createHost, Action cancelGestures, Action changed)
+    internal WorkbenchDockFactory(Func<IHostWindow?> createHost, Action cancelGestures, Action changed, Func<bool>? commitDrafts = null)
     {
         this.cancelGestures = cancelGestures;
         this.changed = changed;
+        this.commitDrafts = commitDrafts ?? (() => true);
         HostWindowLocator = new Dictionary<string, Func<IHostWindow?>> { [nameof(IDockWindow)] = createHost };
         HideToolsOnClose = true;
     }
@@ -55,6 +57,10 @@ internal sealed class WorkbenchDockFactory : Factory
     /// <summary>关闭或隐藏面板前取消正在进行的编辑手势。</summary>
     public override bool OnDockableClosing(IDockable? dockable)
     {
+        if (dockable?.Id == WorkbenchPanelIds.SUBTITLE_DETAILS && !commitDrafts())
+        {
+            return false;
+        }
         cancelGestures();
         return base.OnDockableClosing(dockable);
     }

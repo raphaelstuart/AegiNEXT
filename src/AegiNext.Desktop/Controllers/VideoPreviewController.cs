@@ -9,7 +9,7 @@ namespace AegiNext.Desktop.Controllers;
 /// <summary>
 /// 连接媒体会话与 UI；转换和交付均串行，文件身份与播放代数共同拒绝过时画面。
 /// </summary>
-public sealed class VideoPreviewController : IAsyncDisposable
+public sealed partial class VideoPreviewController : IAsyncDisposable
 {
     private readonly Func<string, CancellationToken, Task<VideoPreviewMedia>> probe;
     private readonly Func<string, int, Func<MediaTime?>?, VideoDecoderOptions, VideoPlaybackSession> sessionFactory;
@@ -213,7 +213,9 @@ public sealed class VideoPreviewController : IAsyncDisposable
             {
                 ThrowIfObsoleteUnderLock(request.ExpectedEpoch);
             }
+            CancelPlaybackRangeUnderLock();
             requestedEpoch = ++epoch;
+            mediaRangeInstalled = false;
             if (request is not null)
             {
                 request.AllocatedEpoch = requestedEpoch;
@@ -509,7 +511,9 @@ public sealed class VideoPreviewController : IAsyncDisposable
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(closed, this);
+            CancelPlaybackRangeUnderLock();
             requestedEpoch = ++epoch;
+            mediaRangeInstalled = false;
             revision++;
             pendingSeek = null;
             opening = false;
@@ -566,12 +570,14 @@ public sealed class VideoPreviewController : IAsyncDisposable
     /// </summary>
     public Task PlayAsync()
     {
+        lock (gate)
+        {
+            CancelPlaybackRangeUnderLock();
+        }
         return ExecuteAsync(async (run, session, operationRevision) =>
         {
-            if (run.AudioError is null && run.Audio is { Error: null } audio)
-            {
-                await TryAudioAsync(run, audio.PlayAsync).ConfigureAwait(false);
-            }
+            await ClearMediaRangeAsync(run, session, operationRevision).ConfigureAwait(false);
+            await SubmitAudioCommandAsync(run, operationRevision, audio => audio.PlayAsync()).ConfigureAwait(false);
 
             Task playback;
             lock (gate)
@@ -589,14 +595,19 @@ public sealed class VideoPreviewController : IAsyncDisposable
     /// </summary>
     public Task PauseAsync()
     {
-        return ExecuteAsync(async (run, session, _) =>
+        lock (gate)
         {
-            if (run.AudioError is null && run.Audio is { Error: null } audio)
+            CancelPlaybackRangeUnderLock();
+        }
+        return ExecuteAsync(async (run, session, operationRevision) =>
+        {
+            Task pause;
+            lock (gate)
             {
-                await TryAudioAsync(run, audio.PauseAsync).ConfigureAwait(false);
+                ThrowIfCommandObsoleteUnderLock(run, operationRevision);
+                pause = Task.WhenAll(SubmitAudioCommandAsync(run, operationRevision, audio => audio.PauseAsync()), session.PauseAsync());
             }
-
-            await session.PauseAsync().ConfigureAwait(false);
+            await pause.ConfigureAwait(false);
         }, true);
     }
 
@@ -608,6 +619,7 @@ public sealed class VideoPreviewController : IAsyncDisposable
     {
         lock (gate)
         {
+            CancelPlaybackRangeUnderLock();
             if (!closed && pendingSeek is { IsCompleted: false } && pendingSeekTarget == target &&
                 pendingSeekEpoch == epoch && pendingSeekSequence == commandSequence)
             {
@@ -616,12 +628,15 @@ public sealed class VideoPreviewController : IAsyncDisposable
 
             pendingSeek = ExecuteAsync(async (run, session, operationRevision) =>
             {
-                if (run.AudioError is null && run.Audio is { Error: null } audio)
+                await ClearMediaRangeAsync(run, session, operationRevision).ConfigureAwait(false);
+                await SubmitAudioCommandAsync(run, operationRevision, audio => audio.PauseAsync()).ConfigureAwait(false);
+                Task seek;
+                lock (gate)
                 {
-                    await TryAudioAsync(run, audio.PauseAsync).ConfigureAwait(false);
+                    ThrowIfCommandObsoleteUnderLock(run, operationRevision);
+                    seek = session.SeekAsync(target);
                 }
-
-                await session.SeekAsync(target).ConfigureAwait(false);
+                await seek.ConfigureAwait(false);
                 Task audioSeek;
                 lock (gate)
                 {
@@ -678,8 +693,9 @@ public sealed class VideoPreviewController : IAsyncDisposable
             {
                 return closeTask;
             }
-
+            CancelPlaybackRangeUnderLock();
             closed = true;
+            mediaRangeInstalled = false;
             opening = false;
             epoch++;
             revision++;
@@ -762,10 +778,16 @@ public sealed class VideoPreviewController : IAsyncDisposable
                 using var presentation = await session.ReadPresentationAsync(run.Token).ConfigureAwait(false);
                 if (presentation is null)
                 {
-                    if (session.Snapshot.State == VideoPlaybackState.ENDED && run.AudioError is null && run.Audio is { Error: null } audio)
+                    var pause = Task.CompletedTask;
+                    lock (gate)
                     {
-                        await TryAudioAsync(run, audio.PauseAsync).ConfigureAwait(false);
+                        if (rangeCancellation is null && IsCurrentUnderLock(run) && session.Snapshot.State == VideoPlaybackState.ENDED &&
+                            run.AudioError is null && run.Audio is { Error: null } audio)
+                        {
+                            pause = TryAudioAsync(run, audio.PauseAsync);
+                        }
                     }
+                    await pause.ConfigureAwait(false);
                     await resume.WaitAsync(run.Token).ConfigureAwait(false);
                     continue;
                 }
@@ -1015,36 +1037,39 @@ public sealed class VideoPreviewController : IAsyncDisposable
             return;
         }
 
-        await run.Stop().ConfigureAwait(false);
         try
         {
+            await run.Stop().ConfigureAwait(false);
             await run.Pump.ConfigureAwait(false);
         }
         finally
         {
-            if (run.Session is { } session)
+            try
             {
-                await session.DisposeAsync().ConfigureAwait(false);
+                await Task.WhenAll(run.Session?.DisposeAsync().AsTask() ?? Task.CompletedTask,
+                    run.Audio?.DisposeAsync().AsTask() ?? Task.CompletedTask).ConfigureAwait(false);
             }
-
-            if (run.Audio is { } audio)
+            finally
             {
-                await audio.DisposeAsync().ConfigureAwait(false);
+                run.Dispose();
             }
-
-            run.Dispose();
         }
     }
 
     private async Task CloseCoreAsync(VideoPreviewRun? run)
     {
         Task pending;
+        Task playbackRange;
+        Task playbackStop;
         lock (gate)
         {
             pending = operationsDrained?.Task ?? Task.CompletedTask;
+            playbackRange = rangeWorker;
+            playbackStop = rangeStop;
         }
 
         await pending.ConfigureAwait(false);
+        await Task.WhenAll(playbackRange, playbackStop).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
         {

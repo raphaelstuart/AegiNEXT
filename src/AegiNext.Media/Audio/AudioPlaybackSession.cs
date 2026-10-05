@@ -1,4 +1,5 @@
 using AegiNext.Core.Timing;
+using System.Diagnostics;
 
 namespace AegiNext.Media.Audio;
 
@@ -29,6 +30,9 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
     private Task? closeTask;
     private Task commands = Task.CompletedTask;
     private long controlRevision;
+    private MediaTimeRange? playbackRange;
+    private bool reachedPlaybackRangeEnd;
+    private long? rangeDrainedAt;
 
     /// <summary>
     /// 接管已创建的源和输出；调用方在后台线程构造，初始设备暂停并定位到原始时间轴目标。
@@ -88,6 +92,46 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
             {
                 return closed ? 0 : output.QueuedFrames;
             }
+        }
+    }
+
+    public bool ReachedPlaybackRangeEnd
+    {
+        get
+        {
+            lock (stateGate)
+            {
+                return reachedPlaybackRangeEnd;
+            }
+        }
+    }
+
+    /// <summary>暂停并重新定位播放范围，清除旧缓冲；null 恢复无范围播放但保持暂停。</summary>
+    public Task SetPlaybackRangeAsync(MediaTimeRange? range)
+    {
+        lock (stateGate)
+        {
+            ThrowIfUnavailable();
+            controlRevision++;
+            output.SetPaused(true);
+            var target = ReadPositionUnderLock();
+            playing = false;
+            return EnqueueUnderLock(async () =>
+            {
+                await operationGate.WaitAsync(lifetime.Token).ConfigureAwait(false);
+                try
+                {
+                    lock (stateGate)
+                    {
+                        playbackRange = range;
+                    }
+                    ResetDecoder(range?.Start ?? target);
+                }
+                finally
+                {
+                    operationGate.Release();
+                }
+            });
         }
     }
 
@@ -165,6 +209,7 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
             output.SetPaused(true);
             _ = ReadPositionUnderLock();
             playing = false;
+            rangeDrainedAt = null;
         }
 
         return Task.CompletedTask;
@@ -190,23 +235,29 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
         try
         {
             ThrowIfUnavailable();
-            source.Seek(target, lifetime.Token);
-            lock (stateGate)
-            {
-                ThrowIfUnavailable();
-                output.Clear();
-                ResetPosition(target);
-            }
-
-            pending = null;
-            pendingOffset = 0;
-            eof = false;
-            Fill();
+            ResetDecoder(target);
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private void ResetDecoder(MediaTime target)
+    {
+        source.Seek(target, lifetime.Token);
+        lock (stateGate)
+        {
+            ThrowIfUnavailable();
+            output.Clear();
+            ResetPosition(target);
+            reachedPlaybackRangeEnd = false;
+            rangeDrainedAt = null;
+        }
+        pending = null;
+        pendingOffset = 0;
+        eof = false;
+        Fill();
     }
 
     /// <summary>设置音量；静音可通过零增益实现，不改变播放时钟。</summary>
@@ -279,6 +330,28 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
         while (!lifetime.IsCancellationRequested)
         {
             var capacity = Math.Min(4096, TARGET_FRAMES - output.QueuedFrames);
+            if (playbackRange is { } range)
+            {
+                var endSample = range.End.ToTimestamp(new(1, SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
+                capacity = (int)Math.Min(capacity, Math.Max(0, endSample - nextSample));
+                if (nextSample >= endSample && output.QueuedFrames == 0)
+                {
+                    lock (stateGate)
+                    {
+                        if (playing)
+                        {
+                            rangeDrainedAt ??= Stopwatch.GetTimestamp();
+                            if (Stopwatch.GetElapsedTime(rangeDrainedAt.Value).TotalSeconds >= (double)output.LatencyFrames / SAMPLE_RATE)
+                            {
+                                position = range.End;
+                                playing = false;
+                                reachedPlaybackRangeEnd = true;
+                                output.SetPaused(true);
+                            }
+                        }
+                    }
+                }
+            }
             if (capacity <= 0)
             {
                 return;
@@ -335,7 +408,7 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
             var estimated = new MediaTime(checked(originSample + consumed), SAMPLE_RATE);
             if (estimated > position)
             {
-                position = estimated;
+                position = playbackRange is { } range && estimated > range.End ? range.End : estimated;
             }
         }
 
@@ -347,7 +420,7 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
         originSample = target.ToTimestamp(new(1, SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
         nextSample = originSample;
         submitted = 0;
-        position = new(originSample, SAMPLE_RATE);
+        position = target;
     }
 
     private void ThrowIfUnavailable()

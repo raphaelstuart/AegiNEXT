@@ -51,7 +51,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
         this.registerWindow = registerWindow;
         panels = panelViews.ToDictionary(pair => pair.Key,
             pair => new WorkbenchDockPanel(pair.Key, pair.Value, Localization.Get("Layout." + (pair.Key))), StringComparer.Ordinal);
-        factory = new(CreateFloatingHost, cancelGestures, ScheduleCapture);
+        factory = new(CreateFloatingHost, cancelGestures, ScheduleCapture, commitDrafts);
         codec = new(factory, panels);
         store = new(personalDirectory);
         var file = store.Load();
@@ -127,6 +127,11 @@ internal sealed class WorkbenchLayoutController : IDisposable
     internal void Hide(string panelId)
     {
         EnsureUsable();
+        if (panelId == WorkbenchPanelIds.SUBTITLE_DETAILS && !commitDrafts())
+        {
+            SetError(Localization.Get("Layout.InvalidDraft"));
+            return;
+        }
         cancelGestures();
         var panel = GetPanel(panelId);
         if (IsVisible(panelId))
@@ -485,12 +490,18 @@ internal sealed class WorkbenchLayoutController : IDisposable
         window.Closed += (_, _) => auxiliaryWindows.Remove(window);
     }
 
-    private void OnFloatingClosing(WorkbenchFloatingHostWindow host)
+    private bool OnFloatingClosing(WorkbenchFloatingHostWindow host)
     {
         cancelGestures();
         if (applying || host.Window?.Layout is not { } floatingRoot)
         {
-            return;
+            return true;
+        }
+        if (WorkbenchDockSnapshotCodec.Enumerate(floatingRoot).OfType<WorkbenchDockPanel>()
+            .Any(panel => panel.Id == WorkbenchPanelIds.SUBTITLE_DETAILS) && !commitDrafts())
+        {
+            SetError(Localization.Get("Layout.InvalidDraft"));
+            return false;
         }
         var hidden = WorkbenchDockSnapshotCodec.Enumerate(floatingRoot).OfType<WorkbenchDockPanel>()
             .Concat((floatingRoot.HiddenDockables ?? []).OfType<WorkbenchDockPanel>()).Distinct().ToArray();
@@ -516,6 +527,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
         root.Windows?.Remove(host.Window);
         restoredWindowScales.Remove(host.Window);
         ScheduleCapture();
+        return true;
     }
 
     private void CloseFloatingHosts()

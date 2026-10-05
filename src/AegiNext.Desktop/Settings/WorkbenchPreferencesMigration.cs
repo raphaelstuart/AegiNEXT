@@ -17,12 +17,23 @@ internal static class WorkbenchPreferencesMigration
         var commands = Enum.GetValues<WorkbenchCommand>();
         var legacy = commands.Where(command => command <= WorkbenchCommand.VIEW_TIMELINE);
         var previous = commands.Where(command => command <= WorkbenchCommand.LAYOUT_RESTORE_DEFAULT);
-        if (!present.SetEquals(legacy) && !present.SetEquals(previous))
+        var current = commands.Where(command => command <= WorkbenchCommand.VIEW_LOG);
+        var subtitleDetails = commands.Where(command => command <= WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
+        if (!present.SetEquals(legacy) && !present.SetEquals(previous) && !present.SetEquals(current) && !present.SetEquals(subtitleDetails))
         {
             return value;
         }
 
-        var additions = ShortcutDefaults.CreateBindings().Where(binding => !present.Contains(binding.Command));
+        var occupied = value.ShortcutBindings.Select(binding => ShortcutConfiguration.Parse(binding.Gesture, OperatingSystem.IsMacOS()))
+            .Where(gesture => gesture is not null).Select(gesture => (gesture!.Key, gesture.KeyModifiers)).ToHashSet();
+        var additions = ShortcutDefaults.CreateBindings().Where(binding => !present.Contains(binding.Command))
+            .Select(binding =>
+            {
+                var gesture = ShortcutConfiguration.Parse(binding.Gesture, OperatingSystem.IsMacOS());
+                return gesture is not null && !occupied.Add((gesture.Key, gesture.KeyModifiers))
+                    ? binding with { Gesture = string.Empty }
+                    : binding;
+            });
         return value with { ShortcutBindings = value.ShortcutBindings.Concat(additions).ToImmutableArray() };
     }
 }

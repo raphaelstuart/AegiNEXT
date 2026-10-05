@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 using AegiNext.Core.Timing;
 
 namespace AegiNext.Core.Projects;
@@ -12,6 +13,12 @@ public sealed record SubtitleLine
     public MediaTime End { get; init; } = new(2);
     public string Text { get; init; } = string.Empty;
     public SubtitleStyle Style { get; init; } = new();
+    public ImmutableArray<SubtitleInlineSpan> InlineSpans { get; init; } = [];
     public ImmutableArray<KaraokeSegment> Karaoke { get; init; } = [];
     public KaraokeHighlightStyle? KaraokeStyle { get; init; }
+
+    [JsonIgnore]
+    public SubtitleContentKind ContentKind => !Karaoke.IsDefaultOrEmpty ? SubtitleContentKind.KARAOKE :
+        !InlineSpans.IsDefaultOrEmpty && InlineSpans.Any(span => span.Style.HasOverrides)
+            ? SubtitleContentKind.RICH_TEXT : SubtitleContentKind.PLAIN;
 }

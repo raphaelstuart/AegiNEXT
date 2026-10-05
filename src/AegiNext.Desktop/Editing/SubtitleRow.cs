@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using AegiNext.Core.Projects;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Editing;
 
@@ -28,6 +29,8 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
 
     public int Number { get; }
 
+    public string ContentType => Localization.Get("Workbench.SubtitleType." + original.ContentKind);
+
     public string Duration => ((double)(original.End - original.Start).Numerator / (original.End - original.Start).Denominator).ToString("0.000", CultureInfo.InvariantCulture);
 
     internal SubtitleLine Original => original;
@@ -42,6 +45,7 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
         EndText = TimelineTimeText.Format(line.End);
         Text = line.Text;
         PropertyChanged?.Invoke(this, new(nameof(Duration)));
+        PropertyChanged?.Invoke(this, new(nameof(ContentType)));
     }
 
     public string StartText
@@ -62,7 +66,7 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
         set => Set(ref text, value);
     }
 
-    internal SubtitleLine CreateEditedLine(SubtitleLine original)
+    internal SubtitleLine CreateEditedLine(SubtitleLine original, ProjectDocument? document = null)
     {
         ArgumentNullException.ThrowIfNull(original);
         if (original.Id != Id)
@@ -77,11 +81,20 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
             throw new InvalidDataException("结束时间必须晚于开始时间。");
         }
 
-        return start == original.Start && end == original.End && Text == original.Text ? original : original with
+        if (start == original.Start && end == original.End && Text == original.Text)
         {
-            Start = start, End = end, Text = Text, Karaoke = Text == original.Text ? original.Karaoke : []
+            return original;
+        }
+        var source = document ?? new ProjectDocument
+        {
+            Subtitles = [original], Layers = [new() { Kind = LayerKind.SUBTITLE, SubtitleId = original.Id,
+                Start = original.Start, End = original.End }]
         };
+        var edited = SubtitleTextDifference.Apply(source, original, Text);
+        return edited with { Start = start, End = end };
     }
+
+    internal void RefreshLanguage() => PropertyChanged?.Invoke(this, new(nameof(ContentType)));
 
     private void Set(ref string field, string value, [CallerMemberName] string? propertyName = null)
     {

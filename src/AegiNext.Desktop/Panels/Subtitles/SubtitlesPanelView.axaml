@@ -27,12 +27,15 @@
         <Button Name="SplitCueButton" Margin="0,0,8,4" Command="{Binding SplitCueCommand}">
           <controlsCommon:IconText IconKey="Split" Text="{Loc Key=Workbench.Split}" />
         </Button>
-        <Button Name="MergeCueButton" Margin="0,0,0,4" Command="{Binding MergeCueCommand}">
+        <Button Name="MergeCueButton" Margin="0,0,8,4" Command="{Binding MergeCueCommand}">
           <controlsCommon:IconText IconKey="Merge" Text="{Loc Key=Workbench.Merge}" />
         </Button>
+        <Button Name="SubtitleDetailsButton" Margin="0,0,0,4" Command="{Binding DetailsCommand}">
+          <controlsCommon:IconText IconKey="OPEN_SUBTITLE_DETAILS" Text="{Loc Key=Workbench.SubtitleDetails}" />
+        </Button>
       </WrapPanel>
-      <Grid Grid.Row="1" ColumnDefinitions="36,112,112,70,*" Margin="20,0,20,4" ColumnSpacing="8">
-        <TextBlock Text="#" Classes="field" HorizontalAlignment="Center" />
+      <Grid Grid.Row="1" ColumnDefinitions="76,112,112,70,*" Margin="20,0,20,4" ColumnSpacing="8">
+        <TextBlock Text="{Loc Key=Workbench.SubtitleType}" Classes="field" HorizontalAlignment="Center" />
         <TextBlock Grid.Column="1" Classes="field" HorizontalAlignment="Center" Text="{Loc Key=Workbench.Start}" />
         <TextBlock Grid.Column="2" Classes="field" HorizontalAlignment="Center" Text="{Loc Key=Workbench.End}" />
         <TextBlock Grid.Column="3" Classes="field" HorizontalAlignment="Center" Text="{Loc Key=Workbench.Duration}" />
@@ -42,8 +45,8 @@
                ItemsSource="{Binding VisibleRows, Mode=OneWay}">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="editing:SubtitleRow">
-            <Grid ColumnDefinitions="36,112,112,70,*" ColumnSpacing="8" Margin="4,0">
-              <TextBlock Text="{Binding Number}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="11" />
+            <Grid ColumnDefinitions="76,112,112,70,*" ColumnSpacing="8" Margin="4,0">
+              <TextBlock Text="{Binding ContentType}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="11" />
               <TextBox Grid.Column="1" Text="{Binding StartText,Mode=TwoWay}" TextAlignment="Center" />
               <TextBox Grid.Column="2" Text="{Binding EndText,Mode=TwoWay}" TextAlignment="Center" />
               <TextBlock Grid.Column="3" Text="{Binding Duration}" VerticalAlignment="Center"

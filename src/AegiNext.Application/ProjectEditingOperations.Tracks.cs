@@ -21,7 +21,7 @@ public static partial class ProjectEditingOperations
             StylePresetName = presetName
         };
         if (track == document.SubtitleTracks[index] &&
-            (!updateExisting || document.Subtitles.Where(line => line.TrackId == trackId).All(line => line.Style == style)))
+            (!updateExisting || document.Subtitles.Where(line => line.TrackId == trackId).All(line => line.Style == style && line.InlineSpans.IsEmpty)))
         {
             return document;
         }
@@ -30,7 +30,7 @@ public static partial class ProjectEditingOperations
         {
             SubtitleTracks = document.SubtitleTracks.SetItem(index, track),
             Subtitles = updateExisting ? document.Subtitles.Select(line => line.TrackId == trackId
-                ? line with { Style = style } : line).ToImmutableArray() : document.Subtitles
+                ? line with { Style = style, InlineSpans = [] } : line).ToImmutableArray() : document.Subtitles
         });
     }
 
@@ -55,7 +55,7 @@ public static partial class ProjectEditingOperations
         var track = document.SubtitleTracks[TrackIndex(document, trackId)];
         var style = track.AutoApplyStyle && track.DefaultStyle is { } defaultStyle
             ? defaultStyle : fallbackStyle ?? new SubtitleStyle();
-        var imported = lines.Select(line => line with { TrackId = trackId, Style = style }).ToImmutableArray();
+        var imported = lines.Select(line => SubtitleKaraokeNormalization.Normalize(line with { TrackId = trackId, Style = style })).ToImmutableArray();
         if (imported.IsEmpty)
         {
             return document;

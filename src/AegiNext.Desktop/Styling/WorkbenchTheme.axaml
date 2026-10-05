@@ -103,6 +103,16 @@
     <Setter Property="HorizontalContentAlignment" Value="Center"/>
     <Setter Property="VerticalContentAlignment" Value="Center"/>
   </Style>
+  <Style Selector="ToggleButton.details-toggle">
+    <Setter Property="CornerRadius" Value="6"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource PreviewBorder}"/>
+  </Style>
+  <Style Selector="ToggleButton.details-toggle:checked">
+    <Setter Property="Background" Value="{DynamicResource WorkbenchDockTabSelectedBackground}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource WorkbenchDockActiveForeground}"/>
+    <Setter Property="Foreground" Value="{DynamicResource WorkbenchDockActiveForeground}"/>
+  </Style>
   <Style Selector="dock|ToolChromeControl">
     <Setter Property="Background" Value="{DynamicResource PreviewSurface}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource PreviewBorder}"/>

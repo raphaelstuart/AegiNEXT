@@ -7,9 +7,9 @@ internal static class WorkspaceLayoutValidator
         Validate(layout, WorkspaceLayoutSnapshot.CURRENT_VERSION, WorkbenchPanelIds.All);
     }
 
-    internal static void ValidateLegacy(WorkspaceLayoutSnapshot layout, IReadOnlyList<string> panelIds)
+    internal static void ValidateLegacy(WorkspaceLayoutSnapshot layout, IReadOnlyList<string> panelIds, int version = 1)
     {
-        Validate(layout, 1, panelIds);
+        Validate(layout, version, panelIds);
     }
 
     private static void Validate(WorkspaceLayoutSnapshot layout, int version, IReadOnlyList<string> panelIds)

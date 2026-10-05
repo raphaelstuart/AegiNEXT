@@ -46,7 +46,7 @@ public sealed partial class ColorDraftInput : UserControl
         AddHandler(KeyDownEvent, InputKeyDown, RoutingStrategies.Tunnel);
         AddHandler(LostFocusEvent, (_, args) =>
         {
-            if (args.Source is TextBox { Name: "ColorInput" } && model is { IsDirty: true } current)
+            if (CommitOnLostFocus && args.Source is TextBox { Name: "ColorInput" } && model is { IsDirty: true } current)
             {
                 var revision = ++focusRevision;
                 Dispatcher.UIThread.Post(() =>
@@ -66,6 +66,12 @@ public sealed partial class ColorDraftInput : UserControl
         get => GetValue(DraftProperty);
         set => SetValue(DraftProperty, value);
     }
+
+    /// <summary>宿主接管输入完成命令时，可关闭本地 Esc 恢复。</summary>
+    public bool RestoreOnEscape { get; set; } = true;
+
+    /// <summary>由宿主统一管理事务时，可关闭颜色原始输入的自动失焦确认。</summary>
+    public bool CommitOnLostFocus { get; set; } = true;
 
     /// <summary>按页面报告的字段定位本地输入，不触发验证或焦点回环。</summary>
     public bool TryFocusInvalidField(string? field = null)
@@ -170,7 +176,7 @@ public sealed partial class ColorDraftInput : UserControl
         {
             return;
         }
-        if (args.Key == Key.Escape)
+        if (args.Key == Key.Escape && RestoreOnEscape)
         {
             focusRevision++;
             model.Restore(name);

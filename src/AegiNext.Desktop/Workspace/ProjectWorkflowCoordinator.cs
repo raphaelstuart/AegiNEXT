@@ -1,17 +1,17 @@
 using System.Collections.Immutable;
 using System.Text;
 using AegiNext.Application;
-using AegiNext.Core.Editing;
+using AegiNext.Application.SubtitleFormats;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
-using AegiNext.Desktop.Workspace.Diagnostics;
 
 namespace AegiNext.Desktop.Workspace;
 
 internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
 {
+    private const int MAX_SUBTITLE_FILE_BYTES = 16 * 1024 * 1024;
     internal async Task<bool> ConfirmDiscardOrSaveAsync()
     {
         if (!session.TryCommitDrafts())
@@ -260,36 +260,49 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         }
     }
 
-    internal async Task ImportSubtitlesAsync()
+    internal async Task ImportSubtitlesAsync(bool ass = false)
     {
-        if (session.IsProjectBusy)
+        if (session.IsProjectBusy || !session.TryCommitDrafts())
         {
             return;
         }
-
-        var path = await dialogs.OpenFileAsync("Import", "SubtitleFiles", ["*.srt", "*.txt"]);
-        if (path is null)
+        var path = await dialogs.OpenFileAsync("Import", "SubtitleFiles", ass ? ["*.ass"] : ["*.srt"]);
+        if (path is null || session.IsClosing)
         {
             return;
         }
-
+        var captured = session.Editor.Snapshot;
         var trackId = session.CurrentTrackId;
         var presetId = session.ViewModel.Styles.SelectedPreset?.Id;
-        var importStart = session.ProjectPosition;
-        Guid? firstCueId = null;
+        Guid? firstCueId;
         session.SetProjectBusy(true);
         try
         {
-            if (new FileInfo(path).Length > 16 * 1024 * 1024)
+            var text = await ReadSubtitleFileAsync(path);
+            var prepared = captured;
+            ImmutableArray<SubtitleLine> lines;
+            if (ass)
             {
-                throw new InvalidDataException("字幕文件超过 16 MiB。");
+                var result = AssSubtitleFormat.Parse(text, captured.Width, captured.Height);
+                if (!await ConfirmConversionAsync(result.Diagnostics))
+                {
+                    return;
+                }
+                lines = result.Lines;
             }
-
-            var text = await File.ReadAllTextAsync(path, new UTF8Encoding(false, true));
-            var lines = Path.GetExtension(path).Equals(".srt", StringComparison.OrdinalIgnoreCase)
-                ? SubtitleTextFormat.ParseSrt(text)
-                : SubtitleTextFormat.ImportText(text, start: importStart);
-            await session.CreateSubtitleClipsAsync(lines, trackId, presetId);
+            else
+            {
+                lines = SubtitleTextFormat.ParseSrt(text);
+                var creation = await session.Styles.PrepareCreationAsync(trackId, presetId);
+                prepared = creation.Project;
+                lines = lines.Select(line => line with { Style = creation.Style }).ToImmutableArray();
+            }
+            if (session.IsClosing || !ReferenceEquals(captured, session.Editor.Snapshot))
+            {
+                return;
+            }
+            var imported = ProjectEditingOperations.ImportSubtitleLines(prepared, lines, Path.GetFileNameWithoutExtension(path));
+            session.Editor.Apply("Import subtitles", _ => imported);
             firstCueId = lines.IsEmpty ? null : lines[0].Id;
             session.LogInfo("Subtitles", $"{Localization.Get("WorkflowLog.SubtitlesImported")} ({lines.Length})", path);
         }
@@ -297,38 +310,82 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         {
             session.SetProjectBusy(false);
         }
-
         if (firstCueId is { } id)
         {
+            var line = session.Editor.Snapshot.Subtitles.First(value => value.Id == id);
+            session.SelectTrack(line.TrackId);
             session.SelectCue(id);
         }
     }
 
-    internal async Task ExportSubtitlesAsync()
+    internal async Task ExportSubtitlesAsync(bool ass = false)
     {
-        if (!session.TryCommitDrafts())
+        if (session.IsProjectBusy || !session.TryCommitDrafts())
         {
             return;
         }
-
-        var text = SubtitleTextFormat.WriteSrt(session.Editor.Snapshot.Subtitles);
-        var path = await dialogs.SaveFileAsync("ExportText", "SubtitleFiles", ["*.srt"], ".srt", "subtitles.srt");
-        if (path is null)
-        {
-            return;
-        }
-
-        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        session.SetProjectBusy(true);
         try
         {
-            await File.WriteAllTextAsync(temporary, text, new UTF8Encoding(false));
-            File.Move(temporary, path, true);
-            session.LogInfo("Subtitles", Localization.Get("WorkflowLog.SubtitlesExported"), path);
+            var document = session.Editor.Snapshot;
+            var result = ass ? AssSubtitleFormat.Write(document) : new SubtitleFormatWriteResult(
+                SubtitleTextFormat.WriteSrt(document.Subtitles.OrderBy(line => line.Start)),
+                SubtitleFormatLossAnalysis.ForSrt(document));
+            if (!await ConfirmConversionAsync(result.Diagnostics) || session.IsClosing)
+            {
+                return;
+            }
+            var extension = ass ? ".ass" : ".srt";
+            var path = await dialogs.SaveFileAsync("ExportText", "SubtitleFiles", ["*" + extension], extension, "subtitles" + extension);
+            if (path is null || session.IsClosing)
+            {
+                return;
+            }
+            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                await File.WriteAllTextAsync(temporary, result.Text, new UTF8Encoding(false, true));
+                File.Move(temporary, path, true);
+                session.LogInfo("Subtitles", Localization.Get("WorkflowLog.SubtitlesExported"), path);
+            }
+            finally
+            {
+                File.Delete(temporary);
+            }
         }
         finally
         {
-            File.Delete(temporary);
+            session.SetProjectBusy(false);
         }
+    }
+
+    private Task<bool> ConfirmConversionAsync(ImmutableArray<SubtitleFormatDiagnostic> diagnostics)
+    {
+        if (diagnostics.IsEmpty)
+        {
+            return Task.FromResult(true);
+        }
+        var messages = diagnostics.Select(item => item.SubtitleId is { } id
+            ? $"[{id}] {item.Code}: {item.Message}" : $"{item.Code}: {item.Message}").ToArray();
+        return dialogs.ConfirmSubtitleConversionAsync(messages);
+    }
+
+    private static async Task<string> ReadSubtitleFileAsync(string path)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (stream.Length > MAX_SUBTITLE_FILE_BYTES)
+        {
+            throw new InvalidDataException(Localization.Get("Workbench.SubtitleFileTooLarge"));
+        }
+        var bytes = new byte[(int)stream.Length];
+        await stream.ReadExactlyAsync(bytes);
+        if (await stream.ReadAsync(new byte[1]) > 0)
+        {
+            throw new InvalidDataException(Localization.Get("Workbench.SubtitleFileTooLarge"));
+        }
+        var offset = bytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF }) ? 3 : 0;
+        return new UTF8Encoding(false, true).GetString(bytes.AsSpan(offset));
     }
 
     internal async Task SynchronizePreviewBindingAsync()

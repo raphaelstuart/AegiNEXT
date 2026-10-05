@@ -11,6 +11,8 @@ public sealed record SubtitleStyle
     public double StrokeWidth { get; init; } = 2;
     public bool Bold { get; init; }
     public bool Italic { get; init; }
+    public bool Underline { get; init; }
+    public bool Strikethrough { get; init; }
     public TextAlignment Alignment { get; init; } = TextAlignment.BOTTOM_CENTER;
     public double Margin { get; init; } = 40;
     public SubtitlePosition? Position { get; init; }

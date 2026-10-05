@@ -1,6 +1,7 @@
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Styling;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Selection;
 using Avalonia.Input;
@@ -17,6 +18,7 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     private readonly ListBox list;
     private readonly SubtitlesPanelViewModel viewModel;
     private readonly HashSet<TextBox> caretInputs = [];
+    private readonly Avalonia.Data.BindingExpressionBase detailMenuBinding;
     private bool suppressFocusCommit;
     private bool synchronizingSelection;
     private bool disposed;
@@ -38,6 +40,22 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         };
         list = this.FindControl<ListBox>("SubtitleList")!;
         list.SelectionChanged += OnSelectionChanged;
+        var detailItem = new MenuItem { Command = viewModel.DetailsCommand };
+        detailMenuBinding = detailItem.Bind(MenuItem.HeaderProperty,
+            AegiNext.Desktop.I18n.Localization.Observe("Workbench.SubtitleDetails").ToBinding());
+        list.ContextMenu = new() { Items = { detailItem } };
+        list.AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (e.GetCurrentPoint(list).Properties.IsRightButtonPressed && e.Source is Visual source)
+            {
+                var row = (source as Control)?.DataContext as SubtitleRow ?? source.GetVisualAncestors()
+                    .OfType<Control>().Select(control => control.DataContext).OfType<SubtitleRow>().FirstOrDefault();
+                if (row is not null)
+                {
+                    viewModel.FocusRow(row.Id);
+                }
+            }
+        }, RoutingStrategies.Tunnel);
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         list.AddHandler(GotFocusEvent, (_, e) =>
@@ -221,6 +239,7 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     public void Dispose()
     {
         disposed = true;
+        detailMenuBinding.Dispose();
         list.SelectionChanged -= OnSelectionChanged;
         session.SubtitleScrollRequested -= OnScrollRequested;
         session.SelectionChanged -= OnSessionSelectionChanged;

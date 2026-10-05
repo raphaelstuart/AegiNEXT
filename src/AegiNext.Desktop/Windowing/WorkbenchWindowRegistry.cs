@@ -7,6 +7,7 @@ using AegiNext.Desktop.Styling;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
@@ -204,7 +205,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             return;
         }
 
-        var textInput = visual is TextBox || visual?.GetVisualAncestors().Any(value => value is TextBox) == true;
+        var textInput = visual is TextBox or AegiNext.Desktop.Controls.RichSubtitleEditor || visual?.GetVisualAncestors().Any(value => value is TextBox or AegiNext.Desktop.Controls.RichSubtitleEditor) == true;
         if (!router.TryResolve(e.Key, e.KeyModifiers, textInput, out var id))
         {
             if (e.Key is not (Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift or
@@ -213,6 +214,17 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
                 invalidateTiming();
             }
 
+            return;
+        }
+
+        if (id == WorkbenchCommand.END_TEXT_INPUT)
+        {
+            if (TryExecuteFocusCommand(id, window))
+            {
+                invalidateTiming();
+                e.Handled = true;
+                entry.PressedKeys.Add(e.Key);
+            }
             return;
         }
 
@@ -244,6 +256,31 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
                 e.Handled = true;
             }
         }
+    }
+
+    internal bool TryExecuteFocusCommand(WorkbenchCommand command, Window? window = null)
+    {
+        window ??= windows.Keys.FirstOrDefault(candidate => candidate.IsActive);
+        if (window is null || !windows.ContainsKey(window) || window.IsDialog ||
+            window is SettingsWindow { IsShortcutCaptureActive: true } ||
+            window.FocusManager.GetFocusedElement() is not Visual focused || HasOpenKeyboardSurface(window, focused) ||
+            HasActiveComposition(focused))
+        {
+            return false;
+        }
+        var target = focused.GetSelfAndVisualAncestors().OfType<IWorkbenchFocusCommandTarget>().FirstOrDefault();
+        return target is not null && target.CanExecuteFocusCommand(command, (IInputElement)focused) &&
+            target.TryExecuteFocusCommand(command, (IInputElement)focused);
+    }
+
+    private static bool HasActiveComposition(Visual focused)
+    {
+        if (focused is AegiNext.Desktop.Controls.RichSubtitleEditor rich)
+        {
+            return rich.Preedit.Length > 0;
+        }
+        return focused is TextBox text && text.GetVisualDescendants().OfType<TextPresenter>()
+            .Any(presenter => !string.IsNullOrEmpty(presenter.PreeditText));
     }
 
     private static bool HasOpenKeyboardSurface(Window window, Visual? source)

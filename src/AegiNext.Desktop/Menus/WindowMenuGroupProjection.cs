@@ -13,6 +13,7 @@ internal sealed class WindowMenuGroupProjection
     private readonly Dictionary<string, MenuItem> layouts = new(StringComparer.Ordinal);
     private readonly List<Control> commandControls = [];
     private string[]? layoutOrder;
+    private readonly List<WindowMenuGroupProjection> children = [];
 
     internal WindowMenuGroupProjection(WorkbenchMenuGroup definition, WorkbenchMenuCatalog catalog)
     {
@@ -31,6 +32,15 @@ internal sealed class WindowMenuGroupProjection
                 commandControls.Add(new Separator());
             }
         }
+        if (!definition.Children.IsDefaultOrEmpty)
+        {
+            foreach (var child in definition.Children)
+            {
+                var projection = new WindowMenuGroupProjection(child, catalog);
+                children.Add(projection);
+                commandControls.Add(projection.Item);
+            }
+        }
         if (definition.Key != "Layouts")
         {
             foreach (var control in commandControls)
@@ -45,7 +55,11 @@ internal sealed class WindowMenuGroupProjection
 
     internal void Refresh()
     {
-        Item.Header = Localization.Get("Workbench." + (definition.Key));
+        Item.Header = Localization.Get("Workbench." + definition.Key);
+        foreach (var child in children)
+        {
+            child.Refresh();
+        }
         foreach (var pair in commands)
         {
             pair.Value.Header = catalog.GetDisplayLabel(pair.Key);

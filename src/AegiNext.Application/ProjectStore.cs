@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using AegiNext.Core.Projects;
@@ -95,15 +96,17 @@ public static class ProjectStore
             if (parsed.RootElement.ValueKind != JsonValueKind.Object ||
                 !parsed.RootElement.TryGetProperty("version", out var version) ||
                 version.ValueKind != JsonValueKind.Number ||
-                !version.TryGetInt32(out var number) || number != ProjectDocument.CURRENT_VERSION)
+                !version.TryGetInt32(out var number) || number is not (3 or ProjectDocument.CURRENT_VERSION))
             {
-                throw new InvalidDataException($"只支持工程版本 {ProjectDocument.CURRENT_VERSION}，旧工程需要使用对应版本打开。");
+                throw new InvalidDataException($"只支持工程版本 3 和 {ProjectDocument.CURRENT_VERSION}，更旧工程需要使用对应版本打开。");
             }
 
-            var upgraded = VectorAnimationJsonMigration.Upgrade(parsed.RootElement, options);
+            var content = JsonNode.Parse(parsed.RootElement.GetRawText(), documentOptions: new() { MaxDepth = 128 })!.AsObject();
+            SubtitleContentJsonMigration.UpgradeProject(content, number);
+            using var normalized = JsonDocument.Parse(content.ToJsonString(new() { MaxDepth = 128 }), new() { MaxDepth = 128 });
+            var upgraded = VectorAnimationJsonMigration.Upgrade(normalized.RootElement, options);
             var document = upgraded.Deserialize<ProjectDocument>(options) ?? throw new JsonException("工程不能为空。");
-            ProjectValidator.Validate(document);
-            return document;
+            return SubtitleKaraokeNormalization.Normalize(document);
         }
         catch (Exception error) when (error is JsonException or ArgumentException or OverflowException)
         {

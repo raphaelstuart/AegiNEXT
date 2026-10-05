@@ -92,6 +92,8 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
         set => SetProperty(ref invalidRowId, value);
     }
 
+    public ICommand DetailsCommand => session.ViewModel.GetCommand(AegiNext.Desktop.Shortcuts.WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
+
     public ICommand AddCueCommand => session.ViewModel.GetCommand(AegiNext.Desktop.Shortcuts.WorkbenchCommand.ADD_SUBTITLE);
 
     public ICommand DeleteCueCommand => session.ViewModel.GetCommand(AegiNext.Desktop.Shortcuts.WorkbenchCommand.DELETE_SUBTITLE);

@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using AegiNext.Core.Presets;
@@ -80,9 +81,13 @@ public static class SubtitleStylePresetStore
             using var parsed = JsonDocument.Parse(json.ToArray(), new() { MaxDepth = 16 });
             RejectDuplicateKeys(parsed.RootElement);
             var upgraded = SubtitlePositionJsonMigration.UpgradeVersionOne(parsed.RootElement, "presets");
-            var collection = (upgraded is null
-                ? parsed.RootElement.Deserialize<SubtitleStylePresetCollection>(options)
-                : upgraded.Deserialize<SubtitleStylePresetCollection>(options)) ??
+            var content = upgraded ?? JsonNode.Parse(parsed.RootElement.GetRawText())!.AsObject();
+            if (!parsed.RootElement.TryGetProperty("version", out var version) || !version.TryGetInt32(out var number))
+            {
+                throw new JsonException("样式库版本无效。");
+            }
+            SubtitleContentJsonMigration.UpgradeStyleLibrary(content, number);
+            var collection = content.Deserialize<SubtitleStylePresetCollection>(options) ??
                 throw new JsonException("样式库不能为 null。");
             SubtitleStylePresetValidator.Validate(collection);
             return collection;

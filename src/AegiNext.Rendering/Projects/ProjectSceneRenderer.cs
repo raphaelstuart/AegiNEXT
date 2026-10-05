@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Collections.Immutable;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
@@ -8,12 +7,15 @@ using SkiaSharp;
 namespace AegiNext.Rendering.Projects;
 
 /// <summary>预览与压制共用的 CPU F16 工程渲染器；实例及缓存限同一线程使用。</summary>
-public sealed class ProjectSceneRenderer : IDisposable
+public sealed partial class ProjectSceneRenderer : IDisposable
 {
     private const float PREVIEW_REFERENCE_WHITE_NITS = 203;
     private readonly IProjectAssetResolver assets;
     private readonly Dictionary<ProjectAsset, SKImage> images = [];
-    private readonly Dictionary<(string Text, SubtitleStyle Style, int Width, int Height), SubtitleLayout> layouts = [];
+    private readonly Dictionary<(SubtitleLine Subtitle, int Width, int Height), SubtitleLayout> layouts = [];
+    private readonly Dictionary<(Guid? Asset, string Family, bool Bold, bool Italic), TextShaper> textShapers = [];
+    private readonly Dictionary<(nint Handle, bool Bold, bool Italic), TextShaper> actualTextShapers = [];
+    private readonly Dictionary<(string Family, bool Bold, bool Italic, string Grapheme), TextShaper> resolvedTextShapers = [];
     private readonly SKColorSpace linear = SKColorSpace.CreateSrgbLinear();
     private PreparedProjectScene? prepared;
     private bool isDisposed;
@@ -178,7 +180,7 @@ public sealed class ProjectSceneRenderer : IDisposable
         var videoBounds = projectViewport ? FitPreview(width, height, outputWidth, outputHeight) : output;
         result.Canvas.DrawImage(background, videoBounds, new SKSamplingOptions(SKFilterMode.Linear));
         using var layer = scene.Snapshot();
-        if (document.ReferenceWhiteNits != PREVIEW_REFERENCE_WHITE_NITS)
+        if (!document.ReferenceWhiteNits.Equals(PREVIEW_REFERENCE_WHITE_NITS))
         {
             previewWhiteFilter ??= CreatePreviewWhiteFilter((float)(document.ReferenceWhiteNits / PREVIEW_REFERENCE_WHITE_NITS));
         }
@@ -261,8 +263,8 @@ public sealed class ProjectSceneRenderer : IDisposable
         {
             var a = previous[i];
             var b = current[i];
-            if (!ReferenceEquals(a.Source, b.Source) || a.Transform != b.Transform || a.Opacity != b.Opacity ||
-                a.Fill != b.Fill || a.Stroke != b.Stroke || a.StrokeWidth != b.StrokeWidth || a.Blur != b.Blur ||
+            if (!ReferenceEquals(a.Source, b.Source) || a.Transform != b.Transform || !a.Opacity.Equals(b.Opacity) ||
+                a.Fill != b.Fill || a.Stroke != b.Stroke || !a.StrokeWidth.Equals(b.StrokeWidth) || !a.Blur.Equals(b.Blur) ||
                 (a.Subtitle is { Karaoke.IsEmpty: false } && a.LocalTime != b.LocalTime) || !Equivalent(a.Children, b.Children))
             {
                 return false;
@@ -407,295 +409,6 @@ public sealed class ProjectSceneRenderer : IDisposable
         canvas.DrawImage(image, bounds, new SKSamplingOptions(SKFilterMode.Linear));
     }
 
-    private void DrawSubtitle(ProjectDocument document, SKCanvas canvas, EvaluatedLayer layer)
-    {
-        var subtitle = layer.Subtitle!;
-        var style = subtitle.Style;
-        var layout = Layout(document, subtitle);
-        for (var index = 0; index < layout.Lines.Count; index++)
-        {
-            var line = layout.Lines[index];
-            if (line.Run is not { } run)
-            {
-                continue;
-            }
-
-            var x = line.Position.X;
-            var y = line.Position.Y;
-            if (subtitle.KaraokeStyle is { } highlightStyle)
-            {
-                using var highlightPath = new SKPath();
-                var padding = Math.Max(layer.StrokeWidth, highlightStyle.StrokeWidth) +
-                    Math.Max(Math.Max(Math.Abs(style.ShadowOffset.X), Math.Abs(style.ShadowOffset.Y)),
-                        Math.Max(Math.Abs(highlightStyle.ShadowOffset.X), Math.Abs(highlightStyle.ShadowOffset.Y))) +
-                    Math.Max(style.ShadowBlur, highlightStyle.ShadowBlur) * 4 + 1;
-                foreach (var karaoke in subtitle.Karaoke)
-                {
-                    if (KaraokeClipBounds(line, run, karaoke, layer.LocalTime, style.FontSize, (float)padding) is { } bounds)
-                    {
-                        highlightPath.AddRect(bounds);
-                    }
-                }
-
-                var save = canvas.Save();
-                canvas.ClipPath(highlightPath, SKClipOperation.Difference, true);
-                DrawSubtitleRun(canvas, run, x, y, layer.Fill, layer.Stroke, layer.StrokeWidth,
-                    style.ShadowColor, style.ShadowOffset, style.ShadowBlur);
-                canvas.RestoreToCount(save);
-                save = canvas.Save();
-                canvas.ClipPath(highlightPath, SKClipOperation.Intersect, true);
-                DrawSubtitleRun(canvas, run, x, y, highlightStyle.Fill, highlightStyle.Stroke, highlightStyle.StrokeWidth,
-                    highlightStyle.ShadowColor, highlightStyle.ShadowOffset, highlightStyle.ShadowBlur);
-                canvas.RestoreToCount(save);
-                continue;
-            }
-
-            DrawSubtitleRun(canvas, run, x, y, layer.Fill, layer.Stroke, layer.StrokeWidth,
-                style.ShadowColor, style.ShadowOffset, style.ShadowBlur);
-            foreach (var karaoke in subtitle.Karaoke)
-            {
-                if (KaraokeClipBounds(line, run, karaoke, layer.LocalTime, style.FontSize) is not { } bounds)
-                {
-                    continue;
-                }
-                var save = canvas.Save();
-                canvas.ClipRect(bounds, SKClipOperation.Intersect, true);
-                using var highlight = Paint(karaoke.HighlightColor);
-                canvas.DrawText(run.GetBlob(), x, y, highlight);
-                canvas.RestoreToCount(save);
-            }
-        }
-    }
-
-    private static SKRect? KaraokeClipBounds(SubtitleLayoutLine line, ShapedTextRun run, KaraokeSegment karaoke,
-        MediaTime localTime, double fontSize, float padding = 0)
-    {
-        if (localTime <= karaoke.Start)
-        {
-            return null;
-        }
-
-        var start = Math.Max(0, karaoke.Utf16Start - line.Utf16Offset);
-        var end = Math.Min(line.Text.Length, karaoke.Utf16Start + karaoke.Utf16Length - line.Utf16Offset);
-        if (end <= start)
-        {
-            return null;
-        }
-
-        var min = float.MaxValue;
-        var max = float.MinValue;
-        foreach (var glyph in run.Glyphs)
-        {
-            if (glyph.Utf16Cluster >= start && glyph.Utf16Cluster < end)
-            {
-                min = Math.Min(min, glyph.Position.X);
-                max = Math.Max(max, glyph.Position.X);
-            }
-        }
-
-        if (min == float.MaxValue)
-        {
-            return null;
-        }
-
-        var right = run.AdvanceWidth;
-        foreach (var glyph in run.Glyphs)
-        {
-            if (glyph.Position.X > max)
-            {
-                right = Math.Min(right, glyph.Position.X);
-            }
-        }
-
-        var elapsed = localTime - karaoke.Start;
-        var duration = karaoke.End - karaoke.Start;
-        var progress = Math.Clamp(((double)elapsed.Numerator / elapsed.Denominator) / ((double)duration.Numerator / duration.Denominator), 0, 1);
-        var left = line.Position.X + min;
-        right = line.Position.X + min + (right - min) * (float)progress;
-        if (padding > 0 && start == 0)
-        {
-            left = Math.Min(left, line.Position.X + run.InkBounds.Left) - padding;
-        }
-        if (padding > 0 && progress >= 1 && end == line.Text.Length)
-        {
-            right = Math.Max(right, line.Position.X + run.InkBounds.Right) + padding;
-        }
-
-        return new(left, line.Position.Y - (float)fontSize * 1.5f - padding,
-            right, line.Position.Y + (float)fontSize + padding);
-    }
-
-    private void DrawSubtitleRun(SKCanvas canvas, ShapedTextRun run, float x, float y, SceneColor fillColor,
-        SceneColor strokeColor, double strokeWidth, SceneColor shadowColor, ScenePoint shadowOffset, double shadowBlur)
-    {
-        if (shadowColor.Alpha > 0)
-        {
-            using var shadow = Paint(shadowColor);
-            using var filter = shadowBlur > 0 ? SKMaskFilter.CreateBlur(SKBlurStyle.Normal, (float)shadowBlur) : null;
-            shadow.MaskFilter = filter;
-            canvas.DrawText(run.GetBlob(), x + (float)shadowOffset.X, y + (float)shadowOffset.Y, shadow);
-        }
-
-        if (strokeWidth > 0)
-        {
-            using var stroke = Paint(strokeColor);
-            stroke.Style = SKPaintStyle.Stroke;
-            stroke.StrokeWidth = (float)strokeWidth * 2;
-            stroke.StrokeJoin = SKStrokeJoin.Round;
-            canvas.DrawText(run.GetBlob(), x, y, stroke);
-        }
-
-        using var fill = Paint(fillColor);
-        canvas.DrawText(run.GetBlob(), x, y, fill);
-    }
-
-    private SubtitleLayout Layout(ProjectDocument document, SubtitleLine subtitle)
-    {
-        var key = (subtitle.Text, subtitle.Style, document.Width, document.Height);
-        if (layouts.TryGetValue(key, out var existing))
-        {
-            return existing;
-        }
-
-        if (layouts.Count >= 256)
-        {
-            ClearLayouts();
-        }
-
-        var lines = new List<SubtitleLayoutLine>();
-        var offset = 0;
-        try
-        {
-            foreach (var paragraph in subtitle.Text.Split('\n'))
-            {
-                var text = paragraph.TrimEnd('\r');
-                if (text.Length == 0)
-                {
-                    lines.Add(new(string.Empty, offset, null));
-                    offset += paragraph.Length + 1;
-                    continue;
-                }
-
-                using var shaper = new TextShaper(Typeface(document, subtitle.Style, text));
-                var direction = text.EnumerateRunes().Any(value => value.Value is >= 0x0590 and <= 0x08ff) ? TextDirection.RIGHT_TO_LEFT : TextDirection.LEFT_TO_RIGHT;
-                var boundaries = StringInfo.ParseCombiningCharacters(text);
-                var begin = 0;
-                while (begin < text.Length)
-                {
-                    var end = text.Length;
-                    var run = shaper.Shape(text[begin..end], (float)subtitle.Style.FontSize, direction, "und");
-                    var available = Math.Max(1, document.Width - subtitle.Style.Margin * 2);
-                    if (run.AdvanceWidth > available)
-                    {
-                        run.Dispose();
-                        var startBoundary = Array.BinarySearch(boundaries, begin);
-                        var low = startBoundary + 1;
-                        var high = boundaries.Length;
-                        while (low < high)
-                        {
-                            var middle = (low + high + 1) / 2;
-                            var candidateEnd = middle == boundaries.Length ? text.Length : boundaries[middle];
-                            using var candidate = shaper.Shape(text[begin..candidateEnd], (float)subtitle.Style.FontSize, direction, "und");
-                            if (candidate.AdvanceWidth <= available)
-                            {
-                                low = middle;
-                            }
-                            else
-                            {
-                                high = middle - 1;
-                            }
-                        }
-
-                        end = low == boundaries.Length ? text.Length : boundaries[low];
-                        run = shaper.Shape(text[begin..end], (float)subtitle.Style.FontSize, direction, "und");
-                    }
-
-                    lines.Add(new(text[begin..end], offset + begin, run));
-                    begin = end;
-                }
-
-                offset += paragraph.Length + 1;
-            }
-
-            var result = PositionLayout(document, subtitle.Style, lines);
-            layouts.Add(key, result);
-            return result;
-        }
-        catch
-        {
-            foreach (var line in lines)
-            {
-                line.Run?.Dispose();
-            }
-
-            throw;
-        }
-    }
-
-    private static SubtitleLayout PositionLayout(ProjectDocument document, SubtitleStyle style,
-        List<SubtitleLayoutLine> lines)
-    {
-        var horizontal = (int)style.Alignment % 3;
-        var vertical = (int)style.Alignment / 3;
-        var lineHeight = (float)(style.FontSize * style.LineHeight);
-        var blockHeight = (float)style.FontSize + Math.Max(0, lines.Count - 1) * lineHeight;
-        var advance = lines.Max(line => line.Run?.AdvanceWidth ?? 0);
-        var top = vertical switch
-        {
-            0 => (float)style.Margin,
-            1 => (document.Height - blockHeight) / 2,
-            _ => document.Height - (float)style.Margin - blockHeight
-        };
-        var ink = SKRect.Empty;
-        for (var index = 0; index < lines.Count; index++)
-        {
-            var line = lines[index];
-            var width = line.Run?.AdvanceWidth ?? 0;
-            var left = 0f;
-            if (line.Run is { InkBounds.IsEmpty: false } measuredRun)
-            {
-                left = measuredRun.InkBounds.Left;
-                width = measuredRun.InkBounds.Width;
-            }
-            var x = horizontal switch
-            {
-                0 => (float)style.Margin - left,
-                1 => (document.Width - width) / 2 - left,
-                _ => document.Width - (float)style.Margin - width - left
-            };
-            var position = new SKPoint(x, top + (float)style.FontSize + index * lineHeight);
-            lines[index] = line with { Position = position };
-            if (line.Run is { InkBounds.IsEmpty: false } run)
-            {
-                var bound = run.InkBounds;
-                bound.Offset(position);
-                ink = ink.IsEmpty ? bound : SKRect.Union(ink, bound);
-            }
-        }
-
-        var hasInk = !ink.IsEmpty;
-        if (!hasInk)
-        {
-            var width = Math.Max(1, advance);
-            var x = horizontal switch
-            {
-                0 => (float)style.Margin,
-                1 => (document.Width - width) / 2,
-                _ => document.Width - (float)style.Margin - width
-            };
-            ink = new(x, top, x + width, top + blockHeight);
-        }
-
-        var normalized = style.Position ?? SubtitlePosition.FromAlignment(style.Alignment, style.Margin);
-        var pivot = new SKPoint(ink.Left + (float)normalized.Pivot.X * ink.Width,
-            ink.Top + (float)normalized.Pivot.Y * ink.Height);
-        var basePosition = style.Position is not null
-            ? new SKPoint((float)(normalized.Anchor.X * document.Width + normalized.Offset.X),
-                (float)(normalized.Anchor.Y * document.Height + normalized.Offset.Y))
-            : new SKPoint((float)(normalized.Anchor.X * document.Width + normalized.Offset.X), pivot.Y);
-        return new(lines, ink, basePosition, pivot, hasInk);
-    }
-
     private ProjectLayerGeometry? FindGeometry(ProjectDocument document, ImmutableArray<EvaluatedLayer> layers,
         Guid id, SKMatrix parentToWorld)
     {
@@ -770,7 +483,7 @@ public sealed class ProjectSceneRenderer : IDisposable
         return new(bounds, effectivePivot, basePosition, SKMatrix.Concat(parentToWorld, local), parentToWorld, hasInk);
     }
 
-    private SKTypeface Typeface(ProjectDocument document, SubtitleStyle style, string text)
+    private SKTypeface Typeface(ProjectDocument document, SubtitleStyle style)
     {
         if (style.FontAssetId is { } id)
         {
@@ -778,37 +491,7 @@ public sealed class ProjectSceneRenderer : IDisposable
             using var data = SKData.Create(stream);
             return SKTypeface.FromData(data) ?? throw new InvalidDataException("无法打开工程字体。");
         }
-
-        var fontStyle = new SKFontStyle(style.Bold ? SKFontStyleWeight.Bold : SKFontStyleWeight.Normal,
-            SKFontStyleWidth.Normal, style.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright);
-        var requested = SKTypeface.FromFamilyName(style.FontFamily, fontStyle);
-        using (var font = new SKFont(requested))
-        {
-            if (font.ContainsGlyphs(text))
-            {
-                return requested;
-            }
-        }
-
-        requested.Dispose();
-        foreach (var rune in text.EnumerateRunes())
-        {
-            var fallback = SKFontManager.Default.MatchCharacter(style.FontFamily, fontStyle, ["und"], rune.Value);
-            if (fallback is null)
-            {
-                continue;
-            }
-
-            using var font = new SKFont(fallback);
-            if (font.ContainsGlyphs(text))
-            {
-                return fallback;
-            }
-
-            fallback.Dispose();
-        }
-
-        throw new InvalidDataException("没有覆盖该段文字的字体，请导入工程字体资源。");
+        return SKTypeface.FromFamilyName(style.FontFamily, FontStyle(style));
     }
 
     private static SKColorFilter CreatePreviewWhiteFilter(float scale)
@@ -860,5 +543,12 @@ public sealed class ProjectSceneRenderer : IDisposable
         }
 
         layouts.Clear();
+        foreach (var shaper in actualTextShapers.Values)
+        {
+            shaper.Dispose();
+        }
+        textShapers.Clear();
+        actualTextShapers.Clear();
+        resolvedTextShapers.Clear();
     }
 }

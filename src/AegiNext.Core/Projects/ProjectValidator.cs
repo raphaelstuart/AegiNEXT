@@ -73,7 +73,8 @@ public static class ProjectValidator
             NotNull(line, "数据项不能为 null。");
             Require(line.Id != Guid.Empty && subtitles.TryAdd(line.Id, line), "字幕标识为空或重复。");
             Require(trackIds.Contains(line.TrackId), "字幕引用不存在的轨道。");
-            Require(line.Start < line.End && line.Text is { Length: <= 1000000 } && !line.Karaoke.IsDefault, "字幕区间或文本无效。");
+            Require(line.Start < line.End && line.Text is { Length: <= 1000000 } && !line.Karaoke.IsDefault &&
+                !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
             ValidateText(line.Text);
             totalText += line.Text.Length;
             Require(totalText <= 8 * 1024 * 1024, "工程文本总量超过预算。");
@@ -93,9 +94,27 @@ public static class ProjectValidator
             var boundaries = StringInfo.ParseCombiningCharacters(line.Text).ToHashSet();
             boundaries.Add(line.Text.Length);
             var previousEnd = 0;
+            foreach (var span in line.InlineSpans)
+            {
+                NotNull(span, "局部样式不能为 null。");
+                Require(span.Utf16Start >= previousEnd && span.Utf16Length > 0 &&
+                    (long)span.Utf16Start + span.Utf16Length <= line.Text.Length, "局部样式文本区间重叠或越界。");
+                var end = checked(span.Utf16Start + span.Utf16Length);
+                Require(boundaries.Contains(span.Utf16Start) && boundaries.Contains(end), "局部样式不能拆开字素。");
+                var inlineStyle = span.Style;
+                NotNull(inlineStyle, "局部样式不能为 null。");
+                Require(inlineStyle.HasOverrides && !(inlineStyle.ClearFontAsset && inlineStyle.FontAssetId.HasValue),
+                    "局部样式为空或字体覆盖冲突。");
+                Style(inlineStyle.ApplyTo(line.Style), assets);
+                previousEnd = end;
+            }
+            previousEnd = 0;
+            var segmentIds = new HashSet<Guid>();
             foreach (var segment in line.Karaoke)
             {
                 NotNull(segment, "数据项不能为 null。");
+                Require(segment.Id != Guid.Empty && segmentIds.Add(segment.Id) && Enum.IsDefined(segment.HighlightKind),
+                    "卡拉 OK 标识为空、重复或高亮类型无效。");
                 Require(segment.Utf16Start >= previousEnd && segment.Utf16Length > 0 &&
                     (long)segment.Utf16Start + segment.Utf16Length <= line.Text.Length, "卡拉 OK 文本区间重叠或越界。");
                 var end = checked(segment.Utf16Start + segment.Utf16Length);
@@ -103,6 +122,14 @@ public static class ProjectValidator
                 Require(segment.Start >= Timing.MediaTime.Zero && segment.Start < segment.End,
                     "卡拉 OK 时间越界。");
                 Color(segment.HighlightColor);
+                if (segment.InactiveStyle is { } inactive)
+                {
+                    ValidateSubtitleStyle(inactive.ApplyTo(line.Style));
+                }
+                if (segment.ActiveStyle is { } active)
+                {
+                    ValidateSubtitleStyle(active.ApplyTo(line.Style));
+                }
                 previousEnd = end;
             }
         }

@@ -25,8 +25,11 @@ public sealed class ShortcutRouter
     /// <summary>匹配完整键与修饰键；返回 false 时调用者不应标记事件已处理。</summary>
     public bool TryResolve(Key key, KeyModifiers modifiers, bool isTextInput, out WorkbenchCommand command)
     {
-        command = default;
-        return (!isTextInput || !ProtectsTextInput(key, modifiers)) && commands.TryGetValue((key, modifiers), out command);
+        if (!commands.TryGetValue((key, modifiers), out command))
+        {
+            return false;
+        }
+        return command == WorkbenchCommand.END_TEXT_INPUT || !isTextInput || !ProtectsTextInput(key, modifiers);
     }
 
     private static bool ProtectsTextInput(Key key, KeyModifiers modifiers)

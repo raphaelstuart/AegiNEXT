@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Numerics;
+using System.Globalization;
 using System.Text;
 using HarfBuzzSharp;
 using SkiaSharp;
@@ -15,11 +16,15 @@ public sealed class TextShaper : IDisposable
 {
     private readonly SKTypeface typeface;
     private readonly SKShaper shaper;
+    private readonly bool synthesizeBold;
+    private readonly bool synthesizeItalic;
     private bool isDisposed;
 
-    internal TextShaper(SKTypeface ownedTypeface)
+    internal TextShaper(SKTypeface ownedTypeface, bool bold = false, bool italic = false)
     {
         typeface = ownedTypeface;
+        synthesizeBold = bold && typeface.FontStyle.Weight < (int)SKFontStyleWeight.Bold;
+        synthesizeItalic = italic && typeface.FontStyle.Slant == SKFontStyleSlant.Upright;
         try
         {
             shaper = new(typeface);
@@ -85,6 +90,8 @@ public sealed class TextShaper : IDisposable
         font.Edging = SKFontEdging.Antialias;
         font.Hinting = SKFontHinting.None;
         font.Subpixel = true;
+        font.Embolden = synthesizeBold;
+        font.SkewX = synthesizeItalic ? -0.25f : 0;
         var metrics = font.Metrics;
         RenderValidation.Finite(metrics.Top, nameof(fontSize));
         RenderValidation.Finite(metrics.Bottom, nameof(fontSize));
@@ -137,13 +144,39 @@ public sealed class TextShaper : IDisposable
                 inkBounds = inkBounds.IsEmpty ? glyphBound : SKRect.Union(inkBounds, glyphBound);
             }
 
-            return new(blob, glyphs, result.Width, inkBounds);
+            return new(blob, glyphs, result.Width, inkBounds, metrics);
         }
         catch
         {
             blob.Dispose();
             throw;
         }
+    }
+
+    internal string FontFamily => typeface.FamilyName;
+
+    internal bool UsesTypeface(SKTypeface candidate)
+    {
+        return ReferenceEquals(typeface, candidate);
+    }
+
+    internal bool ContainsGlyphs(string text)
+    {
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+        using var font = new SKFont(typeface);
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (!IsShapingControl(rune) && !font.ContainsGlyph(rune.Value))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    internal static bool IsShapingControl(Rune rune)
+    {
+        return Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format || rune.Value is >= 0xfe00 and <= 0xfe0f or >= 0xe0100 and <= 0xe01ef;
     }
 
     /// <inheritdoc />

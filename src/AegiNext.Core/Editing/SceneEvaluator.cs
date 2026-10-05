@@ -162,7 +162,12 @@ public static class SceneEvaluator
             result.Add(new(layer, local, transform, Get(values, AnimationProperty.OPACITY, layer.Opacity),
                 GetColor(values, AnimationProperty.FILL, fill), GetColor(values, AnimationProperty.STROKE, stroke),
                 Get(values, AnimationProperty.STROKE_WIDTH, subtitle?.Style.StrokeWidth ?? layer.StrokeWidth),
-                Get(values, AnimationProperty.BLUR, layer.Blur), subtitle, EvaluateLayers(layer.Children, subtitles, time)));
+                Get(values, AnimationProperty.BLUR, layer.Blur), subtitle, EvaluateLayers(layer.Children, subtitles, time))
+            {
+                HasFillAnimation = values.ContainsKey(AnimationProperty.FILL),
+                HasStrokeAnimation = values.ContainsKey(AnimationProperty.STROKE),
+                HasStrokeWidthAnimation = values.ContainsKey(AnimationProperty.STROKE_WIDTH)
+            });
         }
 
         return result.ToImmutable();

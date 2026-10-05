@@ -51,18 +51,20 @@ public static partial class ProjectEditingOperations
                 }
 
                 leftKaraoke.Add(segment with { Utf16Length = utf16Offset - segment.Utf16Start, End = contentTime });
-                rightKaraoke.Add(segment with { Utf16Start = 0, Utf16Length = end - utf16Offset, Start = contentTime });
+                rightKaraoke.Add(segment with { Id = Guid.NewGuid(), Utf16Start = 0, Utf16Length = end - utf16Offset, Start = contentTime });
             }
         }
 
         var left = original with
         {
             End = playhead, Text = leftText, Karaoke = leftKaraoke.ToImmutable(),
+            InlineSpans = SubtitleContentSplitMerge.SplitSpans(original.InlineSpans, utf16Offset, false),
             KaraokeStyle = leftKaraoke.Count > 0 ? original.KaraokeStyle : null
         };
         var right = original with
         {
             Id = Guid.NewGuid(), Start = playhead, Text = rightText, Karaoke = rightKaraoke.ToImmutable(),
+            InlineSpans = SubtitleContentSplitMerge.SplitSpans(original.InlineSpans, utf16Offset, true),
             KaraokeStyle = rightKaraoke.Count > 0 ? original.KaraokeStyle : null
         };
         var found = false;
@@ -73,10 +75,15 @@ public static partial class ProjectEditingOperations
                 Id = right.Id, SubtitleId = right.Id, Start = playhead,
                 AnimationOffset = contentTime
             })), ref found);
-        return Verified(document with { Subtitles = document.Subtitles.SetItem(index, left).Insert(index + 1, right), Layers = layers });
+        return Verified(document with
+        {
+            Subtitles = document.Subtitles.SetItem(index, SubtitleKaraokeNormalization.Normalize(left))
+                .Insert(index + 1, SubtitleKaraokeNormalization.Normalize(right)),
+            Layers = layers
+        });
     }
 
-    /// <summary>合并相邻且不重叠的字幕，样式取首句；保留高亮完整时钟。不能无损合并的层效果明确拒绝。</summary>
+    /// <summary>合并相邻字幕，以首句为基础样式并用局部覆盖保留后句外观与完整高亮时钟。</summary>
     public static ProjectDocument MergeSubtitles(ProjectDocument document, Guid firstId, Guid secondId, string separator = "\n")
     {
         ProjectValidator.Validate(document);
@@ -114,16 +121,28 @@ public static partial class ProjectEditingOperations
         var compatibleKaraokeStyles = first.KaraokeStyle is null
             ? second.KaraokeStyle is null
             : first.KaraokeStyle.VisuallyEquals(second.KaraokeStyle);
+        var mergedKaraokeStyle = firstKaraoke.IsEmpty ? second.KaraokeStyle : first.KaraokeStyle;
         if (!firstKaraoke.IsEmpty && !secondKaraoke.IsEmpty && !compatibleKaraokeStyles)
         {
-            throw new InvalidOperationException("使用不同逐字高亮样式的字幕不能无损合并。");
+            mergedKaraokeStyle = null;
+            firstKaraoke = firstKaraoke.Select((clip, index) => clip with
+            {
+                ActiveStyle = SubtitleContentSplitMerge.PreserveHighlight(first, first.Karaoke[index])
+            }).ToImmutableArray();
+            secondKaraoke = secondKaraoke.Select((clip, index) => clip with
+            {
+                ActiveStyle = SubtitleContentSplitMerge.PreserveHighlight(second, second.Karaoke[index])
+            }).ToImmutableArray();
         }
+        var clipIds = firstKaraoke.Select(clip => clip.Id).ToHashSet();
+        secondKaraoke = secondKaraoke.Select(clip => clipIds.Add(clip.Id) ? clip : clip with { Id = Guid.NewGuid() }).ToImmutableArray();
         var merged = first with
         {
             End = second.End,
             Text = first.Text + separator + second.Text,
+            InlineSpans = SubtitleContentSplitMerge.MergeSpans(first, second, checked(first.Text.Length + separator.Length)),
             Karaoke = firstKaraoke.AddRange(secondKaraoke),
-            KaraokeStyle = firstKaraoke.IsEmpty ? second.KaraokeStyle : first.KaraokeStyle
+            KaraokeStyle = mergedKaraokeStyle
         };
         var found = false;
         var layers = RewriteSiblings(document.Layers, firstLayer.Id, (siblings, layerIndex) =>
@@ -135,7 +154,11 @@ public static partial class ProjectEditingOperations
 
             return siblings.SetItem(layerIndex, firstLayer with { End = second.End, AnimationOffset = mergedOffset }).RemoveAt(layerIndex + 1);
         }, ref found);
-        return Verified(document with { Subtitles = document.Subtitles.SetItem(firstIndex, merged).RemoveAt(secondIndex), Layers = layers });
+        return Verified(document with
+        {
+            Subtitles = document.Subtitles.SetItem(firstIndex, SubtitleKaraokeNormalization.Normalize(merged)).RemoveAt(secondIndex),
+            Layers = layers
+        });
     }
 
     /// <summary>递归删除节点及其子树，并同步删除相应字幕行。</summary>

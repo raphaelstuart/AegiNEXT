@@ -3,11 +3,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Controls;
-using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Settings;
 using AegiNext.Core.Projects;
-using AegiNext.Core.Timing;
-using AegiNext.Media.Analysis;
 using Avalonia.Media;
 
 namespace AegiNext.Desktop.Panels.Styles;
@@ -30,11 +27,6 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private StylePresetListItem[] presets = [];
     private StylePresetListItem? selectedPreset;
     private bool canApplyPreset;
-    private StylePresetListItem[] karaokePresets = [];
-    private StylePresetListItem? selectedKaraokePreset;
-    private Guid? loadedKaraokeCueId;
-    private KaraokeHighlightStyle? loadedKaraokeStyle;
-
     internal event EventHandler? AlignmentChoicesRefreshing;
     internal event EventHandler? AlignmentChoicesRefreshed;
 
@@ -45,13 +37,8 @@ internal sealed class StylesPanelViewModel : ObservableObject
         StrokeDraft.Changed += (_, _) => OnPropertyChanged(nameof(StrokeDraft));
         Position.Changed += (_, _) => OnPropertyChanged(nameof(Position));
         ApplyStyleCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ApplySelectedStyleAsync()));
-        ManageStylesCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.RequestSettingsAsync(AegiNext.Desktop.Settings.SettingsPage.STYLES)));
+        ManageStylesCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.RequestSettingsAsync(SettingsPage.STYLES)));
         RestoreAutomaticPositionCommand = new AsyncRelayCommand(RestoreAutomaticPositionAsync);
-        KaraokeCommand = new AsyncRelayCommand(ApplyKaraokeAsync);
-        ClearKaraokeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ClearKaraoke)));
-        session.SelectionChanged += (_, _) => RefreshKaraokePresets(true);
-        session.PreferencesChanged += (_, _) => RefreshKaraokePresets(false);
-        RefreshKaraokePresets(false);
     }
 
     public string FontFamily
@@ -144,25 +131,7 @@ internal sealed class StylesPanelViewModel : ObservableObject
     public StylePresetListItem[] Presets
     {
         get => presets;
-        set
-        {
-            if (SetProperty(ref presets, value))
-            {
-                RefreshKaraokePresets(false);
-            }
-        }
-    }
-
-    public StylePresetListItem[] KaraokePresets
-    {
-        get => karaokePresets;
-        private set => SetProperty(ref karaokePresets, value);
-    }
-
-    public StylePresetListItem? SelectedKaraokePreset
-    {
-        get => selectedKaraokePreset;
-        set => SetProperty(ref selectedKaraokePreset, value);
+        set => SetProperty(ref presets, value);
     }
 
     public StylePresetListItem? SelectedPreset
@@ -187,9 +156,6 @@ internal sealed class StylesPanelViewModel : ObservableObject
 
     public ICommand RestoreAutomaticPositionCommand { get; }
 
-    public ICommand KaraokeCommand { get; }
-
-    public ICommand ClearKaraokeCommand { get; }
     /// <summary>确认字体输入并通过统一事务提交。</summary>
     public void CommitFont(string family)
     {
@@ -267,34 +233,4 @@ internal sealed class StylesPanelViewModel : ObservableObject
             }
         }
     }
-
-    private Task ApplyKaraokeAsync()
-    {
-        var presetId = SelectedKaraokePreset is { Id: var id } && id != Guid.Empty ? id : (Guid?)null;
-        return session.RunCommandAsync(() => session.EditAsync(() => session.CreateKaraoke(presetId)));
-    }
-
-    private void RefreshKaraokePresets(bool loadSelection)
-    {
-        var cue = session.SelectedCue;
-        var style = cue?.KaraokeStyle;
-        var targetChanged = loadSelection && (cue?.Id != loadedKaraokeCueId || style != loadedKaraokeStyle);
-        var id = targetChanged ? style?.PresetId ?? Guid.Empty : SelectedKaraokePreset?.Id ?? style?.PresetId ?? Guid.Empty;
-        if (loadSelection)
-        {
-            loadedKaraokeCueId = cue?.Id;
-            loadedKaraokeStyle = style;
-        }
-        var options = new List<StylePresetListItem> { new(Guid.Empty, Localization.Get("Workbench.DefaultKaraokeStyle")) };
-        options.AddRange(Presets);
-        if (style is not null && options.All(value => value.Id != style.PresetId))
-        {
-            options.Add(new(style.PresetId, style.PresetName));
-        }
-
-        KaraokePresets = options.ToArray();
-        SelectedKaraokePreset = KaraokePresets.FirstOrDefault(value => value.Id == id) ?? KaraokePresets[0];
-    }
-
-    internal void RefreshLanguage() => RefreshKaraokePresets(false);
 }

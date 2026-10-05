@@ -68,7 +68,7 @@
     <Grid Grid.Row="1" ColumnDefinitions="184,*">
       <Border BorderBrush="{DynamicResource SettingsBorder}" BorderThickness="0,0,1,0" Padding="12,16">
         <StackPanel Spacing="16">
-          <TextBlock Text="{Loc Key=Settings.Settings}" Margin="12,0" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Classes="heading" Text="{Loc Key=Settings.Settings}" Margin="12,0" FontSize="20" FontWeight="SemiBold" />
           <ListBox Name="Navigation" Background="Transparent" SelectedIndex="{Binding PageIndex, Mode=TwoWay}">
             <ListBoxItem>
               <StackPanel Orientation="Horizontal" Spacing="12">

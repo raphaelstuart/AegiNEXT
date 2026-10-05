@@ -11,6 +11,12 @@ internal static partial class MacOsActualMenuSnapshot
     private static readonly nint sharedApplicationSelector = RegisterSelector("sharedApplication");
     private static readonly nint mainMenuSelector = RegisterSelector("mainMenu");
     private static readonly nint keyWindowSelector = RegisterSelector("keyWindow");
+    private static readonly nint activeSelector = RegisterSelector("isActive");
+    private static readonly nint sharedWorkspaceSelector = RegisterSelector("sharedWorkspace");
+    private static readonly nint frontmostApplicationSelector = RegisterSelector("frontmostApplication");
+    private static readonly nint bundleIdentifierSelector = RegisterSelector("bundleIdentifier");
+    private static readonly nint localizedNameSelector = RegisterSelector("localizedName");
+    private static readonly nint processIdentifierSelector = RegisterSelector("processIdentifier");
     private static readonly nint titleSelector = RegisterSelector("title");
     private static readonly nint submenuSelector = RegisterSelector("submenu");
     private static readonly nint countSelector = RegisterSelector("numberOfItems");
@@ -24,6 +30,8 @@ internal static partial class MacOsActualMenuSnapshot
         var application = GetObject(GetClass("NSApplication"), sharedApplicationSelector);
         var mainMenu = GetObject(application, mainMenuSelector);
         var keyWindow = GetObject(application, keyWindowSelector);
+        var workspace = GetObject(GetClass("NSWorkspace"), sharedWorkspaceSelector);
+        var frontmostApplication = GetObject(workspace, frontmostApplicationSelector);
         var count = checked((int)GetCount(mainMenu, countSelector));
         var items = new MacOsActualMenuItem[count];
         for (var index = 0; index < count; index++)
@@ -40,8 +48,11 @@ internal static partial class MacOsActualMenuSnapshot
             items[index] = new(ReadTitle(item), children);
         }
 
-        return new(action, focusedHost, windowMenuMode, ReadTitle(keyWindow), (long)mainMenu, items,
-            managedRootsPreserved, (long)keyWindow);
+        return new(action, focusedHost, windowMenuMode, ReadTitle(keyWindow), mainMenu, items,
+            managedRootsPreserved, keyWindow, ApplicationIsActive: GetBoolean(application, activeSelector),
+            FrontmostApplicationBundleId: ReadString(GetObject(frontmostApplication, bundleIdentifierSelector)),
+            FrontmostApplicationName: ReadString(GetObject(frontmostApplication, localizedNameSelector)),
+            FrontmostApplicationProcessId: GetProcessId(frontmostApplication, processIdentifierSelector));
     }
 
     internal static nint ReadKeyWindowHandle()
@@ -53,8 +64,12 @@ internal static partial class MacOsActualMenuSnapshot
 
     private static string ReadTitle(nint receiver)
     {
-        var title = GetObject(receiver, titleSelector);
-        var characters = GetObject(title, utf8Selector);
+        return ReadString(GetObject(receiver, titleSelector));
+    }
+
+    private static string ReadString(nint receiver)
+    {
+        var characters = GetObject(receiver, utf8Selector);
         return characters == 0 ? string.Empty : Marshal.PtrToStringUTF8(characters) ?? string.Empty;
     }
 
@@ -66,6 +81,13 @@ internal static partial class MacOsActualMenuSnapshot
 
     [LibraryImport(OBJC_LIBRARY, EntryPoint = "objc_msgSend")]
     private static partial nint GetObject(nint receiver, nint selector);
+
+    [LibraryImport(OBJC_LIBRARY, EntryPoint = "objc_msgSend")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static partial bool GetBoolean(nint receiver, nint selector);
+
+    [LibraryImport(OBJC_LIBRARY, EntryPoint = "objc_msgSend")]
+    private static partial int GetProcessId(nint receiver, nint selector);
 
     [LibraryImport(OBJC_LIBRARY, EntryPoint = "objc_msgSend")]
     private static partial nuint GetCount(nint receiver, nint selector);

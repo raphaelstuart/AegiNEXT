@@ -32,6 +32,14 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
         return file is null ? null : file.TryGetLocalPath() ?? throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
     }
 
+    /// <summary>展示具体字幕转换损失，并等待用户明确继续或取消。</summary>
+    public Task<bool> ConfirmSubtitleConversionAsync(IReadOnlyList<string> diagnostics)
+    {
+        var dialog = new SubtitleConversionDialog(diagnostics);
+        registerWindow?.Invoke(dialog);
+        return dialog.ShowDialog<bool>(owner);
+    }
+
     /// <summary>等待用户决定如何处理工程的未保存修改。</summary>
     public Task<int> ConfirmUnsavedAsync()
     {

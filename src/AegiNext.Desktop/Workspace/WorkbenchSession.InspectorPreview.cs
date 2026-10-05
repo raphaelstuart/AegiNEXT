@@ -12,9 +12,15 @@ internal sealed partial class WorkbenchSession
     private bool inspectorPreviewQueued;
     private int inspectorPreviewRevision;
 
-    internal ProjectDocument PreviewDocument => inspectorPreview is { } preview &&
-        ReferenceEquals(inspectorPreviewSource, DocumentSnapshot) && inspectorPreviewLayerId == SelectedLayerId
-        ? preview : DocumentSnapshot;
+    internal ProjectDocument PreviewDocument
+    {
+        get
+        {
+            var document = inspectorPreview is { } preview && ReferenceEquals(inspectorPreviewSource, DocumentSnapshot) &&
+                inspectorPreviewLayerId == SelectedLayerId ? preview : DocumentSnapshot;
+            return Details?.OverlayPreview(document) ?? document;
+        }
+    }
 
     private void QueueInspectorPreview(bool supersedePending = false)
     {

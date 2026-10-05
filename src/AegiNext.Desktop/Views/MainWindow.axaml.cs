@@ -10,6 +10,7 @@ using AegiNext.Desktop.Panels;
 using AegiNext.Desktop.Panels.Preview;
 using AegiNext.Desktop.Panels.Timeline;
 using AegiNext.Desktop.Panels.Subtitles;
+using AegiNext.Desktop.Panels.SubtitleDetails;
 using AegiNext.Desktop.Panels.Styles;
 using AegiNext.Desktop.Panels.Effects;
 using AegiNext.Desktop.Panels.Export;
@@ -67,6 +68,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             ["styles"] = new StylesPanelView(ViewModel.Styles, Session),
             ["effects"] = new EffectsPanelView(ViewModel.Effects, Session),
             ["export"] = new ExportPanelView(ViewModel.Export, Session),
+            [WorkbenchPanelIds.SUBTITLE_DETAILS] = new SubtitleDetailsPanelView(Session),
             [WorkbenchPanelIds.LOG] = new LogPanelView(ViewModel.Log, Session.Journal, () => Session.IsClosing)
         };
         workspaceHost = this.FindControl<ContentControl>("WorkspaceHost")!;
@@ -207,9 +209,27 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
     private async Task HandleHostCommandAsync(WorkbenchHostCommandEventArgs request)
     {
-        if (request.Command == WorkbenchCommand.OPEN_SETTINGS)
+        if (request.Command == WorkbenchCommand.END_TEXT_INPUT)
+        {
+            windowRegistry.TryExecuteFocusCommand(request.Command);
+        }
+        else if (request.Command == WorkbenchCommand.OPEN_SETTINGS)
         {
             OpenSettings(request.SettingsPage);
+        }
+        else if (request.Command == WorkbenchCommand.OPEN_SUBTITLE_DETAILS)
+        {
+            if (ViewModel.TryCommitDrafts())
+            {
+                if (layouts.IsVisible(WorkbenchPanelIds.SUBTITLE_DETAILS))
+                {
+                    layouts.Activate(WorkbenchPanelIds.SUBTITLE_DETAILS);
+                }
+                else
+                {
+                    layouts.Float(WorkbenchPanelIds.SUBTITLE_DETAILS);
+                }
+            }
         }
         else if (request.Command == WorkbenchCommand.EXIT)
         {

@@ -66,7 +66,7 @@ public static partial class SubtitleTextFormat
         ArgumentNullException.ThrowIfNull(lines);
         var result = new StringBuilder();
         var index = 0;
-        foreach (var line in lines)
+        foreach (var line in lines.OrderBy(line => line.Start))
         {
             CheckText(line.Text);
             if (line.Start < MediaTime.Zero || line.Start >= line.End || string.IsNullOrWhiteSpace(line.Text) ||

@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using AegiNext.Desktop.Controls.Common;
+using AegiNext.Desktop.Controls;
+using AegiNext.Core.Projects;
 using AegiNext.Desktop.Layouts;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Menus;
@@ -10,6 +12,7 @@ using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Views;
 using AegiNext.Desktop.Windowing;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -89,8 +92,8 @@ internal sealed class WorkspaceProbe
             var log = MainWindow.Panels[WorkbenchPanelIds.LOG];
             var logOwner = (Dock.Model.Core.IDock)MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.LOG].Owner!;
             var subtitlePanel = MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.SUBTITLES];
-            Verify(MainWindow.Panels.Count == WorkbenchPanelIds.All.Count && WorkbenchPanelIds.All.Count == 7,
-                "All seven stable panel views were registered");
+            Verify(MainWindow.Panels.Count == WorkbenchPanelIds.All.Count && WorkbenchPanelIds.All.Count == 8,
+                "All eight stable panel views were registered");
             Verify(MainWindow.Layouts.IsVisible(WorkbenchPanelIds.LOG) && !IsDisplayed(log) &&
                    ReferenceEquals(logOwner.ActiveDockable, subtitlePanel),
                 "Standard layout kept the Log tab inactive");
@@ -123,8 +126,9 @@ internal sealed class WorkspaceProbe
                 Capture(id);
             }
             Verify(panelInstances.All(pair => ReferenceEquals(pair.Value, MainWindow.Panels[pair.Key])) &&
-                   ReferenceEquals(controller, MainWindow.Session.Controller), "All seven views and the media controller retained their identity");
+                   ReferenceEquals(controller, MainWindow.Session.Controller), "All eight views and the media controller retained their identity");
             Verify(!MainWindow.Session.Editor.CanUndo, "Layout changes did not add an undo entry");
+            await VerifySubtitleDetailsAsync();
             var preset = await MainWindow.Layouts.SaveAsAsync("Runtime verification");
             Verify(preset is not null, "Saved a personal preset");
             MainWindow.Layouts.Hide(WorkbenchPanelIds.EXPORT);
@@ -187,6 +191,74 @@ internal sealed class WorkspaceProbe
             await File.WriteAllBytesAsync(options.ReportPath, JsonSerializer.SerializeToUtf8Bytes(report, jsonOptions));
             Directory.Delete(options.ProfileDirectory, true);
             desktop.Shutdown(report.Completed && report.Failures.Count == 0 ? 0 : 1);
+        }
+    }
+
+    private async Task VerifySubtitleDetailsAsync()
+    {
+        var previous = MainWindow.Session.Editor.Snapshot;
+        var cue = new SubtitleLine { Text = "Native detail", End = new(4), Style = new() { FontSize = 32 } };
+        var document = previous with
+        {
+            Subtitles = [cue],
+            Layers = [new() { Kind = LayerKind.SUBTITLE, SubtitleId = cue.Id, Start = cue.Start, End = cue.End }]
+        };
+        try
+        {
+            MainWindow.Session.Editor.Reset(document);
+            MainWindow.Session.SelectCue(cue.Id);
+            await MainWindow.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
+            await SettleAsync();
+            var panel = MainWindow.Panels[WorkbenchPanelIds.SUBTITLE_DETAILS];
+            var host = MainWindow.Layouts.FloatingWindows.Single();
+            Verify(panel.IsAttachedToVisualTree() && ReferenceEquals(TopLevel.GetTopLevel(panel), host),
+                "Subtitle detail command opened one real floating child window");
+            var rich = panel.GetVisualDescendants().OfType<RichSubtitleEditor>().Single(control => control.Name == "RichSubtitleInput");
+            rich.Focus();
+            rich.SetSelection(0, cue.Text.Length);
+            rich.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = "你好👩‍💻" });
+            var tabs = panel.GetVisualDescendants().OfType<TabControl>().Single(control => control.Name == "SubtitleDetailsTabs");
+            tabs.SelectedIndex = 1;
+            await SettleAsync();
+            Verify(MainWindow.Session.Editor.Snapshot.Subtitles[0].Text == "你好👩‍💻" && rich.RenderDiagnostic is null,
+                "Native detail rich input rendered and committed Chinese with a ZWJ emoji");
+            var committed = MainWindow.Session.Editor.Snapshot;
+            Verify(tabs.Items.Count == 2, "Subtitle details has rich text and AegiSub code pages");
+            tabs.SelectedIndex = 1;
+            await SettleAsync();
+            tabs.SelectedIndex = 0;
+            await SettleAsync();
+            Verify(ReferenceEquals(committed, MainWindow.Session.Editor.Snapshot) && tabs.SelectedIndex == 0,
+                "Both detail tabs preserved the same content without new transactions");
+            Capture("subtitle-details-floating");
+            var source = MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.SUBTITLE_DETAILS];
+            var target = MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.SUBTITLES];
+            var factory = ((DockControl)MainWindow.Layouts.Host).Factory!;
+            factory.MoveDockable((Dock.Model.Core.IDock)source.Owner!, (Dock.Model.Core.IDock)target.Owner!, source, target);
+            MainWindow.Layouts.Activate(WorkbenchPanelIds.SUBTITLE_DETAILS);
+            await SettleAsync();
+            Verify(ReferenceEquals(TopLevel.GetTopLevel(panel), MainWindow),
+                "Floating subtitle detail docked into the main workspace with its original view");
+            await MainWindow.Layouts.FlushAsync();
+            var stored = new WorkspaceLayoutStore(options.ProfileDirectory).Load();
+            Verify(ContainsPanel(stored.Current.Main, WorkbenchPanelIds.SUBTITLE_DETAILS) &&
+                !stored.Current.Floating.Any(window => ContainsPanel(window.Content, WorkbenchPanelIds.SUBTITLE_DETAILS)),
+                "Layout persistence retained subtitle detail as a docked child panel");
+            Capture("subtitle-details-docked");
+            MainWindow.Layouts.Hide(WorkbenchPanelIds.SUBTITLE_DETAILS);
+            await MainWindow.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
+            await SettleAsync();
+            Verify(ReferenceEquals(panel, MainWindow.Panels[WorkbenchPanelIds.SUBTITLE_DETAILS]) && MainWindow.Layouts.IsVisible(WorkbenchPanelIds.SUBTITLE_DETAILS),
+                "Closing and reopening subtitle detail reused its controls and editor state");
+        }
+        finally
+        {
+            MainWindow.Session.Details.Restore("All");
+            MainWindow.Session.Details.Restore("Duration");
+            MainWindow.Session.Details.Restore("LeadingDelay");
+            MainWindow.Session.Editor.Reset(previous);
+            await MainWindow.Layouts.RestoreDefaultAsync();
+            await SettleAsync();
         }
     }
 
@@ -401,6 +473,11 @@ internal sealed class WorkspaceProbe
 
     private static bool IsDisplayed(Control control) => control.IsAttachedToVisualTree() && control.IsEffectivelyVisible &&
         control.Bounds.Width > 0 && control.Bounds.Height > 0;
+
+    private static bool ContainsPanel(LayoutNodeSnapshot node, string panelId)
+    {
+        return node.PanelId == panelId || node.Children.Any(child => ContainsPanel(child, panelId));
+    }
 
     private async Task SettleAsync()
     {

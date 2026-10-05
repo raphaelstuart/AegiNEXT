@@ -8,6 +8,7 @@ User guides and developer documentation live in `docs/`. Checkpoints and accepta
 
 - [Quick Start](quick-start.md): launch, first subtitle, save, and export.
 - [Workbench guide](workbench.md): tracks, timeline, styles, keyframes, layouts, settings, and logs.
+- [Subtitle detail editing and formats](subtitle-editing.md): dockable rich text, karaoke, advanced code, bounded playback, ASS and SRT.
 - [Export and HDR](export.md): encoding, audio, restrictions, and color contracts.
 - [Effect DSL and examples](effect-dsl.md): fixed/flexible timing, vectors, full RGBA, keyframes, and the settings editor.
 
@@ -32,6 +33,8 @@ User guides and developer documentation live in `docs/`. Checkpoints and accepta
 Invoke `$aeginext-effect-dsl` when authoring a script, or `$aeginext-controls` when developing or integrating a shared project control. Portable definitions are in [DSL skill](../.agents/skills/aeginext-effect-dsl/SKILL.md) and [controls skill](../.agents/skills/aeginext-controls/SKILL.md).
 
 ## Implementation evidence
+
+- [Subtitle formats and the dockable shared editor](checkpoints/subtitle-format-and-details.md)
 
 - [Preview decoder modes, missing color tags and platform verification](checkpoints/video-decode-modes-and-missing-color.md)
 

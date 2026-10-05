@@ -7,11 +7,11 @@ namespace AegiNext.Desktop.Layouts;
 
 internal sealed class WorkbenchFloatingHostWindow : HostWindow
 {
-    private readonly Action<WorkbenchFloatingHostWindow> closing;
+    private readonly Func<WorkbenchFloatingHostWindow, bool> closing;
     private readonly Action changed;
 
     internal WorkbenchFloatingHostWindow(WorkbenchDockFactory factory,
-        Action<WorkbenchFloatingHostWindow> closing, Action changed)
+        Func<WorkbenchFloatingHostWindow, bool> closing, Action changed)
     {
         this.closing = closing;
         this.changed = changed;
@@ -45,9 +45,11 @@ internal sealed class WorkbenchFloatingHostWindow : HostWindow
     /// <summary>浮窗关闭时先隐藏其中的面板，再脱离宿主而不释放工作台会话。</summary>
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        if (!IsApplyingLayout)
+        if (!IsApplyingLayout && !closing(this))
         {
-            closing(this);
+            e.Cancel = true;
+            base.OnClosing(e);
+            return;
         }
         IsTracked = false;
         DockHost.Layout = null;

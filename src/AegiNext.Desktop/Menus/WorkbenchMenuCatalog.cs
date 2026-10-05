@@ -12,8 +12,10 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
     [
         new("File", [WorkbenchCommand.NEW_PROJECT, WorkbenchCommand.OPEN_PROJECT, WorkbenchCommand.OPEN_MEDIA, null,
             WorkbenchCommand.SAVE_PROJECT, WorkbenchCommand.SAVE_PROJECT_AS, null,
-            WorkbenchCommand.IMPORT_SUBTITLES, WorkbenchCommand.EXPORT_SUBTITLES, WorkbenchCommand.EXPORT_VIDEO, null,
+            WorkbenchCommand.EXPORT_VIDEO, null,
             WorkbenchCommand.EXIT]),
+        new("Format", [], [new("Aegisub", [WorkbenchCommand.IMPORT_ASS, WorkbenchCommand.EXPORT_ASS]),
+            new("SRT", [WorkbenchCommand.IMPORT_SUBTITLES, WorkbenchCommand.EXPORT_SUBTITLES])]),
         new("Edit", [WorkbenchCommand.UNDO, WorkbenchCommand.REDO, null, WorkbenchCommand.OPEN_SETTINGS]),
         new("View", [WorkbenchCommand.VIEW_PREVIEW, WorkbenchCommand.VIEW_TIMELINE, WorkbenchCommand.VIEW_SUBTITLES,
             WorkbenchCommand.VIEW_STYLES, WorkbenchCommand.VIEW_EFFECTS, WorkbenchCommand.VIEW_EXPORT, WorkbenchCommand.VIEW_LOG]),
@@ -22,7 +24,7 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
         new("Playback", [WorkbenchCommand.PLAY_PAUSE, WorkbenchCommand.SEEK_BACKWARD, WorkbenchCommand.SEEK_FORWARD]),
         new("Subtitles", [WorkbenchCommand.TIMING_ENTER, WorkbenchCommand.TIMING_EXIT, null,
             WorkbenchCommand.ADD_SUBTITLE, WorkbenchCommand.DELETE_SUBTITLE, WorkbenchCommand.SPLIT_SUBTITLE,
-            WorkbenchCommand.MERGE_SUBTITLE])
+            WorkbenchCommand.MERGE_SUBTITLE, null, WorkbenchCommand.OPEN_SUBTITLE_DETAILS])
     ];
 
     private WorkbenchPreferences preferences = new();
@@ -39,9 +41,16 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
     internal ICommand GetCommand(WorkbenchCommand command) => commandProvider(command);
     internal static string GetLabel(WorkbenchCommand command) => Localization.Get("Settings." + (command.ToString()));
 
+    internal static string GetMenuLabel(WorkbenchCommand command) => command switch
+    {
+        WorkbenchCommand.IMPORT_ASS or WorkbenchCommand.IMPORT_SUBTITLES => Localization.Get("Workbench.FormatImport"),
+        WorkbenchCommand.EXPORT_ASS or WorkbenchCommand.EXPORT_SUBTITLES => Localization.Get("Workbench.FormatExport"),
+        _ => GetLabel(command)
+    };
+
     internal string GetDisplayLabel(WorkbenchCommand command)
     {
-        var label = GetLabel(command);
+        var label = GetMenuLabel(command);
         return command == WorkbenchCommand.VIEW_LOG && UnreadLogErrorCount > 0
             ? $"{label} ({UnreadLogErrorCount})" : label;
     }

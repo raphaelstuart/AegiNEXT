@@ -29,13 +29,13 @@
       <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
         <StackPanel Spacing="4">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.Size}" />
-          <controls:NumericDraftInput Name="FontSizeInput" RawText="{Binding FontSizeText, Mode=TwoWay}" Minimum="0.01"
+          <controls:NumericDraftInput Name="FontSizeInput" ShowButtonSpinner="False" RawText="{Binding FontSizeText, Mode=TwoWay}" Minimum="0.01"
                                       Maximum="4096" Value="{Binding FontSize, Mode=TwoWay}"
                                       IsEnabled="{Binding HasCue}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="4">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.StrokeWidth}" />
-          <controls:NumericDraftInput Name="StrokeWidthInput" RawText="{Binding StrokeWidthText, Mode=TwoWay}"
+          <controls:NumericDraftInput Name="StrokeWidthInput" ShowButtonSpinner="False" RawText="{Binding StrokeWidthText, Mode=TwoWay}"
                                       Minimum="0" Maximum="4096" Value="{Binding StrokeWidth, Mode=TwoWay}"
                                       Increment="0.5" />
         </StackPanel>
@@ -65,19 +65,6 @@
       <StackPanel IsEnabled="{Binding HasCue}">
         <controls:SubtitlePositionEditor Name="PositionEditor" ShowAutomaticPositionAction="False"
                                          DataContext="{Binding Position}" />
-      </StackPanel>
-      <TextBlock Classes="field" Text="{Loc Key=Workbench.KaraokeStyle}" />
-      <ComboBox Name="KaraokeStylePresetCombo" HorizontalAlignment="Stretch"
-                ItemsSource="{Binding KaraokePresets, Mode=OneWay}"
-                SelectedItem="{Binding SelectedKaraokePreset, Mode=TwoWay}" IsEnabled="{Binding HasCue}" />
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Name="KaraokeButton" Command="{Binding KaraokeCommand}" IsEnabled="{Binding HasCue}">
-          <controlsCommon:IconText IconKey="Karaoke" Text="{Loc Key=Workbench.Karaoke}" />
-        </Button>
-        <Button Name="ClearKaraokeButton" Command="{Binding ClearKaraokeCommand}"
-                IsEnabled="{Binding HasCue}">
-          <controlsCommon:IconText IconKey="ClearKaraoke" Text="{Loc Key=Workbench.ClearKaraoke}" />
-        </Button>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

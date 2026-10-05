@@ -34,5 +34,9 @@ public enum WorkbenchCommand
     LAYOUT_SAVE_AS,
     LAYOUT_MANAGE,
     LAYOUT_RESTORE_DEFAULT,
-    VIEW_LOG
+    VIEW_LOG,
+    IMPORT_ASS,
+    EXPORT_ASS,
+    OPEN_SUBTITLE_DETAILS,
+    END_TEXT_INPUT
 }

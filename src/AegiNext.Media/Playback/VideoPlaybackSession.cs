@@ -31,6 +31,7 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
     private bool closeRequested;
     private Task? closeTask;
     private int disposed;
+    private MediaTimeRange? playbackRange;
 
     /// <summary>
     /// 创建尚未打开的会话；工厂与所有帧读取均由单一后台工作循环执行。
@@ -72,6 +73,18 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
             {
                 return source is VideoFrameNavigator navigator ? navigator.SessionInfo : null;
             }
+        }
+    }
+
+    /// <summary>限制后续交付帧与播放时钟；允许覆盖起点的前一帧，不交付终点及之后的帧。</summary>
+    public void SetPlaybackRange(MediaTimeRange? range)
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(closeRequested, this);
+            playbackRange = range;
+            ClearPresentationsUnderLock();
+            PulseCommandUnderLock();
         }
     }
 
@@ -307,6 +320,11 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
                     changed = commandChanged.Task;
                     generation = snapshot.Generation;
                     due = snapshot.State == VideoPlaybackState.PLAYING ? nextFrameTime - GetPositionUnderLock() : null;
+                    if (snapshot.State == VideoPlaybackState.PLAYING && playbackRange is { } range)
+                    {
+                        var boundary = range.End - GetPositionUnderLock();
+                        due = due is { } frameDue && frameDue < boundary ? frameDue : boundary;
+                    }
                 }
 
                 if (activeRequest is not null)
@@ -494,9 +512,10 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
                     return;
                 }
 
-                var position = frame is { IsBeforeFirst: true } or { ReachedEnd: true } ? frame.Time : requestedPosition;
-                reachedEnd = frame is null || frame.ReachedEnd;
-                nextFrameTime = frame?.NextFrameTime;
+                var position = frame is { IsBeforeFirst: true } || frame is { ReachedEnd: true } && playbackRange is null
+                    ? frame.Time : requestedPosition;
+                reachedEnd = frame is null || frame.ReachedEnd && playbackRange is null;
+                nextFrameTime = frame?.NextFrameTime ?? playbackRange?.End;
                 needsResynchronization = false;
                 snapshot = snapshot with
                 {
@@ -531,6 +550,11 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
             lock (gate)
             {
                 position = GetPositionUnderLock();
+                if (playbackRange is { } range && position >= range.End)
+                {
+                    CompleteRangeUnderLock(range);
+                    return;
+                }
             }
 
             frame = needsResynchronization
@@ -548,6 +572,11 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
                     }
 
                     position = GetPositionUnderLock();
+                    if (playbackRange is { } range && (position >= range.End || frame is not null && frame.Time >= range.End))
+                    {
+                        CompleteRangeUnderLock(range);
+                        return;
+                    }
                     if (frame is null)
                     {
                         reachedEnd = true;
@@ -559,8 +588,8 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
 
                     if (frame.NextFrameTime is null || frame.NextFrameTime > position)
                     {
-                        reachedEnd = frame.ReachedEnd;
-                        nextFrameTime = frame.NextFrameTime;
+                        reachedEnd = frame.ReachedEnd && playbackRange is null;
+                        nextFrameTime = frame.NextFrameTime ?? playbackRange?.End;
                         needsResynchronization = false;
                         snapshot = snapshot with { DisplayTime = frame.Time };
                         if (reachedEnd && snapshot.State == VideoPlaybackState.PLAYING)
@@ -649,7 +678,7 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
         {
             clockOriginPosition = position;
             clockOriginTimestamp = timeProvider.GetTimestamp();
-            return position;
+            return playbackRange is { } range && position > range.End ? range.End : position;
         }
 
         var elapsed = unchecked(timeProvider.GetTimestamp() - clockOriginTimestamp);
@@ -658,17 +687,31 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
             throw new InvalidOperationException("播放时钟必须单调递增。");
         }
 
-        return clockOriginPosition + new MediaTime(elapsed, timestampFrequency);
+        var result = clockOriginPosition + new MediaTime(elapsed, timestampFrequency);
+        return playbackRange is { } bounded && result > bounded.End ? bounded.End : result;
     }
 
     private void PublishUnderLock(PositionedVideoFrame frame, long generation)
     {
+        if (playbackRange is { } range && (frame.Time >= range.End || frame.NextFrameTime is { } next && next <= range.Start))
+        {
+            frame.Dispose();
+            return;
+        }
         while (presentations.Count >= presentationCapacity)
         {
             presentations.Dequeue().Dispose();
         }
 
         presentations.Enqueue(new(frame, generation));
+        PulsePresentationUnderLock();
+    }
+
+    private void CompleteRangeUnderLock(MediaTimeRange range)
+    {
+        reachedEnd = true;
+        nextFrameTime = null;
+        snapshot = snapshot with { State = VideoPlaybackState.ENDED, Position = range.End };
         PulsePresentationUnderLock();
     }
 

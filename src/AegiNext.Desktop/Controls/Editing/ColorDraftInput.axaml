@@ -1,15 +1,28 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:editing="using:AegiNext.Desktop.Editing" xmlns:controls="using:AegiNext.Desktop.Controls"
              x:Class="AegiNext.Desktop.Controls.ColorDraftInput" x:DataType="controls:ColorDraftInput">
+    <UserControl.Styles>
+        <Style Selector="controls|ColorDraftInput:disabled Border#InputBar">
+            <Setter Property="Background" Value="{DynamicResource TextControlBackgroundDisabled}" />
+        </Style>
+        <Style Selector="TextBox#ColorInput:disabled /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Button#ModeButton:disabled /template/ ContentPresenter#PART_ContentPresenter, Button#PickerButton:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+    </UserControl.Styles>
     <StackPanel Name="DraftRoot" Spacing="4" DataContext="{x:Null}" x:DataType="editing:ColorDraft">
         <Border Name="InputBar" BorderThickness="1" CornerRadius="5" ClipToBounds="True"
                 BorderBrush="{DynamicResource PreviewBorder}" Background="{DynamicResource PreviewSurface}">
             <Grid ColumnDefinitions="32,*,32,32" Height="32">
-                <ColorPreviewer Name="ColorPreview" Width="32" Height="32" IsAccentColorsVisible="False"
+                <ColorPreviewer Name="ColorPreview" Width="32" Height="32" CornerRadius="0" ClipToBounds="True" IsAccentColorsVisible="False"
                                 AutomationProperties.Name="{Loc Key=Settings.ColorPreview}" />
                 <TextBox Name="ColorInput" Grid.Column="1" Text="{Binding InputText, Mode=TwoWay}"
                          PlaceholderText="{Binding InputPlaceholder}" MaxLength="128" Padding="6,0"
-                         Height="32" MinHeight="32" BorderThickness="0" CornerRadius="0" Background="Transparent"
+                         Height="32" MinHeight="32" MinWidth="0" ClipToBounds="True" BorderThickness="0" CornerRadius="0" Background="Transparent"
                          FontSize="12" VerticalContentAlignment="Center" />
                 <Button Name="ModeButton" Grid.Column="2" Content="{Binding ModeLabel}"
                         ToolTip.Tip="{Loc Key=Settings.ColorInputMode}" AutomationProperties.Name="{Loc Key=Settings.ColorInputMode}"

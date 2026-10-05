@@ -22,7 +22,7 @@ internal sealed partial class WorkbenchSession
                 controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
             WorkbenchCommand.TIMING_ENTER => playback.PendingPosition is null && controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
             WorkbenchCommand.TIMING_EXIT => timingSession.ActiveCueId is not null || pendingTimingEntry is not null,
-            WorkbenchCommand.DELETE_SUBTITLE or WorkbenchCommand.SPLIT_SUBTITLE => SelectedCue is not null,
+            WorkbenchCommand.DELETE_SUBTITLE or WorkbenchCommand.SPLIT_SUBTITLE or WorkbenchCommand.OPEN_SUBTITLE_DETAILS => SelectedCue is not null,
             WorkbenchCommand.MERGE_SUBTITLE => CanMergeSubtitleSelection(),
             WorkbenchCommand.EXPORT_VIDEO => editor.Snapshot.Media is not null && export.CanStart,
             _ => true
@@ -66,6 +66,8 @@ internal sealed partial class WorkbenchSession
                     break;
                 case WorkbenchCommand.IMPORT_SUBTITLES: await workflow.ImportSubtitlesAsync(); break;
                 case WorkbenchCommand.EXPORT_SUBTITLES: await workflow.ExportSubtitlesAsync(); break;
+                case WorkbenchCommand.IMPORT_ASS: await workflow.ImportSubtitlesAsync(true); break;
+                case WorkbenchCommand.EXPORT_ASS: await workflow.ExportSubtitlesAsync(true); break;
                 case WorkbenchCommand.EXPORT_VIDEO: await export.EncodeAsync(); break;
                 case WorkbenchCommand.PLAY_PAUSE:
                     TryCommitDrafts(false);

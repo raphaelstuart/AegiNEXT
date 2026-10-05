@@ -11,16 +11,18 @@ public sealed class ShapedTextRun : IDisposable
     private readonly ShapedGlyph[] glyphs;
     private bool isDisposed;
 
-    internal ShapedTextRun(SKTextBlob blob, ShapedGlyph[] glyphs, float advanceWidth, SKRect inkBounds)
+    internal ShapedTextRun(SKTextBlob blob, ShapedGlyph[] glyphs, float advanceWidth, SKRect inkBounds, SKFontMetrics metrics)
     {
         this.blob = blob;
         this.glyphs = glyphs;
         AdvanceWidth = advanceWidth;
         InkBounds = inkBounds;
+        FontMetrics = metrics;
     }
 
     public float AdvanceWidth { get; }
     public SKRect InkBounds { get; }
+    public SKFontMetrics FontMetrics { get; }
     public ReadOnlySpan<ShapedGlyph> Glyphs => glyphs;
 
     /// <inheritdoc />

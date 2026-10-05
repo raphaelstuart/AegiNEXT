@@ -1,6 +1,7 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Input;
 
@@ -23,6 +24,22 @@ public sealed class NumericDraftInput : NumericUpDown
 
     /// <inheritdoc />
     protected override Type StyleKeyOverride => typeof(NumericUpDown);
+
+    /// <inheritdoc />
+    protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
+    {
+        var text = RawText;
+        preservingDraft = true;
+        try
+        {
+            base.OnApplyTemplate(e);
+            SetCurrentValue(TextProperty, text);
+        }
+        finally
+        {
+            preservingDraft = false;
+        }
+    }
 
     /// <inheritdoc />
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

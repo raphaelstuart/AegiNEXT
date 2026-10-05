@@ -32,6 +32,16 @@ internal sealed partial class WorkbenchSession
 
         var document = editor.Snapshot;
         var prepared = document;
+        if (!Details.TryPrepare(document, out prepared))
+        {
+            ViewModel.InvalidPanelId = "subtitleDetails";
+            ViewModel.InvalidFieldKey = Details.InvalidFieldKey;
+            if (focusInvalid)
+            {
+                ViewModel.FocusDraftError();
+            }
+            return false;
+        }
         Guid? invalidRow = null;
         try
         {
@@ -41,10 +51,10 @@ internal sealed partial class WorkbenchSession
                 invalidRow = row.Id;
                 ViewModel.InvalidPanelId = "subtitles";
                 ViewModel.InvalidFieldKey = row.StartText != TimelineTimeText.Format(row.Original.Start) ? "StartText" : row.EndText != TimelineTimeText.Format(row.Original.End) ? "EndText" : "Text";
-                var line = document.Subtitles.FirstOrDefault(value => value.Id == row.Id);
+                var line = prepared.Subtitles.FirstOrDefault(value => value.Id == row.Id);
                 if (line is not null)
                 {
-                    changes.Add(row.Id, row.CreateEditedLine(line));
+                    changes.Add(row.Id, row.CreateEditedLine(line, prepared));
                 }
             }
 

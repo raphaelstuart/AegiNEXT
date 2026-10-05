@@ -22,8 +22,7 @@ public sealed partial class ProjectEditor
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(historyLimit, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(historyLimit, 10000);
-        snapshot = document ?? new();
-        ProjectValidator.Validate(snapshot);
+        snapshot = SubtitleKaraokeNormalization.Normalize(document ?? new());
         saved = snapshot;
         this.historyLimit = historyLimit;
     }
@@ -103,7 +102,7 @@ public sealed partial class ProjectEditor
             try
             {
                 var next = edit(snapshot) ?? throw new InvalidOperationException("编辑不能返回空工程。");
-                ProjectValidator.Validate(next);
+                next = SubtitleKaraokeNormalization.Normalize(next);
                 if (next == snapshot)
                 {
                     return;
@@ -233,7 +232,7 @@ public sealed partial class ProjectEditor
         {
             var index = FindSubtitle(document, id);
             var before = document.Subtitles[index];
-            var after = edit(before) ?? throw new InvalidOperationException("字幕不能为空。");
+            var after = SubtitleKaraokeNormalization.Normalize(edit(before) ?? throw new InvalidOperationException("字幕不能为空。"));
             if (after.Id != id)
             {
                 throw new InvalidOperationException("编辑不能改变字幕标识。");
