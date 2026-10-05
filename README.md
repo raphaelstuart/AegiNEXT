@@ -39,6 +39,20 @@ dotnet run --project src/AegiNext.Desktop/AegiNext.Desktop.csproj -c Release --r
 
 On Windows, replace both RID arguments with `win-x64`. Closing the main window exits the process. Rider can open `AegiNext.sln` and run `AegiNext.Desktop`.
 
+### Native libraries before Debug runs
+
+**Debug builds and Rider debugging do not automatically build missing native media libraries.** Ordinary `dotnet build` / `dotnet run` and the `Managed` target only copy native output that already exists for the selected RID and configuration. Managed compilation can succeed without those libraries; playback or export then reports a native library load error.
+
+Before the first Debug session, and after changing native source or its ABI, run from the repository root:
+
+```powershell
+pwsh -NoProfile -File ./build-debug-native.ps1
+# Windows, including ARM64 hosts:
+pwsh -NoProfile -File ./build-debug-native.ps1 -RuntimeIdentifier win-x64
+```
+
+Use the command for your platform. `build-debug-native.ps1` runs the existing build pipeline with `Workbench / Debug`: Decoder → Audio → Export → Managed, including copying the native libraries into the application output. On macOS, it selects the host RID automatically (`osx-arm64` on Apple Silicon). Native artifacts are isolated by RID and configuration: rebuilding Release does not update Debug libraries. After a successful build, stop the previous debug process and start `AegiNext.Desktop` in Debug. The script accepts `-CheckEnvironment`, explicit `-FfmpegRoot` / `-SdlRoot`, `-InstallDependencies`, and `-RunTests -TestProjects Media`; installation and tests require their explicit switches. See [building](docs/building.md#debugrelease-native-export-compatibility) for configuration and ABI details.
+
 Playback and export use separate FFmpeg/SDL3 native modules. Development runs accept PATH tools or absolute `AEGINEXT_FFPROBE_PATH` / `AEGINEXT_FFMPEG_PATH`; an invalid explicit path fails. Complete packages include their own tools and dependency closure. `-Target All` builds the optional HDR diagnostic and Managed, and does **not** include Workbench; the native HDR display backend currently supports macOS only.
 
 ## Repository structure

@@ -35,10 +35,12 @@ brew install powershell
 启动 Debug 工作台前，应重建对应配置：
 
 ```powershell
-pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug
+pwsh -NoProfile -File ./build-debug-native.ps1
 # Windows，包括 ARM64 宿主：
-pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug -RuntimeIdentifier win-x64
+pwsh -NoProfile -File ./build-debug-native.ps1 -RuntimeIdentifier win-x64
 ```
+
+`build-debug-native.ps1` 是固定使用 `Workbench / Debug` 的专用入口，复用现有环境检查，依次构建 Decoder → Audio → Export → Managed，使应用输出包含原生库。脚本支持 `build.ps1` 的 RID、FFmpeg／SDL SDK 路径、并发数、环境报告、依赖安装与定向测试选项；`-CheckEnvironment` 仅检查，不构建。普通 Debug 构建和 Rider 调试仍不会自动触发 native 编译。
 
 压制 CMake 构建仅在原生库成功构建后写入 `aeginext_export.contract.sha256`。托管构建在复制原生产物前，将该指纹与当前公开压制头文件比较。`ANX1001` 表示原生库缺少当前接口元数据；`ANX1002` 表示库构建后接口已经变化。两类错误均包含 RID、配置、库路径和修复命令。未构建原生压制库的纯托管检出仍可编译，实际压制需要完整 Workbench 构建。
 

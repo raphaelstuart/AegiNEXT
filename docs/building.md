@@ -76,10 +76,12 @@ Native outputs are isolated by RID **and configuration**. Rebuilding Release doe
 For a Debug session, rebuild the matching workbench before launching it:
 
 ```powershell
-pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug
+pwsh -NoProfile -File ./build-debug-native.ps1
 # Windows, including ARM64 hosts:
-pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug -RuntimeIdentifier win-x64
+pwsh -NoProfile -File ./build-debug-native.ps1 -RuntimeIdentifier win-x64
 ```
+
+`build-debug-native.ps1` is a dedicated `Workbench / Debug` entry point: it reuses the existing environment checks and builds Decoder → Audio → Export → Managed so the application output receives the native libraries. It accepts the RID, FFmpeg/SDL SDK roots, jobs, environment report, dependency installation, and focused test options from `build.ps1`. Run with `-CheckEnvironment` for a read-only check. Ordinary Debug builds and Rider sessions still do not invoke native compilation automatically.
 
 The export CMake build writes `aeginext_export.contract.sha256` only after its native library has built successfully. Managed builds compare this fingerprint with the current public export header before copying native output. `ANX1001` means the library lacks current contract metadata; `ANX1002` means the interface has changed since that library was built. Both errors include the RID, configuration, library path, and repair command. A managed-only checkout without a native export library can still compile, but needs a complete Workbench build for export.
 

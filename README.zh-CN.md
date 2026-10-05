@@ -39,6 +39,20 @@ dotnet run --project src/AegiNext.Desktop/AegiNext.Desktop.csproj -c Release --r
 
 Windows 使用 `win-x64` 替换两个 RID 参数。关闭主窗口即退出进程。也可以在 Rider 中打开 `AegiNext.sln`，选择 `AegiNext.Desktop` 启动。
 
+### Debug 调试前的 native 构建
+
+**Debug 构建和 Rider 调试目前不会自动构建缺失的原生媒体库。** 普通 `dotnet build`／`dotnet run` 和 `Managed` 目标只复制当前 RID／配置下已经存在的 native 产物。缺少这些库时，托管编译仍可能成功，播放或压制时才会报告原生库加载错误。
+
+首次 Debug 调试前，以及修改原生源码或 ABI 后，请先在仓库根目录执行：
+
+```powershell
+pwsh -NoProfile -File ./build-debug-native.ps1
+# Windows，包括 ARM64 宿主：
+pwsh -NoProfile -File ./build-debug-native.ps1 -RuntimeIdentifier win-x64
+```
+
+按平台选择对应命令。`build-debug-native.ps1` 固定使用现有构建流程的 `Workbench / Debug`，依次构建 Decoder → Audio → Export → Managed，并把原生库复制到应用输出目录。macOS 自动采用宿主 RID，Apple Silicon 为 `osx-arm64`。native 产物按 RID 和构建配置隔离，重建 Release 不会更新 Debug 使用的库。构建成功后，停止旧调试进程，再以 Debug 配置启动 `AegiNext.Desktop`。脚本支持 `-CheckEnvironment`、显式 `-FfmpegRoot`／`-SdlRoot`、`-InstallDependencies`，以及 `-RunTests -TestProjects Media`；安装依赖和运行测试均须显式指定开关。配置与 ABI 细节见[构建说明](docs/zh-CN/building.md#debugrelease-原生压制兼容性)。
+
 影音播放和压制使用独立 FFmpeg／SDL3 原生库。开发运行时可将工具放在 PATH，或设置 `AEGINEXT_FFPROBE_PATH`、`AEGINEXT_FFMPEG_PATH` 为绝对路径。显式路径无效时报告错误。完整发布包包含自有 native 模块、递归运行库依赖和包内 FFmpeg／FFprobe，使用包内工具；打包入口与验证步骤见 [平台发布说明](docs/zh-CN/publishing.md)。可选 HDR 诊断使用 `-Target All`，该目标不包含 Workbench；现有 HDR 显示后端仅支持 macOS。
 
 ## 结构
