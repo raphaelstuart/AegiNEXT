@@ -1,5 +1,4 @@
 using AegiNext.Desktop.Controls;
-using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Workspace;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -13,13 +12,16 @@ namespace AegiNext.Desktop.Panels.Styles;
 internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
 {
     private readonly WorkbenchSession session;
+    private readonly StylesPanelViewModel viewModel;
     private readonly FontFamilyPicker fonts;
+    private readonly ComboBox alignment;
     private bool suppressFocusCommit;
     private int focusCommitRevision;
     private bool disposed;
     internal StylesPanelView(StylesPanelViewModel viewModel, WorkbenchSession session)
     {
         this.session = session;
+        this.viewModel = viewModel;
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
         fonts = this.FindControl<FontFamilyPicker>("FontCombo")!;
@@ -35,8 +37,16 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         italic.IsCheckedChanged += (_, _) => viewModel.CommitItalic(italic.IsChecked == true);
         viewModel.FillDraft.Committed += (_, _) => viewModel.CommitDrafts();
         viewModel.StrokeDraft.Committed += (_, _) => viewModel.CommitDrafts();
-        var alignment = this.FindControl<ComboBox>("AlignmentCombo")!;
-        alignment.SelectionChanged += (_, _) => viewModel.CommitAlignment(alignment.SelectedIndex);
+        alignment = this.FindControl<ComboBox>("AlignmentCombo")!;
+        alignment.SelectionChanged += (_, _) =>
+        {
+            if (!session.IsUpdating)
+            {
+                viewModel.CommitAlignment(alignment.SelectedIndex);
+            }
+        };
+        viewModel.AlignmentChoicesRefreshing += OnAlignmentChoicesRefreshing;
+        viewModel.AlignmentChoicesRefreshed += OnAlignmentChoicesRefreshed;
         var position = this.FindControl<SubtitlePositionEditor>("PositionEditor")!;
         position.AutomaticPositionRequested += async (_, _) => await viewModel.RestoreAutomaticPositionAsync();
         position.ExplicitPositionChanged += (_, _) => viewModel.CommitDrafts();
@@ -79,9 +89,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
                 }, DispatcherPriority.Background);
             }
         }, RoutingStrategies.Bubble);
-        session.PreferencesChanged += OnPreferencesChanged;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
-        ControlLocalization.Apply(this);
     }
 
     public string PanelId => "styles";
@@ -112,18 +120,26 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         }
         control.Focus();
     }
-    private void OnPreferencesChanged(object? sender, EventArgs e)
-    {
-        ControlLocalization.Apply(this);
-        this.FindControl<ColorDraftInput>("FillPicker")!.RefreshLanguage();
-        this.FindControl<ColorDraftInput>("StrokePicker")!.RefreshLanguage();
-    }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
+
+    private void OnAlignmentChoicesRefreshing(object? sender, EventArgs e)
+    {
+        var selectedIndex = alignment.SelectedIndex;
+        alignment.BeginInit();
+        alignment.SelectedIndex = selectedIndex;
+    }
+
+    private void OnAlignmentChoicesRefreshed(object? sender, EventArgs e)
+    {
+        alignment.EndInit();
+    }
+
     public void Dispose()
     {
         disposed = true;
         focusCommitRevision++;
-        session.PreferencesChanged -= OnPreferencesChanged;
+        viewModel.AlignmentChoicesRefreshing -= OnAlignmentChoicesRefreshing;
+        viewModel.AlignmentChoicesRefreshed -= OnAlignmentChoicesRefreshed;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
     }
 }

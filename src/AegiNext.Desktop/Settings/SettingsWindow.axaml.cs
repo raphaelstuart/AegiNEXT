@@ -3,6 +3,7 @@ using AegiNext.Application.Presets;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Shortcuts;
+using AegiNext.Desktop.I18n;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
@@ -44,7 +45,8 @@ public sealed partial class SettingsWindow : Window
         viewModel.Effects.ImportRequested += (_, _) => ImportEffectRequested?.Invoke(this, EventArgs.Empty);
         viewModel.Effects.ExportRequested += (_, value) => ExportEffectRequested?.Invoke(this, value);
         Deactivated += (_, _) => viewModel.Shortcuts.CancelCapture();
-        Closed += (_, _) => viewModel.Shortcuts.CancelCapture();
+        Closed += OnClosed;
+        Localization.LanguageChanged += OnLanguageChanged;
         UpdatePreferences(preferences);
     }
 
@@ -96,8 +98,18 @@ public sealed partial class SettingsWindow : Window
     /// <summary>即时刷新五个页面的语言，保留未确认输入。</summary>
     public void RefreshLanguage()
     {
-        SettingsViewLocalization.Apply(this);
         ViewModel.RefreshLanguage();
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        RefreshLanguage();
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        Localization.LanguageChanged -= OnLanguageChanged;
+        ViewModel.Shortcuts.CancelCapture();
     }
 
     /// <summary>同步已持久化快捷键。</summary>

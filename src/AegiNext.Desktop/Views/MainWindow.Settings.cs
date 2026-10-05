@@ -1,3 +1,4 @@
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Windowing;
 
@@ -56,7 +57,7 @@ public sealed partial class MainWindow
                 settingsWindow = null;
             }
         };
-        windowRegistry.Register(window, () => AegiNext.Desktop.Localization.SettingsText.Get("Settings"), window.TitleBar,
+        windowRegistry.Register(window, () => Localization.Get("Settings.Settings"), window.TitleBar,
             WorkbenchWindowRole.SETTINGS);
         if (page is { } selected)
         {

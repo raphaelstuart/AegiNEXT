@@ -1,6 +1,6 @@
 using AegiNext.Application.Presets;
 using AegiNext.Core.Effects;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -76,7 +76,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         session.ViewModel.CancelGestures();
         session.ClearKeyframeSelection();
         session.Editor.ApplyEffectScript(layer.Id, EffectScriptParser.Parse(source));
-        session.LogInfo("Effects", WorkbenchText.Get("ApplyPreset"));
+        session.LogInfo("Effects", Localization.Get("Workbench.ApplyPreset"));
     }
 
     internal async Task UpsertAsync(EffectScriptPreset preset)
@@ -84,7 +84,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         await session.EffectScriptLibrary.UpsertAsync(preset);
         RefreshChoices();
         session.NotifyEffectLibraryChanged();
-        session.LogInfo("Effects", WorkbenchText.Get("SavePreset"), preset.Name);
+        session.LogInfo("Effects", Localization.Get("Workbench.SavePreset"), preset.Name);
     }
 
     internal async Task DeleteAsync(Guid id)
@@ -116,10 +116,10 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         }
     }
 
-    private static string BuiltinName(string id) => WorkbenchText.Get(id switch
+    private static string BuiltinName(string id) => Localization.Get("Workbench." + (id switch
     {
         "fade-in-out" => "Fade", "fade-in" => "FadeIn", "fade-out" => "FadeOut",
         "pop-in" => "Pop", "pop-out" => "PopOut", "slide-in" => "Slide", "slide-out" => "SlideOut",
         _ => throw new ArgumentOutOfRangeException(nameof(id))
-    });
+    }));
 }

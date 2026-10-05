@@ -1,4 +1,4 @@
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Media.Encoding;
 
 namespace AegiNext.Desktop.Workspace;
@@ -10,11 +10,22 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
     private bool activeOperation;
     private bool disposed;
     private long revision;
+    private string? statusKey;
+    private string? statusEncoder;
     internal bool IsChoosingOutput { get; private set; }
     internal bool IsRunning => session.ViewModel.Export.IsRunning;
     internal bool CanStart => !disposed && !activeOperation;
     public Task Completion { get; private set; } = Task.CompletedTask;
     internal void Cancel() => cancellation?.Cancel();
+
+    internal void RefreshLanguage()
+    {
+        if (statusKey is not null)
+        {
+            session.ViewModel.Export.Status = Localization.Get(statusKey) +
+                (string.IsNullOrWhiteSpace(statusEncoder) ? string.Empty : " · " + statusEncoder);
+        }
+    }
 
     internal Task EncodeAsync()
     {
@@ -83,7 +94,9 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         vm.IsRunning = true;
         vm.ProgressVisible = true;
         vm.ProgressIndeterminate = true;
-        session.LogInfo("Export", WorkbenchText.Get("Export"));
+        statusKey = null;
+        statusEncoder = null;
+        session.LogInfo("Export", Localization.Get("Workbench.Export"));
         var duration = session.Controller.Snapshot.Duration;
         var exportRevision = revision;
         string? reportedEncoder = null;
@@ -98,6 +111,8 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
                 ? WorkbenchSession.ToSeconds(value.Position) / WorkbenchSession.ToSeconds(end) : (double?)null);
             vm.ProgressIndeterminate = fraction is null;
             vm.Progress = fraction is { } known ? Math.Clamp(known, 0, 1) : 0;
+            statusKey = null;
+            statusEncoder = null;
             vm.Status = $"{WorkbenchSession.FormatTime(value.Position)} · {value.FrameCount}";
             if (!string.IsNullOrWhiteSpace(value.Encoder))
             {
@@ -105,7 +120,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
                 if (reportedEncoder != value.Encoder)
                 {
                     reportedEncoder = value.Encoder;
-                    session.LogInfo("Export", WorkbenchText.Get("Codec") + ": " + value.Encoder);
+                    session.LogInfo("Export", Localization.Get("Workbench.Codec") + ": " + value.Encoder);
                 }
             }
         });
@@ -116,13 +131,17 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
             {
                 vm.ProgressIndeterminate = false;
                 vm.Progress = 1;
-                vm.Status = WorkbenchText.Get("Exported") + (string.IsNullOrWhiteSpace(result.Encoder) ? string.Empty : " · " + result.Encoder);
+                statusKey = "Workbench.Exported";
+                statusEncoder = result.Encoder;
+                RefreshLanguage();
                 session.LogInfo("Export", vm.Status);
             }
         }
         catch (OperationCanceledException)
         {
-            vm.Status = WorkbenchText.Get("Cancelled");
+            statusKey = "Workbench.Cancelled";
+            statusEncoder = null;
+            RefreshLanguage();
             session.LogInfo("Export", vm.Status);
             vm.ProgressVisible = false;
         }
@@ -131,6 +150,8 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
             if (!session.IsClosing)
             {
                 session.ShowError(error);
+                statusKey = null;
+                statusEncoder = null;
                 vm.Status = error.Message;
                 vm.ProgressVisible = false;
             }

@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using AegiNext.Desktop.Views;
 using AegiNext.Desktop.Diagnostics;
+using AegiNext.Desktop.I18n;
 using System.Runtime.Versioning;
 
 namespace AegiNext.Desktop;
@@ -16,6 +17,10 @@ public class App : Avalonia.Application
     /// <inheritdoc />
     public override void Initialize()
     {
+        if (!Localization.IsInitialized)
+        {
+            Localization.Initialize(Path.Combine(AppContext.BaseDirectory, "i18n"));
+        }
         AvaloniaXamlLoader.Load(this);
         if (OperatingSystem.IsMacOS() && NativeMenu.GetMenu(this) is null)
         {

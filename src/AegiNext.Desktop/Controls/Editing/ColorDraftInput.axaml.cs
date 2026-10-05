@@ -1,10 +1,9 @@
 using System.ComponentModel;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Automation;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -85,15 +84,25 @@ public sealed partial class ColorDraftInput : UserControl
     /// <summary>刷新共享输入文案，保留原始草稿和模式。</summary>
     public void RefreshLanguage()
     {
-        var modeButton = this.FindControl<Button>("ModeButton")!;
-        var pickerButton = this.FindControl<Button>("PickerButton")!;
-        ToolTip.SetTip(modeButton, SettingsText.Get("ColorInputMode"));
-        ToolTip.SetTip(pickerButton, SettingsText.Get("OpenColorPicker"));
-        AutomationProperties.SetName(modeButton, SettingsText.Get("ColorInputMode"));
-        AutomationProperties.SetName(pickerButton, SettingsText.Get("OpenColorPicker"));
-        AutomationProperties.SetName(preview, SettingsText.Get("ColorPreview"));
         model?.RefreshLanguage();
     }
+
+    /// <inheritdoc />
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Localization.LanguageChanged += OnLanguageChanged;
+        RefreshLanguage();
+    }
+
+    /// <inheritdoc />
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        Localization.LanguageChanged -= OnLanguageChanged;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e) => RefreshLanguage();
 
     /// <summary>模型替换时重接纯草稿订阅；回填不产生用户颜色提交。</summary>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

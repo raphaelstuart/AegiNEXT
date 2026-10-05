@@ -1,40 +1,43 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:vm="using:AegiNext.Desktop.Settings.Colors"
              x:Class="AegiNext.Desktop.Settings.Colors.ColorsSettingsView" x:DataType="vm:ColorsSettingsViewModel"
              Classes="business-surface">
   <ScrollViewer Name="ColorsPage" IsVisible="{Binding $parent[UserControl].IsVisible}">
     <StackPanel Spacing="16">
-      <Button Name="ResetColorsButton" Tag="ResetColors" HorizontalAlignment="Right" Command="{Binding ResetColorsCommand}" />
+      <Button Name="ResetColorsButton" HorizontalAlignment="Right" Command="{Binding ResetColorsCommand}">
+        <controlsCommon:IconText Text="{Loc Key=Settings.ResetColors}" IconKey="ResetColors" />
+      </Button>
       <Border Classes="card">
         <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
-          <TextBlock Tag="Accent" VerticalAlignment="Center" />
+          <TextBlock Text="{Loc Key=Settings.Accent}" VerticalAlignment="Center" />
           <controls:ColorDraftInput Name="AccentPicker" Draft="{Binding AccentDraft}" Grid.Column="1" />
         </Grid>
       </Border>
       <Border Classes="card">
         <StackPanel Spacing="12">
           <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
-            <TextBlock Tag="AudioPalette" VerticalAlignment="Center" />
+            <TextBlock Text="{Loc Key=Settings.AudioPalette}" VerticalAlignment="Center" />
             <ComboBox Name="AudioPaletteCombo" Grid.Column="1" ItemsSource="{Binding Schemes}" SelectedItem="{Binding SelectedScheme, Mode=TwoWay}">
               <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:AudioGraphPaletteChoice"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
             </ComboBox>
           </Grid>
-          <TextBlock Tag="AudioPaletteHint" Classes="field" TextWrapping="Wrap" />
+          <TextBlock Text="{Loc Key=Settings.AudioPaletteHint}" Classes="field" TextWrapping="Wrap" />
           <controls:AudioGraphPreviewControl Name="AudioPalettePreview" Palette="{Binding AudioGraph}" Height="100" />
           <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
-            <TextBlock Tag="AudioLow" VerticalAlignment="Center" />
+            <TextBlock Text="{Loc Key=Settings.AudioLow}" VerticalAlignment="Center" />
             <controls:ColorDraftInput Name="AudioLowPicker" Draft="{Binding LowDraft}" Grid.Column="1" />
           </Grid>
           <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
-            <TextBlock Tag="AudioMid" VerticalAlignment="Center" />
+            <TextBlock Text="{Loc Key=Settings.AudioMid}" VerticalAlignment="Center" />
             <controls:ColorDraftInput Name="AudioMidPicker" Draft="{Binding MidDraft}" Grid.Column="1" />
           </Grid>
           <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
-            <TextBlock Tag="AudioHigh" VerticalAlignment="Center" />
+            <TextBlock Text="{Loc Key=Settings.AudioHigh}" VerticalAlignment="Center" />
             <controls:ColorDraftInput Name="AudioHighPicker" Draft="{Binding HighDraft}" Grid.Column="1" />
           </Grid>
           <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
-            <TextBlock Tag="AudioWaveform" VerticalAlignment="Center" />
+            <TextBlock Text="{Loc Key=Settings.AudioWaveform}" VerticalAlignment="Center" />
             <controls:ColorDraftInput Name="AudioWaveformPicker" Draft="{Binding WaveformDraft}" Grid.Column="1" />
           </Grid>
         </StackPanel>

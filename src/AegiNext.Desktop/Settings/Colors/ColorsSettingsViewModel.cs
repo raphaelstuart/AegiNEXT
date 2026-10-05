@@ -1,6 +1,6 @@
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -117,7 +117,7 @@ public sealed class ColorsSettingsViewModel : ObservableObject
             var keys = new[] { "AudioClassic", "AudioIce", "AudioFire", "AudioGray", "AudioCustom" };
             for (var index = 0; index < schemes.Length; index++)
             {
-                schemes[index].Label = SettingsText.Get(keys[index]);
+                schemes[index].Label = Localization.Get("Settings." + keys[index]);
             }
             OnPropertyChanged(nameof(SchemeIndex));
             OnPropertyChanged(nameof(SelectedScheme));

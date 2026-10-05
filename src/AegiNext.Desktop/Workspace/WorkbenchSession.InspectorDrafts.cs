@@ -1,7 +1,7 @@
 using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -19,7 +19,7 @@ internal sealed partial class WorkbenchSession
             var family = (preview ? vm.FontFamily : vm.FontDraft)?.Trim() ?? string.Empty;
             if (family.Length is 0 or > 512 || family.Any(char.IsControl))
             {
-                throw new InvalidDataException(WorkbenchText.Get("Font"));
+                throw new InvalidDataException(Localization.Get("Workbench.Font"));
             }
             if (selected.SubtitleId is { } id)
             {
@@ -30,14 +30,14 @@ internal sealed partial class WorkbenchSession
                 var stroke = PrepareColor(ref prepared, selected, ReadColorDraft(vm.StrokeDraft, "StrokePicker"), line.Style.Stroke, true);
                 if (fontSize <= 0 || strokeWidth < 0 || string.IsNullOrWhiteSpace(vm.FontFamily))
                 {
-                    throw new InvalidDataException(WorkbenchText.Get("Font") + ": " + WorkbenchText.Get("Size"));
+                    throw new InvalidDataException(Localization.Get("Workbench.Font") + ": " + Localization.Get("Workbench.Size"));
                 }
 
                 var familyChanged = family != line.Style.FontFamily;
                 if (vm.Position.Validate() is { } positionKey)
                 {
                     ViewModel.InvalidFieldKey = positionKey;
-                    throw new InvalidDataException(WorkbenchText.Get("ExplicitPosition"));
+                    throw new InvalidDataException(Localization.Get("Workbench.ExplicitPosition"));
                 }
                 var style = line.Style with
                 {
@@ -97,7 +97,7 @@ internal sealed partial class WorkbenchSession
                 {
                     if (preparedPlacement.BasePosition is not { } preparedBase)
                     {
-                        throw new InvalidDataException(WorkbenchText.Get("SubtitlePositionUnavailable"), preparedPlacement.Error);
+                        throw new InvalidDataException(Localization.Get("Workbench.SubtitlePositionUnavailable"), preparedPlacement.Error);
                     }
                     positionX = requestedX == displayedX ? positionX : requestedX - preparedBase.X;
                     positionY = requestedY == displayedY ? positionY : requestedY - preparedBase.Y;
@@ -105,7 +105,7 @@ internal sealed partial class WorkbenchSession
             }
             else if (!string.IsNullOrEmpty(vm.PositionXText) || !string.IsNullOrEmpty(vm.PositionYText))
             {
-                throw new InvalidDataException(WorkbenchText.Get("SubtitlePositionUnavailable"), originalPlacement.Error);
+                throw new InvalidDataException(Localization.Get("Workbench.SubtitlePositionUnavailable"), originalPlacement.Error);
             }
 
             prepared = WorkspaceDraftOperations.UpdateLayer(prepared, selected.Id, layer => layer with

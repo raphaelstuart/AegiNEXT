@@ -8,11 +8,11 @@
     <Grid ColumnDefinitions="140,*,Auto,Auto,Auto" ColumnSpacing="6">
       <ComboBox Name="LogLevelFilter" ItemsSource="{Binding Levels}" SelectedIndex="{Binding FilterIndex, Mode=TwoWay}" />
       <TextBox Name="LogSearch" Grid.Column="1" Text="{Binding FilterText, Mode=TwoWay}"
-               PlaceholderText="{Binding SearchLabel}" />
-      <Button Name="CopyLogSelected" Grid.Column="2" Content="{Binding CopySelectedLabel}"
+               PlaceholderText="{Loc Key=Log.Search}" />
+      <Button Name="CopyLogSelected" Grid.Column="2" Content="{Loc Key=Log.CopySelected}"
               IsEnabled="{Binding HasSelection}" Click="CopySelected" />
-      <Button Name="CopyLogVisible" Grid.Column="3" Content="{Binding CopyVisibleLabel}" Click="CopyVisible" />
-      <Button Name="ClearLog" Grid.Column="4" Content="{Binding ClearLabel}" Command="{Binding ClearCommand}" />
+      <Button Name="CopyLogVisible" Grid.Column="3" Content="{Loc Key=Log.CopyVisible}" Click="CopyVisible" />
+      <Button Name="ClearLog" Grid.Column="4" Content="{Loc Key=Log.Clear}" Command="{Binding ClearCommand}" />
     </Grid>
     <Grid Grid.Row="1">
       <ListBox Name="LogEntries" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry, Mode=TwoWay}">
@@ -34,7 +34,7 @@
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
-      <TextBlock Text="{Binding EmptyLabel}" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center"
+      <TextBlock Text="{Loc Key=Log.Empty}" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center"
                  VerticalAlignment="Center" />
     </Grid>
   </Grid>

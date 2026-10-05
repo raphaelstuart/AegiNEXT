@@ -1,8 +1,10 @@
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Menus;
 using AegiNext.Desktop.Windowing;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Platform;
 
@@ -10,6 +12,7 @@ namespace AegiNext.Desktop.Diagnostics;
 
 internal sealed class WindowChromeProbeWindow : Window
 {
+    private readonly List<IDisposable> localizationBindings = [];
     private readonly IWindowChrome chrome;
     private readonly Menu windowMenu = new();
     private readonly NativeMenu nativeMenu = new();
@@ -17,32 +20,33 @@ internal sealed class WindowChromeProbeWindow : Window
     private readonly CheckBox rejectClose;
     private readonly TextBlock status;
     private readonly Size initialSize;
+    private BindingExpressionBase? statusBinding;
 
     internal WindowChromeProbeWindow(string host, Size size, Action toggleMenu, Action resize, Action showChildren)
     {
         Host = host;
         initialSize = size;
-        Title = $"{WindowChromeProbeText.Get(host)} — AegiNext · {WindowChromeProbeText.Get("Probe")}";
+        localizationBindings.Add(this.Bind(TitleProperty, ObserveTitle(host).ToBinding()));
         Width = size.Width;
         Height = size.Height;
         MinWidth = 480;
         MinHeight = 300;
         TitleBar = new();
         status = new() { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-        rejectClose = new() { Content = WindowChromeProbeText.Get("RejectClose") };
+        rejectClose = new();
+        localizationBindings.Add(rejectClose.Bind(ContentControl.ContentProperty, Localization.Observe("WindowChromeProbe.RejectClose").ToBinding()));
         var root = new DockPanel();
         DockPanel.SetDock(TitleBar, Avalonia.Controls.Dock.Top);
         root.Children.Add(TitleBar);
         var content = new StackPanel { Spacing = 16, Margin = new(24) };
-        content.Children.Add(new TextBlock
-        {
-            Text = WindowChromeProbeText.Get("Description"), TextWrapping = Avalonia.Media.TextWrapping.Wrap
-        });
-        content.Children.Add(CreateButton("WindowMenu", toggleMenu));
-        content.Children.Add(CreateButton("Resize", resize));
+        var description = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+        localizationBindings.Add(description.Bind(TextBlock.TextProperty, Localization.Observe("WindowChromeProbe.Description").ToBinding()));
+        content.Children.Add(description);
+        content.Children.Add(CreateButton("WindowMenu", toggleMenu, localizationBindings));
+        content.Children.Add(CreateButton("Resize", resize, localizationBindings));
         if (host == "Main")
         {
-            content.Children.Add(CreateButton("Children", showChildren));
+            content.Children.Add(CreateButton("Children", showChildren, localizationBindings));
         }
 
         content.Children.Add(rejectClose);
@@ -54,15 +58,17 @@ internal sealed class WindowChromeProbeWindow : Window
         var resizeCommand = new WorkbenchCommandAdapter(resize, () => true);
         var childrenCommand = new WorkbenchCommandAdapter(showChildren, () => true);
         var nativeBranch = new NativeMenu();
-        nativeBranch.Items.Add(new NativeMenuItem(WindowChromeProbeText.Get("WindowMenu")) { Command = menuCommand });
-        nativeBranch.Items.Add(new NativeMenuItem(WindowChromeProbeText.Get("Resize")) { Command = resizeCommand });
-        nativeBranch.Items.Add(new NativeMenuItem(WindowChromeProbeText.Get("Children")) { Command = childrenCommand });
-        nativeWindowGroup = new(WindowChromeProbeText.Get("Window")) { Menu = nativeBranch };
+        nativeBranch.Items.Add(CreateNativeItem("WindowMenu", menuCommand, localizationBindings));
+        nativeBranch.Items.Add(CreateNativeItem("Resize", resizeCommand, localizationBindings));
+        nativeBranch.Items.Add(CreateNativeItem("Children", childrenCommand, localizationBindings));
+        nativeWindowGroup = new() { Menu = nativeBranch };
+        localizationBindings.Add(nativeWindowGroup.Bind(NativeMenuItem.HeaderProperty, Localization.Observe("WindowChromeProbe.Window").ToBinding()));
         NativeMenu.SetMenu(this, nativeMenu);
-        var windowBranch = new MenuItem { Header = WindowChromeProbeText.Get("Window") };
-        windowBranch.Items.Add(new MenuItem { Header = WindowChromeProbeText.Get("WindowMenu"), Command = menuCommand });
-        windowBranch.Items.Add(new MenuItem { Header = WindowChromeProbeText.Get("Resize"), Command = resizeCommand });
-        windowBranch.Items.Add(new MenuItem { Header = WindowChromeProbeText.Get("Children"), Command = childrenCommand });
+        var windowBranch = new MenuItem();
+        localizationBindings.Add(windowBranch.Bind(MenuItem.HeaderProperty, Localization.Observe("WindowChromeProbe.Window").ToBinding()));
+        windowBranch.Items.Add(CreateMenuItem("WindowMenu", menuCommand, localizationBindings));
+        windowBranch.Items.Add(CreateMenuItem("Resize", resizeCommand, localizationBindings));
+        windowBranch.Items.Add(CreateMenuItem("Children", childrenCommand, localizationBindings));
         windowMenu.Items.Add(windowBranch);
         chrome = WindowChrome.Attach(this, TitleBar);
         SetWindowMenu(!OperatingSystem.IsMacOS());
@@ -137,20 +143,42 @@ internal sealed class WindowChromeProbeWindow : Window
         {
             RejectNextClose = false;
             e.Cancel = true;
-            status.Text = WindowChromeProbeText.Get("CloseCancelled");
+            statusBinding?.Dispose();
+            statusBinding = status.Bind(TextBlock.TextProperty, Localization.Observe("WindowChromeProbe.CloseCancelled").ToBinding());
         }
 
         base.OnClosing(e);
     }
 
-    private static Button CreateButton(string key, Action execute)
+    private static IObservable<string> ObserveTitle(string host)
     {
-        return new()
+        return Localization.Observe(() =>
+            $"{Localization.Get("WindowChromeProbe." + host)} — AegiNext · {Localization.Get("WindowChromeProbe.Probe")}");
+    }
+
+    private static Button CreateButton(string key, Action execute, List<IDisposable> bindings)
+    {
+        var button = new Button
         {
-            Content = WindowChromeProbeText.Get(key),
             HorizontalAlignment = HorizontalAlignment.Left,
             Command = new WorkbenchCommandAdapter(execute, () => true)
         };
+        bindings.Add(button.Bind(ContentControl.ContentProperty, Localization.Observe("WindowChromeProbe." + key).ToBinding()));
+        return button;
+    }
+
+    private static NativeMenuItem CreateNativeItem(string key, WorkbenchCommandAdapter command, List<IDisposable> bindings)
+    {
+        var item = new NativeMenuItem { Command = command };
+        bindings.Add(item.Bind(NativeMenuItem.HeaderProperty, Localization.Observe("WindowChromeProbe." + key).ToBinding()));
+        return item;
+    }
+
+    private static MenuItem CreateMenuItem(string key, WorkbenchCommandAdapter command, List<IDisposable> bindings)
+    {
+        var item = new MenuItem { Command = command };
+        bindings.Add(item.Bind(MenuItem.HeaderProperty, Localization.Observe("WindowChromeProbe." + key).ToBinding()));
+        return item;
     }
 
     private void OnOpened(object? sender, EventArgs e)
@@ -160,8 +188,16 @@ internal sealed class WindowChromeProbeWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
-        chrome.Dispose();
         Opened -= OnOpened;
         Closed -= OnClosed;
+        statusBinding?.Dispose();
+        statusBinding = null;
+        foreach (var binding in localizationBindings)
+        {
+            binding.Dispose();
+        }
+
+        localizationBindings.Clear();
+        chrome.Dispose();
     }
 }

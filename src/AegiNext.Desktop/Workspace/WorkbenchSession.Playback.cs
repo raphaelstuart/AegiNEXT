@@ -1,5 +1,5 @@
 using AegiNext.Core.Timing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -34,7 +34,7 @@ internal sealed partial class WorkbenchSession
         else if (e.PropertyName == "IsMuted")
         {
             controller.SetMuted(ViewModel.Preview.IsMuted);
-            ViewModel.Preview.MuteLabel = PreviewText.Get(ViewModel.Preview.IsMuted ? "Unmute" : "Mute", InterfaceCulture);
+            ViewModel.Preview.MuteLabel = Localization.Get("Preview." + (ViewModel.Preview.IsMuted ? "Unmute" : "Mute"));
         }
         else if (e.PropertyName == "SelectedQuality" && ViewModel.Preview.SelectedQuality is { } quality &&
                  quality.Id != preferences.PreviewQuality)

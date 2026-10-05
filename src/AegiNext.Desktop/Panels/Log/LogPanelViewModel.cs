@@ -1,3 +1,4 @@
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Workspace.Diagnostics;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -19,6 +20,7 @@ internal sealed class LogPanelViewModel : ObservableObject, IDisposable
         this.journal = journal;
         ClearCommand = new(journal.Clear);
         journal.Changed += OnJournalChanged;
+        Localization.LanguageChanged += OnLanguageChanged;
         RefreshLanguage();
         Refresh();
     }
@@ -91,12 +93,12 @@ internal sealed class LogPanelViewModel : ObservableObject, IDisposable
 
     internal void RefreshLanguage()
     {
-        Levels = [LogText.Get("All"), LogText.Get("Info"), LogText.Get("Warning"), LogText.Get("Error")];
-        SearchLabel = LogText.Get("Search");
-        CopySelectedLabel = LogText.Get("CopySelected");
-        CopyVisibleLabel = LogText.Get("CopyVisible");
-        ClearLabel = LogText.Get("Clear");
-        EmptyLabel = LogText.Get("Empty");
+        Levels = [Localization.Get("Log.All"), Localization.Get("Log.Info"), Localization.Get("Log.Warning"), Localization.Get("Log.Error")];
+        SearchLabel = Localization.Get("Log.Search");
+        CopySelectedLabel = Localization.Get("Log.CopySelected");
+        CopyVisibleLabel = Localization.Get("Log.CopyVisible");
+        ClearLabel = Localization.Get("Log.Clear");
+        EmptyLabel = Localization.Get("Log.Empty");
         foreach (var name in new[] { nameof(Levels), nameof(SearchLabel), nameof(CopySelectedLabel), nameof(CopyVisibleLabel), nameof(ClearLabel), nameof(EmptyLabel), nameof(FilterIndex) })
         {
             OnPropertyChanged(name);
@@ -108,7 +110,10 @@ internal sealed class LogPanelViewModel : ObservableObject, IDisposable
     {
         disposed = true;
         journal.Changed -= OnJournalChanged;
+        Localization.LanguageChanged -= OnLanguageChanged;
     }
+
+    private void OnLanguageChanged(object? sender, EventArgs e) => RefreshLanguage();
 
     private void OnJournalChanged(object? sender, EventArgs e)
     {

@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings.Appearance;
 using AegiNext.Desktop.Settings.Colors;
 using AegiNext.Desktop.Settings.Effects;
@@ -14,7 +14,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
 {
     private int pageIndex;
     private string? externalError;
-    private string title = SettingsText.Get("Settings");
+    private string title = Localization.Get("Settings.Settings");
 
     /// <summary>使用已加载偏好构造页面模型。</summary>
     public SettingsWindowViewModel(WorkbenchPreferences preferences)
@@ -44,14 +44,14 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public bool IsEffectsVisible => CurrentPage == SettingsPage.EFFECTS;
     public bool IsColorsVisible => CurrentPage == SettingsPage.COLORS;
 
-    public string PageTitle => SettingsText.Get(CurrentPage switch
+    public string PageTitle => Localization.Get("Settings." + (CurrentPage switch
     {
         SettingsPage.SHORTCUTS => "Shortcuts",
         SettingsPage.STYLES => "Styles",
         SettingsPage.EFFECTS => "Effects",
         SettingsPage.COLORS => "Colors",
         _ => "Appearance"
-    });
+    }));
 
     public string? Error => externalError ?? (CurrentPage switch
     {
@@ -103,7 +103,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Shortcuts.RefreshLanguage();
         Styles.RefreshLanguage();
         Effects.RefreshLanguage();
-        title = SettingsText.Get("Settings");
+        title = Localization.Get("Settings.Settings");
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(PageTitle));
         RefreshError();

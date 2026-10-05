@@ -1,7 +1,7 @@
 using AegiNext.Application.Presets;
 using AegiNext.Core.Presets;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Workspace.Diagnostics;
 
 namespace AegiNext.Desktop.Workspace;
@@ -15,7 +15,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
     {
         await session.StyleLibrary.LoadAsync();
         Refresh();
-        session.LogInfo("Styles", $"{WorkflowLogText.Get("StyleLibraryLoaded", session.InterfaceCulture)} ({session.StyleLibrary.Snapshot.Presets.Length})");
+        session.LogInfo("Styles", $"{Localization.Get("WorkflowLog.StyleLibraryLoaded")} ({session.StyleLibrary.Snapshot.Presets.Length})");
     });
 
     internal void Queue(Func<Task> action)
@@ -46,7 +46,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
     {
         await session.StyleLibrary.UpsertAsync(preset);
         Refresh(preset.Id);
-        session.LogInfo("Styles", WorkflowLogText.Get("StyleSaved", session.InterfaceCulture), preset.Name);
+        session.LogInfo("Styles", Localization.Get("WorkflowLog.StyleSaved"), preset.Name);
     }
 
     internal async Task DeleteAsync(Guid id)
@@ -56,7 +56,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         Refresh();
         if (preset is not null)
         {
-            session.LogInfo("Styles", WorkflowLogText.Get("StyleDeleted", session.InterfaceCulture), preset.Name);
+            session.LogInfo("Styles", Localization.Get("WorkflowLog.StyleDeleted"), preset.Name);
         }
     }
 
@@ -86,10 +86,10 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         try
         {
             var index = 1;
-            var name = $"{WorkbenchText.Get("CapturedStyle")} {index}";
+            var name = $"{Localization.Get("Workbench.CapturedStyle")} {index}";
             while (session.StyleLibrary.Snapshot.Presets.Any(value => string.Equals(value.Name, name, StringComparison.OrdinalIgnoreCase)))
             {
-                name = $"{WorkbenchText.Get("CapturedStyle")} {++index}";
+                name = $"{Localization.Get("Workbench.CapturedStyle")} {++index}";
             }
 
             var preset = await SubtitleStylePresetService.CaptureAsync(name, cue.Style, session.Editor.Snapshot, session.ProjectDirectory);
@@ -114,7 +114,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
             var prepared = await SubtitleStylePresetService.ApplyAsync(preset, session.Editor.Snapshot, session.ProjectDirectory, [cue.Id]);
             session.Editor.Apply("Apply subtitle style preset", _ => prepared);
             Refresh(preset.Id);
-            session.LogInfo("Styles", WorkflowLogText.Get("StyleApplied", session.InterfaceCulture), preset.Name);
+            session.LogInfo("Styles", Localization.Get("WorkflowLog.StyleApplied"), preset.Name);
         }
         finally
         {
@@ -154,7 +154,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
                 AegiNext.Application.ProjectEditingOperations.SetSubtitleTrackStyle(prepared.Project, trackId, preset.Id,
                     preset.Name, prepared.Style, decision == TrackStyleUpdateDecision.UPDATE_EXISTING));
             Refresh();
-            session.LogInfo("Styles", WorkbenchText.Get("TrackStyleApplied"), preset.Name);
+            session.LogInfo("Styles", Localization.Get("Workbench.TrackStyleApplied"), preset.Name);
         }
         finally
         {
@@ -189,7 +189,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         {
             await session.StyleLibrary.ImportAsync(path);
             Refresh();
-            session.LogInfo("Styles", WorkflowLogText.Get("StylesImported", session.InterfaceCulture), path);
+            session.LogInfo("Styles", Localization.Get("WorkflowLog.StylesImported"), path);
         }
     }
 
@@ -199,7 +199,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         if (path is not null)
         {
             await session.StyleLibrary.ExportAsync(path);
-            session.LogInfo("Styles", WorkflowLogText.Get("StylesExported", session.InterfaceCulture), path);
+            session.LogInfo("Styles", Localization.Get("WorkflowLog.StylesExported"), path);
         }
     }
 }

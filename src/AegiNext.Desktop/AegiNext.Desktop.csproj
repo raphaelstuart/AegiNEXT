@@ -23,6 +23,13 @@
     <PackageReference Include="Dock.Model.Mvvm" />
     <PackageReference Include="Dock.Avalonia.Themes.Fluent" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="I18n/Languages/*.json">
+      <TargetPath>i18n/%(Filename)%(Extension)</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
   <Target Name="CopyExportWorker" AfterTargets="Build">
     <MSBuild Projects="../AegiNext.ExportWorker/AegiNext.ExportWorker.csproj" Targets="GetTargetPath"
              Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier)">

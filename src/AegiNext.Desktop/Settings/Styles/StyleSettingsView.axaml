@@ -1,4 +1,5 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
              xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts" xmlns:presets="using:AegiNext.Core.Presets"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:settings="using:AegiNext.Desktop.Settings"
              xmlns:vm="using:AegiNext.Desktop.Settings.Styles"
@@ -6,12 +7,22 @@
   <Grid Name="StylesPage" IsVisible="{Binding $parent[UserControl].IsVisible}" IsEnabled="{Binding IsAvailable}"
         RowDefinitions="Auto,*,Auto" RowSpacing="12">
     <WrapPanel>
-      <Button Name="AddStyleButton" Command="{Binding AddCommand}" Click="FocusName" Tag="Add" Margin="0,0,8,8" />
-      <Button Name="DuplicateStyleButton" Command="{Binding DuplicateCommand}" Click="FocusName" Tag="Duplicate"
-              Margin="0,0,8,8" />
-      <Button Name="DeleteStyleButton" Command="{Binding DeleteCommand}" Tag="Delete" Margin="0,0,8,8" />
-      <Button Name="ImportStylesButton" Command="{Binding ImportCommand}" Tag="Import" Margin="0,0,8,8" />
-      <Button Name="ExportStylesButton" Command="{Binding ExportCommand}" Tag="Export" Margin="0,0,0,8" />
+      <Button Name="AddStyleButton" Command="{Binding AddCommand}" Click="FocusName" Margin="0,0,8,8">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Add}" IconKey="Add" />
+      </Button>
+      <Button Name="DuplicateStyleButton" Command="{Binding DuplicateCommand}" Click="FocusName"
+              Margin="0,0,8,8">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Duplicate}" IconKey="File" />
+      </Button>
+      <Button Name="DeleteStyleButton" Command="{Binding DeleteCommand}" Margin="0,0,8,8">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Delete}" IconKey="Delete" />
+      </Button>
+      <Button Name="ImportStylesButton" Command="{Binding ImportCommand}" Margin="0,0,8,8">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Import}" IconKey="Import" />
+      </Button>
+      <Button Name="ExportStylesButton" Command="{Binding ExportCommand}" Margin="0,0,0,8">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Export}" IconKey="Export" />
+      </Button>
     </WrapPanel>
     <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="16">
       <Grid>
@@ -23,21 +34,21 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <TextBlock Name="EmptyStylesLabel" IsVisible="{Binding IsEmpty}" Tag="EmptyStyles" Classes="field"
+        <TextBlock Name="EmptyStylesLabel" IsVisible="{Binding IsEmpty}" Text="{Loc Key=Settings.EmptyStyles}" Classes="field"
                    HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
       </Grid>
       <ScrollViewer Grid.Column="1">
         <StackPanel Name="StyleEditor" IsEnabled="{Binding CanEdit}" Spacing="12">
           <StackPanel Spacing="8">
-            <TextBlock Tag="Name" Classes="field" />
+            <TextBlock Text="{Loc Key=Settings.Name}" Classes="field" />
             <TextBox Name="StyleNameInput" Text="{Binding Name, Mode=TwoWay}" MaxLength="128" />
           </StackPanel>
           <Grid ColumnDefinitions="*,112" ColumnSpacing="12">
             <StackPanel Spacing="8">
-              <TextBlock Tag="Font" Classes="field" /><controls:FontFamilyPicker Name="FontInput" />
+              <TextBlock Text="{Loc Key=Settings.Font}" Classes="field" /><controls:FontFamilyPicker Name="FontInput" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">
-              <TextBlock Tag="FontSize" Classes="field" />
+              <TextBlock Text="{Loc Key=Settings.FontSize}" Classes="field" />
               <controls:NumericDraftInput Name="FontSizeInput" RawText="{Binding FontSizeText, Mode=TwoWay}"
                                           Value="{Binding FontSize, Mode=TwoWay}"
                                           Minimum="0.01" Maximum="4096"
@@ -46,29 +57,29 @@
           </Grid>
           <TextBlock Name="FontSourceLabel" Text="{Binding FontSource}" Classes="field" />
           <StackPanel Orientation="Horizontal" Spacing="16">
-            <CheckBox Name="BoldCheck" IsChecked="{Binding Bold, Mode=TwoWay}" Tag="Bold" />
-            <CheckBox Name="ItalicCheck" IsChecked="{Binding Italic, Mode=TwoWay}" Tag="Italic" />
+            <CheckBox Name="BoldCheck" IsChecked="{Binding Bold, Mode=TwoWay}" Content="{Loc Key=Settings.Bold}" />
+            <CheckBox Name="ItalicCheck" IsChecked="{Binding Italic, Mode=TwoWay}" Content="{Loc Key=Settings.Italic}" />
           </StackPanel>
           <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
             <StackPanel Spacing="8">
-              <TextBlock Tag="Fill" Classes="field" />
+              <TextBlock Text="{Loc Key=Settings.Fill}" Classes="field" />
               <controls:ColorDraftInput Name="FillPicker" Draft="{Binding FillDraft}" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">
-              <TextBlock Tag="Stroke" Classes="field" />
+              <TextBlock Text="{Loc Key=Settings.Stroke}" Classes="field" />
               <controls:ColorDraftInput Name="StrokePicker" Draft="{Binding StrokeDraft}" />
             </StackPanel>
           </Grid>
           <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
             <StackPanel Spacing="8">
-              <TextBlock Tag="StrokeWidth" Classes="field" />
+              <TextBlock Text="{Loc Key=Settings.StrokeWidth}" Classes="field" />
               <controls:NumericDraftInput Name="StrokeWidthInput" RawText="{Binding StrokeWidthText, Mode=TwoWay}"
                                           Value="{Binding StrokeWidth, Mode=TwoWay}"
                                           Minimum="0"
                                           Maximum="4096" Increment="0.5" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">
-              <TextBlock Tag="Margin" Classes="field" />
+              <TextBlock Text="{Loc Key=Settings.Margin}" Classes="field" />
               <controls:NumericDraftInput Name="MarginInput" RawText="{Binding MarginText, Mode=TwoWay}" Minimum="0"
                                           Value="{Binding Margin, Mode=TwoWay}"
                                           Maximum="32768"
@@ -76,17 +87,17 @@
             </StackPanel>
           </Grid>
           <StackPanel Spacing="8">
-            <TextBlock Tag="Alignment" Classes="field" />
+            <TextBlock Text="{Loc Key=Settings.Alignment}" Classes="field" />
             <ComboBox Name="AlignmentCombo" ItemsSource="{Binding Alignments}"
                       SelectedIndex="{Binding AlignmentIndex, Mode=TwoWay}" />
           </StackPanel>
           <controls:SubtitlePositionEditor Name="PositionEditor" DataContext="{Binding Position}" />
           <TextBlock Text="{Binding PositionMeasurementError}" IsVisible="{Binding HasPositionMeasurementError}"
                      TextWrapping="Wrap" Classes="field" />
-          <Expander Tag="Advanced" HorizontalAlignment="Stretch">
+          <Expander Header="{Loc Key=Settings.Advanced}" HorizontalAlignment="Stretch">
             <StackPanel Spacing="12" Margin="0,12,0,0">
               <StackPanel Spacing="8">
-                <TextBlock Tag="LineHeight" Classes="field" />
+                <TextBlock Text="{Loc Key=Settings.LineHeight}" Classes="field" />
                 <controls:NumericDraftInput Name="LineHeightInput" RawText="{Binding LineHeightText, Mode=TwoWay}"
                                             Value="{Binding LineHeight, Mode=TwoWay}"
                                             Minimum="0.1"
@@ -94,14 +105,14 @@
               </StackPanel>
               <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                 <StackPanel Spacing="8">
-                  <TextBlock Tag="ShadowX" Classes="field" />
+                  <TextBlock Text="{Loc Key=Settings.ShadowX}" Classes="field" />
                   <controls:NumericDraftInput Name="ShadowXInput" RawText="{Binding ShadowXText, Mode=TwoWay}"
                                               Value="{Binding ShadowX, Mode=TwoWay}"
                                               Minimum="-1000000000"
                                               Maximum="1000000000" Increment="1" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Spacing="8">
-                  <TextBlock Tag="ShadowY" Classes="field" />
+                  <TextBlock Text="{Loc Key=Settings.ShadowY}" Classes="field" />
                   <controls:NumericDraftInput Name="ShadowYInput" RawText="{Binding ShadowYText, Mode=TwoWay}"
                                               Value="{Binding ShadowY, Mode=TwoWay}"
                                               Minimum="-1000000000"
@@ -110,14 +121,14 @@
               </Grid>
               <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                 <StackPanel Spacing="8">
-                  <TextBlock Tag="ShadowBlur" Classes="field" />
+                  <TextBlock Text="{Loc Key=Settings.ShadowBlur}" Classes="field" />
                   <controls:NumericDraftInput Name="ShadowBlurInput" RawText="{Binding ShadowBlurText, Mode=TwoWay}"
                                               Value="{Binding ShadowBlur, Mode=TwoWay}"
                                               Minimum="0"
                                               Maximum="512" Increment="0.5" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Spacing="8">
-                  <TextBlock Tag="ShadowColor" Classes="field" />
+                  <TextBlock Text="{Loc Key=Settings.ShadowColor}" Classes="field" />
                   <controls:ColorDraftInput Name="ShadowPicker" Draft="{Binding ShadowDraft}" />
                 </StackPanel>
               </Grid>
@@ -127,10 +138,16 @@
       </ScrollViewer>
     </Grid>
     <WrapPanel Grid.Row="2">
-      <Button Name="CaptureStyleButton" Command="{Binding CaptureCommand}" Tag="Capture" Margin="0,0,8,8" />
-      <Button Name="ApplyStyleButton" Click="ApplyStyle" IsEnabled="{Binding CanApply}" Tag="Apply" Margin="0,0,8,8" />
-      <Button Name="SaveStyleButton" Click="SaveStyle" IsEnabled="{Binding CanEdit}" Tag="Save" Classes="accent"
-              Margin="0,0,0,8" />
+      <Button Name="CaptureStyleButton" Command="{Binding CaptureCommand}" Margin="0,0,8,8">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Capture}" IconKey="Subtitles" />
+      </Button>
+      <Button Name="ApplyStyleButton" Click="ApplyStyle" IsEnabled="{Binding CanApply}" Margin="0,0,8,8">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Apply}" IconKey="Style" />
+      </Button>
+      <Button Name="SaveStyleButton" Click="SaveStyle" IsEnabled="{Binding CanEdit}" Classes="accent"
+              Margin="0,0,0,8">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
+      </Button>
     </WrapPanel>
   </Grid>
 </UserControl>

@@ -39,6 +39,8 @@
 
 浮窗单独关闭隐藏其中面板，主会话和任务继续运行。主窗口统一执行未保存确认、等待项目工作流与最终写入，关闭设置／管理／浮窗，再释放媒体、分析、导出、偏好和呈现资源。关闭取消或保存失败保留会话与输入；资源释放可重复调用但实际只进行一次。
 
+样式和特效参数的有效草稿立即更新共享画布与视频合成状态；工程编辑器与 Undo 历史仅在失焦、数值 Enter 或显式操作提交时改变。无效或未完成文本保留最后一次有效预览并继续可编辑；其他字幕或导出草稿不会阻断局部预览。字体搜索仍在原有确认边界提交。排队的预览和失焦回调拒绝已改变的目标、快照与已释放宿主。
+
 ## 菜单与窗口
 
 工程名和未保存标记位于自建标题栏，并同步 `Window.Title`。原工程／设置按钮行已删除，设置通过共享菜单进入。主窗、浮窗、设置窗、管理窗和模态辅助窗使用统一窗口注册；窗口菜单只在主工作台显示，各注册窗口的 macOS 原生菜单根长期保留，焦点切换不清空。菜单和原生按钮安全区属于交互区域，其余标题区域支持系统拖动；窄主窗口通过菜单溢出保留入口；浮窗使用统一命令上下文。
@@ -49,15 +51,40 @@ macOS 按钮安全区和原生诊断需要 `IMacOSTopLevelPlatformHandle.NSWindo
 
 旧版完整快捷键数组迁移时保留改键和禁用项，再补新增命令；未知、重复、冲突和不完整旧数组继续拒绝。窗口、浮窗和设置各注册一次输入路由，快捷键录入与文本编辑优先；中文／英文即时更新内置名称、菜单和页面，个人预设名称保留原文。
 
+## 本地化
+
+`AegiNext.Desktop.I18n.Localization` 统一拥有语言目录与当前语言快照。应用在 UI 线程显式调用 `Initialize(Path.Combine(AppContext.BaseDirectory, "i18n"))`，先初始化再加载应用 XAML；主窗口在加载自己的 XAML 前应用已经读取的语言偏好。`Get(string key)` 可在任意线程读取当前快照，`Format(string key, params object[] arguments)` 沿用 `CurrentCulture` 格式化数值。`SetLanguage(string lang)` 在 UI 线程选择已安装的 `LanguageID` 或 `system`，即时刷新已有界面；未知 ID 抛出参数异常且不改变当前语言。服务本身不保存偏好。动态 ViewModel、菜单和窗口标题在所属生命周期内订阅 `LanguageChanged`，关闭或释放时解除订阅。
+
+静态文案通过无前缀 `{Loc Key=...}` 注入 `Text`、`Content`、`Header`、工具提示和辅助名称等属性。扩展返回随语言更新的可观察绑定，保留业务 `DataContext`。用于翻译的 `Tag` 和控件树扫描已移除。例如：
+
+```xml
+<TextBlock Text="{Loc Key=Workbench.Codec}" />
+<Button Content="{Loc Key=Workbench.Cancel}" />
+<Expander Header="{Loc Key=Settings.Advanced}" />
+<Button ToolTip.Tip="{Loc Key=Workbench.Save}">
+  <common:IconText Text="{Loc Key=Workbench.Save}" IconKey="Save" />
+</Button>
+```
+
+最后一个示例需要在根元素声明 `xmlns:common="using:AegiNext.Desktop.Controls.Common"`。`IconText.Text` 接收同样的本地化绑定，`IconKey` 独立使用现有 `WorkbenchIcon` 图标 ID／别名，保留当前图标映射；修改翻译 key 不改变图标。播放／暂停和快捷键录入等状态文案继续绑定 ViewModel，由其调用 `Localization.Get`。
+
+语言源文件位于 `src/AegiNext.Desktop/I18n/Languages/`，使用无 BOM 的 UTF-8 JSON，构建、测试和发布自动复制到输出目录的 `i18n/`。JSON 根对象包含非空 `LanguageName`、有效文化标识 `LanguageID` 和字符串字典 `Strings`；文本 key 使用来源前缀，例如 `Workbench.Export` 与 `Settings.Export`。设置页由 `KnownLanguages` 加上已翻译的 `system` 选项生成语言列表，显示 `LanguageName`，按 ID 选择和保存，不硬编码中英文索引。已保存的有效 ID 对应语言包暂时缺失时，保留偏好 ID，当前显示回退英文。
+
+启动时只扫描目录第一层 JSON；修改或新增语言包需要重启，不提供热重载。`system` 使用初始化捕获的系统文化，按精确 ID、父级 ID、同语言候选匹配；中文／英文候选优先 `zh-CN`／`en-US`，其他候选按 ID 排序，最终回退 `en-US`。单条文案依次查询当前语言、`en-US` 和原始 key。损坏的可选语言包及重复 ID 冲突组排除并记录诊断，`en-US` 必须有效且唯一。语言刷新保留个人名称、字幕正文和待确认草稿；自动测试与包检查不能替代按钮图标、长文本布局和原生菜单的最终人工视觉验收。
+
 ## 验证和复测
 
 ### 字幕定位、时间线与特效画布
+
+时间线关键帧拖动仅沿水平方向修改时间。鼠标纵向移动保留全部标量、向量和颜色分量，时间未改变时不产生编辑或撤销记录。关键帧数值通过特效面板输入框填写，草稿实时预览，确认时以一次事务提交。
 
 字幕显式位置由归一化 Anchor、归一化 Pivot 和像素 Offset 组成，坐标原点在画布左上，X 向右、Y 向下。Anchor 指定画布中的参考点，Pivot 指定实际字形包围盒中的轴心；例如 Anchor / Pivot 都为 `(0.5, 1)`，Offset 为 `(0, -40)`，将文字实际底部中点置于画布底部上方 40 px。定位不拉伸文字，未启用显式位置时沿用九宫格对齐与边距。开启显式位置会用实际排版测量补偿旧基线，保证现有字幕不跳动。
 
 `Rendering/ProjectSceneRenderer.GetLayerGeometry` 为实际渲染、画布选择框及拖动提供共同的字形边界和父级变换。字体塑形用 glyph bounds 与 glyph positions 求并集，空格 advance 不扩张有墨迹文字的边界；空白字幕提供明确的逻辑编辑框。描边、阴影及模糊不改变定位轴心。`Editing/SubtitlePositionDraft` 保存原始数值草稿，`Controls/Editing/SubtitlePositionEditor` 供工作台样式面板和设置模板页复用，不引用 Dock 或会话服务。
 
 位置随字幕样式模板一起捕获、套用、导入和导出，统一使用 `.aegistyles`；字体资源的原有哈希与预算检查继续生效。当前工程 `.aeginext` 使用 v3，v1／v2 明确拒绝；样式模板保留既有版本及自己的迁移规则。工程 v3 的向量和颜色旧分量按属性迁移，未知及重复字段继续拒绝。早期工程 v2／兼容 v1 的结论仅属于历史阶段。
+
+特效面板的位置恢复仅清除位置动画、位移和运动路径，保留字幕 Anchor／Pivot／Offset；样式面板的自动位置操作恢复对齐排版。字幕列表支持系统选择修饰键与 Shift 范围选择，通过稳定 ID 在刷新后保留多选，并以一次事务合并实际选中的连续字幕。单选仍与下一句合并，末句禁用该操作；不兼容效果或不连续选择会明确拒绝，不产生部分修改。
 
 时间线直接同时显示字幕／图层片段与展开轨道全部 Clip 已有属性的关键帧和插值曲线，不再切换字幕／特效标签。整段移动平移片段及关键帧的工程时间，边缘裁剪保留原曲线相位，显式拉伸缩放动画时间。关键帧内容时间限定为 `[max(0, AnimationOffset), AnimationOffset + End - Start]`；结束关键帧可位于右边界，但图层显示仍遵守半开区间。裁剪删除区间外的关键帧并补边界值，保存曲线子区间，使重复裁剪后的缓入／缓出保持原轨迹。
 

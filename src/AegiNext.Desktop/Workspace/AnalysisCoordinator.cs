@@ -1,16 +1,24 @@
 using AegiNext.Core.Timing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Media.Analysis;
-using AegiNext.Desktop.Workspace.Diagnostics;
 
 namespace AegiNext.Desktop.Workspace;
 
 internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposable
 {
     private CancellationTokenSource? cancellation;
+    private bool isAnalyzing;
     public Task Completion { get; private set; } = Task.CompletedTask;
 
     internal void Cancel() => cancellation?.Cancel();
+
+    internal void RefreshLanguage()
+    {
+        if (isAnalyzing)
+        {
+            session.ViewModel.Timeline.AnalysisStatus = Localization.Get("Workbench.Analyzing");
+        }
+    }
 
     internal async Task ClearAsync()
     {
@@ -28,11 +36,12 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
         var media = session.Controller.MediaInfo;
         if (media?.AudioStreamIndex is not { } index || media.Duration is not { } duration || duration <= MediaTime.Zero)
         {
-            session.LogInfo("Analysis", WorkflowLogText.Get("AudioAnalysisSkipped", session.InterfaceCulture), path);
+            session.LogInfo("Analysis", Localization.Get("WorkflowLog.AudioAnalysisSkipped"), path);
             return;
         }
 
-        session.ViewModel.Timeline.AnalysisStatus = WorkbenchText.Get("Analyzing");
+        isAnalyzing = true;
+        RefreshLanguage();
         Completion = AnalyzeAsync(path, index, media.Start ?? MediaTime.Zero, duration, cancellation.Token);
     }
 
@@ -45,7 +54,7 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
             {
                 session.ViewModel.Timeline.Spectrogram = data;
                 session.ViewModel.Timeline.AnalysisStatus = string.Empty;
-                session.LogInfo("Analysis", WorkflowLogText.Get("AudioAnalysisCompleted", session.InterfaceCulture), path);
+                session.LogInfo("Analysis", Localization.Get("WorkflowLog.AudioAnalysisCompleted"), path);
             }
         }
         catch (OperationCanceledException)
@@ -58,6 +67,10 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
                 session.ViewModel.Timeline.AnalysisStatus = error.Message;
                 session.LogError("Analysis", error);
             }
+        }
+        finally
+        {
+            isAnalyzing = false;
         }
     }
 

@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using AegiNext.Desktop.Controls;
-using AegiNext.Desktop.Controls.Common;
+using System.Windows.Input;
+using Avalonia;
 using AegiNext.Desktop.Workspace;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Automation;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -47,12 +47,12 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         this.FindControl<PathIcon>("TimelineSpectrumIcon")!.Data = WorkbenchIcon.Create("Spectrum").Data;
         this.FindControl<PathIcon>("TimelineWaveformIcon")!.Data = WorkbenchIcon.Create("Waveform").Data;
         TrackMenu = new();
-        TrackMenu.Items.Add(new MenuItem { Name = "AddSubtitleTrackMenuItem", Tag = "AddTrack", Command = viewModel.AddTrackCommand });
-        TrackMenu.Items.Add(new MenuItem { Name = "RenameSubtitleTrackMenuItem", Tag = "RenameTrack", Command = viewModel.RenameTrackCommand });
-        TrackMenu.Items.Add(new MenuItem { Name = "DeleteSubtitleTrackMenuItem", Tag = "DeleteTrack", Command = viewModel.DeleteTrackCommand });
+        TrackMenu.Items.Add(CreateMenuItem("AddSubtitleTrackMenuItem", "AddTrack", viewModel.AddTrackCommand));
+        TrackMenu.Items.Add(CreateMenuItem("RenameSubtitleTrackMenuItem", "RenameTrack", viewModel.RenameTrackCommand));
+        TrackMenu.Items.Add(CreateMenuItem("DeleteSubtitleTrackMenuItem", "DeleteTrack", viewModel.DeleteTrackCommand));
         TrackMenu.Items.Add(new Separator());
-        TrackMenu.Items.Add(new MenuItem { Name = "MoveSubtitleTrackUpMenuItem", Tag = "MoveTrackUp", Command = viewModel.MoveTrackUpCommand });
-        TrackMenu.Items.Add(new MenuItem { Name = "MoveSubtitleTrackDownMenuItem", Tag = "MoveTrackDown", Command = viewModel.MoveTrackDownCommand });
+        TrackMenu.Items.Add(CreateMenuItem("MoveSubtitleTrackUpMenuItem", "MoveTrackUp", viewModel.MoveTrackUpCommand));
+        TrackMenu.Items.Add(CreateMenuItem("MoveSubtitleTrackDownMenuItem", "MoveTrackDown", viewModel.MoveTrackDownCommand));
         collapseTrackItem = new() { Name = "CollapseSubtitleTrackMenuItem" };
         collapseTrackItem.Click += (_, _) =>
         {
@@ -63,12 +63,13 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         };
         TrackMenu.Items.Add(collapseTrackItem);
         TrackMenu.Items.Add(new Separator());
-        trackStyleItem = new() { Name = "SubtitleTrackStyleMenuItem", Tag = "TrackSubtitleStyle" };
+        trackStyleItem = CreateMenuItem("SubtitleTrackStyleMenuItem", "TrackSubtitleStyle");
         autoTrackStyleItem = new()
         {
-            Name = "AutoApplySubtitleTrackStyleMenuItem", Tag = "TrackStyleAutoApply", ToggleType = MenuItemToggleType.CheckBox,
+            Name = "AutoApplySubtitleTrackStyleMenuItem", ToggleType = MenuItemToggleType.CheckBox,
             Command = viewModel.ToggleTrackAutoStyleCommand
         };
+        autoTrackStyleItem.Bind(MenuItem.HeaderProperty, Localization.Observe("Workbench.TrackStyleAutoApply").ToBinding());
         TrackMenu.Items.Add(trackStyleItem);
         TrackMenu.Items.Add(autoTrackStyleItem);
         timeline.TrackContextRequested += OnTrackContextRequested;
@@ -89,10 +90,10 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         };
         viewModel.PropertyChanged += OnViewModelChanged;
         session.PreferencesChanged += OnPreferencesChanged;
+        Localization.LanguageChanged += OnLanguageChanged;
         session.StyleLibraryChanged += OnStyleLibraryChanged;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
         ApplyState();
-        ControlLocalization.Apply(this);
         RefreshTrackMenu();
         var nameInput = this.FindControl<TextBox>("TimelineTrackNameInput")!;
         nameInput.KeyDown += (_, e) =>
@@ -195,22 +196,9 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     }
     private void RefreshTrackMenu()
     {
-        ToolTip.SetTip(snapButton, WorkbenchText.Get("TimelineSnapHint"));
-        ToolTip.SetTip(stepButton, WorkbenchText.Get("TimelineStepHint"));
-        AutomationProperties.SetName(snapButton, WorkbenchText.Get("TimelineSnap"));
-        AutomationProperties.SetName(stepButton, WorkbenchText.Get("TimelineStep"));
-        ToolTip.SetTip(spectrumButton, WorkbenchText.Get("TimelineSpectrum"));
-        ToolTip.SetTip(waveformButton, WorkbenchText.Get("TimelineWaveform"));
-        AutomationProperties.SetName(spectrumButton, WorkbenchText.Get("TimelineSpectrum"));
-        AutomationProperties.SetName(waveformButton, WorkbenchText.Get("TimelineWaveform"));
-        foreach (var item in TrackMenu.Items.OfType<MenuItem>().Where(item => item.Tag is string))
-        {
-            item.Header = WorkbenchText.Get((string)item.Tag!);
-        }
-
         collapseTrackItem.IsEnabled = viewModel.SelectedTrackId.HasValue;
-        collapseTrackItem.Header = WorkbenchText.Get(viewModel.SelectedTrackId is { } id && timeline.IsTrackCollapsed(id)
-            ? "ExpandTrack" : "CollapseTrack");
+        collapseTrackItem.Header = Localization.Get("Workbench." + (viewModel.SelectedTrackId is { } id && timeline.IsTrackCollapsed(id)
+            ? "ExpandTrack" : "CollapseTrack"));
         RefreshStylePresets();
     }
     private void RefreshStylePresets()
@@ -238,7 +226,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             });
         }
 
-        ToolTip.SetTip(trackStyleItem, presets.Length == 0 ? WorkbenchText.Get("NoStylePresets") : currentTrack?.StylePresetName);
+        ToolTip.SetTip(trackStyleItem, presets.Length == 0 ? Localization.Get("Workbench.NoStylePresets") : currentTrack?.StylePresetName);
     }
     private void OnStyleLibraryChanged(object? sender, EventArgs e)
     {
@@ -249,10 +237,18 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     }
     private void OnPreferencesChanged(object? sender, EventArgs e)
     {
-        ControlLocalization.Apply(this);
-        RefreshTrackMenu();
         timeline.SetAudioGraphPalette(session.Preferences.AudioGraph);
         timeline.InvalidateVisual();
+    }
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        RefreshTrackMenu();
+    }
+    private static MenuItem CreateMenuItem(string name, string key, ICommand? command = null)
+    {
+        var item = new MenuItem { Name = name, Command = command };
+        item.Bind(MenuItem.HeaderProperty, Localization.Observe("Workbench." + key).ToBinding());
+        return item;
     }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     public void Dispose()
@@ -262,6 +258,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             disposed = true;
             viewModel.PropertyChanged -= OnViewModelChanged;
             session.PreferencesChanged -= OnPreferencesChanged;
+            Localization.LanguageChanged -= OnLanguageChanged;
             session.StyleLibraryChanged -= OnStyleLibraryChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
             timeline.ViewportChanged -= OnViewportChanged;

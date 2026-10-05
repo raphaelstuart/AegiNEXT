@@ -39,6 +39,8 @@ Preset switching cancels gestures, validates pending subtitle/style/effect/expor
 
 Closing a floating window hides its panels and leaves session/tasks running. Main close performs one unsaved flow, awaits work/layout writes, closes registered settings/management/floating hosts, and releases media/analysis/export/preferences/presentation. Cancel or failed save retains session/input. Cleanup is idempotent with actual resource release once.
 
+Style and effect Inspector inputs publish valid drafts immediately to the shared canvas and video composition state. The authoritative editor and Undo history change only on commit (lost focus, numeric Enter, or an explicit action). Invalid or incomplete text retains the last valid preview and remains editable; unrelated subtitle/export drafts do not block the local preview. Font search remains a draft until its existing confirmation boundary. Pending preview/focus callbacks reject changed targets, snapshots, and disposed hosts.
+
 ## Menus and native chrome
 
 `AegiNEXT - Project name •` is shared by custom/native titles; the old project/settings row is removed. Registered roles distinguish main/floating/settings/auxiliary/modal windows. Only the main window projects a window menu. Every workbench window shares command context and a lasting native-menu root for macOS focus changes; root identity is not cleared. System menu is the default; Appearance persists and immediately switches mode. Top-level Layouts never gets a modified suffix.
@@ -49,11 +51,36 @@ macOS platform probes use IMacOSTopLevelPlatformHandle.NSWindow. Rider flags the
 
 Old complete shortcut arrays migrate customized/disabled bindings and append new commands. Unknown/duplicate/conflicting/incomplete old arrays reject. Each window gets one router; recording/text/popups retain local behavior. Language changes update builtins/menus/pages, preserving custom names.
 
+## Localization
+
+`AegiNext.Desktop.I18n.Localization` owns the loaded language catalog and current language snapshot. The application explicitly calls `Initialize(Path.Combine(AppContext.BaseDirectory, "i18n"))` on the UI thread before loading application XAML, then applies the loaded preference before main-window XAML. `Get(string key)` reads the current snapshot on any thread; `Format(string key, params object[] arguments)` formats with `CurrentCulture`. `SetLanguage(string lang)` runs on the UI thread, accepts an installed `LanguageID` or `system`, updates existing text immediately, and rejects unknown IDs without changing the current language. The service does not save preferences. Dynamic ViewModels, menus and titles subscribe to `LanguageChanged` at their owning lifetime boundary and unsubscribe on close/disposal.
+
+Static text uses the unprefixed `{Loc Key=...}` markup extension on `Text`, `Content`, `Header`, tooltip and accessibility properties. It returns a live observable binding without replacing the business `DataContext`. Translation `Tag` attributes and control-tree localization scans have been removed. For example:
+
+```xml
+<TextBlock Text="{Loc Key=Workbench.Codec}" />
+<Button Content="{Loc Key=Workbench.Cancel}" />
+<Expander Header="{Loc Key=Settings.Advanced}" />
+<Button ToolTip.Tip="{Loc Key=Workbench.Save}">
+  <common:IconText Text="{Loc Key=Workbench.Save}" IconKey="Save" />
+</Button>
+```
+
+The last example declares `xmlns:common="using:AegiNext.Desktop.Controls.Common"` on its root. `IconText.Text` accepts the same localization binding; `IconKey` independently uses the existing `WorkbenchIcon` IDs/aliases, preserving the current icon mapping. Renaming a translation key does not change the icon. State-dependent text such as play/pause or shortcut recording remains a ViewModel binding whose getter calls `Localization.Get`.
+
+Source files under `src/AegiNext.Desktop/I18n/Languages/` are UTF-8 JSON without a BOM and are copied automatically to `i18n/` in build, test and publish outputs. Each JSON root supplies nonempty `LanguageName`, a valid culture `LanguageID`, and a string dictionary `Strings`; keys keep their source prefix, such as `Workbench.Export` or `Settings.Export`. Settings populate their language choices from `KnownLanguages` plus the localized `system` option, display `LanguageName`, and select/save by ID rather than fixed indices. A valid saved ID whose package is missing remains in preferences while the application uses English.
+
+Startup discovers the directory's first-level JSON files; editing or adding a language requires a restart, with no hot reload. `system` resolves the captured system culture by exact ID, parents, then candidates of the same language; Chinese/English prefer `zh-CN`/`en-US`, other candidates sort by ID, with final `en-US` fallback. A missing translation falls back to `en-US`, then the raw key. Invalid optional packs and conflicting ID groups are excluded with diagnostics; a valid unique `en-US` pack is required. Language changes preserve personal names, subtitle content and pending drafts. Automated tests and package checks remain separate from final native visual acceptance of icons, long translated labels and platform menus.
+
 ## Subtitle position, curves, and video editing
+
+Timeline keyframe dragging changes only time along the horizontal axis. Vertical pointer movement preserves every scalar, vector, and color component and creates no edit when time stays unchanged. Keyframe values are entered through the Effects panel inputs, with live draft preview and one transaction on confirmation.
 
 Explicit positioning uses normalized canvas Anchor, normalized actual-ink Pivot, and pixel Offset, top-left origin with X right/Y down. `(0.5,1)` anchor/pivot and `(0,-40)` offset put the text's bottom-center 40 px above canvas bottom. Natural text is never stretched. Automatic nine-position alignment remains when explicit positioning is off; enabling explicit position compensates measured ink so text does not jump.
 
 ProjectSceneRenderer.GetLayerGeometry shares actual glyph bounds/positions and parent transforms with drawing/selection/drag. Space advance does not inflate nonempty ink bounds; blank subtitles have a logical editing box. Stroke/shadow/blur do not change pivot. SubtitlePositionDraft retains raw numeric text; SubtitlePositionEditor/VectorDraftInput are shared by Styles and template Settings, without Dock/session dependencies. `.aegistyles` exchanges position and fonts with hash/budget checks. Current project is v3; earlier v2 compatibility statements do not apply to project loading now.
+
+The Effects position reset clears only position animation, displacement, and motion paths, preserving the subtitle Anchor/Pivot/Offset; the Styles automatic-position action restores alignment-based placement. The subtitle list supports the platform selection modifier and Shift ranges, keeps stable selected IDs across refresh, and merges the actual selected consecutive cues in one transaction. A single selected cue still merges with its next cue; the last cue disables that action. Incompatible effects or nonconsecutive selections are rejected without partially changing the document.
 
 Expanded tracks continuously show **all clips' existing properties**, with vector components sharing one row and RGBA one row with independent Alpha geometry. Real-time marker projection is shared by rendering/hit/hover/gestures; coincident components combine without artificial horizontal offsets. Labels appear only on hover in a final overlay after clip cropping. Moving shifts clip/keyframe project time; trim keeps phase and inserts boundary values; stretch scales time. Content bounds are `[max(0, AnimationOffset), AnimationOffset + End - Start]`; endpoint editing does not change half-open playback.
 

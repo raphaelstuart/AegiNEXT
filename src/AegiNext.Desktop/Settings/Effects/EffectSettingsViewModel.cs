@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using AegiNext.Application.Presets;
 using AegiNext.Core.Effects;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -59,7 +59,7 @@ public sealed class EffectSettingsViewModel : ObservableObject
     public bool CanEdit => HasSelection && !IsReadOnly && !IsBusy;
     public bool CanDelete => CanEdit && presets.Any(item => item.Id == selectedEffect!.Id);
     public bool IsDirty => selectedEffect is not null && drafts.ContainsKey(selectedEffect.Id);
-    public string EditorStatus => SettingsText.Get(IsReadOnly ? "BuiltinScriptReadOnly" : IsDirty ? "ScriptUnsaved" : "ScriptSaved");
+    public string EditorStatus => Localization.Get("Settings." + (IsReadOnly ? "BuiltinScriptReadOnly" : IsDirty ? "ScriptUnsaved" : "ScriptSaved"));
 
     public EffectScriptSettingsItem? SelectedEffect
     {
@@ -169,7 +169,7 @@ public sealed class EffectSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(EditorStatus));
         if (validationStatus is not null && Error is null)
         {
-            ValidationStatus = SettingsText.Get("ScriptValid");
+            ValidationStatus = Localization.Get("Settings.ScriptValid");
         }
     }
 
@@ -178,7 +178,7 @@ public sealed class EffectSettingsViewModel : ObservableObject
         var builtins = BuiltinEffectScripts.Templates.Select(template =>
         {
             var id = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(template.Script.Id)).AsSpan(0, 16));
-            return new EffectScriptSettingsItem(new(id, SettingsText.Get("Effect_" + template.Script.Id), template.Source), true);
+            return new EffectScriptSettingsItem(new(id, Localization.Get("Settings.Effect_" + template.Script.Id), template.Source), true);
         });
         var custom = presets.Concat(drafts.Values.Where(draft => presets.All(item => item.Id != draft.Id)))
             .Select(preset => new EffectScriptSettingsItem(preset, false));
@@ -235,7 +235,7 @@ public sealed class EffectSettingsViewModel : ObservableObject
     {
         var id = Guid.NewGuid();
         var scriptId = "effect-" + id.ToString("N");
-        var template = new EffectScriptPreset(id, UniqueName(SettingsText.Get("NewEffect")),
+        var template = new EffectScriptPreset(id, UniqueName(Localization.Get("Settings.NewEffect")),
             $"effect \"{scriptId}\" version 1\nshort-clip compress\nsegment enter fixed 300ms\n    at 0 opacity 0 ease-out\n    at 1 opacity base\nend\nsegment stay flex 1\n    at 0 opacity base hold\n    at 1 opacity base\nend\n");
         drafts[id] = template;
         RebuildItems(id);
@@ -251,7 +251,7 @@ public sealed class EffectSettingsViewModel : ObservableObject
         var id = Guid.NewGuid();
         var scriptId = "effect-" + id.ToString("N");
         var rewritten = Regex.Replace(Source, "^effect\\s+\"[^\"]+\"", $"effect \"{scriptId}\"", RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
-        drafts[id] = new(id, UniqueName(Name + " " + SettingsText.Get("CopySuffix")), rewritten);
+        drafts[id] = new(id, UniqueName(Name + " " + Localization.Get("Settings.CopySuffix")), rewritten);
         RebuildItems(id);
     }
 
@@ -305,7 +305,7 @@ public sealed class EffectSettingsViewModel : ObservableObject
             }
 
             ClearDiagnostics();
-            ValidationStatus = SettingsText.Get("ScriptValid");
+            ValidationStatus = Localization.Get("Settings.ScriptValid");
             return true;
         }
         catch (EffectScriptException failure)

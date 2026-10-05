@@ -7,9 +7,8 @@ using AegiNext.Desktop.Controls;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Media.Analysis;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
-using System.Globalization;
 
 namespace AegiNext.Desktop.Panels.Preview;
 
@@ -66,16 +65,16 @@ internal sealed class PreviewPanelViewModel : ObservableObject
         private set => SetProperty(ref qualityLabel, value);
     }
 
-    internal void RefreshQualities(PreviewQuality quality, CultureInfo culture)
+    internal void RefreshQualities(PreviewQuality quality)
     {
         QualityChoices =
         [
-            new(PreviewQuality.LOW, PreviewText.Get("QualityLow", culture)),
-            new(PreviewQuality.STANDARD, PreviewText.Get("QualityStandard", culture)),
-            new(PreviewQuality.HIGH, PreviewText.Get("QualityHigh", culture))
+            new(PreviewQuality.LOW, Localization.Get("Preview.QualityLow")),
+            new(PreviewQuality.STANDARD, Localization.Get("Preview.QualityStandard")),
+            new(PreviewQuality.HIGH, Localization.Get("Preview.QualityHigh"))
         ];
         SelectedQuality = QualityChoices.Single(choice => choice.Id == quality);
-        QualityLabel = PreviewText.Get("Quality", culture);
+        QualityLabel = Localization.Get("Preview.Quality");
     }
 
     internal bool BeginCanvasGesture() => session.BeginCanvasGesture();

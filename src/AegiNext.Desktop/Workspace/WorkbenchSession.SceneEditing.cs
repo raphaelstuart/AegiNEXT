@@ -3,7 +3,7 @@ using AegiNext.Core.Editing;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -165,7 +165,7 @@ internal sealed partial class WorkbenchSession
     private void RefreshEditingTargetLabel()
     {
         ViewModel.Effects.EditTargetLabel = AnimationTarget is { } target
-            ? $"{WorkbenchText.Get(target.IsKeyframe ? "EditKeyframeTarget" : "EditPlayheadTarget")} {TimelineTimeText.Format(target.LocalTime)}"
-            : WorkbenchText.Get("NoSelection");
+            ? $"{Localization.Get("Workbench." + (target.IsKeyframe ? "EditKeyframeTarget" : "EditPlayheadTarget"))} {TimelineTimeText.Format(target.LocalTime)}"
+            : Localization.Get("Workbench.NoSelection");
     }
 }

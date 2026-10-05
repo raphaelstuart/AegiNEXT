@@ -1,5 +1,5 @@
 using AegiNext.Desktop.Controls.Common;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Menus;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
@@ -37,6 +37,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             applicationMenu = new(application, catalog);
         }
         catalog.Changed += OnCatalogChanged;
+        Localization.LanguageChanged += OnLanguageChanged;
     }
 
     internal IReadOnlyCollection<Window> Windows => windows.Keys;
@@ -108,7 +109,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
     {
         foreach (var entry in windows.Values)
         {
-            entry.Window.Title = entry.TitleProvider();
+            entry.Window.SetCurrentValue(Window.TitleProperty, entry.TitleProvider());
         }
     }
 
@@ -121,6 +122,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         }
 
         disposed = true;
+        Localization.LanguageChanged -= OnLanguageChanged;
         catalog.Changed -= OnCatalogChanged;
         applicationMenu?.Dispose();
         foreach (var window in windows.Keys.ToArray())
@@ -138,7 +140,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
 
     private void Apply(WorkbenchWindowEntry entry)
     {
-        entry.Window.Title = entry.TitleProvider();
+        entry.Window.SetCurrentValue(Window.TitleProperty, entry.TitleProvider());
         entry.Window.RequestedThemeVariant = preferences.Theme switch
         {
             WorkbenchTheme.LIGHT => ThemeVariant.Light, WorkbenchTheme.DARK => ThemeVariant.Dark,
@@ -147,7 +149,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         var prefersWindowMenu = !OperatingSystem.IsMacOS() || preferences.WindowMenuOnMac;
         entry.TitleBar.MenuContent = prefersWindowMenu && entry.Role == WorkbenchWindowRole.MAIN ? entry.MenuBar : null;
         entry.NativeMenu.SetEnabled(!OperatingSystem.IsMacOS() || !prefersWindowMenu);
-        entry.NativeMenu.Update(WorkbenchText.Get, catalog.GetDisplayLabel, catalog.GetGestureLabel);
+        entry.NativeMenu.Update(key => Localization.Get("Workbench." + key), catalog.GetDisplayLabel, catalog.GetGestureLabel);
         entry.NativeMenu.UpdateLayouts(catalog.LayoutChoices);
         UpdateMenuWidth(entry);
     }
@@ -175,6 +177,11 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         {
             Apply(entry);
         }
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        catalog.RefreshLanguage();
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)

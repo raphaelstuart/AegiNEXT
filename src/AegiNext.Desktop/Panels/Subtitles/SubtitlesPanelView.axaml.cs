@@ -1,7 +1,5 @@
-using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Workspace;
-using AegiNext.Desktop.Localization;
 using AegiNext.Desktop.Styling;
 using Avalonia.Controls;
 using Avalonia.Controls.Selection;
@@ -79,11 +77,9 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
                 }, DispatcherPriority.Background);
             }
         }, RoutingStrategies.Bubble);
-        session.PreferencesChanged += OnPreferencesChanged;
         session.SubtitleScrollRequested += OnScrollRequested;
         session.SelectionChanged += OnSessionSelectionChanged;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
-        RefreshLocalization();
         SynchronizeSelection();
     }
 
@@ -214,11 +210,6 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
             caretInputs.Remove(box);
         }
     }
-    private void OnPreferencesChanged(object? sender, EventArgs e) => RefreshLocalization();
-    private void RefreshLocalization()
-    {
-        ControlLocalization.Apply(this);
-    }
     private void OnScrollRequested(object? sender, EventArgs e)
     {
         if (list.SelectedItem is { } selected)
@@ -231,7 +222,6 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     {
         disposed = true;
         list.SelectionChanged -= OnSelectionChanged;
-        session.PreferencesChanged -= OnPreferencesChanged;
         session.SubtitleScrollRequested -= OnScrollRequested;
         session.SelectionChanged -= OnSessionSelectionChanged;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;

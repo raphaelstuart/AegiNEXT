@@ -1,5 +1,5 @@
 using AegiNext.Core.Projects;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -11,7 +11,6 @@ namespace AegiNext.Desktop.Controls;
 /// <summary>仅提供九个非拉伸锚点的复用视图；通过标准按钮保留键盘与无障碍操作。</summary>
 public sealed class AnchorPresetPicker : UserControl
 {
-    private readonly AnchorPresetButton[] buttons = new AnchorPresetButton[9];
     private readonly AnchorPresetGlyph[] glyphs = new AnchorPresetGlyph[9];
     private static readonly string[] names =
     [
@@ -35,17 +34,18 @@ public sealed class AnchorPresetPicker : UserControl
             {
                 Name = $"AnchorPreset{names[index]}", Content = glyph, Padding = new(6), MinHeight = 0
             };
+            var label = ObservePresetLabel("Workbench." + names[index]);
+            button.Bind(ToolTip.TipProperty, label.ToBinding());
+            button.Bind(AutomationProperties.NameProperty, label.ToBinding());
             glyph.Bind(AnchorPresetGlyph.ForegroundProperty, button.GetObservable(Button.ForegroundProperty));
             button.Click += (_, _) => PresetSelected?.Invoke(this, new(anchor,
                 button.SelectionModifiers.HasFlag(KeyModifiers.Shift), button.SelectionModifiers.HasFlag(KeyModifiers.Alt)));
             Grid.SetColumn(button, index % 3);
             Grid.SetRow(button, index / 3);
             grid.Children.Add(button);
-            buttons[index] = button;
             glyphs[index] = glyph;
         }
         Content = grid;
-        RefreshLanguage();
     }
 
     public event EventHandler<AnchorPresetSelectionEventArgs>? PresetSelected;
@@ -60,14 +60,8 @@ public sealed class AnchorPresetPicker : UserControl
         }
     }
 
-    /// <summary>刷新按钮提示与辅助名称，保持当前选择和键盘焦点。</summary>
-    public void RefreshLanguage()
+    private static IObservable<string> ObservePresetLabel(string textKey)
     {
-        for (var index = 0; index < buttons.Length; index++)
-        {
-            var label = $"{WorkbenchText.Get("AnchorPreset")} · {WorkbenchText.Get(names[index])}";
-            ToolTip.SetTip(buttons[index], label);
-            AutomationProperties.SetName(buttons[index], label);
-        }
+        return Localization.Observe(() => $"{Localization.Get("Workbench.AnchorPreset")} · {Localization.Get(textKey)}");
     }
 }

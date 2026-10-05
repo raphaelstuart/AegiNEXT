@@ -1,10 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
              xmlns:vm="using:AegiNext.Desktop.Panels.Styles" x:DataType="vm:StylesPanelViewModel"
              x:Class="AegiNext.Desktop.Panels.Styles.StylesPanelView" Classes="business-surface">
   <ScrollViewer>
     <StackPanel Name="StylePanel" Margin="4" Spacing="8">
-      <TextBlock Tag="StylePreset" Classes="field" />
+      <TextBlock Classes="field" Text="{Loc Key=Workbench.StylePreset}" />
       <Grid Name="StylePresetActions" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
         <ComboBox Name="SubtitleStylePresetCombo" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                   ItemsSource="{Binding Presets, Mode=OneWay}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}">
@@ -14,59 +15,69 @@
             </DataTemplate>
           </ComboBox.SelectionBoxItemTemplate>
         </ComboBox>
-        <Button Name="ApplyStyleButton" Grid.Column="1" Tag="ApplyStyle" Command="{Binding ApplyStyleCommand}"
-                IsEnabled="{Binding CanApplyPreset}" />
-        <Button Name="ManageStylesButton" Grid.Column="2" Tag="ManageStyles" Command="{Binding ManageStylesCommand}" />
+        <Button Name="ApplyStyleButton" Grid.Column="1" Command="{Binding ApplyStyleCommand}"
+                IsEnabled="{Binding CanApplyPreset}">
+          <controlsCommon:IconText IconKey="ApplyStyle" Text="{Loc Key=Workbench.ApplyStyle}" />
+        </Button>
+        <Button Name="ManageStylesButton" Grid.Column="2" Command="{Binding ManageStylesCommand}">
+          <controlsCommon:IconText IconKey="ManageStyles" Text="{Loc Key=Workbench.ManageStyles}" />
+        </Button>
       </Grid>
-      <TextBlock Tag="Font" Classes="field" />
+      <TextBlock Classes="field" Text="{Loc Key=Workbench.Font}" />
       <controls:FontFamilyPicker Name="FontCombo" HorizontalAlignment="Stretch" Text="{Binding FontDraft, Mode=TwoWay}"
                                  IsEnabled="{Binding HasCue}" />
       <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
         <StackPanel Spacing="4">
-          <TextBlock Tag="Size" Classes="field" />
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.Size}" />
           <controls:NumericDraftInput Name="FontSizeInput" RawText="{Binding FontSizeText, Mode=TwoWay}" Minimum="0.01"
                                       Maximum="4096" Value="{Binding FontSize, Mode=TwoWay}"
                                       IsEnabled="{Binding HasCue}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="4">
-          <TextBlock Tag="StrokeWidth" Classes="field" />
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.StrokeWidth}" />
           <controls:NumericDraftInput Name="StrokeWidthInput" RawText="{Binding StrokeWidthText, Mode=TwoWay}"
                                       Minimum="0" Maximum="4096" Value="{Binding StrokeWidth, Mode=TwoWay}"
                                       Increment="0.5" />
         </StackPanel>
       </Grid>
       <StackPanel Spacing="4">
-        <TextBlock Tag="Fill" Classes="field" />
+        <TextBlock Classes="field" Text="{Loc Key=Workbench.Fill}" />
         <controls:ColorDraftInput Name="FillPicker" Draft="{Binding FillDraft}" />
       </StackPanel>
       <StackPanel Spacing="4">
-        <TextBlock Tag="Stroke" Classes="field" />
+        <TextBlock Classes="field" Text="{Loc Key=Workbench.Stroke}" />
         <controls:ColorDraftInput Name="StrokePicker" Draft="{Binding StrokeDraft}" />
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="16">
-        <CheckBox Name="BoldCheck" Tag="Bold" IsChecked="{Binding Bold, Mode=TwoWay}" IsEnabled="{Binding HasCue}" />
-        <CheckBox Name="ItalicCheck" Tag="Italic" IsChecked="{Binding Italic, Mode=TwoWay}"
-                  IsEnabled="{Binding HasCue}" />
+        <CheckBox Name="BoldCheck" IsChecked="{Binding Bold, Mode=TwoWay}" IsEnabled="{Binding HasCue}" Content="{Loc Key=Workbench.Bold}" />
+        <CheckBox Name="ItalicCheck" IsChecked="{Binding Italic, Mode=TwoWay}"
+                  IsEnabled="{Binding HasCue}" Content="{Loc Key=Workbench.Italic}" />
       </StackPanel>
-      <TextBlock Tag="Alignment" Classes="field" />
+      <TextBlock Classes="field" Text="{Loc Key=Workbench.Alignment}" />
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
         <ComboBox Name="AlignmentCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Alignment, Mode=TwoWay}"
                   ItemsSource="{Binding Alignments}" IsEnabled="{Binding HasCue}" />
-        <Button Name="AutomaticPositionButton" Grid.Column="1" Tag="ResetAutomaticPosition"
-                Command="{Binding RestoreAutomaticPositionCommand}" IsEnabled="{Binding HasCue}" />
+        <Button Name="AutomaticPositionButton" Grid.Column="1"
+                Command="{Binding RestoreAutomaticPositionCommand}" IsEnabled="{Binding HasCue}">
+          <controlsCommon:IconText IconKey="ResetAutomaticPosition" Text="{Loc Key=Workbench.ResetAutomaticPosition}" />
+        </Button>
       </Grid>
       <StackPanel IsEnabled="{Binding HasCue}">
         <controls:SubtitlePositionEditor Name="PositionEditor" ShowAutomaticPositionAction="False"
                                          DataContext="{Binding Position}" />
       </StackPanel>
-      <TextBlock Tag="KaraokeStyle" Classes="field" />
+      <TextBlock Classes="field" Text="{Loc Key=Workbench.KaraokeStyle}" />
       <ComboBox Name="KaraokeStylePresetCombo" HorizontalAlignment="Stretch"
                 ItemsSource="{Binding KaraokePresets, Mode=OneWay}"
                 SelectedItem="{Binding SelectedKaraokePreset, Mode=TwoWay}" IsEnabled="{Binding HasCue}" />
       <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Name="KaraokeButton" Tag="Karaoke" Command="{Binding KaraokeCommand}" IsEnabled="{Binding HasCue}" />
-        <Button Name="ClearKaraokeButton" Tag="ClearKaraoke" Command="{Binding ClearKaraokeCommand}"
-                IsEnabled="{Binding HasCue}" />
+        <Button Name="KaraokeButton" Command="{Binding KaraokeCommand}" IsEnabled="{Binding HasCue}">
+          <controlsCommon:IconText IconKey="Karaoke" Text="{Loc Key=Workbench.Karaoke}" />
+        </Button>
+        <Button Name="ClearKaraokeButton" Command="{Binding ClearKaraokeCommand}"
+                IsEnabled="{Binding HasCue}">
+          <controlsCommon:IconText IconKey="ClearKaraoke" Text="{Loc Key=Workbench.ClearKaraoke}" />
+        </Button>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

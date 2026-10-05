@@ -1,15 +1,26 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
              xmlns:effects="using:AegiNext.Desktop.Settings.Effects"
              xmlns:controls="using:AegiNext.Desktop.Controls"
              x:Class="AegiNext.Desktop.Settings.Effects.EffectSettingsView" Classes="business-surface" x:DataType="effects:EffectSettingsViewModel">
   <Grid RowDefinitions="Auto,*" RowSpacing="12">
     <WrapPanel Name="EffectLibraryToolbar">
-      <Button Name="AddEffectScriptButton" Tag="Add" Command="{Binding AddCommand}" Margin="0,0,6,6" />
-      <Button Name="DuplicateEffectScriptButton" Tag="SaveEffectAs" Command="{Binding DuplicateCommand}" Margin="0,0,6,6" />
-      <Button Name="DeleteEffectScriptButton" Tag="Delete" Command="{Binding DeleteCommand}" Margin="0,0,6,6" />
-      <Button Name="ImportEffectScriptButton" Tag="Import" Command="{Binding ImportCommand}" Margin="0,0,6,6" />
-      <Button Name="ExportEffectScriptButton" Tag="Export" Command="{Binding ExportCommand}" Margin="0,0,6,6" />
+      <Button Name="AddEffectScriptButton" Command="{Binding AddCommand}" Margin="0,0,6,6">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Add}" IconKey="Add" />
+      </Button>
+      <Button Name="DuplicateEffectScriptButton" Command="{Binding DuplicateCommand}" Margin="0,0,6,6">
+        <controlsCommon:IconText Text="{Loc Key=Settings.SaveEffectAs}" IconKey="SaveEffectAs" />
+      </Button>
+      <Button Name="DeleteEffectScriptButton" Command="{Binding DeleteCommand}" Margin="0,0,6,6">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Delete}" IconKey="Delete" />
+      </Button>
+      <Button Name="ImportEffectScriptButton" Command="{Binding ImportCommand}" Margin="0,0,6,6">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Import}" IconKey="Import" />
+      </Button>
+      <Button Name="ExportEffectScriptButton" Command="{Binding ExportCommand}" Margin="0,0,6,6">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Export}" IconKey="Export" />
+      </Button>
     </WrapPanel>
     <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="12">
       <ListBox Name="EffectScriptList" ItemsSource="{Binding Effects}" SelectedItem="{Binding SelectedEffect, Mode=TwoWay}" IsEnabled="{Binding !IsBusy}">
@@ -22,16 +33,22 @@
       <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="8">
         <TextBlock Text="{Binding EditorStatus}" FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
         <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="8">
-          <TextBlock Tag="Name" VerticalAlignment="Center" />
+          <TextBlock Text="{Loc Key=Settings.Name}" VerticalAlignment="Center" />
           <TextBox Name="EffectScriptNameInput" Grid.Column="1" Text="{Binding Name, Mode=TwoWay}" IsReadOnly="{Binding IsReadOnly}" IsEnabled="{Binding !IsBusy}" MaxLength="128" />
         </Grid>
         <controls:EffectScriptEditor Name="EffectScriptEditor" Grid.Row="2" Source="{Binding Source, Mode=TwoWay}" IsReadOnly="{Binding IsReadOnly}"
              IsEnabled="{Binding !IsBusy}" DiagnosticLine="{Binding DiagnosticLine}" DiagnosticColumn="{Binding DiagnosticColumn}" />
         <TextBlock Grid.Row="3" Text="{Binding ValidationStatus}" FontSize="12" TextWrapping="Wrap" />
         <WrapPanel Grid.Row="4">
-          <Button Name="ValidateEffectScriptButton" Tag="ValidateScript" Command="{Binding ValidateCommand}" Margin="0,0,6,6" />
-          <Button Name="SaveEffectScriptButton" Tag="Save" Command="{Binding SaveCommand}" Margin="0,0,6,6" />
-          <Button Name="RestoreEffectScriptButton" Tag="RestoreDraft" Command="{Binding RestoreCommand}" Margin="0,0,6,6" />
+          <Button Name="ValidateEffectScriptButton" Command="{Binding ValidateCommand}" Margin="0,0,6,6">
+            <controlsCommon:IconText Text="{Loc Key=Settings.ValidateScript}" IconKey="ValidateScript" />
+          </Button>
+          <Button Name="SaveEffectScriptButton" Command="{Binding SaveCommand}" Margin="0,0,6,6">
+            <controlsCommon:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
+          </Button>
+          <Button Name="RestoreEffectScriptButton" Command="{Binding RestoreCommand}" Margin="0,0,6,6">
+            <controlsCommon:IconText Text="{Loc Key=Settings.RestoreDraft}" IconKey="RestoreDraft" />
+          </Button>
         </WrapPanel>
       </Grid>
     </Grid>

@@ -1,14 +1,12 @@
 using System.Collections.Immutable;
-using System.ComponentModel;
 using System.Globalization;
 using AegiNext.Application;
 using AegiNext.Application.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controllers;
-using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Rendering;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
@@ -30,7 +28,6 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly SubtitleStylePresetLibrary styleLibrary;
     private readonly EffectScriptPresetLibrary effectScriptLibrary;
     private readonly EffectScriptLibraryCoordinator effectScripts;
-    private readonly CultureInfo systemCulture;
     private readonly string scratchDirectory;
     private readonly Dictionary<Guid, int> textCarets = [];
     private readonly ProjectWorkflowCoordinator workflow;
@@ -60,14 +57,15 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         Func<Action, CancellationToken, Task>? dispatch = null,
         ProjectEditor? editor = null,
         WorkbenchPreferencesStore? preferencesStore = null,
-        IWorkbenchExportService? exportService = null)
+        IWorkbenchExportService? exportService = null,
+        WorkbenchPreferences? initialPreferences = null)
     {
         this.dialogs = dialogs;
         this.dispatch = dispatch ?? DispatchAsync;
         this.editor = editor ?? new();
         this.preferencesStore = preferencesStore ?? new(Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
-        preferences = this.preferencesStore.Load();
-        systemCulture = CultureInfo.CurrentUICulture;
+        preferences = initialPreferences ?? this.preferencesStore.Load();
+        WorkbenchCompositionRoot.ApplyLanguagePreference(preferences.Language);
         scratchDirectory = Path.Combine(Path.GetTempPath(), "AegiNext", Guid.NewGuid().ToString("N"));
         projectDirectory = scratchDirectory;
         styleLibrary = new(Path.Combine(this.preferencesStore.DirectoryPath, "subtitle-styles.aegistyles"));
@@ -92,6 +90,11 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         RefreshDocument();
         styles.Initialize();
         effectScripts.Initialize();
+        Localization.LanguageChanged += OnLanguageChanged;
+        foreach (var diagnostic in Localization.Diagnostics)
+        {
+            LogWarning("Localization", diagnostic.Message, diagnostic.FilePath);
+        }
         if (this.preferencesStore.LoadError is { } error)
         {
             ShowError(error);
@@ -115,7 +118,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal EffectScriptPresetLibrary EffectScriptLibrary => effectScriptLibrary;
     internal EffectScriptLibraryCoordinator EffectScripts => effectScripts;
     internal ProjectDocument DocumentSnapshot => editor.Snapshot;
-    internal CultureInfo InterfaceCulture => preferences.Language == "system" ? systemCulture : CultureInfo.GetCultureInfo(preferences.Language);
+    internal static CultureInfo InterfaceCulture => CultureInfo.GetCultureInfo(Localization.CurrentLanguageID);
     internal bool IsClosing => closing;
     internal bool IsProjectBusy => projectBusy;
     internal bool IsUpdating { get => updatingWorkbench; set => updatingWorkbench = value; }
@@ -126,7 +129,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal string ProjectDirectory => projectDirectory;
     internal string? ProjectPath => projectPath;
     internal string ProjectDisplayName => WorkbenchProjectTitle.GetDisplayName(editor.Snapshot, projectPath,
-        WorkbenchText.Get("Untitled"));
+        Localization.Get("Workbench.Untitled"));
     internal string ScratchDirectory => scratchDirectory;
     internal MediaTime ProjectPosition => (playback.PendingPosition ?? controller.Snapshot.Position) - (controller.Snapshot.Start ?? MediaTime.Zero);
     internal ProjectLayer? SelectedLayer => Flatten(editor.Snapshot.Layers).FirstOrDefault(value => value.Id == SelectedLayerId);
@@ -145,11 +148,16 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     {
         value.Validate();
         var qualityChanged = preferences.PreviewQuality != value.PreviewQuality;
+        var languageChanged = !string.Equals(preferences.Language, value.Language, StringComparison.OrdinalIgnoreCase);
         preferences = value;
         if (qualityChanged)
         {
             previewQualityRevision++;
             controller.InvalidatePreview();
+        }
+        if (languageChanged)
+        {
+            WorkbenchCompositionRoot.ApplyLanguagePreference(preferences.Language);
         }
         ApplyPreferences();
         QueuePreferencesWrite();
@@ -186,7 +194,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            LogInfo("Workflow", WorkbenchText.Get("Cancelled"));
+            LogInfo("Workflow", Localization.Get("Workbench.Cancelled"));
         }
         catch (Exception error)
         {
@@ -286,6 +294,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private async Task DisposeCoreAsync()
     {
         closing = true;
+        Localization.LanguageChanged -= OnLanguageChanged;
         ClearInspectorPreview();
         editor.Changed -= OnDocumentChanged;
         playback.Invalidate();
@@ -317,24 +326,37 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private void ApplyPreferences()
     {
-        CultureInfo.CurrentUICulture = InterfaceCulture;
-        CultureInfo.DefaultThreadCurrentUICulture = InterfaceCulture;
+        ViewModel.Preview.Volume = preferences.Volume;
+        controller.SetVolume(preferences.Volume);
+        RefreshLocalizedState();
+        PreferencesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        RefreshLocalizedState();
+    }
+
+    private void RefreshLocalizedState()
+    {
         var previous = updatingWorkbench;
         updatingWorkbench = true;
         try
         {
-            ViewModel.Preview.Volume = preferences.Volume;
-            controller.SetVolume(preferences.Volume);
-            ViewModel.Preview.EmptyLabel = PreviewText.Get("Empty", InterfaceCulture);
-            ViewModel.Preview.RefreshQualities(preferences.PreviewQuality, InterfaceCulture);
-            ViewModel.Styles.Alignments = alignments.Select(value => SettingsText.Get(value.ToString())).ToArray();
-            ViewModel.Effects.Blends = blendKeys.Select(WorkbenchText.Get).ToArray();
-            ViewModel.Effects.Properties = AnimationPropertyMetadata.CurrentProperties.Select(value => new AnimationPropertyChoice(value, WorkbenchText.Property(value))).ToArray();
-            ViewModel.Effects.Interpolations = interpolationKeys.Select(WorkbenchText.Get).ToArray();
-            ViewModel.Export.RefreshChoices([WorkbenchText.Get("Automatic"), "H.264", "HEVC / H.265"],
-                speedKeys.Select(WorkbenchText.Get).ToArray(),
-                [WorkbenchText.Get("Copy"), "AAC", WorkbenchText.Get("NoAudio")]);
-            RefreshDocument();
+            ViewModel.Preview.EmptyLabel = Localization.Get("Preview.Empty");
+            ViewModel.Preview.RefreshQualities(preferences.PreviewQuality);
+            ViewModel.Styles.RefreshAlignmentChoices(alignments.Select(value => Localization.Get("Settings." + value)).ToArray());
+            ViewModel.Styles.RefreshLanguage();
+            ViewModel.Effects.RefreshChoices(blendKeys.Select(key => Localization.Get("Workbench." + key)).ToArray(),
+                AnimationPropertyMetadata.CurrentProperties.Select(value => new AnimationPropertyChoice(value, AnimationPropertyLocalization.Get(value))).ToArray(),
+                interpolationKeys.Select(key => Localization.Get("Workbench." + key)).ToArray());
+            ViewModel.Export.RefreshChoices([Localization.Get("Workbench.Automatic"), "H.264", "HEVC / H.265"],
+                speedKeys.Select(key => Localization.Get("Workbench." + key)).ToArray(),
+                [Localization.Get("Workbench.Copy"), "AAC", Localization.Get("Workbench.NoAudio")]);
+            effectScripts.RefreshChoices();
+            analysis.RefreshLanguage();
+            export.RefreshLanguage();
+            RefreshTitle();
             Tick();
         }
         finally
@@ -342,7 +364,6 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             updatingWorkbench = previous;
         }
 
-        PreferencesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void QueuePreferencesWrite()
@@ -400,13 +421,13 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         var snapshot = controller.Snapshot;
         var preview = ViewModel.Preview;
         var relative = ProjectPosition;
-        preview.FileTitle = snapshot.FilePath is { } path ? Path.GetFileName(path) : PreviewText.Get("Preview", InterfaceCulture);
+        preview.FileTitle = snapshot.FilePath is { } path ? Path.GetFileName(path) : Localization.Get("Preview.Preview");
         preview.IsOpening = snapshot.IsOpening;
         preview.CanPlay = !closing && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
         preview.IsPlaying = snapshot.State == VideoPlaybackState.PLAYING;
-        preview.PlayLabel = PreviewText.Get(preview.IsPlaying ? "Pause" : "Play", InterfaceCulture);
-        preview.MuteLabel = PreviewText.Get(preview.IsMuted ? "Unmute" : "Mute", InterfaceCulture);
-        preview.VolumeLabel = PreviewText.Get("Volume", InterfaceCulture);
+        preview.PlayLabel = Localization.Get("Preview." + (preview.IsPlaying ? "Pause" : "Play"));
+        preview.MuteLabel = Localization.Get("Preview." + (preview.IsMuted ? "Unmute" : "Mute"));
+        preview.VolumeLabel = Localization.Get("Preview.Volume");
         preview.CanSeek = preview.CanPlay && snapshot.Duration is { } duration && duration > MediaTime.Zero;
         preview.Duration = snapshot.Duration is { } known ? Math.Max(0.001, ToSeconds(known)) : 1;
         if (!preview.IsScrubbing)

@@ -1,4 +1,4 @@
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Views;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
@@ -13,10 +13,10 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
     {
         var files = await (storageProvider?.Invoke() ?? owner.StorageProvider).OpenFilePickerAsync(new()
         {
-            Title = WorkbenchText.Get(title), AllowMultiple = false,
-            FileTypeFilter = [new(WorkbenchText.Get(typeName)) { Patterns = patterns }]
+            Title = Localization.Get("Workbench." + (title)), AllowMultiple = false,
+            FileTypeFilter = [new(Localization.Get("Workbench." + (typeName))) { Patterns = patterns }]
         });
-        return files.Count == 0 ? null : files[0].TryGetLocalPath() ?? throw new NotSupportedException(PreviewText.Get("LocalFile", System.Globalization.CultureInfo.CurrentUICulture));
+        return files.Count == 0 ? null : files[0].TryGetLocalPath() ?? throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
     }
 
     /// <summary>选择带指定扩展名的本地保存路径，并由系统确认覆盖。</summary>
@@ -24,12 +24,12 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
     {
         var file = await (storageProvider?.Invoke() ?? owner.StorageProvider).SaveFilePickerAsync(new()
         {
-            Title = WorkbenchText.Get(title),
+            Title = Localization.Get("Workbench." + (title)),
             SuggestedFileName = suggestedName.EndsWith(extension, StringComparison.OrdinalIgnoreCase) ? suggestedName[..^extension.Length] : suggestedName,
             DefaultExtension = extension.TrimStart('.'),
-            FileTypeChoices = [new(WorkbenchText.Get(typeName)) { Patterns = patterns }], ShowOverwritePrompt = true
+            FileTypeChoices = [new(Localization.Get("Workbench." + (typeName))) { Patterns = patterns }], ShowOverwritePrompt = true
         });
-        return file is null ? null : file.TryGetLocalPath() ?? throw new NotSupportedException(PreviewText.Get("LocalFile", System.Globalization.CultureInfo.CurrentUICulture));
+        return file is null ? null : file.TryGetLocalPath() ?? throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
     }
 
     /// <summary>等待用户决定如何处理工程的未保存修改。</summary>

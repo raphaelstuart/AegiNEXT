@@ -1,4 +1,5 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
              xmlns:projects="using:AegiNext.Core.Projects"
              xmlns:vm="using:AegiNext.Desktop.Panels.Subtitles" x:DataType="vm:SubtitlesPanelViewModel"
@@ -7,8 +8,8 @@
           BorderThickness="0" CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
     <Grid RowDefinitions="Auto,Auto,*">
       <WrapPanel Name="SubtitleToolbar" Margin="12,8,12,4">
-        <TextBlock Name="PreviewLabel" Tag="Subtitles" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"
-                   Margin="0,0,12,4" />
+        <TextBlock Name="PreviewLabel" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"
+                   Margin="0,0,12,4" Text="{Loc Key=Workbench.Subtitles}" />
         <ComboBox Name="SubtitleTrackCombo" Width="160" Margin="0,0,8,4" ItemsSource="{Binding Tracks}"
                   SelectedItem="{Binding SelectedTrack, Mode=OneWay}">
           <ComboBox.ItemTemplate>
@@ -17,17 +18,25 @@
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>
-        <Button Name="AddCueButton" Margin="0,0,8,4" Tag="Add" Command="{Binding AddCueCommand}" />
-        <Button Name="DeleteCueButton" Margin="0,0,8,4" Tag="Delete" Command="{Binding DeleteCueCommand}" />
-        <Button Name="SplitCueButton" Margin="0,0,8,4" Tag="Split" Command="{Binding SplitCueCommand}" />
-        <Button Name="MergeCueButton" Margin="0,0,0,4" Tag="Merge" Command="{Binding MergeCueCommand}" />
+        <Button Name="AddCueButton" Margin="0,0,8,4" Command="{Binding AddCueCommand}">
+          <controlsCommon:IconText IconKey="Add" Text="{Loc Key=Workbench.Add}" />
+        </Button>
+        <Button Name="DeleteCueButton" Margin="0,0,8,4" Command="{Binding DeleteCueCommand}">
+          <controlsCommon:IconText IconKey="Delete" Text="{Loc Key=Workbench.Delete}" />
+        </Button>
+        <Button Name="SplitCueButton" Margin="0,0,8,4" Command="{Binding SplitCueCommand}">
+          <controlsCommon:IconText IconKey="Split" Text="{Loc Key=Workbench.Split}" />
+        </Button>
+        <Button Name="MergeCueButton" Margin="0,0,0,4" Command="{Binding MergeCueCommand}">
+          <controlsCommon:IconText IconKey="Merge" Text="{Loc Key=Workbench.Merge}" />
+        </Button>
       </WrapPanel>
       <Grid Grid.Row="1" ColumnDefinitions="36,112,112,70,*" Margin="20,0,20,4" ColumnSpacing="8">
         <TextBlock Text="#" Classes="field" HorizontalAlignment="Center" />
-        <TextBlock Grid.Column="1" Tag="Start" Classes="field" HorizontalAlignment="Center" />
-        <TextBlock Grid.Column="2" Tag="End" Classes="field" HorizontalAlignment="Center" />
-        <TextBlock Grid.Column="3" Tag="Duration" Classes="field" HorizontalAlignment="Center" />
-        <TextBlock Grid.Column="4" Tag="Text" Classes="field" />
+        <TextBlock Grid.Column="1" Classes="field" HorizontalAlignment="Center" Text="{Loc Key=Workbench.Start}" />
+        <TextBlock Grid.Column="2" Classes="field" HorizontalAlignment="Center" Text="{Loc Key=Workbench.End}" />
+        <TextBlock Grid.Column="3" Classes="field" HorizontalAlignment="Center" Text="{Loc Key=Workbench.Duration}" />
+        <TextBlock Grid.Column="4" Classes="field" Text="{Loc Key=Workbench.Text}" />
       </Grid>
       <ListBox Name="SubtitleList" Grid.Row="2" SelectionMode="Multiple" Background="Transparent"
                ItemsSource="{Binding VisibleRows, Mode=OneWay}">

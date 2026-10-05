@@ -4,7 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Controls;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Media.Analysis;
@@ -25,6 +25,7 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private bool? italic = false;
     private int alignment;
     private string[] alignments = [];
+    private bool refreshingAlignmentChoices;
     private bool hasCue;
     private StylePresetListItem[] presets = [];
     private StylePresetListItem? selectedPreset;
@@ -33,6 +34,9 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private StylePresetListItem? selectedKaraokePreset;
     private Guid? loadedKaraokeCueId;
     private KaraokeHighlightStyle? loadedKaraokeStyle;
+
+    internal event EventHandler? AlignmentChoicesRefreshing;
+    internal event EventHandler? AlignmentChoicesRefreshed;
 
     internal StylesPanelViewModel(WorkbenchSession session)
     {
@@ -116,7 +120,13 @@ internal sealed class StylesPanelViewModel : ObservableObject
     public int Alignment
     {
         get => alignment;
-        set => SetProperty(ref alignment, value);
+        set
+        {
+            if (!refreshingAlignmentChoices)
+            {
+                SetProperty(ref alignment, value);
+            }
+        }
     }
 
     public string[] Alignments
@@ -226,8 +236,36 @@ internal sealed class StylesPanelViewModel : ObservableObject
     /// <summary>提交用户选择的对齐方式。</summary>
     public void CommitAlignment(int value)
     {
+        if (refreshingAlignmentChoices)
+        {
+            return;
+        }
         Alignment = value;
         session.TryCommitDrafts();
+    }
+
+    internal void RefreshAlignmentChoices(string[] options)
+    {
+        var selection = alignment;
+        refreshingAlignmentChoices = true;
+        try
+        {
+            AlignmentChoicesRefreshing?.Invoke(this, EventArgs.Empty);
+            Alignments = options;
+            alignment = selection;
+            OnPropertyChanged(nameof(Alignment));
+        }
+        finally
+        {
+            try
+            {
+                AlignmentChoicesRefreshed?.Invoke(this, EventArgs.Empty);
+            }
+            finally
+            {
+                refreshingAlignmentChoices = false;
+            }
+        }
     }
 
     private Task ApplyKaraokeAsync()
@@ -247,7 +285,7 @@ internal sealed class StylesPanelViewModel : ObservableObject
             loadedKaraokeCueId = cue?.Id;
             loadedKaraokeStyle = style;
         }
-        var options = new List<StylePresetListItem> { new(Guid.Empty, WorkbenchText.Get("DefaultKaraokeStyle")) };
+        var options = new List<StylePresetListItem> { new(Guid.Empty, Localization.Get("Workbench.DefaultKaraokeStyle")) };
         options.AddRange(Presets);
         if (style is not null && options.All(value => value.Id != style.PresetId))
         {
@@ -257,4 +295,6 @@ internal sealed class StylesPanelViewModel : ObservableObject
         KaraokePresets = options.ToArray();
         SelectedKaraokePreset = KaraokePresets.FirstOrDefault(value => value.Id == id) ?? KaraokePresets[0];
     }
+
+    internal void RefreshLanguage() => RefreshKaraokePresets(false);
 }

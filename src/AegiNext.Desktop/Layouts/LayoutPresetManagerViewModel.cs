@@ -1,3 +1,4 @@
+using AegiNext.Desktop.I18n;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -123,10 +124,10 @@ internal sealed class LayoutPresetManagerViewModel : ObservableObject, IDisposab
         Presets.Clear();
         foreach (var preset in controller.Presets)
         {
-            var displayName = controller.GetPresetName(preset);
+            var displayName = WorkbenchLayoutController.GetPresetName(preset);
             if (preset.IsReadOnly)
             {
-                displayName += " (" + LayoutText.Get("BuiltIn", controller.Culture) + ")";
+                displayName += " (" + Localization.Get("Layout.BuiltIn") + ")";
             }
             Presets.Add(new(preset.Id, displayName, preset.IsReadOnly));
         }

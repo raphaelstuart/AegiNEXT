@@ -1,7 +1,7 @@
 using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -73,7 +73,7 @@ internal sealed partial class WorkbenchSession
 
     internal void AddSubtitleTrack()
     {
-        var prefix = WorkbenchText.Get("SubtitleTrack");
+        var prefix = Localization.Get("Workbench.SubtitleTrack");
         var names = editor.Snapshot.SubtitleTracks.Select(track => track.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var number = 1;
         while (names.Contains($"{prefix} {number}"))

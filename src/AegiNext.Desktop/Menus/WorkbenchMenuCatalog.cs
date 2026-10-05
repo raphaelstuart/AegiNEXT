@@ -1,5 +1,5 @@
 using System.Windows.Input;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia.Input;
@@ -31,8 +31,13 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
     internal int UnreadLogErrorCount { get; private set; }
     internal event EventHandler? Changed;
 
+    internal void RefreshLanguage()
+    {
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     internal ICommand GetCommand(WorkbenchCommand command) => commandProvider(command);
-    internal static string GetLabel(WorkbenchCommand command) => SettingsText.Get(command.ToString());
+    internal static string GetLabel(WorkbenchCommand command) => Localization.Get("Settings." + (command.ToString()));
 
     internal string GetDisplayLabel(WorkbenchCommand command)
     {

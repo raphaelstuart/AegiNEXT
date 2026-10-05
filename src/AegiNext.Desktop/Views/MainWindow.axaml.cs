@@ -1,3 +1,4 @@
+using AegiNext.Desktop.I18n;
 using System.ComponentModel;
 using System.Windows.Input;
 using AegiNext.Core.Projects;
@@ -52,9 +53,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
     internal MainWindow(Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory)
     {
+        var startup = WorkbenchCompositionRoot.LoadPreferences();
         AvaloniaXamlLoader.Load(this);
         Session = WorkbenchCompositionRoot.Create(new WindowWorkbenchDialogService(this,
-            registerWindow: RegisterAuxiliaryWindow), controllerFactory);
+            registerWindow: RegisterAuxiliaryWindow), controllerFactory, startup: startup);
         ViewModel = Session.ViewModel;
         DataContext = ViewModel;
         panels = new(StringComparer.Ordinal)
@@ -90,6 +92,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         Opened += (_, _) => clockTimer.Start();
         Closed += (_, _) => clockTimer.Stop();
         ApplyWindowPreferences();
+        RefreshLayoutMenu();
         RefreshPanelAvailability();
         RefreshLogIndicator();
         if (layouts.LastError is { } layoutError)
@@ -196,8 +199,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         windowRegistry.Register(window, () => window switch
         {
             WorkbenchFloatingHostWindow => $"{ViewModel.Title} — {floatingTitles.GetValueOrDefault(window, string.Empty)}",
-            LayoutPresetManagerWindow => $"{LayoutText.Get("Manage", Session.InterfaceCulture)} — AegiNext",
-            _ => $"{LayoutText.Get("SaveAs", Session.InterfaceCulture)} — AegiNext"
+            LayoutPresetManagerWindow => $"{Localization.Get("Layout.Manage")} — AegiNext",
+            _ => $"{Localization.Get("Layout.SaveAs")} — AegiNext"
         }, role: window is WorkbenchFloatingHostWindow ? WorkbenchWindowRole.FLOATING : WorkbenchWindowRole.AUXILIARY);
         window.Closed += (_, _) => floatingTitles.Remove(window);
     }
@@ -291,7 +294,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 }, () => !Session.IsProjectBusy && !Session.IsClosing);
                 presetCommands.Add(preset.Id, command);
             }
-            return new LayoutMenuChoice(preset.Id, layouts.GetPresetName(preset),
+            return new LayoutMenuChoice(preset.Id, WorkbenchLayoutController.GetPresetName(preset),
                 preset.Id == layouts.CurrentPresetId, command);
         }).ToArray();
         menuCatalog.UpdateLayouts(choices, layouts.IsModified);
@@ -355,7 +358,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private void ApplyWindowPreferences()
     {
         var preferences = Session.Preferences;
-        layouts.ApplyCulture(Session.InterfaceCulture);
         windowRegistry.UpdatePreferences(preferences);
         if (Avalonia.Application.Current is { } application)
         {

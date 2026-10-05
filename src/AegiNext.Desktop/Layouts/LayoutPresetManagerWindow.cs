@@ -1,17 +1,22 @@
-using System.Globalization;
+using AegiNext.Desktop.I18n;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
 
 namespace AegiNext.Desktop.Layouts;
 
-internal sealed class LayoutPresetManagerWindow : Window
+internal sealed class LayoutPresetManagerWindow : Window, IDisposable
 {
-    internal LayoutPresetManagerWindow(WorkbenchLayoutController controller, CultureInfo culture)
+    private readonly List<IDisposable> localizationBindings = [];
+    private readonly LayoutPresetManagerViewModel viewModel;
+    private bool disposed;
+
+    internal LayoutPresetManagerWindow(WorkbenchLayoutController controller)
     {
-        var viewModel = new LayoutPresetManagerViewModel(controller);
+        viewModel = new(controller);
         DataContext = viewModel;
-        Title = LayoutText.Get("Manage", culture).TrimEnd('…');
+        localizationBindings.Add(this.Bind(TitleProperty, ObserveTitle().ToBinding()));
         Width = 540;
         Height = 430;
         MinWidth = 420;
@@ -19,19 +24,25 @@ internal sealed class LayoutPresetManagerWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var list = new ListBox { ItemsSource = viewModel.Presets, MinHeight = 120 };
         list.Bind(ListBox.SelectedItemProperty, new Binding(nameof(viewModel.Selected)) { Mode = BindingMode.TwoWay });
-        var name = new TextBox { PlaceholderText = LayoutText.Get("Name", culture) };
+        var name = new TextBox();
+        localizationBindings.Add(name.Bind(TextBox.PlaceholderTextProperty, Localization.Observe("Layout.Name").ToBinding()));
         name.Bind(TextBox.TextProperty, new Binding(nameof(viewModel.Name)) { Mode = BindingMode.TwoWay });
         var error = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
         error.Bind(TextBlock.TextProperty, new Binding(nameof(viewModel.Error)));
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var apply = new Button { Content = LayoutText.Get("Apply", culture), Command = viewModel.ApplyCommand };
-        var rename = new Button { Content = LayoutText.Get("Rename", culture), Command = viewModel.RenameCommand };
-        var delete = new Button { Content = LayoutText.Get("Delete", culture), Command = viewModel.DeleteCommand };
+        var apply = new Button { Command = viewModel.ApplyCommand };
+        localizationBindings.Add(apply.Bind(ContentControl.ContentProperty, Localization.Observe("Layout.Apply").ToBinding()));
+        var rename = new Button { Command = viewModel.RenameCommand };
+        localizationBindings.Add(rename.Bind(ContentControl.ContentProperty, Localization.Observe("Layout.Rename").ToBinding()));
+        var delete = new Button { Command = viewModel.DeleteCommand };
+        localizationBindings.Add(delete.Bind(ContentControl.ContentProperty, Localization.Observe("Layout.Delete").ToBinding()));
         buttons.Children.Add(apply);
         buttons.Children.Add(rename);
         buttons.Children.Add(delete);
-        var saveAs = new Button { Content = LayoutText.Get("SaveAs", culture), Command = viewModel.SaveAsCommand };
-        var close = new Button { Content = LayoutText.Get("Close", culture), HorizontalAlignment = HorizontalAlignment.Right };
+        var saveAs = new Button { Command = viewModel.SaveAsCommand };
+        localizationBindings.Add(saveAs.Bind(ContentControl.ContentProperty, Localization.Observe("Layout.SaveAs").ToBinding()));
+        var close = new Button { HorizontalAlignment = HorizontalAlignment.Right };
+        localizationBindings.Add(close.Bind(ContentControl.ContentProperty, Localization.Observe("Layout.Close").ToBinding()));
         close.Click += (_, _) => Close();
         var body = new Grid { Margin = new(16), RowDefinitions = new("*,Auto,Auto,Auto,Auto,Auto"), RowSpacing = 12 };
         body.Children.Add(list);
@@ -46,21 +57,36 @@ internal sealed class LayoutPresetManagerWindow : Window
         Grid.SetRow(close, 5);
         body.Children.Add(close);
         Content = body;
-        void RefreshLabels(object? sender, EventArgs args)
+        Closed += OnClosed;
+    }
+
+    private static IObservable<string> ObserveTitle()
+    {
+        return Localization.Observe(() => Localization.Get("Layout.Manage").TrimEnd('…'));
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        Closed -= OnClosed;
+        Dispose();
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        if (disposed)
         {
-            Title = LayoutText.Get("Manage", controller.Culture).TrimEnd('…');
-            name.PlaceholderText = LayoutText.Get("Name", controller.Culture);
-            apply.Content = LayoutText.Get("Apply", controller.Culture);
-            rename.Content = LayoutText.Get("Rename", controller.Culture);
-            delete.Content = LayoutText.Get("Delete", controller.Culture);
-            saveAs.Content = LayoutText.Get("SaveAs", controller.Culture);
-            close.Content = LayoutText.Get("Close", controller.Culture);
+            return;
         }
-        controller.Changed += RefreshLabels;
-        Closed += (_, _) =>
+
+        disposed = true;
+        Closed -= OnClosed;
+        foreach (var binding in localizationBindings)
         {
-            controller.Changed -= RefreshLabels;
-            viewModel.Dispose();
-        };
+            binding.Dispose();
+        }
+
+        localizationBindings.Clear();
+        viewModel.Dispose();
     }
 }

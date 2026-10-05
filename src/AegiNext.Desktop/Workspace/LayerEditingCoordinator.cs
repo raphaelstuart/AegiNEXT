@@ -7,7 +7,7 @@ using AegiNext.Core.Effects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -109,7 +109,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     internal void BeginPathEdit()
     {
-        var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
+        var layer = session.SelectedLayer ?? throw new InvalidOperationException(Localization.Get("Workbench.NoSelection"));
         if (layer.MotionPath is null)
         {
             var path = new PathGeometry(new(0, 0), [new(new(120, -120), new(240, 120), new(360, 0))]);
@@ -163,7 +163,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     internal void CreateKaraoke(Guid? presetId)
     {
-        var cue = session.SelectedCue ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
+        var cue = session.SelectedCue ?? throw new InvalidOperationException(Localization.Get("Workbench.NoSelection"));
         var preset = presetId is { } id
             ? session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == id)
             : null;
@@ -330,7 +330,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     internal void AddKeyframe()
     {
-        var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
+        var layer = session.SelectedLayer ?? throw new InvalidOperationException(Localization.Get("Workbench.NoSelection"));
         var time = session.ProjectPosition - layer.Start + layer.AnimationOffset;
         if (session.ProjectPosition < layer.Start || session.ProjectPosition > layer.End ||
             time < MediaTime.Zero)
@@ -352,7 +352,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     internal void DeleteKeyframe()
     {
-        var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
+        var layer = session.SelectedLayer ?? throw new InvalidOperationException(Localization.Get("Workbench.NoSelection"));
         var time = session.SelectedKeyTime ?? session.ProjectPosition - layer.Start + layer.AnimationOffset;
         session.Editor.UpdateLayer(layer.Id, value => value with
         {

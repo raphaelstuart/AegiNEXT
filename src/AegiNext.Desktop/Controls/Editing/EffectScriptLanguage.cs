@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Controls;
 
@@ -59,7 +59,7 @@ internal static class EffectScriptLanguage
         {
             if (string.IsNullOrWhiteSpace(source[..lineStart]))
             {
-                candidates.Add(("effect \"my-effect\" version 1", SettingsText.Get("ScriptHintHeader")));
+                candidates.Add(("effect \"my-effect\" version 1", Localization.Get("Settings.ScriptHintHeader")));
             }
             else
             {
@@ -67,65 +67,65 @@ internal static class EffectScriptLanguage
                 var inside = prior.Count(line => line.StartsWith("segment ", StringComparison.Ordinal)) > prior.Count(line => line == "end");
                 if (inside)
                 {
-                    candidates.Add(("at 0 ", SettingsText.Get("ScriptHintAt")));
-                    candidates.Add(("at 1 ", SettingsText.Get("ScriptHintEndpoints")));
-                    candidates.Add(("end", SettingsText.Get("ScriptHintEnd")));
+                    candidates.Add(("at 0 ", Localization.Get("Settings.ScriptHintAt")));
+                    candidates.Add(("at 1 ", Localization.Get("Settings.ScriptHintEndpoints")));
+                    candidates.Add(("end", Localization.Get("Settings.ScriptHintEnd")));
                 }
                 else if (!prior.Any(line => line.StartsWith("short-clip ", StringComparison.Ordinal)))
                 {
-                    candidates.Add(("short-clip compress", SettingsText.Get("ScriptHintCompress")));
-                    candidates.Add(("short-clip reject", SettingsText.Get("ScriptHintReject")));
+                    candidates.Add(("short-clip compress", Localization.Get("Settings.ScriptHintCompress")));
+                    candidates.Add(("short-clip reject", Localization.Get("Settings.ScriptHintReject")));
                 }
                 else
                 {
-                    candidates.Add(("segment enter fixed 300ms", SettingsText.Get("ScriptHintFixed")));
-                    candidates.Add(("segment stay flex 1", SettingsText.Get("ScriptHintFlex")));
+                    candidates.Add(("segment enter fixed 300ms", Localization.Get("Settings.ScriptHintFixed")));
+                    candidates.Add(("segment stay flex 1", Localization.Get("Settings.ScriptHintFlex")));
                 }
             }
         }
         else if (words[0] == "short-clip")
         {
-            candidates.Add(("compress", SettingsText.Get("ScriptHintCompress")));
-            candidates.Add(("reject", SettingsText.Get("ScriptHintReject")));
+            candidates.Add(("compress", Localization.Get("Settings.ScriptHintCompress")));
+            candidates.Add(("reject", Localization.Get("Settings.ScriptHintReject")));
         }
         else if (words[0] == "segment" && words.Length == 2)
         {
-            candidates.Add(("fixed 300ms", SettingsText.Get("ScriptHintFixed")));
-            candidates.Add(("flex 1", SettingsText.Get("ScriptHintFlex")));
+            candidates.Add(("fixed 300ms", Localization.Get("Settings.ScriptHintFixed")));
+            candidates.Add(("flex 1", Localization.Get("Settings.ScriptHintFlex")));
         }
         else if (words[0] == "at" && words.Length == 2)
         {
-            candidates.AddRange(properties.Select(value => (value, SettingsText.Get(value switch
+            candidates.AddRange(properties.Select(value => (value, Localization.Get("Settings." + (value switch
             {
                 "position" or "scale" => "ScriptHintVector",
                 "fill" or "stroke" => "ScriptHintColor",
                 _ => "ScriptHintScalar"
-            }))));
+            })))));
         }
         else if (words[0] == "at" && words.Length == 3)
         {
             var vector = words[2] is "position" or "scale";
             if (words[2] is "fill" or "stroke")
             {
-                candidates.Add(("base", SettingsText.Get("ScriptHintBase")));
-                candidates.Add(("rgba(1, 1, 1, 1)", SettingsText.Get("ScriptHintColor")));
+                candidates.Add(("base", Localization.Get("Settings.ScriptHintBase")));
+                candidates.Add(("rgba(1, 1, 1, 1)", Localization.Get("Settings.ScriptHintColor")));
             }
             else if (words[2] == "path-progress")
             {
-                candidates.Add(("0", SettingsText.Get("ScriptHintPath")));
-                candidates.Add(("1", SettingsText.Get("ScriptHintPath")));
+                candidates.Add(("0", Localization.Get("Settings.ScriptHintPath")));
+                candidates.Add(("1", Localization.Get("Settings.ScriptHintPath")));
             }
             else
             {
-                candidates.Add(("base", SettingsText.Get("ScriptHintBase")));
-                candidates.Add((vector ? "offset(0, 0)" : "offset(0)", SettingsText.Get("ScriptHintOffset")));
-                candidates.Add((vector ? "factor(1, 1)" : "factor(1)", SettingsText.Get("ScriptHintFactor")));
-                candidates.Add((vector ? "(0, 0)" : "0", SettingsText.Get("ScriptHintAbsolute")));
+                candidates.Add(("base", Localization.Get("Settings.ScriptHintBase")));
+                candidates.Add((vector ? "offset(0, 0)" : "offset(0)", Localization.Get("Settings.ScriptHintOffset")));
+                candidates.Add((vector ? "factor(1, 1)" : "factor(1)", Localization.Get("Settings.ScriptHintFactor")));
+                candidates.Add((vector ? "(0, 0)" : "0", Localization.Get("Settings.ScriptHintAbsolute")));
             }
         }
         else if (words[0] == "at" && words.Length >= 4 && (!before.Contains('(', StringComparison.Ordinal) || before.Contains(')', StringComparison.Ordinal)))
         {
-            candidates.AddRange(interpolation.Select(value => (value, SettingsText.Get("ScriptHintInterpolation"))));
+            candidates.AddRange(interpolation.Select(value => (value, Localization.Get("Settings.ScriptHintInterpolation"))));
         }
 
         return candidates.Where(item => item.Text.StartsWith(partial, StringComparison.Ordinal))

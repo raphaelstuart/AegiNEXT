@@ -1,4 +1,5 @@
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -41,7 +42,7 @@ public sealed class FontFamilyPicker : AutoCompleteBox
             VerticalContentAlignment = VerticalAlignment.Center,
             Content = new PathIcon { Width = 12, Height = 12, Data = Geometry.Parse("M2 4L6 8L10 4L11 5L6 10L1 5Z") }
         };
-        AutomationProperties.SetName(toggle, WorkbenchText.Get("Font"));
+        toggle.Bind(AutomationProperties.NameProperty, Localization.Observe("Workbench.Font").ToBinding());
         toggle.Click += (_, _) =>
         {
             if (IsDropDownOpen)

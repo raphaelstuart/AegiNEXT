@@ -1,4 +1,4 @@
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Workspace;
 using Avalonia;
 using Avalonia.Controls;
@@ -9,9 +9,11 @@ namespace AegiNext.Desktop.Views;
 
 internal sealed class TrackStyleChangeDialog : Window
 {
+    private readonly List<IDisposable> localizationBindings = [];
+
     internal TrackStyleChangeDialog(string trackName, string presetName, int subtitleCount)
     {
-        Title = WorkbenchText.Get("TrackStyleChangeTitle");
+        localizationBindings.Add(this.Bind(TitleProperty, Localization.Observe("Workbench.TrackStyleChangeTitle").ToBinding()));
         Width = 470;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
@@ -29,10 +31,11 @@ internal sealed class TrackStyleChangeDialog : Window
         {
             var button = new Button
             {
-                Name = key + "Button", Content = WorkbenchText.Get(key), Padding = new Thickness(14, 7),
+                Name = key + "Button", Padding = new Thickness(14, 7),
                 IsDefault = decision == TrackStyleUpdateDecision.DEFAULT_ONLY,
                 IsCancel = decision == TrackStyleUpdateDecision.CANCEL
             };
+            localizationBindings.Add(button.Bind(ContentControl.ContentProperty, Localization.Observe("Workbench." + key).ToBinding()));
             button.Click += (_, _) => Close(decision);
             buttons.Children.Add(button);
             if (decision == TrackStyleUpdateDecision.DEFAULT_ONLY)
@@ -41,18 +44,34 @@ internal sealed class TrackStyleChangeDialog : Window
             }
         }
 
+        var message = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        localizationBindings.Add(message.Bind(TextBlock.TextProperty, ObserveMessage(trackName, presetName, subtitleCount).ToBinding()));
         Content = new StackPanel
         {
             Margin = new Thickness(20), Spacing = 20,
             Children =
             {
-                new TextBlock
-                {
-                    Text = WorkbenchText.Format("TrackStyleChangeText", trackName, presetName, subtitleCount),
-                    TextWrapping = TextWrapping.Wrap
-                },
+                message,
                 buttons
             }
         };
+        Closed += OnClosed;
+    }
+
+    private static IObservable<string> ObserveMessage(string trackName, string presetName, int subtitleCount)
+    {
+        return Localization.Observe(() =>
+            Localization.Format("Workbench.TrackStyleChangeText", trackName, presetName, subtitleCount));
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        Closed -= OnClosed;
+        foreach (var binding in localizationBindings)
+        {
+            binding.Dispose();
+        }
+
+        localizationBindings.Clear();
     }
 }

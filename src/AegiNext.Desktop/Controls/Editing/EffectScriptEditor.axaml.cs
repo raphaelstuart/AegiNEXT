@@ -1,4 +1,4 @@
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -104,12 +104,21 @@ public sealed partial class EffectScriptEditor : UserControl
     /// <summary>刷新补全和诊断文字，不改变源代码、插入点和未提交草稿。</summary>
     public void RefreshLanguage()
     {
-        this.FindControl<Button>("ScriptLocateError")!.Content = SettingsText.Get("LocateError");
         if (completionPopup.IsOpen)
         {
             ShowCompletions();
         }
     }
+
+    /// <inheritdoc />
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Localization.LanguageChanged += OnLanguageChanged;
+        RefreshLanguage();
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e) => RefreshLanguage();
 
     /// <summary>显式跳转到解析器报告的行列，不在失焦或自动验证时抢焦点。</summary>
     public void RevealDiagnostic()
@@ -151,6 +160,7 @@ public sealed partial class EffectScriptEditor : UserControl
     /// <summary>离开宿主时关闭补全浮层，并取消尚未执行的输入请求。</summary>
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        Localization.LanguageChanged -= OnLanguageChanged;
         HideCompletions();
         consumingSpace = false;
         base.OnDetachedFromVisualTree(e);

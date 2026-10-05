@@ -10,7 +10,7 @@ using Avalonia.Styling;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Styling;
@@ -758,10 +758,28 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        Localization.LanguageChanged -= OnLanguageChanged;
         CancelDrag();
         spectrumBitmap?.Dispose();
         spectrumBitmap = null;
     }
+
+    /// <inheritdoc />
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Localization.LanguageChanged += OnLanguageChanged;
+        InvalidateVisual();
+    }
+
+    /// <inheritdoc />
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        Localization.LanguageChanged -= OnLanguageChanged;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e) => InvalidateVisual();
 
     internal void BeginTimingDrag(SubtitleLine cue, TimelineDragMode mode, double pointer, bool stretch)
     {
@@ -891,7 +909,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 {
                     continue;
                 }
-                var title = WorkbenchText.Property(animation.Property);
+                var title = AnimationPropertyLocalization.Get(animation.Property);
                 using var titleLayout = WorkbenchTextFormatting.CreateLayout(this, title, 11, foreground);
                 context.DrawRectangle(drawingPalette.Surface, null,
                     new(HeaderWidth + 2, top, titleLayout.Width + 6, titleLayout.Height + 3), 2, 2);

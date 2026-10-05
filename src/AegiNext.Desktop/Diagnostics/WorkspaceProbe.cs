@@ -3,7 +3,7 @@ using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Layouts;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Menus;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
@@ -393,7 +393,7 @@ internal sealed class WorkspaceProbe
         var titles = sample.Items.Select(item => item.Title).ToArray();
         foreach (var group in WorkbenchMenuCatalog.Groups)
         {
-            var label = WorkbenchText.Get(group.Key);
+            var label = Localization.Get("Workbench." + (group.Key));
             Verify(titles.Contains(label, StringComparer.Ordinal) != windowMenuMode,
                 $"Actual native workbench group '{label}' matched the selected menu mode: {description}");
         }

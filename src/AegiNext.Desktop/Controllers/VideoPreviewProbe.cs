@@ -1,7 +1,6 @@
-using System.Globalization;
 using AegiNext.Core.Media;
 using AegiNext.Core.Timing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Media.Probing;
 
 namespace AegiNext.Desktop.Controllers;
@@ -13,24 +12,23 @@ internal static class VideoPreviewProbe
 
     internal static async Task<VideoPreviewMedia> ProbeAsync(string filePath, CancellationToken cancellationToken)
     {
-        var culture = CultureInfo.CurrentUICulture;
         var probe = new FfprobeMediaProbe(new(MediaToolchain.ResolveFfprobe()));
         var report = await probe.ProbeAsync(filePath, cancellationToken).ConfigureAwait(false);
         var selected = report.Asset.Streams
             .Where(stream => stream.CodecType == "video" && stream.Video is not null && stream.Disposition.GetValueOrDefault("attached_pic") == 0)
             .OrderByDescending(stream => stream.Disposition.GetValueOrDefault("default"))
             .ThenBy(stream => stream.Index)
-            .FirstOrDefault() ?? throw new InvalidDataException(PreviewText.Get("NoVideo", culture));
+            .FirstOrDefault() ?? throw new InvalidDataException(Localization.Get("Preview.NoVideo"));
         if (!selected.Video!.DisplayMatrices.IsDefaultOrEmpty)
         {
-            throw new NotSupportedException(PreviewText.Get("DisplayMatrix", culture));
+            throw new NotSupportedException(Localization.Get("Preview.DisplayMatrix"));
         }
 
         foreach (var name in selected.Video.SideDataTypes)
         {
             if (unsupportedSideData.Any(fragment => name.Contains(fragment, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new NotSupportedException($"{PreviewText.Get("UnsupportedMetadata", culture)} {name}");
+                throw new NotSupportedException($"{Localization.Get("Preview.UnsupportedMetadata")} {name}");
             }
         }
 

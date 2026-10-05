@@ -2,27 +2,34 @@
              xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts" xmlns:presets="using:AegiNext.Core.Presets"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:settings="using:AegiNext.Desktop.Settings"
              xmlns:vm="using:AegiNext.Desktop.Settings.Appearance"
+             xmlns:i18n="using:AegiNext.Desktop.I18n"
              x:Class="AegiNext.Desktop.Settings.Appearance.AppearanceSettingsView" Classes="business-surface"
              x:DataType="vm:AppearanceSettingsViewModel">
   <ScrollViewer Name="AppearancePage" IsVisible="{Binding $parent[UserControl].IsVisible}">
     <StackPanel Spacing="16">
       <Border Classes="card">
         <Grid ColumnDefinitions="*,240" ColumnSpacing="16">
-          <TextBlock Tag="Theme" VerticalAlignment="Center" />
+          <TextBlock Text="{Loc Key=Settings.Theme}" VerticalAlignment="Center" />
           <ComboBox Name="ThemeCombo" ItemsSource="{Binding Themes}" SelectedIndex="{Binding ThemeIndex, Mode=TwoWay}"
                     Grid.Column="1" />
         </Grid>
       </Border>
       <Border Classes="card">
         <Grid ColumnDefinitions="*,240" ColumnSpacing="16">
-          <TextBlock Tag="Language" VerticalAlignment="Center" />
+          <TextBlock Text="{Loc Key=Settings.Language}" VerticalAlignment="Center" />
           <ComboBox Name="LanguageCombo" ItemsSource="{Binding Languages}"
-                    SelectedIndex="{Binding LanguageIndex, Mode=TwoWay}" Grid.Column="1" />
+                    SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}" Grid.Column="1">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="i18n:LanguageInfo">
+                <TextBlock Text="{Binding LanguageName}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
         </Grid>
       </Border>
       <Border Classes="card" IsVisible="{Binding ShowMenuLocation}">
         <Grid ColumnDefinitions="*,240" ColumnSpacing="16">
-          <TextBlock Tag="MenuLocation" VerticalAlignment="Center" />
+          <TextBlock Text="{Loc Key=Settings.MenuLocation}" VerticalAlignment="Center" />
           <ComboBox Name="MenuLocationCombo" Grid.Column="1" ItemsSource="{Binding MenuLocations}"
                     SelectedIndex="{Binding MenuLocationIndex, Mode=TwoWay}" />
         </Grid>

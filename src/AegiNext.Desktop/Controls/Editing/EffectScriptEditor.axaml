@@ -53,6 +53,6 @@
         </ListBox>
       </Border>
     </Popup>
-    <Button Name="ScriptLocateError" Grid.Row="1" HorizontalAlignment="Right" Tag="LocateError" IsVisible="False" Click="LocateError" />
+    <Button Name="ScriptLocateError" Grid.Row="1" HorizontalAlignment="Right" IsVisible="False" Click="LocateError" Content="{Loc Key=Settings.LocateError}" />
   </Grid>
 </UserControl>

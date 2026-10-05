@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using AegiNext.Desktop.Controls;
-using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.Workspace;
@@ -18,6 +17,9 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
 {
     private readonly WorkbenchSession session;
     private readonly EffectsPanelViewModel viewModel;
+    private readonly ComboBox blend;
+    private readonly ComboBox property;
+    private readonly ComboBox interpolation;
     private bool suppressFocusCommit;
     private int focusCommitRevision;
     private bool disposed;
@@ -27,10 +29,25 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         this.viewModel = viewModel;
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
-        var blend = this.FindControl<ComboBox>("BlendCombo")!;
-        blend.SelectionChanged += (_, _) => viewModel.CommitBlend(blend.SelectedIndex);
-        var interpolation = this.FindControl<ComboBox>("InterpolationCombo")!;
-        interpolation.SelectionChanged += (_, _) => viewModel.CommitInterpolation(interpolation.SelectedIndex);
+        blend = this.FindControl<ComboBox>("BlendCombo")!;
+        blend.SelectionChanged += (_, _) =>
+        {
+            if (!session.IsUpdating)
+            {
+                viewModel.CommitBlend(blend.SelectedIndex);
+            }
+        };
+        property = this.FindControl<ComboBox>("PropertyCombo")!;
+        interpolation = this.FindControl<ComboBox>("InterpolationCombo")!;
+        interpolation.SelectionChanged += (_, _) =>
+        {
+            if (!session.IsUpdating)
+            {
+                viewModel.CommitInterpolation(interpolation.SelectedIndex);
+            }
+        };
+        viewModel.ChoicesRefreshing += OnChoicesRefreshing;
+        viewModel.ChoicesRefreshed += OnChoicesRefreshed;
         var orientPath = this.FindControl<CheckBox>("OrientPathCheck")!;
         orientPath.IsCheckedChanged += (_, _) => viewModel.CommitOrientPath(orientPath.IsChecked == true);
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
@@ -58,9 +75,7 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
                 }, DispatcherPriority.Background);
             }
         }, RoutingStrategies.Bubble);
-        session.PreferencesChanged += OnPreferencesChanged;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
-        ControlLocalization.Apply(this);
     }
     public string PanelId => "effects";
     public void CancelGestures()
@@ -125,20 +140,38 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         }
     }
 
-    private void OnPreferencesChanged(object? sender, EventArgs e)
-    {
-        ControlLocalization.Apply(this);
-        this.FindControl<ColorDraftInput>("KeyframeColorInput")!.RefreshLanguage();
-    }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
+
+    private void OnChoicesRefreshing(object? sender, EventArgs e)
+    {
+        BeginChoiceRefresh(blend);
+        BeginChoiceRefresh(property);
+        BeginChoiceRefresh(interpolation);
+    }
+
+    private void OnChoicesRefreshed(object? sender, EventArgs e)
+    {
+        blend.EndInit();
+        property.EndInit();
+        interpolation.EndInit();
+    }
+
+    private static void BeginChoiceRefresh(ComboBox choice)
+    {
+        var selectedIndex = choice.SelectedIndex;
+        choice.BeginInit();
+        choice.SelectedIndex = selectedIndex;
+    }
+
     public void Dispose()
     {
         if (!disposed)
         {
             disposed = true;
+            viewModel.ChoicesRefreshing -= OnChoicesRefreshing;
+            viewModel.ChoicesRefreshed -= OnChoicesRefreshed;
             viewModel.KeyframeColorDraft.Committed -= OnColorCommitted;
             viewModel.PropertyChanged -= OnViewModelPropertyChanged;
-            session.PreferencesChanged -= OnPreferencesChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
         }
     }

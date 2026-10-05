@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 using System.ComponentModel;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Shortcuts;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -63,7 +63,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
         }
     }
 
-    public string RecordLabel => SettingsText.Get(IsRecording ? "Recording" : "Record");
+    public string RecordLabel => Localization.Get("Settings." + (IsRecording ? "Recording" : "Record"));
 
     public bool IsRecording
     {
@@ -141,7 +141,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
     public void RejectGesture()
     {
         IsRecording = false;
-        Error = SettingsText.Get("ShortcutFormatValidation");
+        Error = Localization.Get("Settings.ShortcutFormatValidation");
     }
 
     /// <summary>宿主关闭或失焦时清理录制与等待释放状态。</summary>
@@ -160,7 +160,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
         }
 
         rows = bindings.Select(value =>
-            new ShortcutSettingRow(value.Command, SettingsText.Get(value.Command.ToString()), value.Gesture)).ToArray();
+            new ShortcutSettingRow(value.Command, Localization.Get("Settings." + value.Command.ToString()), value.Gesture)).ToArray();
         foreach (var row in rows)
         {
             row.PropertyChanged += OnRowChanged;
@@ -197,13 +197,12 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
             var otherCommand = conflict.FirstCommand == SelectedRow?.Command
                 ? conflict.SecondCommand
                 : conflict.FirstCommand;
-            Error = SettingsText.Get("ShortcutConflictValidation")
-                .Replace("{0}", conflict.Gesture, StringComparison.Ordinal)
-                .Replace("{1}", SettingsText.Get(otherCommand.ToString()), StringComparison.Ordinal);
+            Error = Localization.Format("Settings.ShortcutConflictValidation", conflict.Gesture,
+                Localization.Get("Settings." + otherCommand.ToString()));
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidDataException or FormatException)
         {
-            Error = SettingsText.Get("ShortcutFormatValidation");
+            Error = Localization.Get("Settings.ShortcutFormatValidation");
         }
     }
 

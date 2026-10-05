@@ -92,6 +92,63 @@ function Get-AegiNextNugetLicenseRoot
     }
 }
 
+function Test-AegiNextPublishedLocalization
+{
+    param([Parameter(Mandatory)][string] $PayloadDirectory)
+    $directory = Join-Path $PayloadDirectory 'i18n'
+    if (!(Test-Path -LiteralPath $directory -PathType Container)) { throw "Missing published language directory: $directory" }
+    $required = @{ 'en-US.json' = 'en-US'; 'zh-CN.json' = 'zh-CN' }
+    foreach ($name in $required.Keys)
+    {
+        if (!(Test-Path -LiteralPath (Join-Path $directory $name) -PathType Leaf)) { throw "Missing published language package: $name" }
+    }
+
+    $identifiers = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $languages = [Collections.Generic.List[object]]::new()
+    $encoding = [Text.UTF8Encoding]::new($false, $true)
+    foreach ($file in Get-ChildItem -LiteralPath $directory -Filter '*.json' -File | Sort-Object Name)
+    {
+        $document = $null
+        try
+        {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xef -and $bytes[1] -eq 0xbb -and $bytes[2] -eq 0xbf) { throw 'Language JSON must use UTF-8 without a BOM.' }
+            $document = [Text.Json.JsonDocument]::Parse($encoding.GetString($bytes))
+            $root = $document.RootElement
+            if ($root.ValueKind -ne [Text.Json.JsonValueKind]::Object) { throw 'Language JSON must be an object.' }
+            $fields = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach ($field in $root.EnumerateObject())
+            {
+                if (!$fields.Add($field.Name)) { throw "Duplicate language field: $($field.Name)." }
+            }
+
+            $name = $root.GetProperty('LanguageName')
+            $identifier = $root.GetProperty('LanguageID')
+            $strings = $root.GetProperty('Strings')
+            if ($name.ValueKind -ne [Text.Json.JsonValueKind]::String -or [string]::IsNullOrWhiteSpace($name.GetString())) { throw 'LanguageName must be a nonempty string.' }
+            if ($identifier.ValueKind -ne [Text.Json.JsonValueKind]::String -or [string]::IsNullOrWhiteSpace($identifier.GetString())) { throw 'LanguageID must be a nonempty culture identifier.' }
+            $culture = [Globalization.CultureInfo]::GetCultureInfo($identifier.GetString())
+            if ($culture.Equals([Globalization.CultureInfo]::InvariantCulture) -or $identifier.GetString() -ieq 'system') { throw 'LanguageID must identify a named culture and cannot be system.' }
+            if ($strings.ValueKind -ne [Text.Json.JsonValueKind]::Object) { throw 'Strings must be a string dictionary.' }
+            $keys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach ($entry in $strings.EnumerateObject())
+            {
+                if ([string]::IsNullOrWhiteSpace($entry.Name) -or $entry.Value.ValueKind -ne [Text.Json.JsonValueKind]::String) { throw 'Translation keys must be nonempty and values must be strings.' }
+                if (!$keys.Add($entry.Name)) { throw "Duplicate translation key: $($entry.Name)." }
+            }
+            if (!$identifiers.Add($culture.Name)) { throw "Duplicate published LanguageID: $($culture.Name)." }
+            if ($required.ContainsKey($file.Name) -and $culture.Name -ine $required[$file.Name]) { throw "Expected LanguageID $($required[$file.Name]) in $($file.Name)." }
+            $languages.Add([pscustomobject]@{ LanguageName = $name.GetString(); LanguageID = $culture.Name })
+        }
+        catch { throw "Invalid published language package '$($file.FullName)': $($_.Exception.Message)" }
+        finally
+        {
+            if ($null -ne $document) { $document.Dispose() }
+        }
+    }
+    return $languages.ToArray()
+}
+
 function Test-AegiNextPublishedPackage
 {
     param([Parameter(Mandatory)][string] $PackageDirectory)
@@ -113,7 +170,14 @@ function Test-AegiNextPublishedPackage
     {
         if ($file.FullName -ne $manifestPath -and !$expected.Contains($file.FullName)) { throw "Unexpected package file: $($file.FullName)" }
     }
-    return [pscustomobject]@{ RuntimeIdentifier = $manifest.RuntimeIdentifier; ProductVersion = $manifest.ProductVersion; FileCount = $expected.Count; HashesVerified = $true }
+    $payload = switch ($manifest.RuntimeIdentifier)
+    {
+        { $_ -in @('osx-arm64', 'osx-x64') } { Join-Path $root 'AegiNext.app/Contents/MacOS' }
+        'win-x64' { Join-Path $root 'AegiNext' }
+        default { throw "Unsupported package runtime identifier: $($manifest.RuntimeIdentifier)." }
+    }
+    $languages = @(Test-AegiNextPublishedLocalization -PayloadDirectory $payload)
+    return [pscustomobject]@{ RuntimeIdentifier = $manifest.RuntimeIdentifier; ProductVersion = $manifest.ProductVersion; FileCount = $expected.Count; HashesVerified = $true; LocalizationVerified = $true; LanguageIDs = @($languages.LanguageID) }
 }
 
 function Invoke-AegiNextPublish

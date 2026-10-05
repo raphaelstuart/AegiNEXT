@@ -1,5 +1,5 @@
 using AegiNext.Core.Projects;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegiNext.Desktop.Editing;
@@ -43,12 +43,12 @@ public sealed class ColorDraft : ObservableObject
     public int Revision => revision;
     public string? InvalidFieldKey => invalidFieldKey;
     public bool HasError => invalidFieldKey is not null;
-    public string? Error => invalidFieldKey is null ? null : SettingsText.Get(invalidFieldKey switch
+    public string? Error => invalidFieldKey is null ? null : Localization.Get("Settings." + (invalidFieldKey switch
     {
         "Hex" => "HexValidation",
         "Rgba" => "RgbaValidation",
         _ => "LinearColorValidation"
-    });
+    }));
     public ColorInputMode InputMode => inputMode;
     public string ModeLabel => inputMode == ColorInputMode.HEX ? "HEX" : "RGBA";
     public string InputPlaceholder => inputMode == ColorInputMode.HEX ? IsAlphaEnabled ? "#RRGGBBAA" : "#RRGGBB" : "255,255,255,255";

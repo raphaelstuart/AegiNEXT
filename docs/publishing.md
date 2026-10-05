@@ -38,6 +38,12 @@ The external package-manifest.json records version/RID/Git SHA/dirty/time, actua
 
 Windows RequiredRuntimePolicy follows [.NET 10 supported OS policy](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md), including lifecycle and Windows 11 ARM64 x64 emulation, checked 2026-10-04. Build-host version is not runtime acceptance or a native minimum. Release acceptance removes developer PATH and installed .NET/FFmpeg assumptions, then tests open/play/audio/subtitles/actual export/cancel separately per OS.
 
+## Language resources
+
+The desktop project copies UTF-8 JSON without a BOM from `src/AegiNext.Desktop/I18n/Languages/` to `AppContext.BaseDirectory/i18n/` for build, test and publish outputs. The package payload is `AegiNext.app/Contents/MacOS/i18n/` on macOS and `AegiNext/i18n/` on Windows. Include `en-US.json` and `zh-CN.json`; each root must contain nonempty `LanguageName`, the corresponding valid culture `LanguageID`, and a `Strings` object whose values are strings. Additional language filenames may differ from their IDs; all first-level JSON packs must have unique IDs. The application loads these files at startup and needs a restart after changes. See [workspace localization](composable-workspace.md#localization) for the API, XAML bindings and language matching rules.
+
+`verify-package.ps1` checks the payload language directory, both built-in files, UTF-8 encoding, JSON shape, metadata, string entries and duplicate IDs/keys in addition to the existing complete file-hash inventory. Language JSON remains in that inventory; changing packaged language files requires a fresh manifest and the normal package/signing workflow to pass verification. These resource checks do not establish native visual acceptance of translated controls or platform menus.
+
 ## Relocation checks
 
 Move the whole package, then verify read-only; missing/extra/changed files fail:

@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using AegiNext.Desktop.Controls;
-using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.Styling;
 using AegiNext.Desktop.Workspace;
@@ -60,9 +59,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
             }
         };
         session.PreviewUpdated += OnPreviewUpdated;
-        session.PreferencesChanged += OnPreferencesChanged;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
-        ControlLocalization.Apply(this);
     }
 
     public string PanelId => "preview";
@@ -110,7 +107,6 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         canvas.EditMode = scene.Mode;
         canvas.SetScene(scene.Document, scene.SelectedLayer, scene.Position, scene.AssetDirectory, scene.IsEditingPose);
     }
-    private void OnPreferencesChanged(object? sender, EventArgs e) => ControlLocalization.Apply(this);
     private void OnSceneGestureCancelled(object? sender, EventArgs e)
     {
         canvas.CancelGesture();
@@ -123,7 +119,6 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         {
             disposed = true;
             session.PreviewUpdated -= OnPreviewUpdated;
-            session.PreferencesChanged -= OnPreferencesChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
             viewModel.PropertyChanged -= OnSceneChanged;
             session.SceneGestureCancellationRequested -= OnSceneGestureCancelled;

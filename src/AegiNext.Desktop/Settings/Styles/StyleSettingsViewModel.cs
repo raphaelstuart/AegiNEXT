@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Editing;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -95,7 +95,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public bool CanEdit => HasDraft && !IsBusy;
     public bool CanApply => CanEdit && HasSelectedSubtitle;
     public bool IsAvailable => !IsBusy;
-    public string FontSource => SettingsText.Get(draft?.Preset.Font is null ? "SystemFont" : "EmbeddedFont");
+    public string FontSource => Localization.Get("Settings." + (draft?.Preset.Font is null ? "SystemFont" : "EmbeddedFont"));
     public string[] Alignments => alignments;
     public int DraftVersion => draftVersion;
 
@@ -374,7 +374,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         loading = true;
         try
         {
-            alignments = Enum.GetValues<ProjectTextAlignment>().Select(value => SettingsText.Get(value.ToString()))
+            alignments = Enum.GetValues<ProjectTextAlignment>().Select(value => Localization.Get("Settings." + value.ToString()))
                 .ToArray();
             OnPropertyChanged(nameof(Alignments));
             OnPropertyChanged(nameof(AlignmentIndex));
@@ -384,7 +384,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
             ShadowDraft.RefreshLanguage();
             if (errorKey is not null)
             {
-                Error = SettingsText.Get(errorKey);
+                Error = Localization.Get("Settings." + errorKey);
             }
         }
         finally
@@ -396,7 +396,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
     private void Add()
     {
         ClearSelection();
-        LoadDraft(new(new(Guid.NewGuid(), SettingsStyleDraft.UniqueName(SettingsText.Get("NewStyle"), styles), new())));
+        LoadDraft(new(new(Guid.NewGuid(), SettingsStyleDraft.UniqueName(Localization.Get("Settings.NewStyle"), styles), new())));
     }
 
     private void Duplicate()
@@ -407,7 +407,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         }
 
         var next = draft.Duplicate(
-            SettingsStyleDraft.UniqueName($"{draft.Preset.Name} {SettingsText.Get("CopySuffix")}", styles));
+            SettingsStyleDraft.UniqueName($"{draft.Preset.Name} {Localization.Get("Settings.CopySuffix")}", styles));
         ClearSelection();
         LoadDraft(next);
     }
@@ -640,6 +640,6 @@ public sealed class StyleSettingsViewModel : ObservableObject
     private void SetError(string key)
     {
         errorKey = key;
-        Error = SettingsText.Get(key);
+        Error = Localization.Get("Settings." + key);
     }
 }

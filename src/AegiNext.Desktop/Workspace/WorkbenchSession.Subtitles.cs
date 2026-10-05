@@ -3,7 +3,7 @@ using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Core.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -112,11 +112,11 @@ internal sealed partial class WorkbenchSession
 
     internal void SplitCue()
     {
-        var cue = SelectedCue ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
+        var cue = SelectedCue ?? throw new InvalidOperationException(Localization.Get("Workbench.NoSelection"));
         var boundaries = StringInfo.ParseCombiningCharacters(cue.Text).Append(cue.Text.Length).ToArray();
         if (!textCarets.TryGetValue(cue.Id, out var caret))
         {
-            throw new InvalidOperationException(WorkbenchText.Get("SplitCaret"));
+            throw new InvalidOperationException(Localization.Get("Workbench.SplitCaret"));
         }
 
         var offset = boundaries.MinBy(value => Math.Abs(value - caret));

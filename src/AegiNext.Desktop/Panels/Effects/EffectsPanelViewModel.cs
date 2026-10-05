@@ -54,11 +54,15 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     private decimal keyframeMaximum = 65504;
     private int interpolation = 1;
     private string[] interpolations = [];
+    private bool refreshingChoices;
     private bool canAddKeyframe;
     private bool canDeleteKeyframe;
     private int preset = -1;
     private string[] presets = [];
     private string? presetName;
+
+    internal event EventHandler? ChoicesRefreshing;
+    internal event EventHandler? ChoicesRefreshed;
 
     internal EffectsPanelViewModel(WorkbenchSession session)
     {
@@ -233,7 +237,13 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     public int Blend
     {
         get => blend;
-        set => SetProperty(ref blend, value);
+        set
+        {
+            if (!refreshingChoices)
+            {
+                SetProperty(ref blend, value);
+            }
+        }
     }
 
     public string[] Blends
@@ -267,7 +277,7 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         get => session.SceneEditing.Property;
         set
         {
-            if (Property == value)
+            if (refreshingChoices || Property == value)
             {
                 return;
             }
@@ -340,7 +350,13 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     public int Interpolation
     {
         get => interpolation;
-        set => SetProperty(ref interpolation, value);
+        set
+        {
+            if (!refreshingChoices)
+            {
+                SetProperty(ref interpolation, value);
+            }
+        }
     }
 
     public string[] Interpolations
@@ -471,14 +487,51 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     /// <summary>提交用户选择的混合模式。</summary>
     public void CommitBlend(int value)
     {
+        if (refreshingChoices)
+        {
+            return;
+        }
         Blend = value;
         session.TryCommitDrafts();
     }
     /// <summary>提交用户选择的关键帧插值。</summary>
     public void CommitInterpolation(int value)
     {
+        if (refreshingChoices)
+        {
+            return;
+        }
         Interpolation = value;
         session.TryCommitDrafts();
+    }
+
+    internal void RefreshChoices(string[] blendOptions, AnimationPropertyChoice[] propertyOptions, string[] interpolationOptions)
+    {
+        var selection = (blend, interpolation);
+        refreshingChoices = true;
+        try
+        {
+            ChoicesRefreshing?.Invoke(this, EventArgs.Empty);
+            Blends = blendOptions;
+            Properties = propertyOptions;
+            Interpolations = interpolationOptions;
+            blend = selection.blend;
+            interpolation = selection.interpolation;
+            OnPropertyChanged(nameof(Blend));
+            OnPropertyChanged(nameof(Interpolation));
+            OnPropertyChanged(nameof(SelectedProperty));
+        }
+        finally
+        {
+            try
+            {
+                ChoicesRefreshed?.Invoke(this, EventArgs.Empty);
+            }
+            finally
+            {
+                refreshingChoices = false;
+            }
+        }
     }
     /// <summary>提交用户选择的反转蒙版状态。</summary>
     public void CommitInvertMask(bool value)

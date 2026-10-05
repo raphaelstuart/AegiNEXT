@@ -1,4 +1,4 @@
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Styling;
 using Avalonia.Controls;
@@ -45,7 +45,7 @@ internal sealed class WindowMenuGroupProjection
 
     internal void Refresh()
     {
-        Item.Header = WorkbenchText.Get(definition.Key);
+        Item.Header = Localization.Get("Workbench." + (definition.Key));
         foreach (var pair in commands)
         {
             pair.Value.Header = catalog.GetDisplayLabel(pair.Key);

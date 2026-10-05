@@ -5,7 +5,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -70,17 +70,17 @@ internal sealed partial class WorkbenchSession
             }
             if (!ViewModel.Export.UseHardwareEncoder && (crf is < 0 or > 51 || crf != Math.Truncate(crf)))
             {
-                throw new InvalidDataException(WorkbenchText.Get("Quality"));
+                throw new InvalidDataException(Localization.Get("Workbench.Quality"));
             }
             var bitrate = RequiredNumber(ViewModel.Export.AudioBitrateText, "AudioBitrate", "AudioBitrateInput");
             if (bitrate is < 32 or > 512 || bitrate != Math.Truncate(bitrate))
             {
-                throw new InvalidDataException(WorkbenchText.Get("AudioBitrate"));
+                throw new InvalidDataException(Localization.Get("Workbench.AudioBitrate"));
             }
             if (ViewModel.Export.Codec is < 0 or > 2 || ViewModel.Export.Speed is < 0 or > 2 || ViewModel.Export.AudioMode is < 0 or > 2)
             {
                 ViewModel.InvalidFieldKey = "CodecCombo";
-                throw new InvalidDataException(WorkbenchText.Get("Codec"));
+                throw new InvalidDataException(Localization.Get("Workbench.Codec"));
             }
             ViewModel.Export.Crf = (decimal)crf;
             ViewModel.Export.VideoBitrate = videoBitrate;
@@ -148,7 +148,7 @@ internal sealed partial class WorkbenchSession
             var value = RequiredNumber(text, "Property", field);
             if (value < (double)vm.KeyframeMinimum || value > (double)vm.KeyframeMaximum)
             {
-                throw new InvalidDataException(WorkbenchText.Get("Property"));
+                throw new InvalidDataException(Localization.Get("Workbench.Property"));
             }
             return value;
         }
@@ -167,7 +167,7 @@ internal sealed partial class WorkbenchSession
         if (!draft.TryCommit(out var value))
         {
             ViewModel.InvalidFieldKey = field;
-            throw new InvalidDataException(draft.Error ?? WorkbenchText.Get("Fill"));
+            throw new InvalidDataException(draft.Error ?? Localization.Get("Workbench.Fill"));
         }
         return value;
     }
@@ -183,7 +183,7 @@ internal sealed partial class WorkbenchSession
         ViewModel.InvalidFieldKey = fieldKey;
         if (!decimal.TryParse(text, System.Globalization.NumberStyles.Float, InterfaceCulture, out var number))
         {
-            throw new InvalidDataException(WorkbenchText.Get(label));
+            throw new InvalidDataException(Localization.Get("Workbench." + (label)));
         }
         var (minimum, maximum) = fieldKey switch
         {
@@ -202,7 +202,7 @@ internal sealed partial class WorkbenchSession
         };
         if (number < minimum || number > maximum)
         {
-            throw new InvalidDataException(WorkbenchText.Get(label));
+            throw new InvalidDataException(Localization.Get("Workbench." + (label)));
         }
         return (double)number;
     }
@@ -465,7 +465,7 @@ internal sealed partial class WorkbenchSession
         var result = layerPlacement.Resolve(document, projectDirectory, layer);
         if (result.Error is { } error)
         {
-            placementDiagnostic = new InvalidDataException($"{WorkbenchText.Get("SubtitlePositionUnavailable")}: {error.Message}", error);
+            placementDiagnostic = new InvalidDataException($"{Localization.Get("Workbench.SubtitlePositionUnavailable")}: {error.Message}", error);
             SetDiagnosticError("Subtitle placement", placementDiagnostic);
             ShowError(placementDiagnostic, false);
         }
@@ -548,7 +548,7 @@ internal sealed partial class WorkbenchSession
     {
         foreach (var layer in layers)
         {
-            yield return new(layer.Id, new string(' ', depth * 3) + (layer.Name == "Subtitle" ? WorkbenchText.Get("Subtitles") : layer.Name));
+            yield return new(layer.Id, new string(' ', depth * 3) + (layer.Name == "Subtitle" ? Localization.Get("Workbench.Subtitles") : layer.Name));
             foreach (var child in LayerItems(layer.Children, depth + 1))
             {
                 yield return child;

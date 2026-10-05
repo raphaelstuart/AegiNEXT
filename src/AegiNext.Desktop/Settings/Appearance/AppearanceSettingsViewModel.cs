@@ -1,4 +1,5 @@
-using AegiNext.Desktop.Localization;
+using System.Collections.Immutable;
+using AegiNext.Desktop.I18n;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegiNext.Desktop.Settings.Appearance;
@@ -8,10 +9,10 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
 {
     private bool updating;
     private int themeIndex;
-    private int languageIndex;
+    private string languageId = "system";
     private int menuLocationIndex;
     private string[] themes = [];
-    private string[] languages = [];
+    private ImmutableArray<LanguageInfo> languages = [];
     private string[] menuLocations = [];
 
     /// <summary>构造外观草稿，不读写全局设置。</summary>
@@ -24,7 +25,7 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
     public event EventHandler<SettingsAppearanceChangedEventArgs>? Changed;
     public bool ShowMenuLocation { get; }
     public string[] Themes => themes;
-    public string[] Languages => languages;
+    public IReadOnlyList<LanguageInfo> Languages => languages;
     public string[] MenuLocations => menuLocations;
 
     public int ThemeIndex
@@ -39,14 +40,34 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
         }
     }
 
-    public int LanguageIndex
+    public LanguageInfo? SelectedLanguage
     {
-        get => languageIndex;
+        get => languages.FirstOrDefault(language =>
+            string.Equals(language.LanguageID, languageId, StringComparison.OrdinalIgnoreCase));
         set
         {
-            if (SetProperty(ref languageIndex, value))
+            var language = value is null ? null : languages.FirstOrDefault(language =>
+                string.Equals(language.LanguageID, value.LanguageID, StringComparison.OrdinalIgnoreCase));
+            if (language is null || string.Equals(languageId, language.LanguageID, StringComparison.OrdinalIgnoreCase))
             {
-                NotifyChanged();
+                return;
+            }
+
+            languageId = language.LanguageID;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(LanguageIndex));
+            NotifyChanged();
+        }
+    }
+
+    public int LanguageIndex
+    {
+        get => SelectedLanguage is { } selected ? languages.IndexOf(selected) : -1;
+        set
+        {
+            if (value >= 0 && value < languages.Length)
+            {
+                SelectedLanguage = languages[value];
             }
         }
     }
@@ -71,9 +92,9 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
         updating = true;
         try
         {
-            ThemeIndex = (int)value.Theme;
-            LanguageIndex = value.Language switch { "zh-CN" => 1, "en-US" => 2, _ => 0 };
-            MenuLocationIndex = value.WindowMenuOnMac ? 1 : 0;
+            themeIndex = (int)value.Theme;
+            languageId = value.Language;
+            menuLocationIndex = value.WindowMenuOnMac ? 1 : 0;
             RefreshLanguage();
         }
         finally
@@ -87,22 +108,24 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
     {
         var wasUpdating = updating;
         var previousTheme = themeIndex;
-        var previousLanguage = languageIndex;
+        var previousLanguage = languageId;
         var previousLocation = menuLocationIndex;
         updating = true;
         try
         {
-            themes = [SettingsText.Get("System"), SettingsText.Get("Light"), SettingsText.Get("Dark")];
-            languages = [SettingsText.Get("System"), "简体中文", "English"];
-            menuLocations = [SettingsText.Get("SystemMenu"), SettingsText.Get("WindowMenu")];
+            themes = [Localization.Get("Settings.System"), Localization.Get("Settings.Light"), Localization.Get("Settings.Dark")];
+            languages = new[] { new LanguageInfo(Localization.Get("Settings.System"), "system") }
+                .Concat(Localization.KnownLanguages).ToImmutableArray();
+            menuLocations = [Localization.Get("Settings.SystemMenu"), Localization.Get("Settings.WindowMenu")];
             OnPropertyChanged(nameof(Themes));
             OnPropertyChanged(nameof(Languages));
             OnPropertyChanged(nameof(MenuLocations));
             themeIndex = previousTheme;
-            languageIndex = previousLanguage;
+            languageId = previousLanguage;
             menuLocationIndex = previousLocation;
             OnPropertyChanged(nameof(ThemeIndex));
             OnPropertyChanged(nameof(LanguageIndex));
+            OnPropertyChanged(nameof(SelectedLanguage));
             OnPropertyChanged(nameof(MenuLocationIndex));
         }
         finally
@@ -113,15 +136,14 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
 
     private void NotifyChanged()
     {
-        if (updating || ThemeIndex is < 0 or > 2 || LanguageIndex is < 0 or > 2 || MenuLocationIndex is < 0 or > 1)
+        if (updating || ThemeIndex is < 0 or > 2 || MenuLocationIndex is < 0 or > 1)
         {
             return;
         }
 
-        var language = LanguageIndex switch { 1 => "zh-CN", 2 => "en-US", _ => "system" };
         var preferences = new WorkbenchPreferences
         {
-            Theme = (WorkbenchTheme)ThemeIndex, Language = language,
+            Theme = (WorkbenchTheme)ThemeIndex, Language = languageId,
             WindowMenuOnMac = MenuLocationIndex == 1
         };
         preferences.Validate();

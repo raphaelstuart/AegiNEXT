@@ -5,7 +5,7 @@ using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Editing;
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Workspace.Diagnostics;
 
 namespace AegiNext.Desktop.Workspace;
@@ -44,7 +44,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             session.SetProjectLocation(null, session.ScratchDirectory);
             session.ResetSelection();
             session.Editor.Reset(new());
-            session.LogInfo("Project", WorkflowLogText.Get("ProjectCreated", session.InterfaceCulture), session.Editor.Snapshot.Name);
+            session.LogInfo("Project", Localization.Get("WorkflowLog.ProjectCreated"), session.Editor.Snapshot.Name);
         }
         finally
         {
@@ -107,7 +107,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                 await session.Analysis.ClearAsync();
 
             }
-            session.LogInfo("Project", WorkflowLogText.Get("ProjectOpened", session.InterfaceCulture), path);
+            session.LogInfo("Project", Localization.Get("WorkflowLog.ProjectOpened"), path);
         }
         catch (Exception error)
         {
@@ -162,7 +162,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             }
 
             await session.Analysis.StartAsync(path);
-            session.LogInfo("Media", WorkflowLogText.Get("MediaOpened", session.InterfaceCulture), path);
+            session.LogInfo("Media", Localization.Get("WorkflowLog.MediaOpened"), path);
         }
         catch (Exception error)
         {
@@ -251,7 +251,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             }
 
             session.Editor.MarkSaved(prepared);
-            session.LogInfo("Project", WorkbenchText.Get("Saved"), destination);
+            session.LogInfo("Project", Localization.Get("Workbench.Saved"), destination);
             return true;
         }
         finally
@@ -291,7 +291,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                 : SubtitleTextFormat.ImportText(text, start: importStart);
             await session.CreateSubtitleClipsAsync(lines, trackId, presetId);
             firstCueId = lines.IsEmpty ? null : lines[0].Id;
-            session.LogInfo("Subtitles", $"{WorkflowLogText.Get("SubtitlesImported", session.InterfaceCulture)} ({lines.Length})", path);
+            session.LogInfo("Subtitles", $"{Localization.Get("WorkflowLog.SubtitlesImported")} ({lines.Length})", path);
         }
         finally
         {
@@ -323,7 +323,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         {
             await File.WriteAllTextAsync(temporary, text, new UTF8Encoding(false));
             File.Move(temporary, path, true);
-            session.LogInfo("Subtitles", WorkflowLogText.Get("SubtitlesExported", session.InterfaceCulture), path);
+            session.LogInfo("Subtitles", Localization.Get("WorkflowLog.SubtitlesExported"), path);
         }
         finally
         {

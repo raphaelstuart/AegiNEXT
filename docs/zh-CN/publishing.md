@@ -38,6 +38,12 @@ Windows 系统依赖识别包含实测 FFmpeg/Skia 导入的 [Ncrypt.dll](https:
 
 Windows 清单的 `OperatingSystemPolicy.RequiredRuntimePolicy` 按 [.NET 10 官方系统支持政策](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md) 记录目前受支持的 Windows 客户端版本、生命周期限制和 Windows 11 ARM64 的 x64 模拟支持。该政策于 2026-10-04 核对；构建机器说明不等于测试结果，完整 native 应用的最低 Windows 版本仍需对应实机验证。发行验收需在干净 PATH、未安装 .NET/FFmpeg 的目标机器验证媒体打开、播放、音频、字幕合成、实际 worker 压制与取消，并分别记录 Windows 与 macOS 的实机结果。
 
+## 语言资源
+
+桌面项目将 `src/AegiNext.Desktop/I18n/Languages/` 中无 BOM 的 UTF-8 JSON 自动复制至构建、测试和发布输出的 `AppContext.BaseDirectory/i18n/`。macOS 包内位置为 `AegiNext.app/Contents/MacOS/i18n/`，Windows 为 `AegiNext/i18n/`。必须包含 `en-US.json` 和 `zh-CN.json`，每个根对象提供非空 `LanguageName`、对应有效文化标识 `LanguageID` 及字符串值字典 `Strings`。额外语言包的文件名可以不同于 ID，但目录第一层所有 JSON 的 ID 必须唯一。应用启动时读取，修改或新增后重启生效。统一接口、XAML 注入和语言匹配规则见[工作区本地化说明](composable-workspace.md#本地化)。
+
+`verify-package.ps1` 在原有完整文件哈希校验之外，检查包内语言目录、两份内置文件、UTF-8 编码、JSON 形状、元信息、字符串条目和重复 ID／key。语言 JSON 继续纳入已有哈希清单；修改包内文案后须通过正常发布／签名流程更新清单才能通过包校验。这些资源检查不代表已完成翻译控件和平台菜单的原生视觉验收。
+
 移动完整发布目录后可只读校验哈希，任何缺失、额外或修改的文件都会报错：
 
 ```powershell

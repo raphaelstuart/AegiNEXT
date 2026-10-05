@@ -1,4 +1,4 @@
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia;
 using Avalonia.Controls;
@@ -40,7 +40,7 @@ internal sealed class WorkbenchApplicationMenu : IDisposable
 
     private void Refresh()
     {
-        settings.Header = SettingsText.Get(WorkbenchCommand.OPEN_SETTINGS.ToString());
+        settings.Header = Localization.Get("Settings." + (WorkbenchCommand.OPEN_SETTINGS.ToString()));
         settings.Gesture = catalog.GetGesture(WorkbenchCommand.OPEN_SETTINGS);
     }
 }

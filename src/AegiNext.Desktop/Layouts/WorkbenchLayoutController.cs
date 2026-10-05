@@ -1,6 +1,6 @@
+using AegiNext.Desktop.I18n;
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -33,7 +33,6 @@ internal sealed class WorkbenchLayoutController : IDisposable
     private readonly List<WorkspaceLayoutPreset> userPresets;
     private readonly Dictionary<string, int> unreadCounts = new(StringComparer.Ordinal);
     private IRootDock root = null!;
-    private CultureInfo culture;
     private bool applying;
     private bool disposed;
     private string lastFingerprint = string.Empty;
@@ -50,9 +49,8 @@ internal sealed class WorkbenchLayoutController : IDisposable
         this.commitDrafts = commitDrafts;
         this.cancelGestures = cancelGestures;
         this.registerWindow = registerWindow;
-        culture = CultureInfo.CurrentUICulture;
         panels = panelViews.ToDictionary(pair => pair.Key,
-            pair => new WorkbenchDockPanel(pair.Key, pair.Value, LayoutText.Get(pair.Key, culture)), StringComparer.Ordinal);
+            pair => new WorkbenchDockPanel(pair.Key, pair.Value, Localization.Get("Layout." + (pair.Key))), StringComparer.Ordinal);
         factory = new(CreateFloatingHost, cancelGestures, ScheduleCapture);
         codec = new(factory, panels);
         store = new(personalDirectory);
@@ -65,8 +63,9 @@ internal sealed class WorkbenchLayoutController : IDisposable
         persistenceTimer.Tick += OnPersistenceTimer;
         owner.Opened += OnOwnerOpened;
         ApplySnapshot(file.Current);
-        LastError = store.LoadError is null ? null : LayoutText.Get("Corrupt", culture);
+        LastError = store.LoadError is null ? null : Localization.Get("Layout.Corrupt");
         DiagnosticPath = store.DiagnosticPath;
+        Localization.LanguageChanged += OnLanguageChanged;
     }
 
     public event EventHandler? Changed;
@@ -78,16 +77,15 @@ internal sealed class WorkbenchLayoutController : IDisposable
     public bool IsModified { get; private set; }
     public string? LastError { get; private set; }
     public string? DiagnosticPath { get; }
-    public CultureInfo Culture => culture;
     public IReadOnlyList<WorkspaceLayoutPreset> Presets => WorkspaceLayoutPresets.BuiltIn.Concat(userPresets).ToArray();
     public IReadOnlyList<Window> FloatingWindows => floatingHosts.Where(host => host.IsVisible).Cast<Window>().ToArray();
 
     internal IReadOnlyDictionary<string, WorkbenchDockPanel> PanelAdapters => panels;
     internal IRootDock Root => root;
 
-    internal string GetPresetName(WorkspaceLayoutPreset preset)
+    internal static string GetPresetName(WorkspaceLayoutPreset preset)
     {
-        return preset.IsReadOnly ? LayoutText.Get(preset.Id, culture) : preset.Name;
+        return preset.IsReadOnly ? Localization.Get("Layout." + (preset.Id)) : preset.Name;
     }
 
     internal bool IsVisible(string panelId)
@@ -182,7 +180,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
         cancelGestures();
         if (!commitDrafts())
         {
-            SetError(LayoutText.Get("InvalidDraft", culture));
+            SetError(Localization.Get("Layout.InvalidDraft"));
             return false;
         }
 
@@ -200,7 +198,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
         var index = userPresets.FindIndex(preset => preset.Id == CurrentPresetId);
         if (index < 0)
         {
-            SetError(LayoutText.Get("ReadOnly", culture));
+            SetError(Localization.Get("Layout.ReadOnly"));
             return false;
         }
         var layout = Capture();
@@ -217,7 +215,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
         name = name.Trim();
         if (!IsValidName(name, null))
         {
-            SetError(LayoutText.Get("InvalidName", culture));
+            SetError(Localization.Get("Layout.InvalidName"));
             return null;
         }
         var id = "user-" + Guid.NewGuid().ToString("N");
@@ -237,12 +235,12 @@ internal sealed class WorkbenchLayoutController : IDisposable
         var index = userPresets.FindIndex(preset => preset.Id == presetId);
         if (index < 0)
         {
-            SetError(LayoutText.Get("ReadOnly", culture));
+            SetError(Localization.Get("Layout.ReadOnly"));
             return false;
         }
         if (!IsValidName(name, presetId))
         {
-            SetError(LayoutText.Get("InvalidName", culture));
+            SetError(Localization.Get("Layout.InvalidName"));
             return false;
         }
         userPresets[index] = userPresets[index] with { Name = name };
@@ -258,7 +256,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
         var index = userPresets.FindIndex(preset => preset.Id == presetId);
         if (index < 0)
         {
-            SetError(LayoutText.Get("ReadOnly", culture));
+            SetError(Localization.Get("Layout.ReadOnly"));
             return false;
         }
         userPresets.RemoveAt(index);
@@ -278,16 +276,20 @@ internal sealed class WorkbenchLayoutController : IDisposable
         return ApplyPresetAsync(WorkspaceLayoutPresets.STANDARD);
     }
 
-    internal void ApplyCulture(CultureInfo selectedCulture)
+    private void RefreshLanguage()
     {
         EnsureUsable();
-        culture = selectedCulture;
         foreach (var panel in panels.Values)
         {
             panel.Title = GetPanelTitle(panel.Id);
         }
         RefreshFloatingTitles();
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        RefreshLanguage();
     }
 
     internal void SetPanelUnreadCount(string panelId, int count)
@@ -306,7 +308,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
 
     private string GetPanelTitle(string panelId)
     {
-        var title = LayoutText.Get(panelId, culture);
+        var title = Localization.Get("Layout." + (panelId));
         var count = unreadCounts.GetValueOrDefault(panelId);
         return count == 0 ? title : $"{title} ({count})";
     }
@@ -314,7 +316,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
     internal async Task ShowManagerAsync()
     {
         EnsureUsable();
-        var dialog = new LayoutPresetManagerWindow(this, culture);
+        var dialog = new LayoutPresetManagerWindow(this);
         RegisterAuxiliaryWindow(dialog);
         await dialog.ShowDialog(owner);
     }
@@ -322,7 +324,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
     internal async Task ShowSaveAsAsync()
     {
         EnsureUsable();
-        var dialog = new LayoutPresetNameWindow(this);
+        var dialog = new LayoutPresetNameWindow();
         RegisterAuxiliaryWindow(dialog);
         var name = await dialog.ShowDialog<string?>(owner);
         if (name is not null)
@@ -387,6 +389,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
         {
             return;
         }
+        Localization.LanguageChanged -= OnLanguageChanged;
         persistenceTimer.Stop();
         persistenceTimer.Tick -= OnPersistenceTimer;
         owner.Opened -= OnOwnerOpened;
@@ -667,7 +670,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
                 ? WorkbenchDockSnapshotCodec.Enumerate(floatingRoot).OfType<IToolDock>()
                     .Select(dock => dock.ActiveDockable).OfType<WorkbenchDockPanel>().FirstOrDefault()
                 : null;
-            var title = panel?.Title ?? LayoutText.Get("Layout", culture);
+            var title = panel?.Title ?? Localization.Get("Layout.Layout");
             host.Title = title;
             FloatingWindowTitleChanged?.Invoke(host, title);
         }

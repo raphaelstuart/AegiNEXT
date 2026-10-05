@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Buffers;
+using System.Globalization;
 using AegiNext.Desktop.Shortcuts;
 
 namespace AegiNext.Desktop.Settings;
@@ -21,7 +22,7 @@ public sealed record WorkbenchPreferences
     /// <summary>拒绝未知设置版本、语言、主题或非法音量。</summary>
     public void Validate()
     {
-        if (Version != 1 || Language is not ("system" or "zh-CN" or "en-US") ||
+        if (Version != 1 || !IsValidLanguage(Language) ||
             !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
             AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
             AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null)
@@ -34,6 +35,28 @@ public sealed record WorkbenchPreferences
         if (ShortcutBindings.Length != Enum.GetValues<WorkbenchCommand>().Length)
         {
             throw new InvalidDataException("快捷键设置必须包含所有命令，禁用请使用空手势。");
+        }
+    }
+
+    private static bool IsValidLanguage(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (string.Equals(value, "system", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            return !CultureInfo.GetCultureInfo(value).Equals(CultureInfo.InvariantCulture);
+        }
+        catch (CultureNotFoundException)
+        {
+            return false;
         }
     }
 

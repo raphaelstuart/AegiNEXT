@@ -1,4 +1,4 @@
-using AegiNext.Desktop.Localization;
+using AegiNext.Desktop.I18n;
 using Avalonia.Controls;
 using Avalonia;
 
@@ -58,7 +58,7 @@ internal sealed class WindowMenuBar : UserControl, IDisposable
 
     private void Refresh()
     {
-        ToolTip.SetTip(overflow, WorkbenchText.Get("View"));
+        ToolTip.SetTip(overflow, Localization.Get("Workbench.View"));
         foreach (var projection in projections)
         {
             projection.Refresh();

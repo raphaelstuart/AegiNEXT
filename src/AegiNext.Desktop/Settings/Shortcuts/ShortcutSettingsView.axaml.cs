@@ -39,25 +39,15 @@ public sealed partial class ShortcutSettingsView : UserControl
         if (model is not null)
         {
             model.PropertyChanged += ModelChanged;
-            UpdateRecordLabel();
         }
     }
 
     private void ModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ShortcutSettingsViewModel.RecordLabel))
-        {
-            UpdateRecordLabel();
-        }
-        else if (e.PropertyName == nameof(ShortcutSettingsViewModel.IsRecording) && model?.IsRecording == true)
+        if (e.PropertyName == nameof(ShortcutSettingsViewModel.IsRecording) && model?.IsRecording == true)
         {
             this.FindControl<TextBox>("GestureInput")!.Focus();
         }
-    }
-
-    private void UpdateRecordLabel()
-    {
-        SettingsViewLocalization.SetButtonContent(this.FindControl<Button>("RecordShortcutButton")!, model!.RecordLabel, "Record");
     }
 
     private void FocusGesture(object? sender, RoutedEventArgs e)
