@@ -15,7 +15,7 @@ Mapped SDR preview takes priority while HDR export retains precision. The macOS 
 | Location | Responsibility |
 |---|---|
 | Core | Pure C# rational time, media facts, versioned project/scene tree, validation/evaluation. PreparedProjectScene validates snapshots and caches indexes; SceneEvaluator evaluates local time, paths, and keyframes. |
-| Application | Transactions/undo, SRT/TXT, save/load, import/Save As relocation. Video stays external; managed font/image paths can include SHA-256. |
+| Application | Transactions/undo, SRT/TXT, save/load, import/Save As relocation. Videos inside the project directory use relative references, while outside videos use external references; managed font/image paths can include SHA-256. |
 | Rendering | Skia/HarfBuzz linear F16 surfaces and shared text/karaoke/scene rendering, transforms, masks, groups, blur, blend, and SDR composition. Some retained model types have no subtitle-workbench UI. |
 | Media | FFprobe/process adapter, decode/audio/export C ABI ownership, seek/playback/CPU SDR conversion, analysis, worker lifecycle, progress/cancel/commit. |
 | Desktop | Avalonia workbench, panels, controls, playback, timeline, themes/language. Uses services; never sends windows/view models to worker. |
@@ -46,7 +46,7 @@ Layer times are project-absolute. Keyframes/paths/karaoke use content time: `Loc
 
 DSL parsing/budgets/rational compilation live in Core/Effects; application transactions in Application; personal templates in Application/Presets; coordination in Desktop/Workspace; editor in Controls/Editing; management in Settings/Effects. Fixed segments precede flexible allocation; source declares short-clip policy. All seven builtins use the same compile path and do not copy another clip's absolute times.
 
-Save stores immutable snapshots. Save As copies managed small resources, keeping large video external, and commits only after validation/copy/hash checks. Changed resources are not silently trusted.
+Save stores immutable snapshots. Every Save and Save As reclassifies video references against the destination directory without copying videos. Same-directory Save preserves undo/redo and saved snapshot identity without adding a transaction. Save As copies managed small resources and commits only after validation/copy/hash checks. Changed resources are not silently trusted.
 
 ## Shared rendering and SDR preview
 

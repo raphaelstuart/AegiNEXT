@@ -15,7 +15,7 @@ AegiNext 使用 .NET 10、C# 与 Avalonia，根命名空间为 `AegiNext`，首�
 | 位置 | 职责 |
 | --- | --- |
 | `src/AegiNext.Core` | 纯 C# 的有理时间、媒体事实、版本化工程、场景树和编辑求值；`PreparedProjectScene` 验证不可变快照并缓存索引，`SceneEvaluator` 求值关键帧、路径及局部时间。 |
-| `src/AegiNext.Application` | 编辑事务与撤销重做、SRT/TXT 交换、工程保存／加载、资源导入与另存为重定位；媒体使用外部引用，字体／图片使用托管相对路径和可选 SHA-256。 |
+| `src/AegiNext.Application` | 编辑事务与撤销重做、SRT/TXT 交换、工程保存／加载、资源导入与另存为重定位；工程内媒体使用相对引用，工程外媒体使用外部引用，字体／图片使用托管相对路径和可选 SHA-256。 |
 | `src/AegiNext.Rendering` | SkiaSharp/HarfBuzz 的线性 F16 表面与共享工程渲染器：文字、卡拉 OK、图形、图片、变换、蒙版、分组、模糊和混合；提供 SDR 预览叠层合成。 |
 | `src/AegiNext.Media` | FFprobe 正式进程适配器、原生解码／音频／导出 C ABI 绑定、精确定位、播放调度、CPU SDR 转换、音频分析、独立 worker 启动、进度／取消与输出提交。 |
 | `src/AegiNext.Desktop` | Avalonia 工作台、字幕与效果编辑、视频／音频控制器、时间轴、主题和语言；调用应用服务，不将窗口或 ViewModel 传入 worker。 |
@@ -46,7 +46,7 @@ AegiNext 使用 .NET 10、C# 与 Avalonia，根命名空间为 `AegiNext`，首�
 
 字幕特效 DSL 的纯文本语法、预算和精确时间编译位于 `Core/Effects/`，事务应用在 Application，个人模板库在 `Application/Presets/`，会话协调在 Desktop/Workspace，编辑器在 Controls/Editing，管理页面在 Settings/Effects。脚本固定段优先，自由段分配剩余时间，短 Clip 策略由源显式声明。七个内置脚本与用户模板同路径编译，不复制另一 Clip 的绝对关键帧长度。
 
-工程文件保存不可变快照，另存为仅复制托管小资源；大型视频维持外部引用。保存与资源复制校验完成后才提交，重定位验证已有资源哈希，不悄悄接受被替换的字体／图片。详细模型与行为以 Core、Application 的实现和测试为准。
+工程文件保存不可变快照，每次保存和另存为按目标工程目录重新选择视频的相对或外部引用，不复制视频；同目录保存保留撤销／重做及保存点身份，不增加保存事务；另存为仅复制托管小资源。保存与资源复制校验完成后才提交，重定位验证已有资源哈希，不悄悄接受被替换的字体／图片。详细模型与行为以 Core、Application 的实现和测试为准。
 
 ## 共享渲染与 SDR 预览
 

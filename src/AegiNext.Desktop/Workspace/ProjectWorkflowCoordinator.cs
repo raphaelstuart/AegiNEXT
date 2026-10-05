@@ -131,6 +131,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             return;
         }
 
+        path = ProjectAssetLocation.ResolveInputPath(path, session.ProjectDirectory);
         session.SetProjectBusy(true);
         var previousDocument = session.Editor.Snapshot;
         var previousDirectory = session.ProjectDirectory;
@@ -240,17 +241,21 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         {
             var snapshot = session.Editor.Snapshot;
             var directory = Path.GetDirectoryName(destination)!;
-            var prepared = directory == session.ProjectDirectory
-                ? snapshot
+            var sameDirectory = directory == session.ProjectDirectory;
+            var prepared = sameDirectory
+                ? ProjectResources.NormalizeMediaReferences(snapshot, directory)
                 : await ProjectResources.RebaseAsync(snapshot, session.ProjectDirectory, directory);
             await ProjectStore.SaveAsync(prepared, destination);
             session.SetProjectLocation(destination, directory);
-            if (!ReferenceEquals(prepared, snapshot))
+            if (sameDirectory)
+            {
+                session.Editor.MarkSaved(snapshot, prepared);
+            }
+            else
             {
                 session.Editor.Reset(prepared);
             }
 
-            session.Editor.MarkSaved(prepared);
             session.LogInfo("Project", Localization.Get("Workbench.Saved"), destination);
             return true;
         }

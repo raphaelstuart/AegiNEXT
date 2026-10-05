@@ -4,10 +4,10 @@ using AegiNext.Core.Projects;
 
 namespace AegiNext.Application;
 
-/// <summary>资源导入与另存为重定位；大型媒体保持外部引用，字体和图片进入工程资源目录。</summary>
+/// <summary>资源导入与另存为重定位；媒体按工程目录选择相对或外部引用，字体和图片进入资源目录。</summary>
 public static class ProjectResources
 {
-    /// <summary>导入媒体引用或复制字体／图片；目标使用内容哈希命名，不覆盖旧资源。</summary>
+    /// <summary>以工程目录解析源路径，导入媒体引用或复制字体／图片；复制目标使用内容哈希命名。</summary>
     public static async Task<ProjectAsset> ImportAsync(string sourcePath, ProjectAssetKind kind, string projectDirectory,
         CancellationToken cancellationToken = default)
     {
@@ -19,7 +19,7 @@ public static class ProjectResources
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var source = Path.GetFullPath(sourcePath);
+        var source = ProjectAssetLocation.ResolveInputPath(sourcePath, projectDirectory);
         if (!File.Exists(source))
         {
             throw new FileNotFoundException("资源不存在。", source);
@@ -27,7 +27,7 @@ public static class ProjectResources
 
         if (kind == ProjectAssetKind.MEDIA)
         {
-            return new(Guid.NewGuid(), kind, string.Empty, ExternalPath: source);
+            return RelocateMedia(new(Guid.NewGuid(), kind, string.Empty), source, projectDirectory);
         }
 
         var directory = Path.Combine(Path.GetFullPath(projectDirectory), "assets");
@@ -105,7 +105,39 @@ public static class ProjectResources
         }
     }
 
-    /// <summary>为另存为复制托管小资源，相对媒体改为外部引用；原工程和旧资源保持不变。</summary>
+    /// <summary>规范化工程目录内的媒体引用；不访问文件系统，不变时保留原快照。</summary>
+    public static ProjectDocument NormalizeMediaReferences(ProjectDocument document, string projectDirectory)
+    {
+        ProjectValidator.Validate(document);
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectDirectory);
+        ImmutableArray<ProjectAsset>.Builder? assets = null;
+        for (var index = 0; index < document.Assets.Length; index++)
+        {
+            var asset = document.Assets[index];
+            if (asset.Kind != ProjectAssetKind.MEDIA)
+            {
+                continue;
+            }
+
+            var normalized = RebaseMedia(asset, projectDirectory, projectDirectory);
+            if (normalized != asset)
+            {
+                assets ??= document.Assets.ToBuilder();
+                assets[index] = normalized;
+            }
+        }
+
+        if (assets is null)
+        {
+            return document;
+        }
+
+        var result = document with { Assets = assets.ToImmutable() };
+        ProjectValidator.Validate(result);
+        return result;
+    }
+
+    /// <summary>为另存为复制托管小资源，并按新工程目录重定位媒体引用；原工程和旧资源保持不变。</summary>
     public static async Task<ProjectDocument> RebaseAsync(ProjectDocument document, string oldDirectory, string newDirectory,
         CancellationToken cancellationToken = default)
     {
@@ -114,15 +146,15 @@ public static class ProjectResources
         foreach (var asset in document.Assets)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (asset.ExternalPath is not null)
+            if (asset.Kind == ProjectAssetKind.MEDIA)
             {
-                assets.Add(asset);
+                assets.Add(RebaseMedia(asset, oldDirectory, newDirectory));
                 continue;
             }
 
             var source = ProjectAssetLocation.Resolve(asset, oldDirectory);
             var imported = await ImportAsync(source, asset.Kind, newDirectory, cancellationToken).ConfigureAwait(false);
-            if (asset.Kind != ProjectAssetKind.MEDIA && asset.Sha256 is { } expected &&
+            if (asset.Sha256 is { } expected &&
                 !string.Equals(expected, imported.Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidDataException("资源内容与工程记录的 SHA-256 不一致。");
@@ -134,5 +166,22 @@ public static class ProjectResources
         var result = document with { Assets = assets.ToImmutable() };
         ProjectValidator.Validate(result);
         return result;
+    }
+
+    private static ProjectAsset RebaseMedia(ProjectAsset asset, string oldDirectory, string newDirectory)
+    {
+        if (asset.ExternalPath is { } external && !Path.IsPathFullyQualified(external))
+        {
+            return asset;
+        }
+
+        return RelocateMedia(asset, ProjectAssetLocation.Resolve(asset, oldDirectory), newDirectory);
+    }
+
+    private static ProjectAsset RelocateMedia(ProjectAsset asset, string source, string projectDirectory)
+    {
+        return ProjectAssetLocation.TryGetRelativePath(source, projectDirectory, out var relativePath)
+            ? asset with { RelativePath = relativePath, ExternalPath = null }
+            : asset with { RelativePath = string.Empty, ExternalPath = source };
     }
 }
