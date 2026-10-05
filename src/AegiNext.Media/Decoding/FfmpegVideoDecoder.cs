@@ -4,20 +4,25 @@ using AegiNext.Core.Timing;
 namespace AegiNext.Media.Decoding;
 
 /// <summary>
-/// 本地文件的顺序软件视频解码器；读取在调用线程执行，取消为协作式且会终止已开始的会话。
+/// 本地文件的顺序视频解码器；读取在调用线程执行，取消为协作式且会终止已开始的会话。
 /// </summary>
 public sealed class FfmpegVideoDecoder : IVideoDecoder
 {
     private readonly VideoDecoderHandle handle;
     private readonly Lock gate = new();
+    private VideoDecodeSessionInfo sessionInfo = new(VideoDecodeMode.Auto, VideoDecoderBackend.Software, false, "", 0, 0);
 
     private FfmpegVideoDecoder(VideoDecoderHandle handle, MediaTimeBase streamTimeBase)
     {
         this.handle = handle;
         StreamTimeBase = streamTimeBase;
+        RefreshSessionInfo();
     }
 
     public MediaTimeBase StreamTimeBase { get; }
+
+    /// <summary>最新已完成原生操作的会话快照；读取不等待解码。</summary>
+    public VideoDecodeSessionInfo SessionInfo => Volatile.Read(ref sessionInfo);
 
     /// <summary>
     /// 核验 C ABI 与编译／运行 FFmpeg 版本，返回后端身份。
@@ -29,6 +34,7 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
             throw new InvalidOperationException("原生视频解码 ABI 版本不匹配。");
         }
 
+        RequireCore();
         var info = new NativeDecodeBackendInfo { structSize = (uint)sizeof(NativeDecodeBackendInfo), abiVersion = NativeDecodeMethods.ABI_VERSION };
         Span<byte> error = stackalloc byte[NativeDecodeMethods.ERROR_CAPACITY];
         error.Clear();
@@ -48,8 +54,19 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
     /// <summary>
     /// 打开本地文件的指定绝对视频流索引；打开失败或取消时释放全部已分配资源。
     /// </summary>
-    public static unsafe FfmpegVideoDecoder Open(string filePath, int videoStreamIndex, CancellationToken cancellationToken = default)
+    public static FfmpegVideoDecoder Open(string filePath, int videoStreamIndex, CancellationToken cancellationToken = default)
     {
+        return Open(filePath, videoStreamIndex, new(), cancellationToken);
+    }
+
+    /// <summary>按不可变后端策略打开本地视频，首帧前自动模式可回退。</summary>
+    public static unsafe FfmpegVideoDecoder Open(string filePath, int videoStreamIndex, VideoDecoderOptions options, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!Enum.IsDefined(options.Mode) || !Enum.IsDefined(options.Workload))
+        {
+            throw new ArgumentOutOfRangeException(nameof(options));
+        }
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         ArgumentOutOfRangeException.ThrowIfNegative(videoStreamIndex);
         cancellationToken.ThrowIfCancellationRequested();
@@ -65,7 +82,12 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
         error.Clear();
         fixed (byte* errorPointer = error)
         {
-            var code = NativeDecodeMethods.Create(out var pointer, errorPointer, (uint)error.Length);
+            var nativeOptions = new NativeDecoderOptions
+            {
+                structSize = (uint)sizeof(NativeDecoderOptions), abiVersion = NativeDecodeMethods.ABI_VERSION,
+                mode = (uint)options.Mode, workload = (uint)options.Workload
+            };
+            var code = NativeDecodeMethods.CreateWithOptions(in nativeOptions, out var pointer, errorPointer, (uint)error.Length);
             var handle = new VideoDecoderHandle(pointer);
             try
             {
@@ -119,6 +141,7 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
                 var code = NativeDecodeMethods.Seek(handle, timestamp, errorPointer, (uint)error.Length);
                 cancellationToken.ThrowIfCancellationRequested();
                 NativeDecodeError.ThrowIfFailed(code, error, cancellationToken);
+                RefreshSessionInfo();
             }
         }
     }
@@ -142,6 +165,7 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    RefreshSessionInfo();
                     if (code == NativeDecodeMethods.EOF)
                     {
                         if (!frameHandle.IsInvalid)
@@ -214,6 +238,38 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
     public static uint GetLiveFrameCount()
     {
         return NativeDecodeMethods.LiveFrames();
+    }
+
+    internal static void RequireCore()
+    {
+        try
+        {
+            if ((NativeDecodeMethods.Features() & NativeDecodeMethods.CORE_FEATURE) == 0 ||
+                NativeDecodeMethods.CoreVersion() != NativeDecodeMethods.CORE_VERSION ||
+                (NativeDecodeMethods.CoreCapabilities() & NativeDecodeMethods.CORE_CAPABILITIES) != NativeDecodeMethods.CORE_CAPABILITIES)
+            {
+                throw new NotSupportedException("原生解码库缺少当前共享媒体核心，请重新构建 Decoder。");
+            }
+        }
+        catch (EntryPointNotFoundException exception)
+        {
+            throw new NotSupportedException("原生解码库缺少共享媒体核心版本查询，请重新构建 Decoder。", exception);
+        }
+    }
+
+    private unsafe void RefreshSessionInfo()
+    {
+        var info = new NativeDecoderSessionInfo { structSize = (uint)sizeof(NativeDecoderSessionInfo), abiVersion = NativeDecodeMethods.ABI_VERSION };
+        Span<byte> error = stackalloc byte[NativeDecodeMethods.ERROR_CAPACITY];
+        error.Clear();
+        fixed (byte* errorPointer = error)
+        {
+            NativeDecodeError.ThrowIfFailed(NativeDecodeMethods.GetSessionInfo(handle, ref info, errorPointer, (uint)error.Length), error);
+        }
+        var value = new VideoDecodeSessionInfo((VideoDecodeMode)info.requestedMode, (VideoDecoderBackend)info.activeBackend,
+            info.hardwareConfirmed != 0, NativeDecodeError.ReadText(new(info.fallbackReason, 256)), info.generation,
+            info.deliveredFrames, info.decodeNanoseconds, info.downloadNanoseconds);
+        Volatile.Write(ref sessionInfo, value);
     }
 
     private static Version ReadVersion(uint value)

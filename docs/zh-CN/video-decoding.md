@@ -6,6 +6,20 @@ Phase 1 / Step 1.6 建立独立的软件解码输入：`native/decoder` 生成 `
 
 Step 1.6 支持本地文件、显式视频流索引、顺序读取、完整 EOF drain、协作取消和独立帧保留；Step 1.7 增加关键帧 seek 与精确显示帧选择。以上为原始模块阶段边界；当前工作台已集成播放、音频、颜色转换和独立导出，见 [工作台手册](workbench.md)。
 
+## 解码模式与缺失颜色标签
+
+预览和导出静态链接同一份 `native/shared` 媒体核心，分别拥有独立会话。它统一 demux、receive-first 解码、seek/EOF/取消、硬件下载及颜色参数解释，继续使用锁定的 FFmpeg 9.0.2。预览输出为 SDR BGRA，导出保持既有高精度合成路径。
+
+设置 → 媒体 → 预览解码方式提供自动、CPU、GPU。自动优先使用 macOS VideoToolbox 或 Windows D3D11VA；硬件设备、格式协商或首次下载失败时可在交付第一帧前回退 CPU。强制 GPU 要求实际硬件确认，失败恢复原设置、时间位置及播放状态。取消、I/O、内存不足、损坏输入，以及交付帧之后的硬件错误不触发回退。旧偏好缺少字段时默认自动。导出请求的 `DecodeMode` 独立默认自动，不继承预览设置；编码器选择仍由 `EncodingMode` 决定。
+
+硬件首版覆盖 H.264 8-bit 与 HEVC 8/10-bit 的不透明 4:2:0。下载保留 NV12/P010 和全部帧属性、side data，10-bit 不降为 NV12。缓存只持有 CPU 可访问帧。VideoToolbox 用公开会话属性确认实际硬件加速，D3D11VA 使用现代 D3D11 硬件帧契约。软件交互解码为单线程，离线导出最多四线程，硬件外层单线程。
+
+帧尺寸和裁剪描述实际解码后端的布局。例如，软件解码器可能返回 1088 编码行加 8 行裁剪，VideoToolbox 则直接返回 1080 可视行且裁剪为零。下载保留硬件帧的真实属性，不伪造已不可访问的 padding。颜色默认值按裁剪后的可视尺寸判断；软硬件等价验收比较可视像素、时间、位深及颜色/HDR 元数据，不要求编码布局相同。
+
+原始 `VideoFrameInfo` 保留未知标签；`ResolvedVideoColor` 从原生帧获得有效解释及推断位掩码。仅补真正缺失字段，显式值不被覆盖。RGB/yuvj 默认全范围，普通 YUV 默认有限范围；缺矩阵优先已知原色，否则 HD 使用 BT.709、SD 使用 BT.601；缺原色结合有效矩阵和 PAL/NTSC 高度解释；全范围 RGB/YUV 缺传递函数使用 sRGB，有限范围使用对应 BT.709/SMPTE170M；缺失色度位置按有限/全范围选择 LEFT/CENTER。带 PQ、HLG、BT.2020 或 HDR side data 证据的输入需要完整且受支持的标签，不套用 SDR 默认。
+
+解码帧 ABI 保持 1，追加选项、实际会话信息、共享核心版本和颜色解释入口。导出请求 ABI 为 3，结构大小 80 字节。旧库、能力不足或共享核心版本不匹配会明确要求重建，不继续调用错误布局。有效输出颜色会传递给最终 mux 校验，源文件标签缺失不会导致已编码的正确成片被误拒绝。
+
 ## 构建与平台
 
 ```powershell
@@ -18,7 +32,7 @@ pwsh -NoProfile -File ./build.ps1 -Target Managed
 
 macOS 产物为 `artifacts/native/osx-<arch>/<Configuration>/libaeginext_decode.dylib`；Windows 产物为 `artifacts/native/win-x64/<Configuration>/aeginext_decode.dll`，所选开发包的 DLL 一同暂存。`Native`／`All` 仍指向此前的 macOS HDR 诊断库，不包含 Decoder。
 
-源码和构建入口包含 Windows 路径，但目前只在 Apple Silicon macOS 27 实际编译和运行。本机 FFmpeg 动态库自身要求 macOS 27；解码库设置 macOS 14 部署目标不能消除依赖限制。Windows、最低系统版本、完整依赖打包及许可证交付仍待后续验证。Linux Decoder 本步明确延期。
+平台执行证据按日期及测试范围记录于 Checkpoint。本机 FFmpeg 动态库自身要求 macOS 27；解码库设置 macOS 14 部署目标不能消除依赖限制。最低系统版本及物理 Windows GPU 的验证须分别记录。Linux Decoder 明确延期。
 
 ## 时间与帧事实
 
@@ -95,4 +109,4 @@ dotnet test Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj -c Release --
 
 原生 CTest 检查平面边界、负 stride、奇数尺寸 10-bit 色度平面、调色板、时间与 HDR 部分字段、C ABI 和资源生命周期。托管集成生成短 PQ／HLG／BT.2020 SDR HEVC 素材，包含音频前置流、B 帧及真实 VFR；逐帧与 FFprobe 时间戳对照，并与 FFmpeg 原始解码像素逐字节比较。还检查跨 decoder 释放的帧保留、拷贝独立性、取消和错误路径。
 
-最终执行结果与日志路径见 [Checkpoint](README.md#实施与验收记录)。这些测试尚未证明播放器实时性能、Windows 可运行性或 HDR 压制保真。
+最终执行结果与日志路径见 [Checkpoint](README.md#实施与验收记录)。测试结果须区分自动回归、实际硬件后端、性能测量与用户视觉验收；旧阶段的结果不自动覆盖本次实现。

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "aeginext_decode.h"
+#include "media_core.h"
 #include <atomic>
 #include <memory>
 #include <stdexcept>
@@ -24,12 +25,7 @@ private:
     int32_t result_;
 };
 
-struct FrameDeleter
-{
-    void operator()(AVFrame *frame) const noexcept { av_frame_free(&frame); }
-};
-
-using FramePointer = std::unique_ptr<AVFrame, FrameDeleter>;
+using FramePointer = aeginext::media::FramePointer;
 
 std::string AvError(int code);
 void CheckAv(int code, int32_t result, const char *operation);

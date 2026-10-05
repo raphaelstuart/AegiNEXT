@@ -4,8 +4,22 @@ namespace AegiNext.Media.Encoding;
 
 internal static class NativeExportAbi
 {
-    internal const uint VERSION = 2;
-    internal const uint REQUEST_SIZE = 72;
+    internal const uint VERSION = 3;
+    internal const uint REQUEST_SIZE = 80;
+    private const uint CORE_VERSION = 1;
+    private const uint CORE_CAPABILITIES = 15;
+
+    internal static void ValidateCore(uint exportVersion, uint decodeVersion, uint exportCapabilities, uint decodeCapabilities, string libraryPath)
+    {
+        if (exportVersion == CORE_VERSION && decodeVersion == exportVersion && exportCapabilities == decodeCapabilities &&
+            (exportCapabilities & CORE_CAPABILITIES) == CORE_CAPABILITIES)
+        {
+            return;
+        }
+
+        throw new NotSupportedException($"原生导出与预览媒体核心不匹配：导出 {exportVersion}，解码 {decodeVersion}，" +
+            $"导出能力 {exportCapabilities}，解码能力 {decodeCapabilities}；加载路径 {libraryPath}。请重新构建同配置 Workbench 与 worker。");
+    }
 
     internal static void Validate(uint nativeVersion, string libraryPath)
     {

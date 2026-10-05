@@ -16,6 +16,19 @@ internal static partial class NativeExportMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial uint AbiVersion();
 
+    [LibraryImport(LIBRARY, EntryPoint = "an_export_core_version")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial uint CoreVersion();
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_export_capabilities")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial uint Capabilities();
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_export_get_result_info")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static unsafe partial int GetResultInfo(nint context, ref NativeExportResultInfo info,
+        byte* error, uint capacity);
+
     [LibraryImport(LIBRARY, EntryPoint = "an_export_create")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe partial int Create(out nint context, byte* error, uint capacity);

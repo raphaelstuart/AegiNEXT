@@ -9,6 +9,7 @@
         xmlns:stylePages="using:AegiNext.Desktop.Settings.Styles"
         xmlns:effectPages="using:AegiNext.Desktop.Settings.Effects"
         xmlns:colorPages="using:AegiNext.Desktop.Settings.Colors"
+        xmlns:mediaPages="using:AegiNext.Desktop.Settings.Media"
         x:Class="AegiNext.Desktop.Settings.SettingsWindow" x:DataType="settings:SettingsWindowViewModel"
         Classes="business-surface" Title="{Binding Title}"
         Width="980" Height="720" MinWidth="860" MinHeight="580"
@@ -101,6 +102,12 @@
                 <TextBlock Text="{Loc Key=Settings.Colors}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Width="18" Height="18" Data="M2,4 L22,4 L22,20 L2,20 Z M4,6 L4,18 L20,18 L20,6 Z M9,8 L16,12 L9,16 Z" />
+                <TextBlock Text="{Loc Key=Settings.Media}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
           </ListBox>
         </StackPanel>
       </Border>
@@ -125,6 +132,10 @@
         <Grid Grid.Row="1" IsVisible="{Binding IsColorsVisible}">
           <colorPages:ColorsSettingsView Name="ColorsView" DataContext="{Binding Colors}"
                                          IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsMediaVisible}">
+          <mediaPages:MediaSettingsView Name="MediaView" DataContext="{Binding Media}"
+                                       IsVisible="{Binding $parent[Grid].IsVisible}" />
         </Grid>
         <TextBlock Name="SettingsError" Grid.Row="2" Text="{Binding Error}"
                    Foreground="{DynamicResource SettingsError}" IsVisible="{Binding HasError}" TextWrapping="Wrap"

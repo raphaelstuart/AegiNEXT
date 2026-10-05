@@ -27,6 +27,9 @@ public sealed partial class MainWindow
         window.SetEffectOperationBusy(Session.EffectScripts.IsBusy);
         window.UpdateSelectionAvailability(Session.HasSelectedCue && !Session.IsProjectBusy);
         window.SetStyleOperationBusy(Session.Styles.IsBusy);
+        RefreshMediaSettings(window);
+        void OnPreviewDecodeModeChanged(object? sender, EventArgs e) => RefreshMediaSettings(window);
+        Session.PreviewDecodeModeChanged += OnPreviewDecodeModeChanged;
         window.AppearanceChanged += (_, e) => Session.UpdatePreferences(Session.Preferences with
         {
             Theme = e.Theme, Language = e.Language, WindowMenuOnMac = e.WindowMenuOnMac
@@ -40,6 +43,16 @@ public sealed partial class MainWindow
             Session.UpdatePreferences(Session.Preferences with { ShortcutBindings = e.Bindings });
             window.UpdateShortcuts(Session.Preferences.ShortcutBindings);
         };
+        window.PreviewDecodeModeChanged += async (_, e) =>
+        {
+            window.ShowError(null);
+            var succeeded = await Session.SetPreviewDecodeModeAsync(e.Mode);
+            RefreshMediaSettings(window);
+            if (!succeeded && Session.LastError is { } error)
+            {
+                window.ShowError(error.Message);
+            }
+        };
         window.UpsertStyleRequested += (_, e) => Session.Styles.Queue(() => Session.Styles.UpsertAsync(e.Preset));
         window.DeleteStyleRequested += (_, e) => Session.Styles.Queue(() => Session.Styles.DeleteAsync(e.Id));
         window.CaptureStyleRequested += (_, _) => Session.Styles.Queue(Session.Styles.CaptureAsync);
@@ -52,6 +65,7 @@ public sealed partial class MainWindow
         window.ExportEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.ExportAsync(e.Preset));
         window.Closed += (_, _) =>
         {
+            Session.PreviewDecodeModeChanged -= OnPreviewDecodeModeChanged;
             if (ReferenceEquals(settingsWindow, window))
             {
                 settingsWindow = null;
@@ -64,5 +78,14 @@ public sealed partial class MainWindow
             window.SelectPage(selected);
         }
         window.Show(this);
+    }
+
+    private void RefreshMediaSettings(SettingsWindow window)
+    {
+        window.ViewModel.Media.IsBusy = Session.IsPreviewDecodeModeSwitching;
+        window.ViewModel.Media.UpdatePreferences(Session.Preferences);
+        var info = Session.PreviewDecodeSessionInfo;
+        window.ViewModel.Media.UpdateDecodeStatus(info?.ActiveBackend.ToString(), info?.HardwareConfirmed == true,
+            info?.FallbackReason);
     }
 }

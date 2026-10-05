@@ -467,6 +467,18 @@
     "WindowChromeProbe.CloseCancelled": "关闭已取消，窗口仍可交互。",
     "WindowChromeProbe.Description": "检查系统按钮、空白标题拖动、菜单点击、全屏和尺寸恢复。此窗口不加载工程或个人设置。",
     "WindowChromeProbe.Close": "关闭",
-    "WindowChromeProbe.Probe": "标题栏验证"
+    "WindowChromeProbe.Probe": "标题栏验证",
+    "Settings.Media": "媒体",
+    "Settings.PreviewDecodeMode": "预览解码方式",
+    "Settings.DecodeAuto": "自动",
+    "Settings.DecodeSoftware": "CPU",
+    "Settings.DecodeHardware": "GPU",
+    "Settings.DecodeAutoDescription": "优先使用 GPU；硬件解码不可用时使用 CPU。",
+    "Settings.DecodeSoftwareDescription": "使用 CPU 解码。",
+    "Settings.DecodeHardwareDescription": "要求使用 GPU。硬件解码不可用时保留之前的设置。",
+    "Settings.DecodeSwitching": "正在切换解码器…",
+    "Settings.DecodeNoMedia": "将在下次打开视频时应用。",
+    "Settings.DecodeActive": "当前解码器：{0} · {1}",
+    "Settings.DecodeFallback": "当前解码器：CPU · {0}。GPU 回退原因：{1}"
   }
 }

@@ -25,12 +25,14 @@ internal static class Program
             {
                 Codec = job.Codec, Preset = job.Preset, Crf = job.Crf, AudioMode = job.AudioMode,
                 AudioBitrate = job.AudioBitrate, FfmpegPath = job.FfmpegPath,
-                EncodingMode = job.EncodingMode, VideoBitrate = job.VideoBitrate
+                EncodingMode = job.EncodingMode, VideoBitrate = job.VideoBitrate, DecodeMode = job.DecodeMode
             };
             var progress = new WorkerProgress();
             var encoded = NativeVideoExport.Run(request, Path.Combine(job.TemporaryDirectory, "video.nut"), progress, CancellationToken.None);
-            await ExportMuxer.RunAsync(request, Path.Combine(job.TemporaryDirectory, "video.nut"), CancellationToken.None).ConfigureAwait(false);
-            Send(new("complete", encoded.Frames, Encoder: encoded.Encoder));
+            await ExportMuxer.RunAsync(request, Path.Combine(job.TemporaryDirectory, "video.nut"), encoded.OutputColor,
+                CancellationToken.None).ConfigureAwait(false);
+            Send(new("complete", encoded.Frames, Encoder: encoded.Encoder, Decoder: encoded.Decoder,
+                OutputColor: encoded.OutputColor));
             return 0;
         }
         catch (Exception error)

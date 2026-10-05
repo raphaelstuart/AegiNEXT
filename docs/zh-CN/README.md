@@ -33,6 +33,8 @@
 
 ## 实施与验收记录
 
+- [预览解码切换、缺失颜色标签与平台验收](checkpoints/video-decode-modes-and-missing-color.md)
+
 - [预览画质、轨道样式策略、双语文档与 Skill](checkpoints/preview-quality-and-track-style-policy.md)
 
 - [轨道样式、自动位置、向量输入与逐字高亮](checkpoints/track-styles-and-karaoke.md)

@@ -25,7 +25,7 @@ an_decode_ratio Ratio(AVRational value)
 }
 }
 
-FrameOwner::FrameOwner(FramePointer frame, AVRational streamTimeBase) : frame_(std::move(frame))
+FrameOwner::FrameOwner(FramePointer frame, AVRational streamTimeBase, aeginext::media::SourceColorContext colorContext) : frame_(std::move(frame)), colorContext_(colorContext)
 {
     if (!frame_ || frame_->width <= 0 || frame_->height <= 0 || streamTimeBase.num <= 0 || streamTimeBase.den <= 0)
     {

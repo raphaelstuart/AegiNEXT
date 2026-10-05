@@ -1,5 +1,6 @@
 using AegiNext.Core.Timing;
 using AegiNext.Media.Playback;
+using AegiNext.Media.Decoding;
 
 namespace AegiNext.Desktop.Controllers;
 
@@ -10,4 +11,5 @@ namespace AegiNext.Desktop.Controllers;
 public sealed record VideoPreviewSnapshot(string? FilePath, VideoPlaybackState State, bool IsOpening,
     MediaTime Position, MediaTime? Start, MediaTime? Duration, Exception? Error, long Epoch,
     MediaTime? PresentedFrameTime = null, MediaTime? PresentedAtPosition = null, long? PresentedGeneration = null,
-    bool AudioAvailable = false, Exception? AudioError = null, float Volume = 1, bool IsMuted = false);
+    bool AudioAvailable = false, Exception? AudioError = null, float Volume = 1, bool IsMuted = false,
+    VideoDecodeSessionInfo? DecodeSessionInfo = null);

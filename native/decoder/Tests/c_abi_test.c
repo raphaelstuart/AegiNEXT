@@ -14,6 +14,12 @@ _Static_assert(sizeof(an_preview_request) == 48, "preview request ABI size");
 _Static_assert(offsetof(an_preview_request, color_range) == 16, "preview color ABI offset");
 _Static_assert(offsetof(an_preview_request, flags) == 40, "preview flags ABI offset");
 
+_Static_assert(sizeof(an_decoder_options) == 16, "options ABI size");
+_Static_assert(sizeof(an_decoder_session_info) == 320, "session ABI size");
+_Static_assert(offsetof(an_decoder_session_info, decode_nanoseconds) == 48, "decode timing offset");
+_Static_assert(offsetof(an_decoder_session_info, fallback_reason) == 64, "fallback offset");
+_Static_assert(sizeof(an_resolved_color) == 40, "resolved color ABI size");
+
 int an_decode_c_abi_test(void)
 {
     return an_decode_abi_version() == AN_DECODE_ABI_VERSION &&

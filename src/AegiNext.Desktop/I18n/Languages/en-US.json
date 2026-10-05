@@ -467,6 +467,18 @@
     "WindowChromeProbe.CloseCancelled": "Close cancelled; the window remains interactive.",
     "WindowChromeProbe.Description": "Check system buttons, title dragging, menus, full screen and size restoration. This window does not load a project or personal preferences.",
     "WindowChromeProbe.Close": "Close",
-    "WindowChromeProbe.Probe": "Window chrome probe"
+    "WindowChromeProbe.Probe": "Window chrome probe",
+    "Settings.Media": "Media",
+    "Settings.PreviewDecodeMode": "Preview decoder",
+    "Settings.DecodeAuto": "Auto",
+    "Settings.DecodeSoftware": "CPU",
+    "Settings.DecodeHardware": "GPU",
+    "Settings.DecodeAutoDescription": "Prefer GPU decoding; use CPU when hardware decoding is unavailable.",
+    "Settings.DecodeSoftwareDescription": "Use CPU decoding.",
+    "Settings.DecodeHardwareDescription": "Require GPU decoding. An unavailable decoder leaves the previous setting active.",
+    "Settings.DecodeSwitching": "Switching decoder…",
+    "Settings.DecodeNoMedia": "Applies when the next video is opened.",
+    "Settings.DecodeActive": "Active decoder: {0} · {1}",
+    "Settings.DecodeFallback": "Active decoder: CPU · {0}. GPU fallback: {1}"
   }
 }

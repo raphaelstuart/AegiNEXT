@@ -7,5 +7,6 @@ public enum SettingsPage
     SHORTCUTS,
     STYLES,
     EFFECTS,
-    COLORS
+    COLORS,
+    MEDIA
 }

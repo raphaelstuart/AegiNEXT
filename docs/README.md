@@ -33,6 +33,8 @@ Invoke `$aeginext-effect-dsl` when authoring a script, or `$aeginext-controls` w
 
 ## Implementation evidence
 
+- [Preview decoder modes, missing color tags and platform verification](checkpoints/video-decode-modes-and-missing-color.md)
+
 - [Preview quality, track style policy, bilingual docs, and skills](checkpoints/preview-quality-and-track-style-policy.md)
 
 - [GPU encoding, project titles, default colors](checkpoints/export-title-colors.md)

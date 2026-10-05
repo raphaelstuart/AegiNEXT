@@ -74,6 +74,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         controller = controllerFactory?.Invoke(ApplyUpdate) ?? new(this.dispatch, ApplyUpdate,
             () => new ProjectPreviewConverter(GetPreviewState,
                 error => Volatile.Write(ref previewRenderError, error), previewFrames));
+        controller.ConfigureDecodeMode(preferences.PreviewDecodeMode);
         workflow = new(this, dialogs);
         analysis = new(this);
         export = new(this, dialogs, exportService ?? new VideoWorkbenchExportService(new AegiNext.Media.Encoding.VideoExporter()));
@@ -419,11 +420,12 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal void Tick()
     {
         var snapshot = controller.Snapshot;
+        RefreshPreviewDecodeSessionInfo(snapshot.DecodeSessionInfo);
         var preview = ViewModel.Preview;
         var relative = ProjectPosition;
         preview.FileTitle = snapshot.FilePath is { } path ? Path.GetFileName(path) : Localization.Get("Preview.Preview");
-        preview.IsOpening = snapshot.IsOpening;
-        preview.CanPlay = !closing && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
+        preview.IsOpening = snapshot.IsOpening || switchingPreviewDecodeMode;
+        preview.CanPlay = !closing && !switchingPreviewDecodeMode && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
         preview.IsPlaying = snapshot.State == VideoPlaybackState.PLAYING;
         preview.PlayLabel = Localization.Get("Preview." + (preview.IsPlaying ? "Pause" : "Play"));
         preview.MuteLabel = Localization.Get("Preview." + (preview.IsMuted ? "Unmute" : "Mute"));

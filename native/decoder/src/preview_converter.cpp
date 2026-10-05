@@ -1,5 +1,6 @@
 #include "preview_converter.h"
 #include "decode_versions.h"
+#include "color_resolution.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -120,8 +121,8 @@ void ValidateSource(const AVFrame *frame, const an_preview_request &request)
         throw Error(AN_DECODE_UNSUPPORTED, "Corrupt or partially decoded frames cannot be used for color-managed preview.");
     }
     if ((frame->color_range != AVCOL_RANGE_MPEG && frame->color_range != AVCOL_RANGE_JPEG) ||
-        (frame->color_primaries != AVCOL_PRI_BT709 && frame->color_primaries != AVCOL_PRI_BT2020) ||
-        (frame->color_trc != AVCOL_TRC_BT709 && frame->color_trc != AVCOL_TRC_IEC61966_2_1 &&
+        (frame->color_primaries != AVCOL_PRI_BT709 && frame->color_primaries != AVCOL_PRI_BT470BG && frame->color_primaries != AVCOL_PRI_SMPTE170M && frame->color_primaries != AVCOL_PRI_BT2020) ||
+        (frame->color_trc != AVCOL_TRC_BT709 && frame->color_trc != AVCOL_TRC_SMPTE170M && frame->color_trc != AVCOL_TRC_IEC61966_2_1 &&
             frame->color_trc != AVCOL_TRC_SMPTE2084 && frame->color_trc != AVCOL_TRC_ARIB_STD_B67))
     {
         throw Error(AN_DECODE_UNSUPPORTED, "Preview source range, primaries and transfer must be explicit and supported.");
@@ -154,7 +155,7 @@ void ValidateSource(const AVFrame *frame, const an_preview_request &request)
         request.color_primaries != frame->color_primaries || request.color_transfer != frame->color_trc ||
         request.chroma_location != frame->chroma_location || request.alpha_mode != frame->alpha_mode)
     {
-        throw Error(AN_DECODE_INVALID_ARGUMENT, "Preview request does not match the original frame color metadata; overrides are unsupported.");
+        throw Error(AN_DECODE_INVALID_ARGUMENT, "Preview request does not match the effective frame color metadata; overrides are unsupported.");
     }
     for (int index = 0; index < frame->nb_side_data; ++index)
     {
@@ -253,12 +254,14 @@ void PreviewConverter::Convert(const FrameOwner &owner, const an_preview_request
     {
         throw Error(AN_DECODE_UNSUPPORTED, "Coded preview dimensions exceed the supported pixel limit.");
     }
-    ValidateSource(original, request);
+    const auto resolved = aeginext::media::ResolveColor(original, owner.ColorContext());
     FramePointer source(av_frame_clone(original));
     if (!source)
     {
         throw std::bad_alloc();
     }
+    aeginext::media::ApplyColor(source.get(), resolved);
+    ValidateSource(source.get(), request);
     if (source->color_trc == AVCOL_TRC_ARIB_STD_B67)
     {
         av_frame_remove_side_data(source.get(), AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);

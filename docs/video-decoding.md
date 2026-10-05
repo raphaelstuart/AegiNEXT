@@ -4,6 +4,20 @@
 
 native/decoder builds aeginext_decode; Media/Decoding supplies managed contracts/SafeHandle ownership. It depends only on pinned FFmpeg, not libplacebo/MoltenVK/windows. Original Step 1.6 added local explicit-stream sequential reading, EOF drain, cancellation, and retained frames; Step 1.7 added keyframe seek/exact selection. Current playback/color/export integration is separate: [workbench](workbench.md).
 
+## Decode modes and missing color tags
+
+Preview and export statically link the same `native/shared` media core while owning independent sessions. It shares demux, receive-first decoding, seek/EOF/cancellation, hardware readback and color interpretation with pinned FFmpeg 9.0.2. Preview remains SDR BGRA; export retains its high precision composition path.
+
+Settings → Media → Preview decoder offers Auto, CPU and GPU. Auto prefers VideoToolbox on macOS or D3D11VA on Windows and may fall back before the first delivered frame for unavailable hardware, negotiation or initial readback failures. Required GPU verifies actual hardware and rolls back the setting, position and playback state on failure. Cancellation, I/O, allocation failures, corrupt input and failures after frame delivery do not trigger fallback. Older preferences default to Auto. Export has its own Auto-default `DecodeMode`; preview preferences do not change it. Encoder selection remains `EncodingMode`.
+
+Hardware v1 covers opaque 4:2:0 H.264 8-bit and HEVC 8/10-bit. Readback preserves NV12/P010 and all frame properties/side data without reducing 10-bit to NV12; cache entries are CPU accessible. VideoToolbox confirms actual acceleration through its public session property; D3D11VA uses modern D3D11 frames. Interactive software decoding uses one thread, offline export at most four, and hardware uses one outer thread.
+
+Frame size and crop describe the actual decoded backend layout. For example, a software decoder may expose 1088 coded rows with an 8-row crop, while VideoToolbox exposes 1080 visible rows with no crop. Readback preserves the hardware frame's actual properties and does not invent unavailable padding. Color defaults use visible dimensions after crop; equivalence checks compare visible pixels, timing, bit depth and color/HDR metadata rather than requiring identical coded layouts.
+
+Raw `VideoFrameInfo` continues to report missing tags. Native `ResolvedVideoColor` supplies effective parameters and an inferred-field mask. Only actual missing sentinels are filled: RGB/yuvj defaults to full range, ordinary YUV to limited; a missing matrix first follows known primaries, otherwise HD uses BT.709 and SD BT.601; missing primaries follow the effective matrix and PAL/NTSC height; missing transfer uses sRGB for full-range RGB/YUV or BT.709/SMPTE170M for limited YUV; missing subsampled chroma uses LEFT/CENTER for limited/full range. PQ, HLG, BT.2020 or HDR side-data evidence requires complete supported tags instead of SDR defaults.
+
+Frame ABI remains 1 with appended options, actual session info, core version and color-resolution entries. Export request ABI is 3, size 80 bytes. Stale libraries, missing capabilities or a core version mismatch require rebuilding instead of calling an incompatible layout. Final mux validation uses effective encoded color metadata, so absent source tags do not reject correctly encoded output.
+
 ## Build and platforms
 
 ```powershell

@@ -2,19 +2,18 @@ using AegiNext.Media.Decoding;
 
 namespace AegiNext.Media.Preview;
 
-/// <summary>
-/// 当前预览可以明确解释的帧级色彩；不推测缺失字段，也不改写原始事实。
-/// </summary>
+/// <summary>共享原生媒体核心派生的有效色彩；原始帧事实保持不变。</summary>
 public sealed record ResolvedVideoColor
 {
-    private ResolvedVideoColor(VideoFrameInfo frame)
+    private ResolvedVideoColor(NativeResolvedColor color)
     {
-        Range = frame.ColorRangeCode;
-        Matrix = frame.ColorMatrixCode;
-        Primaries = frame.ColorPrimariesCode;
-        Transfer = frame.ColorTransferCode;
-        ChromaLocation = frame.ChromaLocationCode;
-        AlphaMode = frame.AlphaModeCode;
+        Range = color.range;
+        Matrix = color.matrix;
+        Primaries = color.primaries;
+        Transfer = color.transfer;
+        ChromaLocation = color.chromaLocation;
+        AlphaMode = color.alphaMode;
+        InferredFields = color.inferredFields;
     }
 
     public int Range { get; }
@@ -29,72 +28,38 @@ public sealed record ResolvedVideoColor
 
     public int AlphaMode { get; }
 
-    /// <summary>
-    /// 验证首版逐行、不透明整数输入；未知或需要专用解释的组合明确拒绝。
-    /// </summary>
-    public static ResolvedVideoColor Resolve(VideoFrameInfo frame)
+    /// <summary>缺失字段推断位：范围 1、矩阵 2、基色 4、传递函数 8、色度位置 16。</summary>
+    public uint InferredFields { get; }
+
+    /// <summary>在拥有原生引用的帧上解析有效色彩，并保留流级 HDR 证据约束。</summary>
+    public static ResolvedVideoColor Resolve(IVideoFrame frame)
     {
         ArgumentNullException.ThrowIfNull(frame);
-        if (frame.IsCorrupt || frame.DecodeErrorFlags != 0)
+        return frame switch
         {
-            throw new InvalidDataException("损坏视频帧不能用于预览。");
-        }
+            DecodedVideoFrame decoded => decoded.UseHandle(ResolveHandle),
+            VideoFrameLease lease => lease.UseHandle(ResolveHandle),
+            _ => throw new NotSupportedException("色彩解析需要拥有原生引用的解码帧。")
+        };
+    }
 
-        if (frame.IsInterlaced)
+    internal static unsafe ResolvedVideoColor ResolveHandle(DecodedFrameHandle frame)
+    {
+        FfmpegVideoDecoder.RequireCore();
+        var color = new NativeResolvedColor
         {
-            throw new NotSupportedException("当前预览尚未支持隔行视频。");
-        }
-
-        foreach (var name in frame.SideDataTypes)
+            structSize = (uint)sizeof(NativeResolvedColor), abiVersion = NativeDecodeMethods.ABI_VERSION
+        };
+        Span<byte> error = stackalloc byte[NativeDecodeMethods.ERROR_CAPACITY];
+        error.Clear();
+        fixed (byte* errorPointer = error)
         {
-            if (name.Contains("dynamic", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("dovi", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("dolby", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("display matrix", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("stereo", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("icc", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("raw color", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("film grain", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("ambient", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new NotSupportedException($"当前预览尚未支持帧信息：{name}。");
-            }
+            NativeDecodeError.ThrowIfFailed(NativeDecodeMethods.ResolveColor(frame, ref color, errorPointer, (uint)error.Length), error);
         }
-
-        if (frame.ComponentDepths.Length != 3 || frame.ComponentDepths.Any(depth => depth is < 8 or > 16))
+        if (color.coreVersion != NativeDecodeMethods.CORE_VERSION)
         {
-            throw new NotSupportedException($"当前预览需要 8 至 16 位、不透明的三分量整数图像：{frame.PixelFormat}。");
+            throw new NotSupportedException("原生色彩解析核心版本不匹配。");
         }
-
-        if (frame.ColorPrimariesCode is not (1 or 9) || frame.ColorTransferCode is not (1 or 13 or 16 or 18) ||
-            frame.ColorRangeCode is not (1 or 2))
-        {
-            throw new NotSupportedException($"预览需要明确的 BT.709／BT.2020 基色、BT.709／sRGB／PQ／HLG 传递函数及范围。当前：{frame.Color}。");
-        }
-
-        var format = frame.PixelFormat;
-        var isRgb = format.StartsWith("rgb", StringComparison.Ordinal) ||
-            format.StartsWith("bgr", StringComparison.Ordinal) || format.StartsWith("gbr", StringComparison.Ordinal);
-        var isYuv = format.StartsWith("yuv", StringComparison.Ordinal) ||
-            format is "nv12" or "nv21" || format.StartsWith("p010", StringComparison.Ordinal) ||
-            format.StartsWith("p016", StringComparison.Ordinal);
-        if ((!isRgb && !isYuv) ||
-            (isRgb && (frame.ColorMatrixCode != 0 || frame.ColorRangeCode != 2)) ||
-            (format.StartsWith("yuvj", StringComparison.Ordinal) && frame.ColorRangeCode != 2) ||
-            (isYuv && frame.ColorMatrixCode is not (1 or 5 or 6 or 9)))
-        {
-            throw new NotSupportedException($"预览不支持或无法明确解释像素格式／矩阵／范围：{format} / {frame.ColorMatrixCode} / {frame.ColorRangeCode}。");
-        }
-
-        var isSubsampled = isYuv && (format.Contains("420", StringComparison.Ordinal) ||
-            format.Contains("422", StringComparison.Ordinal) || format.Contains("440", StringComparison.Ordinal) ||
-            format.Contains("411", StringComparison.Ordinal) || format.Contains("410", StringComparison.Ordinal) ||
-            format.StartsWith("nv", StringComparison.Ordinal) || format.StartsWith("p0", StringComparison.Ordinal));
-        if (frame.ChromaLocationCode is < 0 or > 6 || (isSubsampled && frame.ChromaLocationCode == 0))
-        {
-            throw new NotSupportedException("子采样视频预览需要明确的色度采样位置。");
-        }
-
-        return new(frame);
+        return new(color);
     }
 }

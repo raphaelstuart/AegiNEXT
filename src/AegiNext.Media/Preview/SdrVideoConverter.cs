@@ -43,6 +43,7 @@ public sealed class SdrVideoConverter : IVideoPreviewConverter
                 throw new NotSupportedException("原生解码库缺少 SDR 预览能力，请执行 Decoder 构建。");
             }
 
+            FfmpegVideoDecoder.RequireCore();
             var info = new NativePreviewBackendInfo
             {
                 structSize = (uint)sizeof(NativePreviewBackendInfo),
@@ -81,16 +82,15 @@ public sealed class SdrVideoConverter : IVideoPreviewConverter
                 throw new NotSupportedException("此转换器需要拥有原生引用的解码帧。");
             }
 
-            var color = ResolvedVideoColor.Resolve(frame.Info);
             var (width, height) = GetOutputSize(frame.Info);
             var pixels = new byte[checked(width * height * 4)];
             if (frame is DecodedVideoFrame decoded)
             {
-                decoded.UseHandle(frameHandle => Render(frameHandle, color, width, height, pixels));
+                decoded.UseHandle(frameHandle => Render(frameHandle, ResolvedVideoColor.ResolveHandle(frameHandle), width, height, pixels));
             }
             else
             {
-                ((VideoFrameLease)frame).UseHandle(frameHandle => Render(frameHandle, color, width, height, pixels));
+                ((VideoFrameLease)frame).UseHandle(frameHandle => Render(frameHandle, ResolvedVideoColor.ResolveHandle(frameHandle), width, height, pixels));
             }
             cancellationToken.ThrowIfCancellationRequested();
             return SdrVideoFrame.FromOwnedPixels(width, height, pixels);

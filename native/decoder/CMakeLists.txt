@@ -31,8 +31,7 @@ foreach(COMPONENT avformat avcodec avutil swscale)
 endforeach()
 
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../src/AegiNext.Media/Probing/ffmpeg-toolchain.json" TOOLCHAIN_MANIFEST)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/AegiNext.Media/Probing/ffmpeg-toolchain.json")
+
 set(VERSION_HEADER "#pragma once\n")
 foreach(COMPONENT avformat avcodec avutil swscale)
     string(JSON VERSION GET "${TOOLCHAIN_MANIFEST}" libraries "lib${COMPONENT}")
@@ -57,14 +56,17 @@ endforeach()
 string(APPEND VERSION_HEADER "};\n")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/decode_versions.h" "${VERSION_HEADER}")
 
+add_subdirectory("../shared" "shared")
+
 add_library(aeginext_decode_objects OBJECT src/decode_support.cpp src/frame_owner.cpp src/decoder_context.cpp src/preview_converter.cpp)
 target_include_directories(aeginext_decode_objects PUBLIC include src "${FFMPEG_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(aeginext_decode_objects PUBLIC aeginext_media_core)
 set_target_properties(aeginext_decode_objects PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_VISIBILITY_PRESET hidden)
 
 add_library(aeginext_decode SHARED src/decode_api.cpp $<TARGET_OBJECTS:aeginext_decode_objects>)
 target_include_directories(aeginext_decode PUBLIC include PRIVATE src "${FFMPEG_INCLUDE_DIR}")
 target_compile_definitions(aeginext_decode PRIVATE AEGINEXT_DECODE_BUILD)
-target_link_libraries(aeginext_decode PRIVATE "${FFMPEG_avformat_LIBRARY}" "${FFMPEG_avcodec_LIBRARY}" "${FFMPEG_avutil_LIBRARY}" "${FFMPEG_swscale_LIBRARY}")
+target_link_libraries(aeginext_decode PRIVATE aeginext_media_core "${FFMPEG_avformat_LIBRARY}" "${FFMPEG_avcodec_LIBRARY}" "${FFMPEG_avutil_LIBRARY}" "${FFMPEG_swscale_LIBRARY}")
 set_target_properties(aeginext_decode PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES
     LIBRARY_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
     RUNTIME_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
@@ -89,14 +91,14 @@ foreach(TARGET aeginext_decode_objects aeginext_decode)
 endforeach()
 if(MINGW)
     target_link_options(aeginext_decode PRIVATE -static-libgcc -static-libstdc++)
-    target_link_libraries(aeginext_decode PRIVATE -Wl,-Bstatic winpthread -Wl,-Bdynamic)
+    target_link_libraries(aeginext_decode PRIVATE aeginext_media_core -Wl,-Bstatic winpthread -Wl,-Bdynamic)
 endif()
 
 include(CTest)
 if(BUILD_TESTING)
     add_executable(aeginext_decode_tests Tests/decode_tests.cpp Tests/c_abi_test.c $<TARGET_OBJECTS:aeginext_decode_objects>)
     target_include_directories(aeginext_decode_tests PRIVATE include src "${FFMPEG_INCLUDE_DIR}")
-    target_link_libraries(aeginext_decode_tests PRIVATE aeginext_decode "${FFMPEG_avformat_LIBRARY}" "${FFMPEG_avcodec_LIBRARY}" "${FFMPEG_avutil_LIBRARY}" "${FFMPEG_swscale_LIBRARY}")
+    target_link_libraries(aeginext_decode_tests PRIVATE aeginext_decode aeginext_media_core "${FFMPEG_avformat_LIBRARY}" "${FFMPEG_avcodec_LIBRARY}" "${FFMPEG_avutil_LIBRARY}" "${FFMPEG_swscale_LIBRARY}")
     set_target_properties(aeginext_decode_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
         BUILD_RPATH "${AEGINEXT_NATIVE_OUTPUT_DIR};${AEGINEXT_FFMPEG_ROOT}/lib")
     if(MINGW)
@@ -107,7 +109,7 @@ if(BUILD_TESTING)
 
     add_executable(aeginext_preview_tests Tests/preview_tests.cpp $<TARGET_OBJECTS:aeginext_decode_objects>)
     target_include_directories(aeginext_preview_tests PRIVATE include src "${FFMPEG_INCLUDE_DIR}")
-    target_link_libraries(aeginext_preview_tests PRIVATE aeginext_decode "${FFMPEG_avformat_LIBRARY}"
+    target_link_libraries(aeginext_preview_tests PRIVATE aeginext_decode aeginext_media_core "${FFMPEG_avformat_LIBRARY}"
         "${FFMPEG_avcodec_LIBRARY}" "${FFMPEG_avutil_LIBRARY}" "${FFMPEG_swscale_LIBRARY}")
     set_target_properties(aeginext_preview_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}"
         BUILD_RPATH "${AEGINEXT_NATIVE_OUTPUT_DIR};${AEGINEXT_FFMPEG_ROOT}/lib")
@@ -118,5 +120,18 @@ if(BUILD_TESTING)
     add_test(NAME aeginext.preview.contracts COMMAND aeginext_preview_tests)
 endif()
 
-message(STATUS "Standalone software decoder uses the explicit SDK: ${AEGINEXT_FFMPEG_ROOT}")
+message(STATUS "Shared media decoder uses the explicit SDK: ${AEGINEXT_FFMPEG_ROOT}")
 message(STATUS "Development output: ${AEGINEXT_NATIVE_OUTPUT_DIR}; dependency redistribution is a later packaging step.")
+if(BUILD_TESTING)
+    add_executable(aeginext_color_resolution_tests ../shared/color_resolution_tests.cpp)
+    target_link_libraries(aeginext_color_resolution_tests PRIVATE aeginext_media_core)
+    set_target_properties(aeginext_color_resolution_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}" BUILD_RPATH "${AEGINEXT_FFMPEG_ROOT}/lib")
+    add_test(NAME aeginext.media.color_resolution COMMAND aeginext_color_resolution_tests)
+endif()
+if(BUILD_TESTING)
+    add_executable(aeginext_decoder_session_tests ../shared/decoder_session_tests.cpp)
+    target_link_libraries(aeginext_decoder_session_tests PRIVATE aeginext_media_core)
+    set_target_properties(aeginext_decoder_session_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AEGINEXT_NATIVE_OUTPUT_DIR}" BUILD_RPATH "${AEGINEXT_FFMPEG_ROOT}/lib")
+    add_test(NAME aeginext.media.decoder_session COMMAND aeginext_decoder_session_tests)
+    set_tests_properties(aeginext.media.decoder_session PROPERTIES SKIP_RETURN_CODE 77)
+endif()

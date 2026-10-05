@@ -30,6 +30,16 @@ int main()
             Require(std::abs(mixed[0] - 151.5) < 0.001 && std::abs(mixed[2] - 151.5) < 0.001,
                 "Premultiplied subtitle was not composited in absolute linear light.");
         }
+        for (const auto primaries : {AVCOL_PRI_BT470BG, AVCOL_PRI_SMPTE170M})
+        {
+            ColorPipeline sd(primaries == AVCOL_PRI_BT470BG ? AVCOL_SPC_BT470BG : AVCOL_SPC_SMPTE170M,
+                primaries, AVCOL_TRC_SMPTE170M);
+            const Color source{0.45, 0.08, -0.03};
+            const auto roundtrip = sd.Encode(sd.Decode(source));
+            for (size_t index = 0; index < source.size(); ++index)
+                Require(std::abs(roundtrip[index] - source[index]) < 1e-8, "BT601 color roundtrip lost precision.");
+            Require(sd.Composite(source, {0, 0, 0, 0}, 203) == source, "BT601 transparent overlay changed source.");
+        }
         ColorPipeline pq(AVCOL_SPC_BT2020_NCL, AVCOL_PRI_BT2020, AVCOL_TRC_SMPTE2084);
         for (const double nits : {203.0, 1000.0, 4000.0, 10000.0})
         {

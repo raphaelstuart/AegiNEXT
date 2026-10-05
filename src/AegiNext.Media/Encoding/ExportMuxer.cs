@@ -8,7 +8,8 @@ namespace AegiNext.Media.Encoding;
 
 internal static class ExportMuxer
 {
-    internal static async Task RunAsync(VideoExportRequest request, string videoPath, CancellationToken cancellationToken)
+    internal static async Task RunAsync(VideoExportRequest request, string videoPath, VideoExportColor outputColor,
+        CancellationToken cancellationToken)
     {
         var ffmpeg = ExportExecutable.Resolve("ffmpeg", request.FfmpegPath);
         var probePath = Path.Combine(Path.GetDirectoryName(ffmpeg)!, OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe");
@@ -16,8 +17,9 @@ internal static class ExportMuxer
         var binding = request.Project.Media!;
         var sourcePath = ProjectAssetLocation.Resolve(request.Project.Assets.Single(asset => asset.Id == binding.AssetId), request.ProjectDirectory);
         var source = await probe.ProbeAsync(sourcePath, cancellationToken).ConfigureAwait(false);
-        var selectedVideo = source.Asset.Streams.Single(stream => stream.Index == binding.VideoStreamIndex).Video
+        _ = source.Asset.Streams.Single(stream => stream.Index == binding.VideoStreamIndex).Video
             ?? throw new InvalidDataException("选定流不是视频。");
+        var expectedColor = outputColor.ToMetadata();
         int? audioIndex = null;
         if (request.AudioMode != AudioExportMode.None)
         {
@@ -98,9 +100,9 @@ internal static class ExportMuxer
         var result = await probe.ProbeAsync(request.OutputPath, cancellationToken).ConfigureAwait(false);
         var encoded = result.Asset.Streams.First(stream => stream.CodecType == "video").Video!;
         if (encoded.Width != request.Project.Width || encoded.Height != request.Project.Height ||
-            encoded.Color.Transfer != selectedVideo.Color.Transfer || encoded.Color.Primaries != selectedVideo.Color.Primaries ||
-            encoded.Color.Matrix != selectedVideo.Color.Matrix || encoded.Color.Range != selectedVideo.Color.Range ||
-            (selectedVideo.Color.IsPq || selectedVideo.Color.IsHlg) && encoded.PixelFormat != "yuv420p10le")
+            encoded.Color.Transfer != expectedColor.Transfer || encoded.Color.Primaries != expectedColor.Primaries ||
+            encoded.Color.Matrix != expectedColor.Matrix || encoded.Color.Range != expectedColor.Range ||
+            (expectedColor.IsPq || expectedColor.IsHlg) && encoded.PixelFormat != "yuv420p10le")
         {
             throw new InvalidDataException("成片尺寸、色彩标签或 HDR 位深校验失败，未提交输出。");
         }

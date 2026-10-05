@@ -1,4 +1,5 @@
 #include "preview_converter.h"
+#include "color_resolution.h"
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -31,6 +32,11 @@ void ExpectError(int32_t result, Action action)
     {
         action();
     }
+    catch (const aeginext::media::CoreError &error)
+    {
+        Require(static_cast<int32_t>(error.Code()) == result, error.what());
+        return;
+    }
     catch (const Error &error)
     {
         Require(error.Result() == result, error.what());
@@ -62,12 +68,16 @@ FramePointer MakeFrame(AVPixelFormat format, int width = 5, int height = 3)
 an_preview_request Request(const FrameOwner &owner, uint32_t width = 0, uint32_t height = 0)
 {
     const auto &info = owner.Info();
+    aeginext::media::ResolvedColor color{info.color_range, info.color_matrix, info.color_primaries,
+        info.color_transfer, info.chroma_location, info.alpha_mode, 0};
+    try { color = aeginext::media::ResolveColor(owner.NativeFrame(), owner.ColorContext()); }
+    catch (const aeginext::media::CoreError &) { }
     return {
         sizeof(an_preview_request), AN_DECODE_ABI_VERSION,
         width ? width : info.width - info.crop_left - info.crop_right,
         height ? height : info.height - info.crop_top - info.crop_bottom,
-        info.color_range, info.color_matrix, info.color_primaries, info.color_transfer,
-        info.chroma_location, info.alpha_mode, 0, 0
+        color.range, color.matrix, color.primaries, color.transfer,
+        color.chromaLocation, color.alphaMode, 0, 0
     };
 }
 
@@ -401,7 +411,7 @@ void InvalidRequestsAndUnsupportedSourcesFail()
     auto unknown = MakeFrame(AV_PIX_FMT_RGB24);
     unknown->color_trc = AVCOL_TRC_UNSPECIFIED;
     FrameOwner unknownOwner(std::move(unknown), {1, 25});
-    ExpectError(AN_DECODE_UNSUPPORTED, [&]() { Convert(converter, unknownOwner); });
+    Require(!Convert(converter, unknownOwner).empty(), "Missing SDR transfer should be inferred.");
     auto interlaced = MakeFrame(AV_PIX_FMT_RGB24);
     interlaced->flags |= AV_FRAME_FLAG_INTERLACED;
     FrameOwner interlacedOwner(std::move(interlaced), {1, 25});

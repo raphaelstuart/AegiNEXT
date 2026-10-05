@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Buffers;
 using System.Globalization;
 using AegiNext.Desktop.Shortcuts;
+using AegiNext.Media.Decoding;
 
 namespace AegiNext.Desktop.Settings;
 
@@ -18,12 +19,13 @@ public sealed record WorkbenchPreferences
     public float Volume { get; init; } = 1;
     public bool WindowMenuOnMac { get; init; }
     public PreviewQuality PreviewQuality { get; init; } = PreviewQuality.LOW;
+    public VideoDecodeMode PreviewDecodeMode { get; init; } = VideoDecodeMode.Auto;
 
     /// <summary>拒绝未知设置版本、语言、主题或非法音量。</summary>
     public void Validate()
     {
         if (Version != 1 || !IsValidLanguage(Language) ||
-            !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
+            !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !Enum.IsDefined(PreviewDecodeMode) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
             AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
             AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null)
         {
@@ -64,7 +66,7 @@ public sealed record WorkbenchPreferences
     public bool Equals(WorkbenchPreferences? other)
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
-               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality &&
+               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
                ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
     }
 
@@ -80,6 +82,7 @@ public sealed record WorkbenchPreferences
         hash.Add(Volume);
         hash.Add(WindowMenuOnMac);
         hash.Add(PreviewQuality);
+        hash.Add(PreviewDecodeMode);
         foreach (var binding in ShortcutBindings)
         {
             hash.Add(binding);

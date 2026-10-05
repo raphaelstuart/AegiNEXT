@@ -1,6 +1,8 @@
 #include "aeginext_export.h"
 #include "color_pipeline.h"
 #include "export_versions.h"
+#include "media_core.h"
+#include "color_resolution.h"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -26,6 +28,9 @@ extern "C"
 namespace
 {
 using aeginext::encode::ColorPipeline;
+using aeginext::media::DecoderSession;
+using aeginext::media::DecodeMode;
+using aeginext::media::DecodeWorkload;
 struct Failure : std::runtime_error
 {
     int code;
@@ -58,17 +63,20 @@ struct Context
 {
     std::atomic<bool> cancelled{false};
     bool started = false;
-    AVFormatContext *input = nullptr, *output = nullptr;
-    AVCodecContext *decoder = nullptr, *encoder = nullptr;
-    AVPacket *packet = nullptr, *encoded = nullptr;
+    AVFormatContext *output = nullptr;
+    AVCodecContext *encoder = nullptr;
+    AVPacket *encoded = nullptr;
+    std::unique_ptr<DecoderSession> decoderSession;
+    std::mutex decoderMutex;
     SwsContext *upsample = nullptr, *downsample = nullptr;
     std::string encoderName;
+    an_export_result_info resultInfo{};
+    bool completed = false;
     ~Context()
     {
         sws_free_context(&upsample); sws_free_context(&downsample);
-        av_packet_free(&packet); av_packet_free(&encoded);
-        avcodec_free_context(&decoder); avcodec_free_context(&encoder);
-        avformat_close_input(&input);
+        av_packet_free(&encoded);
+        avcodec_free_context(&encoder);
         if (output)
         {
             if (output->pb) avio_closep(&output->pb);
@@ -262,7 +270,7 @@ AVCodecContext *OpenHardwareEncoder(Context &c, const an_export_request &r, AVSt
             continue;
         }
         auto value = ConfigureEncoder(encoder, r, source, frame, c.output, format);
-        value->framerate = av_guess_frame_rate(c.input, source, const_cast<AVFrame *>(frame));
+        value->framerate = source->avg_frame_rate.num > 0 ? source->avg_frame_rate : source->r_frame_rate;
         value->bit_rate = r.video_bitrate;
         AVDictionary *options = nullptr;
         const auto speed = std::string(HardwareSpeed(r.preset));
@@ -324,14 +332,16 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
     c.started = true;
     Need(!std::filesystem::exists(std::filesystem::path(reinterpret_cast<const char8_t *>(r.output_path))), "Temporary export output already exists");
     Need(std::filesystem::is_regular_file(std::filesystem::path(reinterpret_cast<const char8_t *>(r.input_path))), "Export input must be a local regular file");
-    c.input = avformat_alloc_context();
-    if (!c.input) throw std::bad_alloc();
-    c.input->interrupt_callback = {Interrupt, &c};
-    Check(avformat_open_input(&c.input, r.input_path, nullptr, nullptr), "open export input");
-    Check(avformat_find_stream_info(c.input, nullptr), "inspect export input");
-    Need(r.video_stream_index >= 0 && r.video_stream_index < static_cast<int>(c.input->nb_streams), "Selected video stream does not exist");
-    auto *sourceStream = c.input->streams[r.video_stream_index];
-    Need(sourceStream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && sourceStream->time_base.num > 0 && sourceStream->time_base.den > 0, "Invalid video stream/time base");
+    {
+        std::scoped_lock lock(c.decoderMutex);
+        c.decoderSession = std::make_unique<DecoderSession>(aeginext::media::DecodeOptions{
+            static_cast<DecodeMode>(r.decode_mode), DecodeWorkload::Offline});
+        if (c.cancelled.load()) c.decoderSession->Cancel();
+    }
+    c.decoderSession->Open(r.input_path, r.video_stream_index);
+    auto *sourceStream = c.decoderSession->SourceStream();
+    Need(sourceStream && sourceStream->time_base.num > 0 && sourceStream->time_base.den > 0,
+        "Invalid video stream/time base");
     for (int i = 0; i < sourceStream->codecpar->nb_coded_side_data; ++i)
     {
         switch (sourceStream->codecpar->coded_side_data[i].type)
@@ -343,16 +353,9 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         default: break;
         }
     }
-    const auto *decoder = avcodec_find_decoder(sourceStream->codecpar->codec_id);
-    Need(decoder != nullptr, "Video decoder unavailable");
-    c.decoder = avcodec_alloc_context3(decoder);
-    if (!c.decoder) throw std::bad_alloc();
-    Check(avcodec_parameters_to_context(c.decoder, sourceStream->codecpar), "decoder parameters");
-    c.decoder->thread_count = 4; c.decoder->pkt_timebase = sourceStream->time_base; c.decoder->apply_cropping = 0;
-    Check(avcodec_open2(c.decoder, decoder, nullptr), "open software decoder");
-    c.packet = av_packet_alloc(); c.encoded = av_packet_alloc();
-    Frame decoded(av_frame_alloc());
-    if (!c.packet || !c.encoded || !decoded) throw std::bad_alloc();
+    c.encoded = av_packet_alloc();
+    Frame decoded;
+    if (!c.encoded) throw std::bad_alloc();
     Frame upsampled, composed, outputFrame;
     AVStream *targetStream = nullptr;
     std::unique_ptr<ColorPipeline> color;
@@ -387,7 +390,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
                 Need(encoder != nullptr, "Requested software encoder is unavailable");
                 auto value = ConfigureEncoder(encoder, r, sourceStream, decoded.get(), c.output,
                     codec == 1 ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_YUV420P10LE);
-                value->framerate = av_guess_frame_rate(c.input, sourceStream, decoded.get());
+                value->framerate = sourceStream->avg_frame_rate.num > 0 ? sourceStream->avg_frame_rate : sourceStream->r_frame_rate;
                 AVDictionary *options = nullptr;
                 av_dict_set(&options, "preset", r.preset, 0);
                 av_dict_set(&options, "crf", std::to_string(r.crf).c_str(), 0);
@@ -410,6 +413,8 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
             targetStream = avformat_new_stream(c.output, nullptr);
             if (!targetStream) throw std::bad_alloc();
             targetStream->time_base = sourceStream->time_base;
+            targetStream->avg_frame_rate = sourceStream->avg_frame_rate;
+            targetStream->r_frame_rate = sourceStream->r_frame_rate;
             Check(avcodec_parameters_from_context(targetStream->codecpar, c.encoder), "output stream parameters");
             Check(avio_open2(&c.output->pb, r.output_path, AVIO_FLAG_WRITE, &c.output->interrupt_callback, nullptr), "open temporary output");
             Check(avformat_write_header(c.output, nullptr), "write container header");
@@ -466,38 +471,66 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         Check(avcodec_send_frame(c.encoder, outputFrame.get()), "send composited frame");
         WritePackets(c, targetStream); ++frames;
     };
-    auto receive = [&]()
-    {
-        while (true)
-        {
-            const auto result = avcodec_receive_frame(c.decoder, decoded.get());
-            if (result == AVERROR_EOF || result == AVERROR(EAGAIN)) return;
-            Check(result, "decode export frame"); process(); av_frame_unref(decoded.get());
-        }
-    };
     while (true)
     {
-        c.CheckCancel(); const auto result = av_read_frame(c.input, c.packet);
-        if (result == AVERROR_EOF) break;
-        Check(result, "read source packet");
-        if (c.packet->stream_index == r.video_stream_index)
-        {
-            auto sent = avcodec_send_packet(c.decoder, c.packet);
-            if (sent == AVERROR(EAGAIN)) { receive(); sent = avcodec_send_packet(c.decoder, c.packet); }
-            Check(sent, "send decode packet"); receive();
-        }
-        av_packet_unref(c.packet);
+        c.CheckCancel();
+        auto raw = c.decoderSession->ReadFrame();
+        if (!raw) break;
+        sourceStream = c.decoderSession->SourceStream();
+        Need(sourceStream && sourceStream->time_base.num > 0 && sourceStream->time_base.den > 0,
+            "Invalid video stream/time base after decoder selection");
+        const auto resolved = aeginext::media::ResolveColor(raw.get(), c.decoderSession->ColorContext());
+        decoded.reset(av_frame_clone(raw.get()));
+        if (!decoded) throw std::bad_alloc();
+        aeginext::media::ApplyColor(decoded.get(), resolved);
+        process();
+        c.resultInfo.inferred_fields |= resolved.inferredFields;
     }
-    Check(avcodec_send_packet(c.decoder, nullptr), "drain decoder"); receive();
     Need(c.encoder != nullptr && frames > 0, "No decoded video frames");
     Check(avcodec_send_frame(c.encoder, nullptr), "drain encoder"); WritePackets(c, targetStream);
     Check(av_write_trailer(c.output), "write output trailer");
     Check(avio_closep(&c.output->pb), "close output file");
+    const auto &session = c.decoderSession->Info();
+    c.resultInfo.struct_size = sizeof(an_export_result_info);
+    c.resultInfo.abi_version = 3;
+    c.resultInfo.core_version = aeginext::media::CORE_VERSION;
+    c.resultInfo.capabilities = aeginext::media::CAPABILITIES;
+    c.resultInfo.requested_decode_mode = static_cast<uint32_t>(session.requestedMode);
+    c.resultInfo.active_decode_backend = static_cast<uint32_t>(session.activeBackend);
+    c.resultInfo.hardware_confirmed = session.hardwareConfirmed ? 1 : 0;
+    c.resultInfo.generation = session.generation;
+    c.resultInfo.delivered_frames = session.deliveredFrames;
+    c.resultInfo.color_range = range;
+    c.resultInfo.color_matrix = matrix;
+    c.resultInfo.color_primaries = primaries;
+    c.resultInfo.color_transfer = transfer;
+    c.resultInfo.chroma_location = AVCHROMA_LOC_LEFT;
+    c.resultInfo.alpha_mode = decoded->alpha_mode;
+    CopyError(c.resultInfo.fallback_reason, sizeof(c.resultInfo.fallback_reason), session.fallbackReason.c_str());
+    c.completed = true;
 }
 }
 extern "C"
 {
-uint32_t AN_EXPORT_CALL an_export_abi_version(void) { return 2; }
+uint32_t AN_EXPORT_CALL an_export_abi_version(void) { return 3; }
+uint32_t AN_EXPORT_CALL an_export_core_version(void) { return aeginext::media::CORE_VERSION; }
+uint32_t AN_EXPORT_CALL an_export_capabilities(void) { return aeginext::media::CAPABILITIES; }
+int32_t AN_EXPORT_CALL an_export_get_result_info(void *context, an_export_result_info *info,
+    char *error, uint32_t capacity)
+{
+    try
+    {
+        if (!info || info->struct_size != sizeof(*info) || info->abi_version != 3)
+            throw Failure(1, "Invalid export result information ABI");
+        const auto *value = Get(context);
+        if (!value->completed) throw Failure(1, "Export result is available only after successful completion");
+        *info = value->resultInfo;
+        CopyError(error, capacity, "");
+        return 0;
+    }
+    catch (const Failure &e) { CopyError(error, capacity, e.what()); return e.code; }
+    catch (const std::exception &e) { CopyError(error, capacity, e.what()); return 3; }
+}
 const char *AN_EXPORT_CALL an_export_encoder_name(void *context)
 {
     try { return Get(context)->encoderName.c_str(); }
@@ -518,7 +551,14 @@ int32_t AN_EXPORT_CALL an_export_create(void **context, char *error, uint32_t ca
 }
 void AN_EXPORT_CALL an_export_cancel(void *context)
 {
-    try { Get(context)->cancelled.store(true); } catch (...) {}
+    try
+    {
+        auto *value = Get(context);
+        value->cancelled.store(true);
+        std::scoped_lock lock(value->decoderMutex);
+        if (value->decoderSession) value->decoderSession->Cancel();
+    }
+    catch (...) {}
 }
 void AN_EXPORT_CALL an_export_destroy(void *context)
 {
@@ -535,8 +575,8 @@ int32_t AN_EXPORT_CALL an_export_run(void *context, const an_export_request *req
 {
     try
     {
-        if (!request || request->struct_size != sizeof(*request) || request->abi_version != 2 || !render || !frames ||
-            !request->input_path || !request->output_path || !request->preset || request->flags || request->reserved ||
+        if (!request || request->struct_size != sizeof(*request) || request->abi_version != 3 || !render || !frames ||
+            !request->input_path || !request->output_path || !request->preset || request->flags || request->reserved || request->decode_reserved || request->decode_mode > 2 ||
             request->width == 0 || request->height == 0 || (request->width % 2) || (request->height % 2) ||
             static_cast<uint64_t>(request->width)*request->height > 33177600 || request->codec < 0 || request->codec > 2 ||
             request->crf < 0 || request->crf > 51 || !std::isfinite(request->reference_white_nits) || request->reference_white_nits <= 0)
@@ -547,6 +587,14 @@ int32_t AN_EXPORT_CALL an_export_run(void *context, const an_export_request *req
         CopyError(error, capacity, ""); return 0;
     }
     catch (const Failure &e) { CopyError(error, capacity, e.what()); return e.code; }
+    catch (const aeginext::media::CoreError &e)
+    {
+        CopyError(error, capacity, e.what());
+        if (e.Code() == aeginext::media::ErrorCode::Cancelled) return 4;
+        if (e.Code() == aeginext::media::ErrorCode::Unsupported) return 2;
+        if (e.Code() == aeginext::media::ErrorCode::InvalidArgument) return 1;
+        return 3;
+    }
     catch (const std::exception &e) { CopyError(error, capacity, e.what()); return 3; }
     catch (...) { CopyError(error, capacity, "Unknown native export failure"); return 3; }
 }

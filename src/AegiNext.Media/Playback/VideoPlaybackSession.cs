@@ -63,6 +63,18 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
         }
     }
 
+    /// <summary>取得当前帧源实际使用的解码后端；注入的非原生帧源没有后端信息。</summary>
+    public VideoDecodeSessionInfo? DecodeSessionInfo
+    {
+        get
+        {
+            lock (gate)
+            {
+                return source is VideoFrameNavigator navigator ? navigator.SessionInfo : null;
+            }
+        }
+    }
+
     /// <summary>
     /// 打开源并交付首帧后暂停；取消令牌仅撤回尚未执行的命令，执行开始后由关闭操作终止。
     /// </summary>

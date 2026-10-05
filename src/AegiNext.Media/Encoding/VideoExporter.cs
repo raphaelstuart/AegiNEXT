@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
+using AegiNext.Media.Decoding;
 
 namespace AegiNext.Media.Encoding;
 
@@ -30,12 +31,12 @@ public sealed class VideoExporter
         {
             var ffmpeg = ExportExecutable.Resolve("ffmpeg", request.FfmpegPath ?? Environment.GetEnvironmentVariable("AEGINEXT_FFMPEG_PATH"));
             var worker = request.WorkerPath ?? Path.Combine(AppContext.BaseDirectory,
-                File.Exists(Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "AegiNext.ExportWorker.exe" : "AegiNext.ExportWorker"))
-                    ? OperatingSystem.IsWindows() ? "AegiNext.ExportWorker.exe" : "AegiNext.ExportWorker"
-                    : "AegiNext.ExportWorker.dll");
+                File.Exists(Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "aegn-exporter.exe" : "aegn-exporter"))
+                    ? OperatingSystem.IsWindows() ? "aegn-exporter.exe" : "aegn-exporter"
+                    : "aegn-exporter.dll");
             if (!Path.IsPathFullyQualified(worker) || !File.Exists(worker))
             {
-                throw new FileNotFoundException("缺少邻接的 AegiNext.ExportWorker，请完整部署应用。", worker);
+                throw new FileNotFoundException("缺少邻接的 aegn-exporter，请完整部署应用。", worker);
             }
 
             var start = new ProcessStartInfo
@@ -56,7 +57,7 @@ public sealed class VideoExporter
             var job = new ExportWorkerJob(JsonSerializer.SerializeToElement(request.Project, ExportWire.Options),
                 Path.GetFullPath(request.ProjectDirectory), temporary, Path.GetExtension(output).ToLowerInvariant(),
                 request.Codec, request.Preset, request.Crf, request.AudioMode, request.AudioBitrate, ffmpeg,
-                request.EncodingMode, request.VideoBitrate);
+                request.EncodingMode, request.VideoBitrate, request.DecodeMode);
             var serializedJob = JsonSerializer.Serialize(job, ExportWire.Options);
             using var process = new Process { StartInfo = start };
             if (!process.Start())
@@ -104,6 +105,7 @@ public sealed class VideoExporter
                 }
 
                 ValidateCompletedEncoder(request, completed.Encoder);
+                ValidateCompletedDecoder(request, completed);
 
                 var encoded = Path.Combine(temporary, "output" + job.Extension);
                 if (!File.Exists(encoded) || new FileInfo(encoded).Length == 0)
@@ -113,7 +115,7 @@ public sealed class VideoExporter
 
                 File.Move(encoded, output, false);
                 progress?.Report(new(completed.Frames, MediaTime.Zero, 1, "complete", completed.Encoder));
-                return new(output, completed.Frames, completed.Encoder);
+                return new(output, completed.Frames, completed.Encoder, completed.Decoder, completed.OutputColor);
             }
             finally
             {
@@ -150,6 +152,7 @@ public sealed class VideoExporter
         }
 
         if (!Enum.IsDefined(request.Codec) || !Enum.IsDefined(request.AudioMode) || !Enum.IsDefined(request.EncodingMode) ||
+            !Enum.IsDefined(request.DecodeMode) ||
             (request.EncodingMode == VideoEncodingMode.HARDWARE && request.VideoBitrate is < 100000 or > 200000000) ||
             (request.EncodingMode == VideoEncodingMode.SOFTWARE && request.Crf is < 0 or > 51) ||
             request.Preset is not "ultrafast" and not "superfast" and not "veryfast" and not "faster" and not "fast" and not "medium" and not "slow" and not "slower" and not "veryslow" ||
@@ -172,6 +175,22 @@ public sealed class VideoExporter
         if (!hardware || (prefix is not null && !encoder!.StartsWith(prefix, StringComparison.Ordinal)))
         {
             throw new InvalidDataException("GPU 导出 worker 未确认匹配的硬件编码器，可能部署了旧 worker；未提交成片，也不会回退 CPU。");
+        }
+    }
+
+    internal static void ValidateCompletedDecoder(VideoExportRequest request, ExportWorkerMessage completed)
+    {
+        var decoder = completed.Decoder;
+        var color = completed.OutputColor?.ToMetadata();
+        if (decoder is null || !Enum.IsDefined(decoder.ActiveBackend) || decoder.RequestedMode != request.DecodeMode ||
+            decoder.Generation == 0 || decoder.DeliveredFrames != completed.Frames || completed.Frames == 0 || color is null ||
+            color.Range is null || color.Matrix is null || color.Primaries is null || color.Transfer is null ||
+            decoder.HardwareConfirmed != (decoder.ActiveBackend != VideoDecoderBackend.Software) ||
+            (request.DecodeMode == VideoDecodeMode.Software && decoder.ActiveBackend != VideoDecoderBackend.Software) ||
+            (request.DecodeMode == VideoDecodeMode.Hardware &&
+                (!decoder.HardwareConfirmed || decoder.ActiveBackend == VideoDecoderBackend.Software)))
+        {
+            throw new InvalidDataException("导出 worker 未确认匹配的解码模式、实际后端与有效色彩；未提交成片。");
         }
     }
 

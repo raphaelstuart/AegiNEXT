@@ -34,6 +34,7 @@ public sealed partial class SettingsWindow : Window
         viewModel.Appearance.Changed += (_, value) => AppearanceChanged?.Invoke(this, value);
         viewModel.Colors.Changed += (_, value) => ColorsChanged?.Invoke(this, value);
         viewModel.Shortcuts.Changed += (_, value) => ShortcutsChanged?.Invoke(this, value);
+        viewModel.Media.DecodeModeChanged += (_, value) => PreviewDecodeModeChanged?.Invoke(this, value);
         viewModel.Styles.UpsertRequested += (_, value) => UpsertStyleRequested?.Invoke(this, value);
         viewModel.Styles.DeleteRequested += (_, value) => DeleteStyleRequested?.Invoke(this, value);
         viewModel.Styles.ApplyRequested += (_, value) => ApplyStyleRequested?.Invoke(this, value);
@@ -53,6 +54,7 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler<SettingsAppearanceChangedEventArgs>? AppearanceChanged;
     public event EventHandler<SettingsColorsChangedEventArgs>? ColorsChanged;
     public event EventHandler<SettingsShortcutsChangedEventArgs>? ShortcutsChanged;
+    public event EventHandler<SettingsPreviewDecodeModeChangedEventArgs>? PreviewDecodeModeChanged;
     public event EventHandler<SettingsStyleEventArgs>? UpsertStyleRequested;
     public event EventHandler<SettingsStyleDeleteEventArgs>? DeleteStyleRequested;
     public event EventHandler? CaptureStyleRequested;
@@ -92,10 +94,11 @@ public sealed partial class SettingsWindow : Window
         };
         ViewModel.Appearance.UpdatePreferences(value);
         ViewModel.Colors.UpdatePreferences(value);
+        ViewModel.Media.UpdatePreferences(value);
         RefreshLanguage();
     }
 
-    /// <summary>即时刷新五个页面的语言，保留未确认输入。</summary>
+    /// <summary>即时刷新各页面的语言，保留未确认输入。</summary>
     public void RefreshLanguage()
     {
         ViewModel.RefreshLanguage();

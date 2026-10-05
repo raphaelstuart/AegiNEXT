@@ -5,11 +5,12 @@ using AegiNext.Desktop.Settings.Colors;
 using AegiNext.Desktop.Settings.Effects;
 using AegiNext.Desktop.Settings.Shortcuts;
 using AegiNext.Desktop.Settings.Styles;
+using AegiNext.Desktop.Settings.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegiNext.Desktop.Settings;
 
-/// <summary>设置导航和五个独立页面的组合模型，不拥有工程或控件。</summary>
+/// <summary>设置导航和独立页面的组合模型，不拥有工程或控件。</summary>
 public sealed class SettingsWindowViewModel : ObservableObject
 {
     private int pageIndex;
@@ -26,6 +27,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Shortcuts = new(preferences.ShortcutBindings);
         Styles = new();
         Effects = new();
+        Media = new(preferences);
         Shortcuts.PropertyChanged += PageModelChanged;
         Styles.PropertyChanged += PageModelChanged;
         Effects.PropertyChanged += PageModelChanged;
@@ -36,6 +38,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public ShortcutSettingsViewModel Shortcuts { get; }
     public StyleSettingsViewModel Styles { get; }
     public EffectSettingsViewModel Effects { get; }
+    public MediaSettingsViewModel Media { get; }
     public string Title => title;
     public SettingsPage CurrentPage => (SettingsPage)PageIndex;
     public bool IsAppearanceVisible => CurrentPage == SettingsPage.APPEARANCE;
@@ -43,6 +46,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public bool IsStylesVisible => CurrentPage == SettingsPage.STYLES;
     public bool IsEffectsVisible => CurrentPage == SettingsPage.EFFECTS;
     public bool IsColorsVisible => CurrentPage == SettingsPage.COLORS;
+    public bool IsMediaVisible => CurrentPage == SettingsPage.MEDIA;
 
     public string PageTitle => Localization.Get("Settings." + (CurrentPage switch
     {
@@ -50,6 +54,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.STYLES => "Styles",
         SettingsPage.EFFECTS => "Effects",
         SettingsPage.COLORS => "Colors",
+        SettingsPage.MEDIA => "Media",
         _ => "Appearance"
     }));
 
@@ -82,6 +87,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsStylesVisible));
                 OnPropertyChanged(nameof(IsEffectsVisible));
                 OnPropertyChanged(nameof(IsColorsVisible));
+                OnPropertyChanged(nameof(IsMediaVisible));
                 OnPropertyChanged(nameof(PageTitle));
                 RefreshError();
             }
@@ -103,6 +109,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Shortcuts.RefreshLanguage();
         Styles.RefreshLanguage();
         Effects.RefreshLanguage();
+        Media.RefreshLanguage();
         title = Localization.Get("Settings.Settings");
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(PageTitle));

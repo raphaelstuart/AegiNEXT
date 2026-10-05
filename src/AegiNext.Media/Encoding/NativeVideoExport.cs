@@ -3,6 +3,7 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using AegiNext.Core.Projects;
+using AegiNext.Media.Decoding;
 
 namespace AegiNext.Media.Encoding;
 
@@ -12,6 +13,8 @@ internal static class NativeVideoExport
     {
         VideoExporter.Validate(request);
         NativeExportAbi.Validate(NativeExportMethods.AbiVersion(), NativeMediaRuntime.GetLibraryPath("aeginext_export"));
+        NativeExportAbi.ValidateCore(NativeExportMethods.CoreVersion(), NativeDecodeMethods.CoreVersion(),
+            NativeExportMethods.Capabilities(), NativeDecodeMethods.CoreCapabilities(), NativeMediaRuntime.GetLibraryPath("aeginext_export"));
 
         var inputAsset = request.Project.Assets.Single(asset => asset.Id == request.Project.Media!.AssetId);
         var input = ProjectAssetLocation.Resolve(inputAsset, request.ProjectDirectory);
@@ -24,7 +27,8 @@ internal static class NativeVideoExport
             Width = (uint)request.Project.Width, Height = (uint)request.Project.Height,
             ReferenceWhiteNits = (float)request.Project.ReferenceWhiteNits,
             EncodingMode = (int)request.EncodingMode,
-            VideoBitrate = request.EncodingMode == VideoEncodingMode.HARDWARE ? request.VideoBitrate : 8000000
+            VideoBitrate = request.EncodingMode == VideoEncodingMode.HARDWARE ? request.VideoBitrate : 8000000,
+            DecodeMode = (uint)request.DecodeMode
         };
         var error = stackalloc byte[1024];
         nint native = 0;
@@ -43,7 +47,21 @@ internal static class NativeVideoExport
             }
 
             Check(result, error, cancellationToken);
-            return new(frames, Marshal.PtrToStringUTF8(NativeExportMethods.EncoderName(native)) ?? string.Empty);
+            var info = new NativeExportResultInfo
+            {
+                StructSize = (uint)sizeof(NativeExportResultInfo),
+                AbiVersion = NativeExportAbi.VERSION
+            };
+            Check(NativeExportMethods.GetResultInfo(native, ref info, error, 1024), error, cancellationToken);
+            var reason = new ReadOnlySpan<byte>(info.FallbackReason, 256);
+            var reasonEnd = reason.IndexOf((byte)0);
+            var decoder = new VideoDecodeSessionInfo((VideoDecodeMode)info.RequestedDecodeMode,
+                (VideoDecoderBackend)info.ActiveDecodeBackend, info.HardwareConfirmed != 0,
+                System.Text.Encoding.UTF8.GetString(reason[..(reasonEnd < 0 ? reason.Length : reasonEnd)]),
+                info.Generation, info.DeliveredFrames);
+            return new(frames, Marshal.PtrToStringUTF8(NativeExportMethods.EncoderName(native)) ?? string.Empty,
+                decoder, new(info.ColorRange, info.ColorMatrix, info.ColorPrimaries, info.ColorTransfer,
+                    info.ChromaLocation, info.AlphaMode, info.InferredFields));
         }
         finally
         {

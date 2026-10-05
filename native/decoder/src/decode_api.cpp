@@ -1,5 +1,6 @@
 #include "decoder_context.h"
 #include "preview_converter.h"
+#include "color_resolution.h"
 #include <cstddef>
 #include <mutex>
 #include <unordered_set>
@@ -9,6 +10,10 @@ using aeginext::decode::Error;
 using aeginext::decode::FrameOwner;
 using aeginext::decode::PreviewConverter;
 
+static_assert(sizeof(an_decoder_options) == 16);
+static_assert(sizeof(an_decoder_session_info) == 320);
+static_assert(offsetof(an_decoder_session_info, fallback_reason) == 64);
+static_assert(sizeof(an_resolved_color) == 40);
 static_assert(sizeof(an_decode_backend_info) == 64);
 static_assert(sizeof(an_frame_info) == 600);
 static_assert(offsetof(an_frame_info, pts) == 128);
@@ -41,6 +46,11 @@ int32_t Boundary(char *error, uint32_t capacity, Action action) noexcept
     try
     {
         return action();
+    }
+    catch (const aeginext::media::CoreError &exception)
+    {
+        aeginext::decode::CopyText(error, capacity, exception.what());
+        return static_cast<int32_t>(exception.Code());
     }
     catch (const Error &exception)
     {
@@ -105,7 +115,7 @@ void ValidateInfo(T *info)
 }
 
 uint32_t AN_DECODE_CALL an_decode_abi_version(void) { return AN_DECODE_ABI_VERSION; }
-uint32_t AN_DECODE_CALL an_decode_features(void) { return AN_DECODE_FEATURE_SEEK | AN_DECODE_FEATURE_SDR_PREVIEW; }
+uint32_t AN_DECODE_CALL an_decode_features(void) { return AN_DECODE_FEATURE_SEEK | AN_DECODE_FEATURE_SDR_PREVIEW | AN_DECODE_FEATURE_MEDIA_CORE; }
 uint32_t AN_DECODE_CALL an_decode_live_decoders(void) { return decoderCount.load(); }
 uint32_t AN_DECODE_CALL an_decode_live_frames(void) { return frameCount.load(); }
 uint32_t AN_DECODE_CALL an_preview_live_converters(void) { return previewCount.load(); }
@@ -358,4 +368,53 @@ void AN_DECODE_CALL an_frame_destroy(void *handle)
         delete frame;
     }
     catch (...) {}
+}
+
+uint32_t AN_DECODE_CALL an_decode_core_version(void) { return aeginext::media::CORE_VERSION; }
+uint32_t AN_DECODE_CALL an_decode_core_capabilities(void) { return aeginext::media::CAPABILITIES; }
+int32_t AN_DECODE_CALL an_decoder_create_with_options(const an_decoder_options *options, void **decoder, char *error, uint32_t capacity)
+{
+    if (decoder) { *decoder = nullptr; }
+    return Boundary(error, capacity, [&]() -> int32_t
+    {
+        if (!decoder) { throw Error(AN_DECODE_INVALID_ARGUMENT, "Decoder output is required."); }
+        ValidateInfo(options);
+        auto value = std::make_unique<DecoderContext>(aeginext::media::DecodeOptions{
+            static_cast<aeginext::media::DecodeMode>(options->mode), static_cast<aeginext::media::DecodeWorkload>(options->workload)});
+        const std::lock_guard lock(registryMutex);
+        decoders.insert(value.get());
+        *decoder = value.release();
+        ++decoderCount;
+        return AN_DECODE_OK;
+    });
+}
+int32_t AN_DECODE_CALL an_decoder_get_session_info(void *decoder, an_decoder_session_info *info, char *error, uint32_t capacity)
+{
+    return Boundary(error, capacity, [&]() -> int32_t
+    {
+        ValidateInfo(info);
+        const auto &value = Decoder(decoder)->Info();
+        *info = {};
+        info->struct_size = sizeof(*info); info->abi_version = AN_DECODE_ABI_VERSION;
+        info->core_version = aeginext::media::CORE_VERSION; info->capabilities = aeginext::media::CAPABILITIES;
+        info->requested_mode = static_cast<uint32_t>(value.requestedMode);
+        info->active_backend = static_cast<uint32_t>(value.activeBackend);
+        info->hardware_confirmed = value.hardwareConfirmed;
+        info->generation = value.generation; info->delivered_frames = value.deliveredFrames;
+        info->decode_nanoseconds = value.decodeNanoseconds; info->download_nanoseconds = value.downloadNanoseconds;
+        aeginext::decode::CopyText(info->fallback_reason, sizeof(info->fallback_reason), value.fallbackReason.c_str());
+        return AN_DECODE_OK;
+    });
+}
+int32_t AN_DECODE_CALL an_frame_resolve_color(void *frame, an_resolved_color *color, char *error, uint32_t capacity)
+{
+    return Boundary(error, capacity, [&]() -> int32_t
+    {
+        ValidateInfo(color);
+        const auto *owner = Frame(frame);
+        const auto value = aeginext::media::ResolveColor(owner->NativeFrame(), owner->ColorContext());
+        *color = {sizeof(*color), AN_DECODE_ABI_VERSION, aeginext::media::CORE_VERSION, value.inferredFields,
+            value.range, value.matrix, value.primaries, value.transfer, value.chromaLocation, value.alphaMode};
+        return AN_DECODE_OK;
+    });
 }

@@ -5,7 +5,9 @@ using AegiNext.Core.Timing;
 namespace AegiNext.Media.Decoding;
 
 /// <summary>
-/// 原始解码帧的事实快照；帧级色彩不由流级信息补写，估算时间戳与原始 PTS 分开保存。
+/// 实际解码或硬件下载帧的事实快照；帧级色彩不由流级信息补写，估算时间戳与原始 PTS 分开保存。
+/// CPU 与 GPU 后端可能交付不同像素布局、编码尺寸及裁剪矩形；可视区域定义为尺寸减去裁剪，
+/// 后端不会补造已由硬件移除的编码边缘，NV12／P010 保留其实际平面及位深。
 /// </summary>
 public sealed record VideoFrameInfo
 {

@@ -178,6 +178,30 @@ typedef struct an_preview_request
     uint32_t reserved;
 } an_preview_request;
 
+/* Shared core extensions leave all original frame structure layouts unchanged. */
+enum { AN_DECODE_FEATURE_MEDIA_CORE = 4 };
+typedef struct an_decoder_options
+{
+    uint32_t struct_size, abi_version, mode, workload;
+} an_decoder_options;
+typedef struct an_decoder_session_info
+{
+    uint32_t struct_size, abi_version, core_version, capabilities;
+    uint32_t requested_mode, active_backend, hardware_confirmed, reserved;
+    uint64_t generation, delivered_frames, decode_nanoseconds, download_nanoseconds;
+    char fallback_reason[256];
+} an_decoder_session_info;
+typedef struct an_resolved_color
+{
+    uint32_t struct_size, abi_version, core_version, inferred_fields;
+    int32_t color_range, color_matrix, color_primaries, color_transfer, chroma_location, alpha_mode;
+} an_resolved_color;
+AN_DECODE_API uint32_t AN_DECODE_CALL an_decode_core_version(void);
+AN_DECODE_API uint32_t AN_DECODE_CALL an_decode_core_capabilities(void);
+AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_create_with_options(const an_decoder_options *options, void **decoder, char *error, uint32_t capacity);
+AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_get_session_info(void *decoder, an_decoder_session_info *info, char *error, uint32_t capacity);
+AN_DECODE_API int32_t AN_DECODE_CALL an_frame_resolve_color(void *frame, an_resolved_color *color, char *error, uint32_t capacity);
+
 AN_DECODE_API uint32_t AN_DECODE_CALL an_decode_abi_version(void);
 /* SEEK guarantees both an_decoder_seek and an_decoder_get_time_base exports.
  * Capability additions do not change the layout of ABI 1 structures. */
@@ -211,7 +235,11 @@ AN_DECODE_API void AN_DECODE_CALL an_decoder_destroy(void *decoder);
  * next read and decoder destruction. All struct queries require exact size and
  * ABI on entry. PTS/duration use time_base; best_effort uses stream_time_base.
  * Missing timestamps are described by flags; their numeric fields are zero.
- * Native pixels, signed strides, cropping, and raw color enum values are kept.
+ * Actual decoded/downloaded pixels, signed strides, cropping and raw color enums
+ * are kept. Hardware output may use NV12/P010 and already omit coded padding:
+ * CPU/GPU coded dimensions and crop values need not match, but their visible
+ * regions match. Download copies hardware frame properties and never fabricates
+ * padding or reinstates cropping that the hardware decoder already removed.
  * Cropping must leave nonempty width and height. A single-row plane (including
  * a palette) may have native_stride == 0; multirow strides cover an active row.
  * Unknown color names are empty; unknown raw enum values are not rewritten. */
@@ -231,7 +259,7 @@ AN_DECODE_API void AN_DECODE_CALL an_frame_destroy(void *frame);
  * Output is tight top-down opaque BGRA8, sRGB / BT.709 / full range. Exact source
  * crop is applied in BGRA before bilinear display resampling to width/height.
  * The caller resolves SAR into the requested square-pixel output dimensions.
- * Request color values must exactly match the source; overrides are unsupported.
+ * Request color values must exactly match shared core effective color; overrides are unsupported.
  * flags/reserved must be zero. The fixed CPU CMS uses perceptual mapping and the
  * FFmpeg SDR reference of 203 nits, not measured physical display luminance.
  * PQ static mastering metadata participates in mapping; HLG uses its fixed

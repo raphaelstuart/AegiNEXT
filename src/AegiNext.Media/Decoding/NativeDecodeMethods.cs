@@ -21,6 +21,30 @@ internal static partial class NativeDecodeMethods
     internal const int NAME_CAPACITY = 64;
     private const string LIBRARY = "aeginext_decode";
 
+    internal const uint CORE_VERSION = 1;
+    internal const uint CORE_FEATURE = 4;
+    internal const uint CORE_CAPABILITIES = 15;
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_decode_core_version")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial uint CoreVersion();
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_decode_core_capabilities")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial uint CoreCapabilities();
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_decoder_create_with_options")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static unsafe partial int CreateWithOptions(in NativeDecoderOptions options, out nint decoder, byte* error, uint capacity);
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_decoder_get_session_info")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static unsafe partial int GetSessionInfo(VideoDecoderHandle decoder, ref NativeDecoderSessionInfo info, byte* error, uint capacity);
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_frame_resolve_color")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static unsafe partial int ResolveColor(DecodedFrameHandle frame, ref NativeResolvedColor color, byte* error, uint capacity);
+
     [LibraryImport(LIBRARY, EntryPoint = "an_decode_abi_version")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial uint AbiVersion();

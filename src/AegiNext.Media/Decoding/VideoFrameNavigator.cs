@@ -72,6 +72,19 @@ public sealed class VideoFrameNavigator : IVideoFrameSource
         return new(token => FfmpegVideoDecoder.Open(path, videoStreamIndex, token), cancellationToken);
     }
 
+    /// <summary>实际解码会话快照；读取不等待正在进行的帧读取。</summary>
+    public VideoDecodeSessionInfo? SessionInfo => (Volatile.Read(ref decoder) as FfmpegVideoDecoder)?.SessionInfo;
+
+    /// <summary>使用相同不可变策略重新创建文件解码器。</summary>
+    public static VideoFrameNavigator Open(string filePath, int videoStreamIndex, VideoDecoderOptions options, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        ArgumentOutOfRangeException.ThrowIfNegative(videoStreamIndex);
+        ArgumentNullException.ThrowIfNull(options);
+        var path = Path.GetFullPath(filePath);
+        return new(token => FfmpegVideoDecoder.Open(path, videoStreamIndex, options, token), cancellationToken);
+    }
+
     /// <inheritdoc />
     public PositionedVideoFrame? ReadFrame(CancellationToken cancellationToken = default)
     {

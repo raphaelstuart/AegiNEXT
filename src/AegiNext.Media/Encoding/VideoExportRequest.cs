@@ -1,4 +1,5 @@
 using AegiNext.Core.Projects;
+using AegiNext.Media.Decoding;
 
 namespace AegiNext.Media.Encoding;
 
@@ -7,6 +8,7 @@ public sealed record VideoExportRequest(ProjectDocument Project, string ProjectD
 {
     public VideoCodec Codec { get; init; } = VideoCodec.Auto;
     public VideoEncodingMode EncodingMode { get; init; } = VideoEncodingMode.SOFTWARE;
+    public VideoDecodeMode DecodeMode { get; init; } = VideoDecodeMode.Auto;
     public int VideoBitrate { get; init; } = 8000000;
     public string Preset { get; init; } = "medium";
     public int Crf { get; init; } = 20;

@@ -12,7 +12,7 @@ namespace AegiNext.Desktop.Controllers;
 public sealed class VideoPreviewController : IAsyncDisposable
 {
     private readonly Func<string, CancellationToken, Task<VideoPreviewMedia>> probe;
-    private readonly Func<string, int, Func<MediaTime?>?, VideoPlaybackSession> sessionFactory;
+    private readonly Func<string, int, Func<MediaTime?>?, VideoDecoderOptions, VideoPlaybackSession> sessionFactory;
     private readonly Func<string, int, MediaTime, CancellationToken, Task<AudioPlaybackSession>>? audioFactory;
     private readonly Func<IVideoPreviewConverter> converterFactory;
     private readonly Func<Action, CancellationToken, Task> dispatch;
@@ -37,6 +37,8 @@ public sealed class VideoPreviewController : IAsyncDisposable
     private int disposed;
     private float volume = 1;
     private bool muted;
+    private VideoDecodeMode decodeMode;
+    private bool switchingDecodeMode;
 
     /// <summary>
     /// 使用真实探测、解码与 SDR 转换服务创建控制器；UI 调度须返回可等待的完成任务。
@@ -45,7 +47,7 @@ public sealed class VideoPreviewController : IAsyncDisposable
     public VideoPreviewController(Func<Action, CancellationToken, Task> dispatch, Action<VideoPreviewUpdate> present,
         Func<IVideoPreviewConverter>? converterFactory = null)
         : this(VideoPreviewProbe.ProbeAsync,
-            (path, index, clock) => new(token => VideoFrameNavigator.Open(path, index, token), externalPosition: clock),
+            (path, index, clock, options) => new(token => VideoFrameNavigator.Open(path, index, options, token), externalPosition: clock),
             converterFactory ?? (static () => new SdrVideoConverter()), dispatch, present, AudioPlaybackSession.OpenAsync)
     {
     }
@@ -60,7 +62,7 @@ public sealed class VideoPreviewController : IAsyncDisposable
         Func<IVideoPreviewConverter> converterFactory,
         Func<Action, CancellationToken, Task> dispatch,
         Action<VideoPreviewUpdate> present)
-        : this(probe, (path, index, _) => sessionFactory(path, index), converterFactory, dispatch, present, null)
+        : this(probe, (path, index, _, _) => sessionFactory(path, index), converterFactory, dispatch, present)
     {
         ArgumentNullException.ThrowIfNull(sessionFactory);
     }
@@ -75,6 +77,19 @@ public sealed class VideoPreviewController : IAsyncDisposable
         Func<Action, CancellationToken, Task> dispatch,
         Action<VideoPreviewUpdate> present,
         Func<string, int, MediaTime, CancellationToken, Task<AudioPlaybackSession>>? audioFactory)
+        : this(probe, (path, index, clock, _) => sessionFactory(path, index, clock), converterFactory, dispatch, present, audioFactory)
+    {
+        ArgumentNullException.ThrowIfNull(sessionFactory);
+    }
+
+    /// <summary>注入能接收解码选项的会话工厂，以同一工作流打开和切换实际解码后端。</summary>
+    public VideoPreviewController(
+        Func<string, CancellationToken, Task<VideoPreviewMedia>> probe,
+        Func<string, int, Func<MediaTime?>?, VideoDecoderOptions, VideoPlaybackSession> sessionFactory,
+        Func<IVideoPreviewConverter> converterFactory,
+        Func<Action, CancellationToken, Task> dispatch,
+        Action<VideoPreviewUpdate> present,
+        Func<string, int, MediaTime, CancellationToken, Task<AudioPlaybackSession>>? audioFactory = null)
     {
         ArgumentNullException.ThrowIfNull(probe);
         ArgumentNullException.ThrowIfNull(sessionFactory);
@@ -87,6 +102,37 @@ public sealed class VideoPreviewController : IAsyncDisposable
         this.converterFactory = converterFactory;
         this.dispatch = dispatch;
         this.present = present;
+    }
+
+    /// <summary>取得当前生效的解码类型；媒体尚未打开时用于下一次打开。</summary>
+    public VideoDecodeMode DecodeMode
+    {
+        get
+        {
+            lock (gate)
+            {
+                return decodeMode;
+            }
+        }
+    }
+
+    internal void ConfigureDecodeMode(VideoDecodeMode mode)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode));
+        }
+
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            if (requestedPath is not null || opening)
+            {
+                throw new InvalidOperationException("打开媒体后必须通过切换工作流更改解码类型。");
+            }
+
+            decodeMode = mode;
+        }
     }
 
     public VideoPreviewSnapshot Snapshot
@@ -143,6 +189,18 @@ public sealed class VideoPreviewController : IAsyncDisposable
     /// </summary>
     public async Task OpenAsync(string filePath, CancellationToken cancellationToken = default)
     {
+        VideoDecodeMode mode;
+        lock (gate)
+        {
+            mode = decodeMode;
+        }
+
+        await OpenCoreAsync(filePath, mode, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<VideoPreviewRun> OpenCoreAsync(string filePath, VideoDecodeMode mode,
+        MediaTime? initialPosition, CancellationToken cancellationToken, VideoPreviewOpenRequest? request = null)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         cancellationToken.ThrowIfCancellationRequested();
         var path = Path.GetFullPath(filePath);
@@ -151,7 +209,15 @@ public sealed class VideoPreviewController : IAsyncDisposable
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(closed, this);
+            if (request is not null)
+            {
+                ThrowIfObsoleteUnderLock(request.ExpectedEpoch);
+            }
             requestedEpoch = ++epoch;
+            if (request is not null)
+            {
+                request.AllocatedEpoch = requestedEpoch;
+            }
             revision++;
             pendingSeek = null;
             requestedPath = path;
@@ -210,7 +276,7 @@ public sealed class VideoPreviewController : IAsyncDisposable
             Func<MediaTime?>? audioClock = run.Audio is { } attachedAudio
                 ? () => run.AudioError is null && attachedAudio.Error is null ? attachedAudio.Position : null
                 : null;
-            var session = sessionFactory(path, media.VideoStreamIndex, audioClock);
+            var session = sessionFactory(path, media.VideoStreamIndex, audioClock, new() { Mode = mode });
             try
             {
                 run.Attach(session);
@@ -227,6 +293,11 @@ public sealed class VideoPreviewController : IAsyncDisposable
             }
 
             await session.OpenAsync(run.Token).ConfigureAwait(false);
+            var decodedStart = session.Snapshot.DisplayTime;
+            if (initialPosition is { } target)
+            {
+                await session.SeekAsync(target, run.Token).ConfigureAwait(false);
+            }
             if (run.Audio is { } openedAudio)
             {
                 await TryAudioAsync(run, () => openedAudio.SeekAsync(session.Snapshot.Position)).ConfigureAwait(false);
@@ -235,11 +306,12 @@ public sealed class VideoPreviewController : IAsyncDisposable
             {
                 ThrowIfObsoleteUnderLock(requestedEpoch);
                 opening = false;
-                run.Media = media with { Start = media.Start ?? session.Snapshot.DisplayTime };
+                run.Media = media with { Start = media.Start ?? decodedStart };
                 run.Pump = Task.Run(() => PumpAsync(run, session), CancellationToken.None);
             }
 
             await DispatchAsync(run, null, null, false, run.Token).ConfigureAwait(false);
+            return run;
         }
         catch (Exception error)
         {
@@ -298,6 +370,132 @@ public sealed class VideoPreviewController : IAsyncDisposable
 
                 CompleteOperationUnderLock();
             }
+        }
+    }
+
+    /// <summary>
+    /// 在当前媒体位置重建解码会话，确认转换后的首帧交付后恢复播放；失败时恢复原模式和播放状态。
+    /// 尚未打开媒体时仅更新下一次打开所用的模式。
+    /// </summary>
+    public async Task SwitchDecodeModeAsync(VideoDecodeMode mode, CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        VideoPreviewSnapshot previous;
+        VideoDecodeMode previousMode;
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            if (switchingDecodeMode)
+            {
+                throw new InvalidOperationException("视频解码类型正在切换。");
+            }
+            if (mode == decodeMode)
+            {
+                return;
+            }
+            if (opening)
+            {
+                throw new InvalidOperationException("请等待视频打开完成后再切换解码类型。");
+            }
+
+            previousMode = decodeMode;
+            previous = GetSnapshotUnderLock();
+            if (previous.FilePath is null)
+            {
+                decodeMode = mode;
+                return;
+            }
+
+            switchingDecodeMode = true;
+            BeginOperationUnderLock();
+        }
+
+        var request = new VideoPreviewOpenRequest(previous.Epoch);
+        try
+        {
+            var run = await OpenCoreAsync(previous.FilePath, mode, previous.Position, cancellationToken, request).ConfigureAwait(false);
+            await WaitForFirstPresentationAsync(run, cancellationToken).ConfigureAwait(false);
+            if (previous.State == VideoPlaybackState.PLAYING)
+            {
+                await ResumeRunAsync(run).ConfigureAwait(false);
+            }
+
+            lock (gate)
+            {
+                ThrowIfObsoleteUnderLock(run.Epoch);
+                decodeMode = mode;
+            }
+        }
+        catch (Exception switchError)
+        {
+            bool restore;
+            lock (gate)
+            {
+                restore = !closed && request.AllocatedEpoch is { } attemptedEpoch && epoch == attemptedEpoch;
+            }
+            if (restore)
+            {
+                var restoration = new VideoPreviewOpenRequest(request.AllocatedEpoch!.Value);
+                try
+                {
+                    var restored = await OpenCoreAsync(previous.FilePath, previousMode, previous.Position,
+                        CancellationToken.None, restoration).ConfigureAwait(false);
+                    await WaitForFirstPresentationAsync(restored, CancellationToken.None).ConfigureAwait(false);
+                    if (previous.State == VideoPlaybackState.PLAYING)
+                    {
+                        await ResumeRunAsync(restored).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception) when (IsOpenRequestObsolete(restoration))
+                {
+                }
+                catch (Exception restoreError)
+                {
+                    throw new AggregateException("切换视频解码类型失败，恢复原预览时也发生错误。", switchError, restoreError);
+                }
+            }
+
+            throw;
+        }
+        finally
+        {
+            lock (gate)
+            {
+                switchingDecodeMode = false;
+                CompleteOperationUnderLock();
+            }
+        }
+    }
+
+    private bool IsOpenRequestObsolete(VideoPreviewOpenRequest request)
+    {
+        lock (gate)
+        {
+            return closed || epoch != (request.AllocatedEpoch ?? request.ExpectedEpoch);
+        }
+    }
+
+    private static Task<bool> WaitForFirstPresentationAsync(VideoPreviewRun run, CancellationToken cancellationToken)
+    {
+        if (run.Session?.Snapshot.DisplayTime is null)
+        {
+            throw new InvalidDataException("视频没有可转换的首帧。");
+        }
+
+        return run.FirstPresentation.Task.WaitAsync(cancellationToken);
+    }
+
+    private Task ResumeRunAsync(VideoPreviewRun run)
+    {
+        lock (gate)
+        {
+            ThrowIfObsoleteUnderLock(run.Epoch);
+            return PlayAsync();
         }
     }
 
@@ -625,6 +823,7 @@ public sealed class VideoPreviewController : IAsyncDisposable
                 }
 
                 run.Error = error;
+                run.FirstPresentation.TrySetException(error);
             }
 
             try
@@ -690,6 +889,7 @@ public sealed class VideoPreviewController : IAsyncDisposable
                         run.PresentedFrameTime = snapshot.PresentedFrameTime;
                         run.PresentedAtPosition = snapshot.PresentedAtPosition;
                         run.PresentedGeneration = snapshot.PresentedGeneration;
+                        run.FirstPresentation.TrySetResult(true);
                     }
                     else if (clear && IsCurrentUnderLock(run))
                     {
@@ -781,7 +981,8 @@ public sealed class VideoPreviewController : IAsyncDisposable
             opening ? null : current?.Media?.Start, opening ? null : current?.Media?.Duration,
             opening ? null : current?.Error ?? playback?.Error, epoch,
             current?.PresentedFrameTime, current?.PresentedAtPosition, current?.PresentedGeneration,
-            current?.Audio is not null, current?.AudioError ?? current?.Audio?.Error, volume, muted);
+            current?.Audio is not null, current?.AudioError ?? current?.Audio?.Error, volume, muted,
+            current?.Session?.DecodeSessionInfo);
     }
 
     private void BeginOperationUnderLock()

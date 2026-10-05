@@ -47,9 +47,10 @@ ColorPipeline::ColorPipeline(AVColorSpace matrix, AVColorPrimaries primaries, AV
     const auto *coeff = av_csp_luma_coeffs_from_avcsp(matrix);
     if (!coeff || (matrix != AVCOL_SPC_BT709 && matrix != AVCOL_SPC_BT2020_NCL && matrix != AVCOL_SPC_BT470BG && matrix != AVCOL_SPC_SMPTE170M))
         throw std::invalid_argument("Explicit supported non-constant-luminance YUV matrix is required");
-    if (primaries != AVCOL_PRI_BT709 && primaries != AVCOL_PRI_BT2020)
-        throw std::invalid_argument("Export requires BT709 or BT2020 primaries");
-    if (transfer != AVCOL_TRC_BT709 && transfer != AVCOL_TRC_IEC61966_2_1 && transfer != AVCOL_TRC_SMPTE2084 && transfer != AVCOL_TRC_ARIB_STD_B67)
+    if (primaries != AVCOL_PRI_BT709 && primaries != AVCOL_PRI_BT2020 &&
+        primaries != AVCOL_PRI_BT470BG && primaries != AVCOL_PRI_SMPTE170M)
+        throw std::invalid_argument("Export requires supported BT601, BT709 or BT2020 primaries");
+    if (transfer != AVCOL_TRC_BT709 && transfer != AVCOL_TRC_SMPTE170M && transfer != AVCOL_TRC_IEC61966_2_1 && transfer != AVCOL_TRC_SMPTE2084 && transfer != AVCOL_TRC_ARIB_STD_B67)
         throw std::invalid_argument("Export requires explicit SDR, PQ or HLG transfer");
     if ((transfer == AVCOL_TRC_SMPTE2084 || transfer == AVCOL_TRC_ARIB_STD_B67) && primaries != AVCOL_PRI_BT2020)
         throw std::invalid_argument("HDR export requires BT2020 primaries");
