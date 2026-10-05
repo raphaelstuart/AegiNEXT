@@ -3,6 +3,7 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>AegiNext.Desktop</RootNamespace>
     <AssemblyName>aegi-next</AssemblyName>
+    <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -24,6 +25,7 @@
     <PackageReference Include="Dock.Avalonia.Themes.Fluent" />
   </ItemGroup>
   <ItemGroup>
+    <AvaloniaResource Include="Assets/AppIcon.ico" />
     <None Update="I18n/Languages/*.json">
       <TargetPath>i18n/%(Filename)%(Extension)</TargetPath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

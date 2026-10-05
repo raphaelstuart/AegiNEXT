@@ -4,6 +4,7 @@ Import-Module (Join-Path $PSScriptRoot '../build/AegiNext.Build.psm1')
 . (Join-Path $PSScriptRoot 'AegiNext.MacDependencies.ps1')
 . (Join-Path $PSScriptRoot 'AegiNext.WindowsDependencies.ps1')
 . (Join-Path $PSScriptRoot 'AegiNext.PublishMetadata.ps1')
+. (Join-Path $PSScriptRoot 'AegiNext.AppBundle.ps1')
 
 function Invoke-AegiNextPublishCommand
 {
@@ -185,11 +186,12 @@ function Invoke-AegiNextPublish
     [CmdletBinding()]
     param([Parameter(Mandatory)][string] $RepositoryRoot, [string] $RuntimeIdentifier,
         [ValidateSet('Debug', 'Release')][string] $Configuration = 'Release', [string] $FfmpegRoot, [string] $SdlRoot,
-        [string] $OutputDirectory, [string] $LicenseDirectory, [string[]] $RuntimeDependencyDirectory = @(), [string] $SigningIdentity = '-', [switch] $SkipBuild,
+        [string] $OutputDirectory, [string] $LicenseDirectory, [string[]] $RuntimeDependencyDirectory = @(), [string] $SigningIdentity = '-', [switch] $SkipBuild, [switch] $CreateDmg,
         [ValidateRange(1, 128)][int] $Jobs = 2)
     $hostInfo = Get-AegiNextHost
     $rid = Get-AegiNextRuntimeIdentifier -HostInfo $hostInfo -RuntimeIdentifier $RuntimeIdentifier
     if ($rid -notin @('osx-arm64', 'osx-x64', 'win-x64')) { throw "Unsupported publish RID $rid." }
+    if ($CreateDmg -and $hostInfo.Platform -ne 'MacOS') { throw 'CreateDmg is only supported on macOS.' }
     $report = Get-AegiNextEnvironment -RepositoryRoot $RepositoryRoot -HostInfo $hostInfo -Target Workbench -FfmpegRoot $FfmpegRoot -SdlRoot $SdlRoot
     if (!$report.Ready) { throw "Publish environment is not ready: $($report.Checks | Where-Object Status -in @('Missing','Invalid','Unsupported') | ConvertTo-Json -Compress)" }
     $compilerRuntime = if ($hostInfo.Platform -eq 'Windows') { Get-AegiNextWindowsCompilerRuntime $report.NativePrefixes['cxx'] } else { $null }
@@ -242,17 +244,7 @@ function Invoke-AegiNextPublish
         $licenseRoots += $closure.PackageRoots
         $requiredLicenseRoots += $closure.PackageRoots
         $contents = Split-Path $payload
-        $plist = @"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleDisplayName</key><string>AegiNext</string><key>CFBundleName</key><string>AegiNext</string>
-<key>CFBundleIdentifier</key><string>org.aeginext.desktop</string><key>CFBundleExecutable</key><string>aegi-next</string>
-<key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>$version</string>
-<key>CFBundleVersion</key><string>$version</string><key>LSMinimumSystemVersion</key><string>$($closure.MinimumOSVersion)</string>
-<key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>
-"@
-        Set-Content -LiteralPath (Join-Path $contents 'Info.plist') -Value $plist -Encoding utf8NoBOM
+        Set-AegiNextMacAppBundle -RepositoryRoot $RepositoryRoot -ContentsDirectory $contents -ProductVersion $version -MinimumOSVersion $closure.MinimumOSVersion
     }
     else
     {
@@ -281,6 +273,10 @@ function Invoke-AegiNextPublish
         $app = Split-Path (Split-Path $payload)
         $null = Invoke-AegiNextPublishCommand '/usr/bin/codesign' @('--force', '--deep', '--sign', $SigningIdentity, $app) $RepositoryRoot
         $null = Invoke-AegiNextPublishCommand '/usr/bin/codesign' @('--verify', '--deep', '--strict', '--verbose=2', $app) $RepositoryRoot
+        if ($CreateDmg)
+        {
+            $null = New-AegiNextMacDiskImage -AppDirectory $app -PublishDirectory $publishRoot -ProductVersion $version -RuntimeIdentifier $rid
+        }
     }
     $manifest.ToolVersions = @(Get-AegiNextPublishedToolVersion $payload $rid)
     foreach ($file in Get-ChildItem -LiteralPath $publishRoot -File -Recurse)

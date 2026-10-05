@@ -10,6 +10,7 @@ param(
     [string[]] $RuntimeDependencyDirectory = @(),
     [string] $SigningIdentity = '-',
     [switch] $SkipBuild,
+    [switch] $CreateDmg,
     [ValidateRange(1, 128)][int] $Jobs = 2
 )
 

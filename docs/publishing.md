@@ -38,6 +38,26 @@ The external package-manifest.json records version/RID/Git SHA/dirty/time, actua
 
 Windows RequiredRuntimePolicy follows [.NET 10 supported OS policy](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md), including lifecycle and Windows 11 ARM64 x64 emulation, checked 2026-10-04. Build-host version is not runtime acceptance or a native minimum. Release acceptance removes developer PATH and installed .NET/FFmpeg assumptions, then tests open/play/audio/subtitles/actual export/cancel separately per OS.
 
+## Application icon and DMG
+
+The application icon uses a redesigned leaning bat/cat mascot, a slate-blue rounded tile, a caption slate and a red timing indicator, with no text. The selected generated source, prompt and platform assets live in `src/AegiNext.Desktop/Assets/`. `AppIcon.Source.png` preserves the selected generation; `AppIcon.png` is the 1024×1024 master with a normalized transparent outer contour.
+
+Regenerate the platform assets on macOS using system AppKit, `sips` and `iconutil`:
+
+```powershell
+pwsh -NoProfile -File ./scripts/assets/export-app-icons.ps1 -SourcePng ./src/AegiNext.Desktop/Assets/AppIcon.Source.png
+```
+
+`AppIcon.ico` contains transparent 32-bit representations at 16, 20, 24, 32, 40, 48, 64, 128 and 256 pixels for the Windows executable, native window icon and taskbar. Shared custom title bars do not display an application icon. `AppIcon.icns` supplies standard and Retina representations from 16 to 1024 pixels. The publisher installs it in `Contents/Resources/` and writes `CFBundleIconFile` before signing the app for Finder and Dock.
+
+Add `-CreateDmg` to macOS publishing to create a compressed disk image containing the signed `AegiNext.app` and an `/Applications` shortcut:
+
+```powershell
+pwsh -NoProfile -File ./publish.ps1 -RuntimeIdentifier osx-arm64 -Configuration Release -CreateDmg -OutputDirectory ./artifacts/releases/mac-icon
+```
+
+`AegiNext-0.1.0-osx-arm64.dmg` is generated inside that publish directory, checked with `hdiutil verify` and included in the outer `package-manifest.json` hashes. Temporary staging is removed after success or failure. Windows rejects `-CreateDmg`. The default ad-hoc app signature and disk-image integrity check do not establish notarization; final Finder/Dock and Windows multi-DPI appearance require native visual acceptance.
+
 ## Language resources
 
 The desktop project copies UTF-8 JSON without a BOM from `src/AegiNext.Desktop/I18n/Languages/` to `AppContext.BaseDirectory/i18n/` for build, test and publish outputs. The package payload is `AegiNext.app/Contents/MacOS/i18n/` on macOS and `AegiNext/i18n/` on Windows. Include `en-US.json` and `zh-CN.json`; each root must contain nonempty `LanguageName`, the corresponding valid culture `LanguageID`, and a `Strings` object whose values are strings. Additional language filenames may differ from their IDs; all first-level JSON packs must have unique IDs. The application loads these files at startup and needs a restart after changes. See [workspace localization](composable-workspace.md#localization) for the API, XAML bindings and language matching rules.

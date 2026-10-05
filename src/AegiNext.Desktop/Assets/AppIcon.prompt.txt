@@ -1,0 +1,16 @@
+Generation mode: built-in image_gen; character identity reference supplied by the user.
+Selected design: new leaning pose, wing holding the caption slate, slate-blue tile.
+AppIcon.Source.png is the selected generated source. AppIcon.png is the normalized
+1024px platform master. Export uses native AppKit for a clean round-square alpha
+boundary, then sips for size representations and iconutil for ICNS encoding.
+
+Use case: logo-brand
+Asset type: one original desktop app icon for a professional subtitle authoring app (macOS and Windows).
+Input image: CHARACTER IDENTITY REFERENCE ONLY. Reinterpret and redraw the character from scratch in a CLEARLY NEW POSE; do NOT trace, paste, reuse the upright silhouette, or just put the source image on a tile.
+Primary design: a compact rounded charcoal-black bat/cat ghost, in three-quarter view, leaning playfully LEFT and FORWARD over a subtitle editing card. The head is softly tilted about 15 degrees, both pointed cat ears are shorter and asymmetrically foreshortened. Its two coral-red capsule eyes are shorter than the reference and follow the head tilt, with a focused, warm expression; no mouth or nose.
+NEW action pose: the near-side small bat wing curls forward around the right edge of the caption card as if holding it; the other wing fans outward and slightly upward to the LEFT like a working gesture. The rounded body is more squat and curved than the original. A compact upward curling tail sweeps behind the card on the RIGHT. The action must read as the character actively arranging captions, not standing behind a sticker.
+Subtitle cue: a gently tilted compact ivory caption slate across the lower third, held by the character; two thick dark charcoal horizontal bars of unequal length represent subtitle lines, and a coral-red vertical playhead intersects one short coral-red timeline strip underneath. Pure geometric marks only, no letters or CC glyphs.
+Finish: refined soft 3D/clay desktop icon with smooth matte surfaces, restrained bevels, clean stylized forms and controlled lighting. Sophisticated productivity software branding, friendly but tidy, no childish props.
+Background: ONE smooth rounded-square muted medium cool slate-blue tile (#8196B7 family), fully opaque interior, occupies 84 percent of a 1024x1024 square canvas with equal margins. Transparent exterior, clean antialiased silhouette, no exterior shadow. The slate-blue tile MUST contrast strongly with the transparent exterior so there are no stray white edge fragments. Leave at least 8 percent margins on every side, no element escapes the tile.
+Color identity: deep charcoal body, coral-red eyes and timing markers, ivory caption card, slate-blue tile.
+Constraints: one icon only, all key forms recognizable at 16-32px. NO text, words, numbers, logos, labels, watermark, sparkles, loose particles, snow, white speckles, chalky borders, outer shadow, scenery, device mockup, screenshots or icon grids. No glossy specular noise or thin details. Preserve the CHARACTER identity, intentionally CHANGE the pose, proportions, silhouette and interaction with the subtitle card.

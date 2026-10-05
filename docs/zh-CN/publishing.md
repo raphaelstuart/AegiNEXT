@@ -38,6 +38,26 @@ Windows 系统依赖识别包含实测 FFmpeg/Skia 导入的 [Ncrypt.dll](https:
 
 Windows 清单的 `OperatingSystemPolicy.RequiredRuntimePolicy` 按 [.NET 10 官方系统支持政策](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md) 记录目前受支持的 Windows 客户端版本、生命周期限制和 Windows 11 ARM64 的 x64 模拟支持。该政策于 2026-10-04 核对；构建机器说明不等于测试结果，完整 native 应用的最低 Windows 版本仍需对应实机验证。发行验收需在干净 PATH、未安装 .NET/FFmpeg 的目标机器验证媒体打开、播放、音频、字幕合成、实际 worker 压制与取消，并分别记录 Windows 与 macOS 的实机结果。
 
+## 应用图标与 DMG
+
+桌面图标采用经过重新设计姿态的黑色蝠翼角色、雾蓝圆角底板、字幕卡片及红色时间指示。图标不含文字。设计源、生成提示与平台资产位于 `src/AegiNext.Desktop/Assets/`；`AppIcon.Source.png` 是选定的生成源，`AppIcon.png` 是经过透明外缘规范化的 1024×1024 母版。
+
+在 macOS 上可使用系统 AppKit、`sips` 和 `iconutil` 重新导出，无需安装图像处理依赖：
+
+```powershell
+pwsh -NoProfile -File ./scripts/assets/export-app-icons.ps1 -SourcePng ./src/AegiNext.Desktop/Assets/AppIcon.Source.png
+```
+
+`AppIcon.ico` 包含 16、20、24、32、40、48、64、128、256px 的透明 32-bit 表示，用于 Windows 可执行文件、窗口系统图标及任务栏。共享自绘标题栏不显示应用图标。`AppIcon.icns` 覆盖 macOS 16–1024px 的标准及 Retina 表示。发布器在签名前将 ICNS 复制到 `Contents/Resources/` 并写入 `CFBundleIconFile`，供 Finder 和 Dock 使用。
+
+macOS 发布可添加 `-CreateDmg`，生成包含已签名 `AegiNext.app` 与 `/Applications` 快捷入口的压缩镜像：
+
+```powershell
+pwsh -NoProfile -File ./publish.ps1 -RuntimeIdentifier osx-arm64 -Configuration Release -CreateDmg -OutputDirectory ./artifacts/releases/mac-icon
+```
+
+`AegiNext-0.1.0-osx-arm64.dmg` 位于该发布目录内，经过 `hdiutil verify` 并纳入外层 `package-manifest.json` 哈希清单。临时镜像目录在成功或失败后清理；Windows 不接受 `-CreateDmg`。App 的默认 ad-hoc 签名和镜像完整性检查仍不表示已完成公证。Finder/Dock 及 Windows 不同 DPI 下的最终图标观感需要原生视觉验收。
+
 ## 语言资源
 
 桌面项目将 `src/AegiNext.Desktop/I18n/Languages/` 中无 BOM 的 UTF-8 JSON 自动复制至构建、测试和发布输出的 `AppContext.BaseDirectory/i18n/`。macOS 包内位置为 `AegiNext.app/Contents/MacOS/i18n/`，Windows 为 `AegiNext/i18n/`。必须包含 `en-US.json` 和 `zh-CN.json`，每个根对象提供非空 `LanguageName`、对应有效文化标识 `LanguageID` 及字符串值字典 `Strings`。额外语言包的文件名可以不同于 ID，但目录第一层所有 JSON 的 ID 必须唯一。应用启动时读取，修改或新增后重启生效。统一接口、XAML 注入和语言匹配规则见[工作区本地化说明](composable-workspace.md#本地化)。

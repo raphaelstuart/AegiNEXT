@@ -8,5 +8,8 @@
     <DockFluentTheme DensityStyle="Normal" />
     <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
     <StyleInclude Source="avares://aegi-next/Styling/WorkbenchTheme.axaml" />
+    <Style Selector=":is(Window)">
+      <Setter Property="Icon" Value="avares://aegi-next/Assets/AppIcon.ico" />
+    </Style>
   </Application.Styles>
 </Application>
