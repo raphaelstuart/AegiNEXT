@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
+             xmlns:materialIcons="using:Material.Icons.Avalonia"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
              xmlns:vm="using:AegiNext.Desktop.Panels.Timeline" x:DataType="vm:TimelinePanelViewModel"
              x:Class="AegiNext.Desktop.Panels.Timeline.TimelinePanelView" Classes="business-surface">
@@ -11,17 +12,17 @@
           <controlsCommon:ToolbarToggleButton Name="TimelineSnapButton" ToolTip.Tip="{Loc Key=Workbench.TimelineSnapHint}"
                         AutomationProperties.Name="{Loc Key=Workbench.TimelineSnap}"
                         IsChecked="{Binding IsSnapEnabled, Mode=TwoWay}">
-            <PathIcon Name="TimelineSnapIcon" Width="18" Height="18" />
+            <materialIcons:MaterialIcon Name="TimelineSnapIcon" Width="18" Height="18" />
           </controlsCommon:ToolbarToggleButton>
           <controlsCommon:ToolbarToggleButton Name="TimelineSpectrumButton" ToolTip.Tip="{Loc Key=Workbench.TimelineSpectrum}"
                         AutomationProperties.Name="{Loc Key=Workbench.TimelineSpectrum}"
                         IsChecked="{Binding IsSpectrumVisible, Mode=TwoWay}">
-            <PathIcon Name="TimelineSpectrumIcon" Width="18" Height="18" />
+            <materialIcons:MaterialIcon Name="TimelineSpectrumIcon" Width="18" Height="18" />
           </controlsCommon:ToolbarToggleButton>
           <controlsCommon:ToolbarToggleButton Name="TimelineWaveformButton" ToolTip.Tip="{Loc Key=Workbench.TimelineWaveform}"
                         AutomationProperties.Name="{Loc Key=Workbench.TimelineWaveform}"
                         IsChecked="{Binding IsWaveformVisible, Mode=TwoWay}">
-            <PathIcon Name="TimelineWaveformIcon" Width="18" Height="18" />
+            <materialIcons:MaterialIcon Name="TimelineWaveformIcon" Width="18" Height="18" />
           </controlsCommon:ToolbarToggleButton>
           <controlsCommon:ToolbarToggleButton Name="TimelineStepButton" ToolTip.Tip="{Loc Key=Workbench.TimelineStepHint}"
                         AutomationProperties.Name="{Loc Key=Workbench.TimelineStep}"

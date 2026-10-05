@@ -4,6 +4,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
+using Material.Icons.Avalonia;
 
 namespace AegiNext.Desktop.Controls.Common;
 
@@ -12,7 +13,7 @@ public sealed class IconText : UserControl
 {
     public static readonly StyledProperty<string> TextProperty = AvaloniaProperty.Register<IconText, string>(nameof(Text), string.Empty);
     public static readonly StyledProperty<string> IconKeyProperty = AvaloniaProperty.Register<IconText, string>(nameof(IconKey), "Settings");
-    private readonly PathIcon icon = WorkbenchIcon.Create("Settings");
+    private readonly MaterialIcon icon = WorkbenchIcon.Create("Settings");
 
     /// <summary>沿用共享字体、行高和图标布局，不改变宿主的 DataContext。</summary>
     public IconText()
@@ -51,7 +52,7 @@ public sealed class IconText : UserControl
         base.OnPropertyChanged(change);
         if (change.Property == IconKeyProperty)
         {
-            icon.Data = WorkbenchIcon.Create(IconKey).Data;
+            icon.Kind = WorkbenchIcon.ResolveKind(IconKey);
         }
     }
 }

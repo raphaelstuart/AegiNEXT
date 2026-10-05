@@ -1,4 +1,5 @@
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Styling;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -40,7 +41,7 @@ public sealed class FontFamilyPicker : AutoCompleteBox
             Focusable = false, Background = Brushes.Transparent, BorderThickness = new(0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
-            Content = new PathIcon { Width = 12, Height = 12, Data = Geometry.Parse("M2 4L6 8L10 4L11 5L6 10L1 5Z") }
+            Content = WorkbenchIcon.Create("Down", 12)
         };
         toggle.Bind(AutomationProperties.NameProperty, Localization.Observe("Workbench.Font").ToBinding());
         toggle.Click += (_, _) =>

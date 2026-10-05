@@ -1,4 +1,5 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="using:Material.Icons.Avalonia"
              xmlns:editing="using:AegiNext.Desktop.Editing" xmlns:controls="using:AegiNext.Desktop.Controls"
              x:Class="AegiNext.Desktop.Controls.ColorDraftInput" x:DataType="controls:ColorDraftInput">
     <UserControl.Styles>
@@ -31,7 +32,7 @@
                 <Button Name="PickerButton" Grid.Column="3" Width="32" Height="32" MinWidth="32" MinHeight="32"
                         ToolTip.Tip="{Loc Key=Settings.OpenColorPicker}" AutomationProperties.Name="{Loc Key=Settings.OpenColorPicker}"
                         Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent">
-                    <PathIcon Width="16" Height="16" Data="M 12,1 L 15,4 L 12,7 L 11,6 L 5,12 L 2,13 L 3,10 L 9,4 L 8,3 Z M 4,10 L 5,11 L 10,6 L 9,5 Z" />
+                    <materialIcons:MaterialIcon Width="16" Height="16" Kind="Eyedropper" />
                     <Button.Flyout>
                         <Flyout Placement="BottomEdgeAlignedRight">
                             <ColorView Name="Picker" IsColorPaletteVisible="False" IsColorComponentsVisible="False"

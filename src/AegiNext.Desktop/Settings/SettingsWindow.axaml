@@ -10,6 +10,7 @@
         xmlns:effectPages="using:AegiNext.Desktop.Settings.Effects"
         xmlns:colorPages="using:AegiNext.Desktop.Settings.Colors"
         xmlns:mediaPages="using:AegiNext.Desktop.Settings.Media"
+        xmlns:materialIcons="using:Material.Icons.Avalonia"
         x:Class="AegiNext.Desktop.Settings.SettingsWindow" x:DataType="settings:SettingsWindowViewModel"
         Classes="business-surface" Title="{Binding Title}"
         Width="980" Height="720" MinWidth="860" MinHeight="580"
@@ -72,39 +73,37 @@
           <ListBox Name="Navigation" Background="Transparent" SelectedIndex="{Binding PageIndex, Mode=TwoWay}">
             <ListBoxItem>
               <StackPanel Orientation="Horizontal" Spacing="12">
-                <PathIcon Width="18" Height="18"
-                          Data="M12,2 A10,10 0 1 0 12,22 A10,10 0 0 0 12,2 M12,5 L12,19 A7,7 0 0 1 12,5 Z" />
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="ThemeLightDark" />
                 <TextBlock Text="{Loc Key=Settings.Appearance}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
             <ListBoxItem>
               <StackPanel Orientation="Horizontal" Spacing="12">
-                <PathIcon Width="18" Height="18"
-                          Data="M2,5 L22,5 L22,19 L2,19 Z M4,7 L4,17 L20,17 L20,7 Z M6,9 L8,9 L8,11 L6,11 Z M10,9 L12,9 L12,11 L10,11 Z M14,9 L16,9 L16,11 L14,11 Z M6,13 L18,13 L18,15 L6,15 Z" />
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Keyboard" />
                 <TextBlock Text="{Loc Key=Settings.Shortcuts}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
             <ListBoxItem>
               <StackPanel Orientation="Horizontal" Spacing="12">
-                <PathIcon Width="18" Height="18" Data="M3,3 L21,3 L21,7 L14,7 L14,21 L10,21 L10,7 L3,7 Z" />
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatText" />
                 <TextBlock Text="{Loc Key=Settings.Styles}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
             <ListBoxItem>
               <StackPanel Orientation="Horizontal" Spacing="12">
-                <PathIcon Width="18" Height="18" Data="M12,2 L14,9 L22,12 L14,15 L12,22 L9,15 L2,12 L9,9 Z" />
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Creation" />
                 <TextBlock Text="{Loc Key=Settings.Effects}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
             <ListBoxItem>
               <StackPanel Orientation="Horizontal" Spacing="12">
-                <PathIcon Width="18" Height="18" Data="M12,2 C6,2 2,6 2,12 C2,18 7,22 12,22 C15,22 16,20 15,18 C14,16 16,15 18,15 C21,15 22,13 22,10 C22,6 17,2 12,2 Z M7,7 A2,2 0 1 0 7,11 A2,2 0 1 0 7,7 Z M13,5 A2,2 0 1 0 13,9 A2,2 0 1 0 13,5 Z M17,9 A2,2 0 1 0 17,13 A2,2 0 1 0 17,9 Z" />
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Palette" />
                 <TextBlock Text="{Loc Key=Settings.Colors}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
             <ListBoxItem>
               <StackPanel Orientation="Horizontal" Spacing="12">
-                <PathIcon Width="18" Height="18" Data="M2,4 L22,4 L22,20 L2,20 Z M4,6 L4,18 L20,18 L20,6 Z M9,8 L16,12 L9,16 Z" />
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="PlayBoxOutline" />
                 <TextBlock Text="{Loc Key=Settings.Media}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>

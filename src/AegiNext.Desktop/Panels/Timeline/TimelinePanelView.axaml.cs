@@ -11,6 +11,7 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using AegiNext.Desktop.Styling;
+using Material.Icons.Avalonia;
 
 namespace AegiNext.Desktop.Panels.Timeline;
 
@@ -43,9 +44,9 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         stepButton = this.FindControl<ToolbarToggleButton>("TimelineStepButton")!;
         spectrumButton = this.FindControl<ToolbarToggleButton>("TimelineSpectrumButton")!;
         waveformButton = this.FindControl<ToolbarToggleButton>("TimelineWaveformButton")!;
-        this.FindControl<PathIcon>("TimelineSnapIcon")!.Data = WorkbenchIcon.Create("Magnet").Data;
-        this.FindControl<PathIcon>("TimelineSpectrumIcon")!.Data = WorkbenchIcon.Create("Spectrum").Data;
-        this.FindControl<PathIcon>("TimelineWaveformIcon")!.Data = WorkbenchIcon.Create("Waveform").Data;
+        this.FindControl<MaterialIcon>("TimelineSnapIcon")!.Kind = WorkbenchIcon.ResolveKind("Magnet");
+        this.FindControl<MaterialIcon>("TimelineSpectrumIcon")!.Kind = WorkbenchIcon.ResolveKind("Spectrum");
+        this.FindControl<MaterialIcon>("TimelineWaveformIcon")!.Kind = WorkbenchIcon.ResolveKind("Waveform");
         TrackMenu = new();
         TrackMenu.Items.Add(CreateMenuItem("AddSubtitleTrackMenuItem", "AddTrack", viewModel.AddTrackCommand));
         TrackMenu.Items.Add(CreateMenuItem("RenameSubtitleTrackMenuItem", "RenameTrack", viewModel.RenameTrackCommand));

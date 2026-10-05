@@ -1,10 +1,12 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="using:Material.Icons.Avalonia"
              x:Class="AegiNext.Desktop.App"
              Name="AegiNext"
              RequestedThemeVariant="Default">
   <Application.Styles>
     <FluentTheme />
+    <materialIcons:MaterialIconStyles />
     <DockFluentTheme DensityStyle="Normal" />
     <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
     <StyleInclude Source="avares://aegi-next/Styling/WorkbenchTheme.axaml" />
