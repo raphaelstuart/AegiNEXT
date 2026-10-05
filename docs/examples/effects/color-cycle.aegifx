@@ -1,0 +1,22 @@
+effect "color-cycle" version 1
+short-clip compress
+
+# rgba 是直通线性值；HEX 输入属于界面的 sRGB 表示。
+segment enter fixed 400ms
+    at 0 fill base ease-out
+    at 1 fill rgba(1, 0.08, 0.02, 1) linear
+    at 0 stroke base ease-out
+    at 1 stroke rgba(0.02, 0.02, 0.08, 1) linear
+end
+segment stay flex 1
+    at 0 fill rgba(1, 0.08, 0.02, 1) hold
+    at 1 fill rgba(1, 0.08, 0.02, 1) hold
+    at 0 stroke rgba(0.02, 0.02, 0.08, 1) hold
+    at 1 stroke rgba(0.02, 0.02, 0.08, 1) hold
+end
+segment exit fixed 400ms
+    at 0 fill rgba(1, 0.08, 0.02, 1) ease-in
+    at 1 fill base linear
+    at 0 stroke rgba(0.02, 0.02, 0.08, 1) ease-in
+    at 1 stroke base linear
+end

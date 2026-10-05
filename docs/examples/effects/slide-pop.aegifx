@@ -1,0 +1,30 @@
+# 自定义组合样板：固定滑入/弹入，自由保持，固定滑出/淡出。
+# 可将 short-clip 改成 reject，明确拒绝不足 600ms 的 Clip。
+effect "slide-pop" version 1
+short-clip compress
+
+segment enter fixed 300ms
+    at 0 position offset(-250, 0) ease-out
+    at 0 scale factor(0.2, 0.2) ease-out
+    at 0 opacity 0 ease-out
+    at 0.7 scale factor(1.08, 1.08) ease-in-out
+    at 1 position base
+    at 1 scale base
+    at 1 opacity base
+end
+
+segment stay flex 1
+    at 0 position base hold
+    at 0 scale base hold
+    at 0 opacity base hold
+    at 1 position base
+    at 1 scale base
+    at 1 opacity base
+end
+
+segment exit fixed 300ms
+    at 0 position base ease-in
+    at 0 opacity base ease-in
+    at 1 position offset(250, 0)
+    at 1 opacity 0
+end

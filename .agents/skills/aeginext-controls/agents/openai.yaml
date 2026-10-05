@@ -1,0 +1,4 @@
+interface:
+  display_name: "AegiNext Controls"
+  short_description: "Develop reusable Avalonia controls within AegiNext boundaries."
+  default_prompt: "Use $aeginext-controls to implement a reusable control and integrate it with an AegiNext panel."

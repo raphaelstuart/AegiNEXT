@@ -1,0 +1,51 @@
+---
+name: aeginext-controls
+description: Develop, refactor, integrate, or review AegiNext Avalonia reusable controls and their use in panels/settings, including draft inputs, timeline/canvas gestures, bindings, keyboard routing, typography, and disposal. Use for project control architecture and behavior; keep Dock space management and subtitle business workflows in their owning layers.
+---
+
+# AegiNext control development and use
+
+Read the actual consuming panel and the closest existing control before designing an interface. Locate the checkout via `git rev-parse --show-toplevel`, or resolve this skill's `.agents/skills/aeginext-controls/` location three directories below it. Read `docs/composable-workspace.md`, `docs/layouts.md`, and `references/integration-checks.md` as needed; Chinese counterparts are under `docs/zh-CN/`.
+
+## Choose the owner before editing
+
+| Owner | Responsibility |
+|---|---|
+| `Controls/Common/` | General visual/input primitives |
+| `Controls/Media/` | Frame presentation and bitmap lifetime |
+| `Controls/Editing/` | Draft input, drawing, hit tests, local pointer/keyboard gestures |
+| `Panels/<feature>/` | Compose controls, local adapters, compiled state/commands |
+| `Settings/<page>/` | Settings drafts, validation, page commands |
+| `Workspace/` | Shared session/selection, edit coordination, workflows, transaction boundaries |
+| `Layouts/` | Dock hosts, tabs, splits, floating windows, layout persistence |
+
+Controls must not access Dock, MainWindow, WorkbenchSession, ProjectEditor, personal libraries, or global services. A drawing control may consume immutable pure model data, but must not own the authoritative project. Business ViewModels must not hold controls, platform events, Dock objects, or bitmaps. Keep C# types top-level, one per file; preserve established namespaces without an unrelated mass rename.
+
+## Design a semantic contract
+
+- Prefer `StyledProperty`/`DirectProperty`, commands, and typed events carrying stable entity IDs, `MediaTime`, complete vectors/colors, or final gesture values. Declare ownership, two-way behavior, and the difference between user edits and synchronization.
+- Use `NumericDraftInput`, `VectorDraftInput`, `ColorDraftInput`, and `SubtitlePositionEditor` before inventing another field implementation. Preserve raw invalid text; parsed `NumericUpDown.Value` alone is insufficient. `ColorDraft` is a pure draft model; it retains untouched linear/HDR values while its input projects sRGB HEX or byte RGBA.
+- Validate/commit in the consuming ViewModel or Workspace transaction, not while setting a control property. Initialization, language/theme refresh, focus changes, and rendering synchronization must not write valid-looking old values back into the project.
+- Keep stable field identities for error location and Esc restore. For programmatically composed vector fields, use the control's held component references or local descendants; names do not automatically register in a parent's XAML namescope. A View may find its own local controls, never another panel's controls.
+- For typed child views, isolate their local `DataContext` before loading XAML where inheritance could expose the host ViewModel. `x:DataType` compiles accessors but does not enforce the runtime context; final-state type assertions alone miss initialization binding exceptions.
+
+## Preserve input and lifetime behavior
+
+- Invalid input remains editable with a field error. Esc restores only that field. Automatic lost-focus validation must not activate a panel or repeatedly force focus; cancel stale queued commits using a revision plus current model/root identity and visual attachment checks.
+- Moving/hiding/reparenting a panel cancels pointer gestures, not drafts. Do not commit a business edit solely because a Dock container detached. Views implement their local gesture cancellation/disposal contract; the session owns the unique editor and media controller.
+- Freeze target IDs, source snapshot, time, and component set at gesture start. Use one geometry/projection for drawing, hover, hit tests, and dragging. Release creates one semantic edit and one Undo; capture loss, selection replacement, Undo, and closing cancel uncommitted gestures.
+- Global shortcuts consume both KeyDown and the matching KeyUp so focused buttons/checkboxes cannot also click on Space. Preserve local text, popup/menu, modal, and shortcut-recording input. Do not bypass the shared router by adding a second global handler to a control.
+- Presenters own/dispose bitmaps and reject late preview results using request identity. A quality or viewport change is personal presentation state, not a project edit. Do not perform expensive scene composition in the UI drawing callback.
+- Hook local/long-lived model events deliberately and remove subscriptions on final disposal. Do not dispose fixed panel instances on a temporary visual detach; test reattachment and final release separately.
+
+## Match the shared visual system
+
+Use dynamic theme resources, shared business typography, and existing compact icon/transport themes. A square icon button must reserve its actual size; slider rows must reserve thumb height. Keep DSL/log multiline layout distinct from ordinary centered inputs. Do not adjust CJK and Latin glyphs separately or alter a subtitle's saved render font to fix application UI typography.
+
+Read existing Dock and window themes before touching chrome. Space/title buttons remain compact and use visible vector icons; business padding belongs to business surfaces. New controls must work in light/dark themes, narrow docks, floating windows, and translated labels. Inspect actual measured geometry rather than relying on screenshot-like hardcoded offsets.
+
+## Verify and report
+
+Run the affected build, Rider analysis when available, and scoped behavior tests serially. Use real Headless pointer/key/text input for routing/focus/gesture bugs; inspect raw drafts and the committed project, not only commands. Close all test windows. Keep real native drawing, touchpad, multi-DPI, and complex visual acceptance distinct from Headless results.
+
+Deliver the owning paths, public/semantic contract, consumer wiring, tests actually run, and any pending visual acceptance. Preserve unrelated staged changes and follow the user's commit scope; a control task does not imply a commit or dependency upgrade.
