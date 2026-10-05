@@ -1,3 +1,4 @@
+using AegiNext.Desktop.Styling;
 using System.Globalization;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
@@ -152,10 +153,9 @@ public sealed class SubtitlePositionDiagram : Control
         context.DrawLine(pen, point - new Vector(0, 2), point + new Vector(0, 2));
     }
 
-    private static void DrawText(DrawingContext context, string text, Point point, IBrush? brush)
+    private void DrawText(DrawingContext context, string text, Point point, IBrush? brush)
     {
-        var formatted = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface(FontFamily.Default), 10, brush);
-        context.DrawText(formatted, point);
+        using var layout = WorkbenchTextFormatting.CreateLayout(this, text, 10, brush, LEGEND_HEIGHT);
+        layout.Draw(context, point);
     }
 }

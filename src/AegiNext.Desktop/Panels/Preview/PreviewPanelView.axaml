@@ -7,18 +7,19 @@
           <Grid Name="VideoSurface" Background="#080A0E" MinHeight="250" ToolTip.Tip="{Binding FileTitle}">
             <controls:EffectCanvasControl Name="EffectCanvas" />
             <StackPanel Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" IsVisible="{Binding !HasFrame, Mode=OneWay}">
-              <TextBlock Text="▷" FontSize="42" Foreground="#7C8AA6" HorizontalAlignment="Center" />
+              <TextBlock Classes="ui-icon" Text="▷" FontSize="42" Foreground="#7C8AA6" HorizontalAlignment="Center" />
               <TextBlock Name="EmptyLabel" Foreground="#A5ADBD" FontSize="13" Text="{Binding EmptyLabel, Mode=OneWay}" />
             </StackPanel>
             <ProgressBar Name="OpeningProgress" IsIndeterminate="True" Height="3" VerticalAlignment="Top" IsVisible="{Binding IsOpening, Mode=OneWay}" />
-            <Border Name="ModeBadge" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" Padding="7,3" CornerRadius="5"
-                    Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" IsHitTestVisible="False">
-              <TextBlock Name="ModeLabel" Classes="field" Text="SDR" FontSize="11" />
-            </Border>
-            <ComboBox Name="QualityCombo" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8,8,58,8"
-                      MinHeight="28" Height="28" Padding="6,2" FontSize="11" MaxWidth="160"
-                      ItemsSource="{Binding QualityChoices}" SelectedItem="{Binding SelectedQuality, Mode=TwoWay}"
+            <Grid Name="PreviewOptions" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" ColumnDefinitions="Auto,Auto" ColumnSpacing="6">
+            <ComboBox Name="QualityCombo" Height="{StaticResource WorkbenchControlHeight}" Padding="6,2" FontSize="11" MaxWidth="160"
+                      VerticalContentAlignment="Center" ItemsSource="{Binding QualityChoices}" SelectedItem="{Binding SelectedQuality, Mode=TwoWay}"
                       ToolTip.Tip="{Binding QualityLabel}" AutomationProperties.Name="{Binding QualityLabel}" />
+            <Border Name="ModeBadge" Grid.Column="1" Height="{StaticResource WorkbenchControlHeight}" Padding="7,0" CornerRadius="5"
+                    Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" IsHitTestVisible="False">
+              <TextBlock Name="ModeLabel" Classes="field" Text="SDR" FontSize="11" VerticalAlignment="Center" />
+            </Border>
+            </Grid>
           </Grid>
           <Grid Grid.Row="1" Margin="12,6" RowDefinitions="Auto,Auto" RowSpacing="2">
             <Grid.Resources>

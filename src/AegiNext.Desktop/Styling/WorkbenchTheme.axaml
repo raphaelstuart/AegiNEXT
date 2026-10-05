@@ -7,6 +7,7 @@
     <sys:Double x:Key="WorkbenchControlHeight">32</sys:Double>
     <sys:Double x:Key="WorkbenchBodyFontSize">13</sys:Double>
     <sys:Double x:Key="WorkbenchInputLineHeight">20</sys:Double>
+    <sys:Double x:Key="WorkbenchHeadingLineHeight">28</sys:Double>
     <FontFamily x:Key="WorkbenchBodyFontFamily">PingFang SC, Microsoft YaHei, Noto Sans CJK SC</FontFamily>
     <sys:Double x:Key="WorkbenchTabFontSize">13</sys:Double>
     <sys:Double x:Key="WorkbenchGapSmall">8</sys:Double>
@@ -77,6 +78,20 @@
   </Style>
   <Style Selector=".business-surface TextBox.multiline-input">
     <Setter Property="VerticalContentAlignment" Value="Top"/>
+  </Style>
+  <Style Selector=".business-surface TextBlock:not(.code-input):not(.multiline-input):not(.heading):not(.ui-icon)">
+    <Setter Property="FontFamily" Value="{StaticResource WorkbenchBodyFontFamily}"/>
+    <Setter Property="LineHeight" Value="{StaticResource WorkbenchInputLineHeight}"/>
+  </Style>
+  <Style Selector=".business-surface TextBlock.heading">
+    <Setter Property="FontFamily" Value="{StaticResource WorkbenchBodyFontFamily}"/>
+    <Setter Property="LineHeight" Value="{StaticResource WorkbenchHeadingLineHeight}"/>
+  </Style>
+  <Style Selector=".business-surface ComboBox">
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+  </Style>
+  <Style Selector=".business-surface ToggleButton, .business-surface CheckBox">
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
   </Style>
   <Style Selector="Button:not(.dock-chrome)"><Setter Property="CornerRadius" Value="6"/><Setter Property="Padding" Value="{StaticResource WorkbenchButtonPadding}"/><Setter Property="MinHeight" Value="{StaticResource WorkbenchControlHeight}"/><Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
   <Style Selector="Button.icon-button, ToggleButton.icon-button">

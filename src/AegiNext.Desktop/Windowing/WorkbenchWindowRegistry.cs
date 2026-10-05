@@ -50,6 +50,11 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             return;
         }
 
+        if (!window.Classes.Contains("business-surface"))
+        {
+            window.Classes.Add("business-surface");
+        }
+
         if (titleBar is null)
         {
             titleBar = new();

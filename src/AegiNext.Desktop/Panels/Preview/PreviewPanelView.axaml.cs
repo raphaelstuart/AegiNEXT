@@ -35,7 +35,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         canvas.RenderingFailed += (_, e) => viewModel.ReportRenderingError(e.Error);
         canvas.RenderingRecovered += (_, _) => viewModel.ReportRenderingRecovery();
         viewModel.PropertyChanged += OnSceneChanged;
-        session.SceneGestureCancellationRequested += OnGesturesCancelled;
+        session.SceneGestureCancellationRequested += OnSceneGestureCancelled;
         ApplyScene();
         positionSlider = this.FindControl<Slider>("PositionSlider")!;
         positionSlider.AddHandler(PointerPressedEvent, (_, e) =>
@@ -54,7 +54,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         positionSlider.PointerCaptureLost += (_, _) => viewModel.IsScrubbing = false;
         positionSlider.ValueChanged += async (_, e) =>
         {
-            if (!viewModel.IsScrubbing && positionSlider.IsEnabled && Math.Abs(e.NewValue - viewModel.Position) > 0.000001)
+            if (positionSlider.IsEnabled && (viewModel.IsScrubbing || Math.Abs(e.NewValue - viewModel.Position) > 0.000001))
             {
                 await viewModel.SeekAsync(MediaTime.FromTimeSpan(TimeSpan.FromSeconds(e.NewValue)));
             }
@@ -111,6 +111,11 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         canvas.SetScene(scene.Document, scene.SelectedLayer, scene.Position, scene.AssetDirectory, scene.IsEditingPose);
     }
     private void OnPreferencesChanged(object? sender, EventArgs e) => ControlLocalization.Apply(this);
+    private void OnSceneGestureCancelled(object? sender, EventArgs e)
+    {
+        canvas.CancelGesture();
+        viewModel.CancelCanvasGesture();
+    }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     public void Dispose()
     {
@@ -121,7 +126,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
             session.PreferencesChanged -= OnPreferencesChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
             viewModel.PropertyChanged -= OnSceneChanged;
-            session.SceneGestureCancellationRequested -= OnGesturesCancelled;
+            session.SceneGestureCancellationRequested -= OnSceneGestureCancelled;
             canvas.Dispose();
         }
     }

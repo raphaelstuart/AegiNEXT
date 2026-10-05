@@ -9,5 +9,6 @@ internal sealed record TimelineRow(Guid Id, Guid? TrackId, string Name, IReadOnl
 {
     internal double CurveHeight => Animations.Sum(row => row.Height);
     internal Rect? StyleBadgeRectangle(double rowY, double headerWidth) => StylePresetName is null
-        ? null : new Rect(46 + Depth * 8, rowY + 23, Math.Max(0, headerWidth - 54 - Depth * 8), 18);
+        ? null : new Rect(26 + Depth * 8, rowY + 23, Math.Max(0, headerWidth - 34 - Depth * 8), 18);
+    internal Rect ExpanderRectangle(double rowY) => new(4 + Depth * 8, rowY + 4, 20, 20);
 }

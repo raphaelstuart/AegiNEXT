@@ -13,6 +13,7 @@ using AegiNext.Core.Timing;
 using AegiNext.Desktop.Localization;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Styling;
 using AegiNext.Media.Analysis;
 
 namespace AegiNext.Desktop.Controls;
@@ -40,7 +41,6 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     private readonly HashSet<Guid> selectedIds = [];
     private readonly HashSet<Guid> collapsedTracks = [];
     private readonly HashSet<Guid> collapsedGroups = [];
-    private readonly HashSet<Guid> collapsedAnimations = [];
     private IReadOnlyList<MediaTime> snapBoundaries = [];
     private MediaTime? snapTarget;
     private AnimationValue originalAnimationValue;
@@ -392,15 +392,12 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 context.DrawRectangle(row.TrackId == selectedTrack && selectedTrack.HasValue
                         ? drawingPalette.SelectedTrack : drawingPalette.Track, null,
                     new(0, y, HeaderWidth, row.Height));
-                DrawText(context, row.IsCollapsed ? "▸" : "▾", new(6 + row.Depth * 8, y + 5), foreground, 12);
-                if (row.Clips.Any(clip => clip.Tracks.Any(track => !track.Keyframes.IsEmpty)))
-                {
-                    DrawText(context, row.CurveHeight > 0 ? "◆" : "◇", new(28 + row.Depth * 8, y + 5), foreground, 12);
-                }
+                DrawExpander(context, row.ExpanderRectangle(y), row.IsCollapsed);
 
-                using (context.PushClip(new Rect(46 + row.Depth * 8, y, Math.Max(0, HeaderWidth - 48 - row.Depth * 8), row.Height)))
+                using (context.PushClip(new Rect(26 + row.Depth * 8, y, Math.Max(0, HeaderWidth - 28 - row.Depth * 8), row.Height)))
                 {
-                    DrawText(context, row.Name, new(46 + row.Depth * 8, y + 5), foreground, 11);
+                    DrawCenteredText(context, row.Name, new(26 + row.Depth * 8, y + 4,
+                        Math.Max(0, HeaderWidth - 28 - row.Depth * 8), 20), foreground, 11);
                 }
                 if (row.StyleBadgeRectangle(y, HeaderWidth) is { } badge)
                 {
@@ -409,7 +406,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                         context.DrawRectangle(drawingPalette.StyleBadge, null, badge, 3, 3);
                         using (context.PushClip(badge.Deflate(new Thickness(4, 0))))
                         {
-                            DrawText(context, row.StylePresetName!, new(badge.X + 4, badge.Y + 2), foreground, 10);
+                            DrawCenteredText(context, row.StylePresetName!, badge.Deflate(new Thickness(4, 0)), foreground, 10);
                         }
                     }
                 }
@@ -504,15 +501,9 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             if (row is not null)
             {
                 CancelDrag();
-                if (point.X < 24 + row.Depth * 8)
+                if (row.ExpanderRectangle(RowY(row)).Contains(point))
                 {
                     Toggle(row.TrackId.HasValue ? collapsedTracks : collapsedGroups, row.Id);
-                    RebuildRows();
-                    PublishViewport(viewport);
-                }
-                else if (point.X < 46 + row.Depth * 8 && row.Clips.Any(clip => clip.Tracks.Any(track => !track.Keyframes.IsEmpty)))
-                {
-                    Toggle(collapsedAnimations, row.Id);
                     RebuildRows();
                     PublishViewport(viewport);
                 }
@@ -917,11 +908,10 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                     continue;
                 }
                 var title = WorkbenchText.Property(animation.Property);
-                var titleLayout = new FormattedText(title, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                    new Typeface(FontFamily.Default), 11, foreground);
+                using var titleLayout = WorkbenchTextFormatting.CreateLayout(this, title, 11, foreground);
                 context.DrawRectangle(drawingPalette.Surface, null,
                     new(HeaderWidth + 2, top, titleLayout.Width + 6, titleLayout.Height + 3), 2, 2);
-                context.DrawText(titleLayout, new(HeaderWidth + 5, top + 2));
+                titleLayout.Draw(context, new(HeaderWidth + 5, top + 2));
                 if (animation.Property is AnimationProperty.FILL or AnimationProperty.STROKE)
                 {
                     DrawText(context, "R", new(HeaderWidth + 105, top + 2), drawingPalette.ColorComponents[0], 10);
@@ -1185,8 +1175,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
     private Rect LabelRectangle(Point anchor, string text)
     {
-        var formatted = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface(FontFamily.Default), 11, Brushes.White);
+        using var formatted = WorkbenchTextFormatting.CreateLayout(this, text, 11, drawingPalette.Foreground);
         var body = BodyRectangle();
         var width = Math.Min(body.Width, formatted.Width + 8);
         var height = Math.Min(body.Height, formatted.Height + 4);
@@ -1371,7 +1360,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             {
                 displayedClips.Add(flattened.Single(layer => layer.Id == dragId));
             }
-            var animations = !collapsed && !collapsedAnimations.Contains(track.Id)
+            var animations = !collapsed
                 ? CreateAnimationRows(displayedClips) : [];
             var curve = animations.Sum(animation => animation.Height);
             var height = (track.StylePresetName is null ? 28 : 48) + curve;
@@ -1399,8 +1388,8 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             }
 
             var group = layer.Kind == LayerKind.GROUP;
-            var collapsed = group && collapsedGroups.Contains(layer.Id);
-            var animations = !collapsedAnimations.Contains(layer.Id)
+            var collapsed = collapsedGroups.Contains(layer.Id);
+            var animations = !collapsed
                 ? CreateAnimationRows([layer]) : [];
             var curve = animations.Sum(animation => animation.Height);
             var height = 28 + curve;
@@ -1700,10 +1689,30 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
     private static MediaTime Min(MediaTime first, MediaTime second) => first <= second ? first : second;
 
-    private static void DrawText(DrawingContext context, string text, Point origin, IBrush foreground, double size)
+    private void DrawText(DrawingContext context, string text, Point origin, IBrush foreground, double size)
     {
-        var formatted = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface(FontFamily.Default), size, foreground);
-        context.DrawText(formatted, origin);
+        using var layout = WorkbenchTextFormatting.CreateLayout(this, text, size, foreground);
+        layout.Draw(context, origin);
+    }
+
+    private void DrawCenteredText(DrawingContext context, string text, Rect rectangle, IBrush brush, double size)
+    {
+        using var layout = WorkbenchTextFormatting.CreateLayout(this, text, size, brush,
+            rectangle.Height, Math.Max(0.01, rectangle.Width));
+        layout.Draw(context, WorkbenchTextFormatting.CenteredOrigin(layout, rectangle));
+    }
+
+    private void DrawExpander(DrawingContext context, Rect rectangle, bool collapsed)
+    {
+        var center = rectangle.Center;
+        var geometry = new StreamGeometry();
+        using (var shape = geometry.Open())
+        {
+            shape.BeginFigure(center + (collapsed ? new Vector(-3, -5) : new Vector(-5, -3)), true);
+            shape.LineTo(center + (collapsed ? new Vector(3, 0) : new Vector(5, -3)));
+            shape.LineTo(center + (collapsed ? new Vector(-3, 5) : new Vector(0, 3)));
+            shape.EndFigure(true);
+        }
+        context.DrawGeometry(drawingPalette.Foreground, null, geometry);
     }
 }

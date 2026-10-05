@@ -1,3 +1,5 @@
-# 工作区布局
+# Workspace layouts
 
-空间管理、Dock 宿主、持久化及生命周期统一见 [布局开发文档](../../../docs/layouts.md)。
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+Space management, Dock hosts, persistence, and lifetime are documented in the [layout developer guide](../../../docs/layouts.md).
