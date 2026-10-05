@@ -382,7 +382,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
                         .Where(frame => frame.Time != movedTime || frame.Time == e.OldTime)
                         .Select(frame =>
                             frame.Time == e.OldTime
-                                ? frame with { Time = movedTime, Value = e.NewValue ?? frame.Value }
+                                ? frame with { Time = movedTime }
                                 : frame).OrderBy(frame => frame.Time).ToImmutableArray()
                 }
                 : track).ToImmutableArray()

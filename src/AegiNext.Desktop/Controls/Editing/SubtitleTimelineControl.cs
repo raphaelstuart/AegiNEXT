@@ -57,19 +57,13 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     private TimelineDragMode dragMode;
     private Guid dragId;
     private double dragPointer;
-    private double dragPointerY;
     private MediaTime originalStart;
     private MediaTime originalEnd;
     private MediaTime pendingStart;
     private MediaTime pendingEnd;
     private MediaTime originalKey;
     private MediaTime pendingKey;
-    private double originalValue;
-    private double pendingValue;
-    private double valueMinimum;
-    private double valueMaximum;
     private AnimationProperty dragProperty;
-    private Rect dragCurve;
     private bool stretching;
     private AnimationProperty effectProperty = AnimationProperty.OPACITY;
     private IPointer? capturedPointer;
@@ -539,7 +533,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             var currentLayer = layersById[hit.Identity.LayerId];
             var currentTrack = currentLayer.Tracks.Single(item => item.Property == hit.Identity.Property);
             var currentKey = currentTrack.Keyframes.Single(item => item.Time == hit.Identity.Time);
-            BeginKeyframeDrag(currentLayer, currentKey, point.X, hit.Identity.Property, point.Y, hit.Components);
+            BeginKeyframeDrag(currentLayer, currentKey, point.X, hit.Identity.Property, hit.Components);
             hover = new(point, hit);
             if (HasActiveDrag)
             {
@@ -690,8 +684,6 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 pendingKey = LayerAnimationTiming.ClampTime(keyLayer,
                     SnapEdit(sceneTime, e.KeyModifiers) - keyLayer.Start + keyLayer.AnimationOffset);
                 snapTarget = snapTarget == keyLayer.Start + pendingKey - keyLayer.AnimationOffset ? snapTarget : null;
-                pendingValue = Math.Clamp(originalValue + (dragPointerY - point.Y) / dragCurve.Height *
-                    (valueMaximum - valueMinimum), valueMinimum, valueMaximum);
                 break;
         }
 
@@ -735,10 +727,10 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         var targetTrack = pendingTrackId;
         var canCommit = validDrop;
         CancelDrag();
-        if (mode == TimelineDragMode.KEYFRAME && (pendingKey != originalKey || !pendingValue.Equals(originalValue)))
+        if (mode == TimelineDragMode.KEYFRAME && pendingKey != originalKey)
         {
             KeyframeMoved?.Invoke(this, new(dragId, dragProperty, originalKey, pendingKey,
-                UpdatedAnimationValue(), dragComponents));
+                originalAnimationValue, dragComponents));
         }
         else if (mode is TimelineDragMode.MOVE or TimelineDragMode.TRIM_START or TimelineDragMode.TRIM_END &&
                  canCommit && (pendingStart != originalStart || pendingEnd != originalEnd || targetTrack != originalTrackId))
@@ -795,7 +787,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     }
 
     private void BeginKeyframeDrag(ProjectLayer layer, Keyframe key, double pointer, AnimationProperty property,
-        double? pointerY = null, TimelineComponentMask components = TimelineComponentMask.FIRST)
+        TimelineComponentMask components = TimelineComponentMask.FIRST)
     {
         CancelDrag();
         dragMode = TimelineDragMode.KEYFRAME;
@@ -803,14 +795,8 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         originalKey = pendingKey = key.Time;
         originalAnimationValue = key.Value;
         dragComponents = components;
-        var firstComponent = FirstComponent(components);
-        originalValue = pendingValue = key.Value.GetComponent(firstComponent);
         dragId = layer.Id;
         dragProperty = property;
-        dragCurve = ComponentCurve(CurveRectangle(layer.Id, property)!.Value, key.Value, firstComponent);
-        (valueMinimum, valueMaximum) = ComponentRange(key.Value, firstComponent,
-            ValueRange(layer.Tracks.Single(track => track.Property == property)));
-        dragPointerY = pointerY ?? ValueY(originalValue, valueMinimum, valueMaximum, dragCurve);
         CacheSnapBoundaries(layer.Id);
     }
 
@@ -863,9 +849,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         {
             return;
         }
-        var sharedRange = dragMode == TimelineDragMode.KEYFRAME && dragId == layer.Id && dragProperty == property &&
-            !(track.Keyframes[0].Value.IsColor && FirstComponent(dragComponents) == 3)
-            ? (valueMinimum, valueMaximum) : CachedValueRange(source, track);
+        var sharedRange = CachedValueRange(source, track);
         using var clip = context.PushClip(new Rect(startX, curve.Top - 1, endX - startX, curve.Height + 2));
         for (var component = 0; component < track.Keyframes[0].Value.ComponentCount; component++)
         {
@@ -994,9 +978,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                     {
                         continue;
                     }
-                    var range = dragMode == TimelineDragMode.KEYFRAME && dragId == layer.Id &&
-                        dragProperty == animation.Property && !(track.Keyframes[0].Value.IsColor && FirstComponent(dragComponents) == 3)
-                        ? (valueMinimum, valueMaximum) : CachedValueRange(source, track);
+                    var range = CachedValueRange(source, track);
                     foreach (var key in track.Keyframes)
                     {
                         var x = X(Seconds(layer.Start + key.Time - layer.AnimationOffset));
@@ -1075,38 +1057,9 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         return track with
         {
             Keyframes = track.Keyframes.Where(key => key.Time != pendingKey || key.Time == originalKey)
-                .Select(key => key.Time == originalKey ? key with { Time = pendingKey, Value = UpdatedAnimationValue() } : key)
+                .Select(key => key.Time == originalKey ? key with { Time = pendingKey } : key)
                 .OrderBy(key => key.Time).ToImmutableArray()
         };
-    }
-
-    private AnimationValue UpdatedAnimationValue()
-    {
-        var delta = pendingValue - originalValue;
-        var minimumDelta = double.NegativeInfinity;
-        var maximumDelta = double.PositiveInfinity;
-        for (var component = 0; component < originalAnimationValue.ComponentCount; component++)
-        {
-            if (!Contains(dragComponents, component))
-            {
-                continue;
-            }
-            var value = originalAnimationValue.GetComponent(component);
-            minimumDelta = Math.Max(minimumDelta,
-                Math.Max(valueMinimum, AnimationPropertyMetadata.GetMinimum(dragProperty, component)) - value);
-            maximumDelta = Math.Min(maximumDelta,
-                Math.Min(valueMaximum, AnimationPropertyMetadata.GetMaximum(dragProperty, component)) - value);
-        }
-        delta = Math.Clamp(delta, minimumDelta, maximumDelta);
-        var edited = originalAnimationValue;
-        for (var component = 0; component < edited.ComponentCount; component++)
-        {
-            if (Contains(dragComponents, component))
-            {
-                edited = edited.WithComponent(component, originalAnimationValue.GetComponent(component) + delta);
-            }
-        }
-        return edited;
     }
 
     private static TimelineComponentMask ComponentMask(int component) => (TimelineComponentMask)(1 << component);

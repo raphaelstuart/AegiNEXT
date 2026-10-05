@@ -27,7 +27,7 @@
                                  YText="{Binding PositionYText, Mode=TwoWay}" X="{Binding PositionX, Mode=TwoWay}"
                                  Y="{Binding PositionY, Mode=TwoWay}" Minimum="-2000032768" Maximum="2000032768"
                                  IsEnabled="{Binding CanEditPosition}" />
-      <Button Name="ResetPositionButton" Tag="ResetAutomaticPosition" Command="{Binding ResetPositionCommand}"
+      <Button Name="ResetPositionButton" Tag="ResetPosition" Command="{Binding ResetPositionCommand}"
               IsEnabled="{Binding CanResetPosition}" />
       <TextBlock Tag="ScaleVector" Classes="field" />
       <controls:VectorDraftInput Name="ScaleInput" XFieldKey="ScaleXInput" YFieldKey="ScaleYInput"
