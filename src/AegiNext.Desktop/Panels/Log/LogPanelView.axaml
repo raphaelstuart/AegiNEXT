@@ -2,8 +2,65 @@
              xmlns:vm="using:AegiNext.Desktop.Panels.Log"
              xmlns:diagnostics="using:AegiNext.Desktop.Workspace.Diagnostics"
              xmlns:converters="using:Avalonia.Data.Converters"
-             x:Class="AegiNext.Desktop.Panels.Log.LogPanelView" x:DataType="vm:LogPanelViewModel"
-             Classes="business-surface">
+              x:Class="AegiNext.Desktop.Panels.Log.LogPanelView" x:DataType="vm:LogPanelViewModel"
+              Classes="business-surface">
+  <UserControl.Resources>
+    <ControlTheme x:Key="LogEntryHeaderTheme" TargetType="ToggleButton">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="Transparent">
+            <ContentPresenter Name="PART_ContentPresenter"
+                              Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Foreground="{TemplateBinding Foreground}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+    <ControlTheme x:Key="LogEntryExpanderTheme" TargetType="Expander">
+      <Setter Property="IsTabStop" Value="False" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <StackPanel>
+            <ToggleButton Name="ExpanderHeader" Theme="{StaticResource LogEntryHeaderTheme}"
+                          Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                          Foreground="{TemplateBinding Foreground}"
+                          IsChecked="{TemplateBinding IsExpanded, Mode=TwoWay}" />
+            <ContentPresenter Name="PART_ContentPresenter" IsVisible="{TemplateBinding IsExpanded}"
+                              Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Foreground="{TemplateBinding Foreground}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" />
+          </StackPanel>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="TextBlock.log-summary">
+      <Setter Property="FontFamily" Value="{StaticResource WorkbenchBodyFontFamily}" />
+      <Setter Property="LineHeight" Value="{StaticResource WorkbenchInputLineHeight}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ListBox#LogEntries ListBoxItem">
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Path.log-details-triangle">
+      <Setter Property="Data" Value="M 2,0 L 6,4 L 2,8 Z" />
+    </Style>
+    <Style Selector="Expander:expanded Path.log-details-triangle">
+      <Setter Property="Data" Value="M 0,2 L 8,2 L 4,6 Z" />
+    </Style>
+  </UserControl.Styles>
   <Grid RowDefinitions="Auto,*" Margin="4" RowSpacing="6">
     <Grid ColumnDefinitions="140,*,Auto,Auto,Auto" ColumnSpacing="6">
       <ComboBox Name="LogLevelFilter" ItemsSource="{Binding Levels}" SelectedIndex="{Binding FilterIndex, Mode=TwoWay}" />
@@ -15,20 +72,28 @@
       <Button Name="ClearLog" Grid.Column="4" Content="{Loc Key=Log.Clear}" Command="{Binding ClearCommand}" />
     </Grid>
     <Grid Grid.Row="1">
-      <ListBox Name="LogEntries" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry, Mode=TwoWay}">
+      <ListBox Name="LogEntries" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
+               Background="{DynamicResource PreviewBackground}" BorderThickness="0">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="diagnostics:WorkbenchLogEntry">
             <StackPanel>
-              <TextBlock Text="{Binding Summary}"
-                         IsVisible="{Binding Details, Converter={x:Static converters:StringConverters.IsNullOrEmpty}}"
-                         TextWrapping="Wrap" FontFamily="monospace" />
-              <Expander
-                IsVisible="{Binding Details, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
-                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+              <TextBlock Classes="log-summary" Text="{Binding Summary}"
+                         IsVisible="{Binding Details, Converter={x:Static converters:StringConverters.IsNullOrEmpty}}" />
+              <Expander Theme="{StaticResource LogEntryExpanderTheme}"
+                        IsVisible="{Binding Details, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}">
                 <Expander.Header>
-                  <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontFamily="monospace" />
+                  <TextBlock Classes="log-summary">
+                    <TextBlock.Inlines>
+                      <Run Text="{Binding Summary}" />
+                      <InlineUIContainer BaselineAlignment="Center">
+                        <Path Classes="log-details-triangle" Width="8" Height="8" Margin="8,0,0,0"
+                              Stretch="None" Fill="{Binding $parent[TextBlock].Foreground}" />
+                      </InlineUIContainer>
+                    </TextBlock.Inlines>
+                  </TextBlock>
                 </Expander.Header>
-                <SelectableTextBlock Text="{Binding Details}" TextWrapping="Wrap" FontFamily="monospace" />
+                <SelectableTextBlock Text="{Binding Details}" TextWrapping="Wrap" FontFamily="monospace"
+                                     LineHeight="{StaticResource WorkbenchInputLineHeight}" Margin="0,4,0,0" />
               </Expander>
             </StackPanel>
           </DataTemplate>
