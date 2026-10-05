@@ -4,6 +4,7 @@ Paths are relative to the AegiNext checkout. Use them as current examples, not a
 
 | Need | Existing implementation |
 |---|---|
+| Shared square toolbar toggles | `src/AegiNext.Desktop/Controls/Common/ToolbarToggleButton.cs` and its type-keyed theme in `WorkbenchTheme.axaml` |
 | Raw scalar drafts | `src/AegiNext.Desktop/Controls/Editing/NumericDraftInput.cs` |
 | Pure scalar state for vector consumers | `src/AegiNext.Desktop/Editing/NumericValueDraft.cs` |
 | X/Y draft composition and local focus | `src/AegiNext.Desktop/Controls/Editing/VectorDraftInput.cs` |
@@ -27,6 +28,7 @@ Settings pages use compiled bindings to their own page ViewModels. Watch framewo
 
 | Behavior | Tests |
 |---|---|
+| Toolbar toggle themes, input, and panel wiring | `ToolbarToggleButtonUiTests`, `SubtitleDetailsFormattingToggleUiTests`, `TimelineDisplayOptionsUiTests`, `WorkbenchShortcutInputUiTests` |
 | Draft ranges and preservation | `NumericDraftEditingUiTests`, `InvalidAnimationDraftUiTests` |
 | Shared vector local namescope/Esc | `SubtitlePositionDiagramUiTests`, `SubtitlePositionEditingUiTests` |
 | Color input modes, invalid input, picker | `ColorDraftTests`, `ColorDraftInputUiTests`, `SettingsColorDraftTests` |

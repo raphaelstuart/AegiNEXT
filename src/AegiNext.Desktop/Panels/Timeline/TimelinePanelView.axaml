@@ -5,31 +5,31 @@
              x:Class="AegiNext.Desktop.Panels.Timeline.TimelinePanelView" Classes="business-surface">
   <Border Background="{DynamicResource PreviewSurface}" BorderThickness="0"
           CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
-    <Grid RowDefinitions="28,*" ColumnDefinitions="36,*">
+    <Grid RowDefinitions="28,*" ColumnDefinitions="37,*">
       <Border Grid.RowSpan="2" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,1,0">
         <StackPanel Spacing="4" Margin="2,4">
-          <ToggleButton Name="TimelineSnapButton" ToolTip.Tip="{Loc Key=Workbench.TimelineSnapHint}"
-                        AutomationProperties.Name="{Loc Key=Workbench.TimelineSnap}" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
+          <controlsCommon:ToolbarToggleButton Name="TimelineSnapButton" ToolTip.Tip="{Loc Key=Workbench.TimelineSnapHint}"
+                        AutomationProperties.Name="{Loc Key=Workbench.TimelineSnap}"
                         IsChecked="{Binding IsSnapEnabled, Mode=TwoWay}">
-            <PathIcon Name="TimelineSnapIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
-          </ToggleButton>
-          <ToggleButton Name="TimelineSpectrumButton" ToolTip.Tip="{Loc Key=Workbench.TimelineSpectrum}"
-                        AutomationProperties.Name="{Loc Key=Workbench.TimelineSpectrum}" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
+            <PathIcon Name="TimelineSnapIcon" Width="18" Height="18" />
+          </controlsCommon:ToolbarToggleButton>
+          <controlsCommon:ToolbarToggleButton Name="TimelineSpectrumButton" ToolTip.Tip="{Loc Key=Workbench.TimelineSpectrum}"
+                        AutomationProperties.Name="{Loc Key=Workbench.TimelineSpectrum}"
                         IsChecked="{Binding IsSpectrumVisible, Mode=TwoWay}">
-            <PathIcon Name="TimelineSpectrumIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
-          </ToggleButton>
-          <ToggleButton Name="TimelineWaveformButton" ToolTip.Tip="{Loc Key=Workbench.TimelineWaveform}"
-                        AutomationProperties.Name="{Loc Key=Workbench.TimelineWaveform}" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
+            <PathIcon Name="TimelineSpectrumIcon" Width="18" Height="18" />
+          </controlsCommon:ToolbarToggleButton>
+          <controlsCommon:ToolbarToggleButton Name="TimelineWaveformButton" ToolTip.Tip="{Loc Key=Workbench.TimelineWaveform}"
+                        AutomationProperties.Name="{Loc Key=Workbench.TimelineWaveform}"
                         IsChecked="{Binding IsWaveformVisible, Mode=TwoWay}">
-            <PathIcon Name="TimelineWaveformIcon" Width="18" Height="18" Foreground="{DynamicResource PreviewMuted}" />
-          </ToggleButton>
-          <ToggleButton Name="TimelineStepButton" ToolTip.Tip="{Loc Key=Workbench.TimelineStepHint}"
-                        AutomationProperties.Name="{Loc Key=Workbench.TimelineStep}" Width="30" Height="30" MinWidth="0" MinHeight="0" Padding="5"
+            <PathIcon Name="TimelineWaveformIcon" Width="18" Height="18" />
+          </controlsCommon:ToolbarToggleButton>
+          <controlsCommon:ToolbarToggleButton Name="TimelineStepButton" ToolTip.Tip="{Loc Key=Workbench.TimelineStepHint}"
+                        AutomationProperties.Name="{Loc Key=Workbench.TimelineStep}"
                         IsChecked="{Binding IsStepEnabled, Mode=TwoWay}">
             <Path Data="M 1,15 L 5,15 L 5,11 L 9,11 L 9,7 L 13,7 L 13,3 L 17,3 M 5,2 L 5,5 M 9,2 L 9,5 M 13,2 L 13,5"
-                  Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource PreviewMuted}"
+                  Width="18" Height="18" Stretch="Uniform" Stroke="{Binding $parent[ToggleButton].Foreground}"
                   StrokeThickness="1.7" />
-          </ToggleButton>
+          </controlsCommon:ToolbarToggleButton>
         </StackPanel>
       </Border>
       <controls:TimelineOverviewControl Name="TimelineMinimap" Grid.Column="1" Margin="4,2" />

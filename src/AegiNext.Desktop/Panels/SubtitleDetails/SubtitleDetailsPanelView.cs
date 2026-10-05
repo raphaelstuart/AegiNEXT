@@ -4,6 +4,7 @@ using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Workspace;
@@ -43,11 +44,11 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private readonly NumericDraftInput duration = new() { Name = "KaraokeDurationInput", Width = 200, Minimum = 0, Maximum = 86400, Increment = 0.01m, ShowButtonSpinner = false };
     private readonly ComboBox kind = new() { Name = "KaraokeHighlightKindInput", Width = 200 };
     private readonly ComboBox presets = new() { Name = "SelectionStylePresetCombo", Width = 200 };
-    private readonly ToggleButton highlightTarget = new() { Name = "HighlightStyleToggle" };
+    private readonly ToolbarToggleButton highlightTarget = new() { Name = "HighlightStyleToggle" };
     private readonly DraftPopup clipPopup = new() { OverlayDismissEventPassThrough = true,
         Placement = PlacementMode.BottomEdgeAlignedLeft, VerticalOffset = 4 };
-    private readonly ToggleButton enableKaraoke = new() { Name = "EnableKaraokeToggle" };
-    private readonly ToggleButton loop = new() { Name = "SubtitleLoopToggle", IsChecked = false };
+    private readonly ToolbarToggleButton enableKaraoke = new() { Name = "EnableKaraokeToggle" };
+    private readonly ToolbarToggleButton loop = new() { Name = "SubtitleLoopToggle", IsChecked = false };
     private readonly CheckBox snap = new() { Name = "KaraokeSnapToggle", IsChecked = true };
     private readonly Button play;
     private readonly StackPanel styleToolbar = new() { Name = "SelectionStyleToolbar", Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
@@ -55,7 +56,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private readonly WrapPanel timingFields = new() { Name = "KaraokeTimingFields", Width = 424 };
     private readonly List<Control> bodyOnlyFields = [];
     private readonly List<Button> selectionActions = [];
-    private readonly Dictionary<string, ToggleButton> toggles = [];
+    private readonly Dictionary<string, ToolbarToggleButton> toggles = [];
     private bool synchronizing;
     private bool disposed;
     private bool completingInput;
@@ -325,7 +326,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     {
         foreach (var (name, text) in new[] { ("Bold", "B"), ("Italic", "I"), ("Underline", "U"), ("Strikethrough", "S") })
         {
-            var button = new ToggleButton { Name = name + "SelectionButton" };
+            var button = new ToolbarToggleButton { Name = name + "SelectionButton" };
             ConfigureToggle(button, "Workbench." + name, text);
             button.Click += (_, _) => Toggle(name);
             toggles.Add(name, button);
@@ -458,10 +459,8 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         return button;
     }
 
-    private void ConfigureToggle(ToggleButton toggle, string key, object content)
+    private void ConfigureToggle(ToolbarToggleButton toggle, string key, object content)
     {
-        toggle.Classes.Add("icon-button");
-        toggle.Classes.Add("details-toggle");
         toggle.Content = content;
         bindings.Add(toggle.Bind(ToolTip.TipProperty, Localization.Observe(key).ToBinding()));
         bindings.Add(toggle.Bind(AutomationProperties.NameProperty, Localization.Observe(key).ToBinding()));

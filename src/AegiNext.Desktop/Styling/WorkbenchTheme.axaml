@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:common="using:AegiNext.Desktop.Controls.Common"
         xmlns:dock="using:Dock.Avalonia.Controls"
         xmlns:sys="clr-namespace:System;assembly=System.Runtime">
   <Styles.Resources>
@@ -23,6 +24,29 @@
       <Setter Property="MinHeight" Value="24"/>
       <Setter Property="Padding" Value="0"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
+    </ControlTheme>
+    <ControlTheme x:Key="{x:Type common:ToolbarToggleButton}" TargetType="common:ToolbarToggleButton"
+                  BasedOn="{StaticResource {x:Type ToggleButton}}">
+      <Setter Property="Width" Value="{StaticResource WorkbenchControlHeight}"/>
+      <Setter Property="Height" Value="{StaticResource WorkbenchControlHeight}"/>
+      <Setter Property="MinWidth" Value="{StaticResource WorkbenchControlHeight}"/>
+      <Setter Property="MinHeight" Value="{StaticResource WorkbenchControlHeight}"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource PreviewBorder}"/>
+      <Style Selector="^:checked">
+        <Setter Property="Background" Value="{DynamicResource WorkbenchDockTabSelectedBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkbenchDockActiveForeground}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WorkbenchDockActiveForeground}"/>
+      </Style>
+      <Style Selector="^:checked /template/ ContentPresenter#PART_ContentPresenter, ^:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter, ^:checked:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{Binding $parent[common:ToolbarToggleButton].Background}"/>
+        <Setter Property="BorderBrush" Value="{Binding $parent[common:ToolbarToggleButton].BorderBrush}"/>
+        <Setter Property="Foreground" Value="{Binding $parent[common:ToolbarToggleButton].Foreground}"/>
+      </Style>
     </ControlTheme>
     <ControlTheme x:Key="WorkbenchDockChromeButtonTheme" TargetType="Button"
                   BasedOn="{StaticResource {x:Type Button}}">
@@ -102,16 +126,6 @@
     <Setter Property="Padding" Value="0"/>
     <Setter Property="HorizontalContentAlignment" Value="Center"/>
     <Setter Property="VerticalContentAlignment" Value="Center"/>
-  </Style>
-  <Style Selector="ToggleButton.details-toggle">
-    <Setter Property="CornerRadius" Value="6"/>
-    <Setter Property="BorderThickness" Value="1"/>
-    <Setter Property="BorderBrush" Value="{DynamicResource PreviewBorder}"/>
-  </Style>
-  <Style Selector="ToggleButton.details-toggle:checked">
-    <Setter Property="Background" Value="{DynamicResource WorkbenchDockTabSelectedBackground}"/>
-    <Setter Property="BorderBrush" Value="{DynamicResource WorkbenchDockActiveForeground}"/>
-    <Setter Property="Foreground" Value="{DynamicResource WorkbenchDockActiveForeground}"/>
   </Style>
   <Style Selector="dock|ToolChromeControl">
     <Setter Property="Background" Value="{DynamicResource PreviewSurface}"/>
