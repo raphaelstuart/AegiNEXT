@@ -2,7 +2,7 @@
              xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts" xmlns:presets="using:AegiNext.Core.Presets"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:settings="using:AegiNext.Desktop.Settings"
              xmlns:vm="using:AegiNext.Desktop.Settings.Shortcuts"
-             x:Class="AegiNext.Desktop.Settings.Shortcuts.ShortcutSettingsView"
+             x:Class="AegiNext.Desktop.Settings.Shortcuts.ShortcutSettingsView" Classes="business-surface"
              x:DataType="vm:ShortcutSettingsViewModel">
 
   <Grid Name="ShortcutsPage" IsVisible="{Binding $parent[UserControl].IsVisible}" RowDefinitions="Auto,*,Auto,Auto"
@@ -22,7 +22,7 @@
       </ListBox.ItemTemplate>
     </ListBox>
     <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-      <TextBox Name="GestureInput" Text="{Binding Gesture, Mode=TwoWay}" IsEnabled="{Binding HasSelection}"
+      <TextBox Name="GestureInput" Text="{Binding Gesture, Mode=OneWay}" IsReadOnly="True" IsEnabled="{Binding HasSelection}"
                PlaceholderText="CmdOrCtrl+K" />
       <Button Grid.Column="1" Name="RecordShortcutButton" Command="{Binding ToggleRecordingCommand}"
               Click="FocusGesture" Tag="Record" />

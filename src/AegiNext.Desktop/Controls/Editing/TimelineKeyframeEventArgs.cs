@@ -7,20 +7,23 @@ namespace AegiNext.Desktop.Controls;
 public sealed class TimelineKeyframeEventArgs : EventArgs
 {
     /// <summary>创建关键帧操作。</summary>
-    public TimelineKeyframeEventArgs(Guid layerId, AnimationProperty property, MediaTime oldTime, MediaTime newTime, double? newValue = null)
+    public TimelineKeyframeEventArgs(Guid layerId, AnimationProperty property, MediaTime oldTime, MediaTime newTime,
+        AnimationValue? newValue = null, TimelineComponentMask components = TimelineComponentMask.FIRST)
     {
         LayerId = layerId;
         Property = property;
         OldTime = oldTime;
         NewTime = newTime;
         NewValue = newValue;
+        Components = components;
     }
 
     public Guid LayerId { get; }
     public AnimationProperty Property { get; }
     public MediaTime OldTime { get; }
     public MediaTime NewTime { get; }
-    public double? NewValue { get; }
+    public AnimationValue? NewValue { get; }
+    public TimelineComponentMask Components { get; }
 
     /// <summary>选择接收方完成草稿验证后允许控件开始手势。</summary>
     public bool SelectionAccepted { get; set; }

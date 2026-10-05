@@ -2,11 +2,8 @@
              xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts" xmlns:presets="using:AegiNext.Core.Presets"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:settings="using:AegiNext.Desktop.Settings"
              xmlns:vm="using:AegiNext.Desktop.Settings.Appearance"
-             x:Class="AegiNext.Desktop.Settings.Appearance.AppearanceSettingsView"
+             x:Class="AegiNext.Desktop.Settings.Appearance.AppearanceSettingsView" Classes="business-surface"
              x:DataType="vm:AppearanceSettingsViewModel">
-  <UserControl.Resources>
-    <settings:SettingsAccentColorConverter x:Key="AccentConverter" />
-  </UserControl.Resources>
   <ScrollViewer Name="AppearancePage" IsVisible="{Binding $parent[UserControl].IsVisible}">
     <StackPanel Spacing="16">
       <Border Classes="card">
@@ -21,15 +18,6 @@
           <TextBlock Tag="Language" VerticalAlignment="Center" />
           <ComboBox Name="LanguageCombo" ItemsSource="{Binding Languages}"
                     SelectedIndex="{Binding LanguageIndex, Mode=TwoWay}" Grid.Column="1" />
-        </Grid>
-      </Border>
-      <Border Classes="card">
-        <Grid ColumnDefinitions="*,240" ColumnSpacing="16">
-          <TextBlock Tag="Accent" VerticalAlignment="Center" />
-          <ColorPicker Name="AccentPicker"
-                       Color="{Binding AccentColor, Mode=TwoWay, Converter={StaticResource AccentConverter}}"
-                       Grid.Column="1" IsAlphaEnabled="False" IsColorPaletteVisible="False"
-                       IsColorComponentsVisible="False" />
         </Grid>
       </Border>
       <Border Classes="card" IsVisible="{Binding ShowMenuLocation}">

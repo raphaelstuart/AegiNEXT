@@ -22,7 +22,7 @@ public static class SceneEvaluator
     }
 
     /// <summary>求严格递增轨道的保持、线性或缓动值；时间在首尾之外时保持端点。</summary>
-    public static double EvaluateTrack(AnimationTrack track, MediaTime time)
+    public static AnimationValue EvaluateTrack(AnimationTrack track, MediaTime time)
     {
         ArgumentNullException.ThrowIfNull(track);
         if (track.Keyframes.IsDefaultOrEmpty)
@@ -36,35 +36,64 @@ public static class SceneEvaluator
             return frames[0].Value;
         }
 
-        for (var index = 1; index < frames.Length; index++)
+        if (time >= frames[^1].Time)
         {
-            if (time >= frames[index].Time)
-            {
-                continue;
-            }
-
-            var first = frames[index - 1];
-            var second = frames[index];
-            var fraction = Fraction(time - first.Time, second.Time - first.Time);
-            fraction = CurveFraction(first, fraction);
-            return first.Value + (second.Value - first.Value) * fraction;
+            return frames[^1].Value;
         }
 
-        return frames[^1].Value;
+        var lower = 1;
+        var upper = frames.Length - 1;
+        while (lower < upper)
+        {
+            var middle = lower + (upper - lower) / 2;
+            if (time >= frames[middle].Time)
+            {
+                lower = middle + 1;
+            }
+            else
+            {
+                upper = middle;
+            }
+        }
+
+        var first = frames[lower - 1];
+        var second = frames[lower];
+        var fraction = Fraction(time - first.Time, second.Time - first.Time);
+        var firstFraction = CurveFraction(first.Interpolation, first.CurveStart, first.CurveEnd, fraction);
+        var value = AnimationValue.Lerp(first.Value, second.Value, firstFraction);
+        for (var component = 1; component < first.Value.ComponentCount; component++)
+        {
+            if (!first.ComponentCurves.IsDefaultOrEmpty && first.ComponentCurves[component - 1] is { } curve)
+            {
+                var componentFraction = CurveFraction(curve.Interpolation, curve.CurveStart, curve.CurveEnd, fraction);
+                var start = first.Value.GetComponent(component);
+                value = value.WithComponent(component, start + (second.Value.GetComponent(component) - start) * componentFraction);
+            }
+        }
+
+        return value;
     }
 
-    private static double CurveFraction(Keyframe frame, double fraction)
+    /// <summary>读取标量轨道值，拒绝向量轨道。</summary>
+    public static double EvaluateScalarTrack(AnimationTrack track, MediaTime time) => EvaluateTrack(track, time).Scalar;
+
+    /// <summary>读取二维向量轨道值，拒绝标量轨道。</summary>
+    public static ScenePoint EvaluateVectorTrack(AnimationTrack track, MediaTime time) => EvaluateTrack(track, time).Vector;
+
+    /// <summary>读取完整线性 RGBA 轨道值，拒绝其他维度。</summary>
+    public static SceneColor EvaluateColorTrack(AnimationTrack track, MediaTime time) => EvaluateTrack(track, time).Color;
+
+    private static double CurveFraction(KeyframeInterpolation interpolation, double start, double end, double fraction)
     {
-        var start = frame.CurveStart;
-        var range = frame.CurveEnd - start;
+        var range = end - start;
         var offset = range * fraction;
-        return frame.Interpolation switch
+        return interpolation switch
         {
             KeyframeInterpolation.HOLD => 0,
             KeyframeInterpolation.LINEAR => fraction,
             KeyframeInterpolation.EASE_IN => fraction * (2 * start + offset) / (2 * start + range),
-            KeyframeInterpolation.EASE_OUT => fraction * (2 * (1 - frame.CurveEnd) + range * (2 - fraction)) /
-                (2 * (1 - frame.CurveEnd) + range),
+            KeyframeInterpolation.EASE_OUT => fraction * (2 * (1 - end) + range * (2 - fraction)) /
+                (2 * (1 - end) + range),
             KeyframeInterpolation.EASE_IN_OUT => fraction *
                 (6 * start * (1 - start) + 3 * offset * (1 - 2 * start) - 2 * offset * offset) /
                 (6 * start * (1 - start) + 3 * range * (1 - 2 * start) - 2 * range * range),
@@ -109,10 +138,8 @@ public static class SceneEvaluator
             var values = layer.Tracks.ToDictionary(track => track.Property, track => EvaluateTrack(track, local));
             var transform = layer.Transform with
             {
-                X = Get(values, AnimationProperty.POSITION_X, layer.Transform.X),
-                Y = Get(values, AnimationProperty.POSITION_Y, layer.Transform.Y),
-                ScaleX = Get(values, AnimationProperty.SCALE_X, layer.Transform.ScaleX),
-                ScaleY = Get(values, AnimationProperty.SCALE_Y, layer.Transform.ScaleY),
+                Position = GetVector(values, AnimationProperty.POSITION, layer.Transform.Position),
+                Scale = GetVector(values, AnimationProperty.SCALE, layer.Transform.Scale),
                 Rotation = Get(values, AnimationProperty.ROTATION, layer.Transform.Rotation)
             };
             if (layer.MotionPath is { } motion)
@@ -133,10 +160,7 @@ public static class SceneEvaluator
             var fill = subtitle?.Style.Fill ?? layer.Fill;
             var stroke = subtitle?.Style.Stroke ?? layer.Stroke;
             result.Add(new(layer, local, transform, Get(values, AnimationProperty.OPACITY, layer.Opacity),
-                new(Get(values, AnimationProperty.FILL_RED, fill.Red), Get(values, AnimationProperty.FILL_GREEN, fill.Green),
-                    Get(values, AnimationProperty.FILL_BLUE, fill.Blue), Get(values, AnimationProperty.FILL_ALPHA, fill.Alpha)),
-                new(Get(values, AnimationProperty.STROKE_RED, stroke.Red), Get(values, AnimationProperty.STROKE_GREEN, stroke.Green),
-                    Get(values, AnimationProperty.STROKE_BLUE, stroke.Blue), Get(values, AnimationProperty.STROKE_ALPHA, stroke.Alpha)),
+                GetColor(values, AnimationProperty.FILL, fill), GetColor(values, AnimationProperty.STROKE, stroke),
                 Get(values, AnimationProperty.STROKE_WIDTH, subtitle?.Style.StrokeWidth ?? layer.StrokeWidth),
                 Get(values, AnimationProperty.BLUR, layer.Blur), subtitle, EvaluateLayers(layer.Children, subtitles, time)));
         }
@@ -144,9 +168,19 @@ public static class SceneEvaluator
         return result.ToImmutable();
     }
 
-    private static double Get(Dictionary<AnimationProperty, double> values, AnimationProperty property, double fallback)
+    private static double Get(Dictionary<AnimationProperty, AnimationValue> values, AnimationProperty property, double fallback)
     {
-        return values.GetValueOrDefault(property, fallback);
+        return values.TryGetValue(property, out var value) ? value.Scalar : fallback;
+    }
+
+    private static ScenePoint GetVector(Dictionary<AnimationProperty, AnimationValue> values, AnimationProperty property, ScenePoint fallback)
+    {
+        return values.TryGetValue(property, out var value) ? value.Vector : fallback;
+    }
+
+    private static SceneColor GetColor(Dictionary<AnimationProperty, AnimationValue> values, AnimationProperty property, SceneColor fallback)
+    {
+        return values.TryGetValue(property, out var value) ? value.Color : fallback;
     }
 
     private static double Fraction(MediaTime elapsed, MediaTime duration)

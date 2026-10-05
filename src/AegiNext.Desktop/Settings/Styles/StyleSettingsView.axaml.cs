@@ -104,6 +104,12 @@ public sealed partial class StyleSettingsView : UserControl
 
         if (model.Error is not null && model.InvalidFieldKey is { } fieldKey)
         {
+            var colorField = fieldKey.Split('.', 2);
+            if (colorField.Length == 2 && this.FindControl<ColorDraftInput>(colorField[0]) is { } colorInput)
+            {
+                _ = colorInput.TryFocusInvalidField(colorField[1]);
+                return;
+            }
             if (!this.FindControl<SubtitlePositionEditor>("PositionEditor")!.FocusInvalidField(fieldKey))
             {
                 this.FindControl<Control>(fieldKey)!.Focus();

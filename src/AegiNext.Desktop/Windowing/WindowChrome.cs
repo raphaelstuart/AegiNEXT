@@ -12,7 +12,6 @@ internal static class WindowChrome
     {
         titleBar.Bind(WindowTitleBar.TitleProperty, new Binding(nameof(Window.Title)) { Source = window });
         window.WindowDecorations = WindowDecorations.Full;
-        window.SizeToContent = SizeToContent.Manual;
         if (OperatingSystem.IsWindows() && window.TryGetPlatformHandle() is { HandleDescriptor: "HWND" })
         {
             return new WindowsWindowChrome(window, titleBar);

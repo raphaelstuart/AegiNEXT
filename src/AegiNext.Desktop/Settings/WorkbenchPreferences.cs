@@ -12,6 +12,7 @@ public sealed record WorkbenchPreferences
     public string Language { get; init; } = "system";
     public WorkbenchTheme Theme { get; init; }
     public string AccentColor { get; init; } = "#5273E8";
+    public AudioGraphPalette AudioGraph { get; init; } = new();
     public ImmutableArray<ShortcutBinding> ShortcutBindings { get; init; } = ShortcutDefaults.CreateBindings();
     public float Volume { get; init; } = 1;
     public bool WindowMenuOnMac { get; init; }
@@ -22,11 +23,12 @@ public sealed record WorkbenchPreferences
         if (Version != 1 || Language is not ("system" or "zh-CN" or "en-US") ||
             !Enum.IsDefined(Theme) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
             AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
-            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault)
+            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null)
         {
             throw new InvalidDataException("桌面偏好无效或版本不受支持。");
         }
 
+        AudioGraph.Validate();
         ShortcutConfiguration.Validate(ShortcutBindings);
         if (ShortcutBindings.Length != Enum.GetValues<WorkbenchCommand>().Length)
         {
@@ -38,7 +40,7 @@ public sealed record WorkbenchPreferences
     public bool Equals(WorkbenchPreferences? other)
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
-               AccentColor == other.AccentColor && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac &&
+               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac &&
                ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
     }
 
@@ -50,6 +52,7 @@ public sealed record WorkbenchPreferences
         hash.Add(Language);
         hash.Add(Theme);
         hash.Add(AccentColor);
+        hash.Add(AudioGraph);
         hash.Add(Volume);
         hash.Add(WindowMenuOnMac);
         foreach (var binding in ShortcutBindings)

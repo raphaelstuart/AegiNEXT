@@ -1,0 +1,10 @@
+effect "slide-out" version 1
+short-clip compress
+
+segment stay flex 1
+end
+
+segment exit fixed 250ms
+    at 0 position base ease-in
+    at 1 position offset(250, 0)
+end

@@ -12,6 +12,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Localization;
 using AegiNext.Desktop.Editing;
+using AegiNext.Desktop.Settings;
 using AegiNext.Media.Analysis;
 
 namespace AegiNext.Desktop.Controls;
@@ -21,8 +22,16 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 {
     private static readonly Cursor resizeCursor = new(StandardCursorType.SizeWestEast);
     private ProjectDocument document = new();
+    private Dictionary<Guid, ProjectLayer> layersById = [];
+    private Dictionary<Guid, SubtitleLine> cuesById = [];
+    private Dictionary<Guid, TimelineRow> rowsByLayer = [];
+    private readonly Dictionary<(Guid LayerId, AnimationProperty Property), (double Minimum, double Maximum)> valueRanges = [];
     private SpectrogramData? spectrum;
     private WriteableBitmap? spectrumBitmap;
+    private AudioGraphPalette audioGraphPalette = new();
+    private TimelineDrawingPalette drawingPalette = new(false);
+    private Color[] spectrumColors = AudioGraphColorRamp.Create(new());
+    private Pen waveformPen = new(new SolidColorBrush(AudioGraphColorRamp.Parse(new AudioGraphPalette().Waveform)));
     private Guid? selectedCue;
     private Guid? selectedTrack;
     private ProjectLayer? selectedLayer;
@@ -32,6 +41,13 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     private readonly HashSet<Guid> collapsedTracks = [];
     private readonly HashSet<Guid> collapsedGroups = [];
     private readonly HashSet<Guid> collapsedAnimations = [];
+    private IReadOnlyList<MediaTime> snapBoundaries = [];
+    private MediaTime? snapTarget;
+    private AnimationValue originalAnimationValue;
+    private TimelineComponentMask dragComponents;
+    private IReadOnlyList<TimelineKeyframeMarker> markers = [];
+    private bool markersDirty = true;
+    private TimelineHoverState? hover;
     private IReadOnlyList<TimelineRow> rows = [];
     private double duration = 60;
     private Guid? pendingTrackId;
@@ -64,7 +80,8 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     {
         Focusable = true;
         ClipToBounds = true;
-        ActualThemeVariantChanged += (_, _) => InvalidateVisual();
+        ActualThemeVariantChanged += (_, _) => RefreshTheme();
+        RefreshTheme();
         SizeChanged += (_, _) => RefreshMetrics();
         AddHandler(PointerTouchPadGestureMagnifyEvent, OnMagnify);
     }
@@ -96,6 +113,33 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
     internal bool HasActiveDrag => dragMode != TimelineDragMode.NONE;
     internal bool IsSeeking => dragMode == TimelineDragMode.SEEK;
+
+    public bool IsSnapEnabled { get; set; } = true;
+    public bool IsStepEnabled { get; set; }
+
+    public static readonly StyledProperty<bool> IsSpectrumVisibleProperty =
+        AvaloniaProperty.Register<SubtitleTimelineControl, bool>(nameof(IsSpectrumVisible), true);
+    public static readonly StyledProperty<bool> IsWaveformVisibleProperty =
+        AvaloniaProperty.Register<SubtitleTimelineControl, bool>(nameof(IsWaveformVisible), true);
+
+    static SubtitleTimelineControl()
+    {
+        AffectsRender<SubtitleTimelineControl>(IsSpectrumVisibleProperty, IsWaveformVisibleProperty);
+    }
+
+    public bool IsSpectrumVisible
+    {
+        get => GetValue(IsSpectrumVisibleProperty);
+        set => SetValue(IsSpectrumVisibleProperty, value);
+    }
+
+    public bool IsWaveformVisible
+    {
+        get => GetValue(IsWaveformVisibleProperty);
+        set => SetValue(IsWaveformVisibleProperty, value);
+    }
+
+    internal MediaTime? SnapTarget => snapTarget;
 
     public MediaTime Position
     {
@@ -139,6 +183,8 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         if (next != viewport)
         {
             viewport = next;
+            markersDirty = true;
+            ClearHover();
             InvalidateVisual();
         }
     }
@@ -161,7 +207,14 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             CancelDrag();
         }
 
+        var documentChanged = !ReferenceEquals(document, value);
         document = value;
+        layersById = Flatten(value.Layers).ToDictionary(item => item.Id);
+        cuesById = value.Subtitles.ToDictionary(item => item.Id);
+        if (documentChanged)
+        {
+            valueRanges.Clear();
+        }
         selectedCue = cueId;
         selectedLayer = layer;
         selectedTrack = trackId;
@@ -182,12 +235,47 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     }
 
     /// <summary>建立一次有界显示位图，高频率在顶端。</summary>
-    public unsafe void SetSpectrogram(SpectrogramData? value)
+    public void SetSpectrogram(SpectrogramData? value)
+    {
+        spectrum = value;
+        RebuildSpectrogramBitmap();
+        InvalidateVisual();
+    }
+
+    /// <summary>替换独立颜色映射，不重新分析媒体或改变时间线视口。</summary>
+    public void SetAudioGraphPalette(AudioGraphPalette value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        value.Validate();
+        if (audioGraphPalette == value)
+        {
+            return;
+        }
+
+        audioGraphPalette = value;
+        RefreshAudioGraph();
+    }
+
+    private void RefreshTheme()
+    {
+        drawingPalette = new(ActualThemeVariant == ThemeVariant.Dark);
+        RefreshAudioGraph();
+    }
+
+    private void RefreshAudioGraph()
+    {
+        var effective = AudioGraphPalettes.Resolve(audioGraphPalette, ActualThemeVariant != ThemeVariant.Dark);
+        spectrumColors = AudioGraphColorRamp.Create(effective);
+        waveformPen = new(new SolidColorBrush(AudioGraphColorRamp.Parse(effective.Waveform)));
+        RebuildSpectrogramBitmap();
+        InvalidateVisual();
+    }
+
+    private unsafe void RebuildSpectrogramBitmap()
     {
         spectrumBitmap?.Dispose();
         spectrumBitmap = null;
-        spectrum = value;
-        if (value is not null)
+        if (spectrum is { } value)
         {
             spectrumBitmap = new(new(value.Width, value.Height), new Vector(96, 96), PixelFormat.Bgra8888,
                 AlphaFormat.Opaque);
@@ -198,17 +286,16 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 var row = new Span<byte>((void*)(target.Address + y * target.RowBytes), value.Width * 4);
                 for (var x = 0; x < value.Width; x++)
                 {
-                    var intensity = levels[(value.Height - 1 - y) * value.Width + x] / 255.0;
+                    var color = spectrumColors[levels[(value.Height - 1 - y) * value.Width + x]];
                     var offset = x * 4;
-                    row[offset] = (byte)Math.Clamp(22 + 150 * Math.Sin(intensity * Math.PI), 0, 255);
-                    row[offset + 1] = (byte)Math.Clamp(28 + intensity * intensity * 220, 0, 255);
-                    row[offset + 2] = (byte)Math.Clamp(18 + Math.Pow(intensity, 3) * 237, 0, 255);
+                    row[offset] = color.B;
+                    row[offset + 1] = color.G;
+                    row[offset + 2] = color.R;
                     row[offset + 3] = 255;
                 }
             }
         }
 
-        InvalidateVisual();
     }
 
     /// <inheritdoc />
@@ -216,14 +303,14 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     {
         base.Render(context);
         var dark = ActualThemeVariant == ThemeVariant.Dark;
-        var foreground = new SolidColorBrush(Color.Parse(dark ? "#DDE3EE" : "#263247"));
-        var grid = new Pen(new SolidColorBrush(Color.Parse(dark ? "#334155" : "#CCD5E2")));
-        context.DrawRectangle(new SolidColorBrush(Color.Parse(dark ? "#131A26" : "#E7EDF5")), null, new(Bounds.Size));
+        var foreground = drawingPalette.Foreground;
+        var grid = drawingPalette.Grid;
+        context.DrawRectangle(drawingPalette.Surface, null, new(Bounds.Size));
         var body = new Rect(HeaderWidth, RulerHeight, Math.Max(0, Bounds.Width - HeaderWidth),
             Math.Max(0, Bounds.Height - RulerHeight));
         using (context.PushClip(body))
         {
-            if (spectrum is not null && spectrumBitmap is not null)
+            if (IsSpectrumVisible && spectrum is not null && spectrumBitmap is not null)
             {
                 var length = Seconds(spectrum.Duration);
                 var start = Math.Clamp(ViewStart / length * spectrum.Width, 0, spectrum.Width);
@@ -234,6 +321,10 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                         new Rect(HeaderWidth, body.Top, visible / spectrum.Width * length * PixelsPerSecond, body.Height));
                 }
 
+            }
+
+            if (IsWaveformVisible && spectrum is not null)
+            {
                 DrawWaveform(context, body.Top, body.Height);
             }
 
@@ -246,13 +337,19 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                 }
 
                 context.DrawLine(grid, new(HeaderWidth, y + row.Height), new(Bounds.Width, y + row.Height));
-                if (selectedLayer is { } layer && ClipsForRow(row).Any(clip => clip.Id == layer.Id) && row.CurveHeight > 0)
+                if (row.CurveHeight > 0)
                 {
-                    foreach (var animation in row.Animations)
+                    context.DrawRectangle(drawingPalette.AnimationSurface, null,
+                        new(HeaderWidth, y, Math.Max(0, Bounds.Width - HeaderWidth), row.CurveHeight));
+                    foreach (var clip in ClipsForRow(row))
                     {
-                        if (CurveRectangle(layer.Id, animation.Property) is { } curve && curve.Bottom >= RulerHeight && curve.Top <= Bounds.Height)
+                        foreach (var animation in row.Animations)
                         {
-                            DrawEffects(context, foreground, animation.Property, curve);
+                            if (CurveRectangle(clip.Id, animation.Property) is { } curve &&
+                                curve.Bottom >= RulerHeight && curve.Top <= Bounds.Height)
+                            {
+                                DrawEffects(context, clip, animation.Property, curve);
+                            }
                         }
                     }
                 }
@@ -267,15 +364,15 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
                     var active = selectedIds.Contains(clip.Id);
                     var invalid = HasActiveDrag && dragId == clip.Id && !validDrop;
-                    context.DrawRectangle(new SolidColorBrush(Color.Parse(invalid ? "#BDAD4759" :
-                            active ? "#B84568DC" : clip.Kind == LayerKind.SUBTITLE ? "#865F90C4" : "#864FB3AB")),
-                        new Pen(new SolidColorBrush(Color.Parse(active ? "#A5B8FF" : "#77D4DF")), active ? 2 : 1), rectangle, 3, 3);
+                    context.DrawRectangle(invalid ? drawingPalette.InvalidClip : active ? drawingPalette.ActiveClip :
+                            clip.Kind == LayerKind.SUBTITLE ? drawingPalette.SubtitleClip : drawingPalette.SceneClip,
+                        new Pen(active ? drawingPalette.ActiveClipBorder : drawingPalette.ClipBorder, active ? 2 : 1), rectangle, 3, 3);
                     if (rectangle.Width > 8 && rectangle.Height >= 10)
                     {
-                        var text = clip.SubtitleId is { } cueId ? document.Subtitles.First(cue => cue.Id == cueId).Text.Replace('\n', ' ') : clip.Name;
+                        var text = clip.SubtitleId is { } cueId ? cuesById[cueId].Text.Replace('\n', ' ') : clip.Name;
                         using (context.PushClip(rectangle.Deflate(3)))
                         {
-                            DrawText(context, text, new(rectangle.X + 6, rectangle.Y + 3), Brushes.White, 11);
+                            DrawText(context, text, new(rectangle.X + 6, rectangle.Y + 3), drawingPalette.ClipForeground, 11);
                         }
                     }
                 }
@@ -292,11 +389,11 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
             using (context.PushClip(new Rect(0, RulerHeight, HeaderWidth, Math.Max(0, Bounds.Height - RulerHeight))))
             {
-                context.DrawRectangle(new SolidColorBrush(Color.Parse(row.TrackId == selectedTrack && selectedTrack.HasValue
-                        ? dark ? "#354C73" : "#AACAF0" : dark ? "#202C40" : "#D9E2EE")), null,
+                context.DrawRectangle(row.TrackId == selectedTrack && selectedTrack.HasValue
+                        ? drawingPalette.SelectedTrack : drawingPalette.Track, null,
                     new(0, y, HeaderWidth, row.Height));
                 DrawText(context, row.IsCollapsed ? "▸" : "▾", new(6 + row.Depth * 8, y + 5), foreground, 12);
-                if (row.Clips.Any(clip => clip.Id == selectedLayer?.Id) && selectedLayer!.Tracks.Any(track => !track.Keyframes.IsEmpty))
+                if (row.Clips.Any(clip => clip.Tracks.Any(track => !track.Keyframes.IsEmpty)))
                 {
                     DrawText(context, row.CurveHeight > 0 ? "◆" : "◇", new(28 + row.Depth * 8, y + 5), foreground, 12);
                 }
@@ -308,23 +405,38 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             }
         }
 
-        context.DrawRectangle(new SolidColorBrush(Color.Parse(dark ? "#131A26" : "#E7EDF5")), null,
+        context.DrawRectangle(drawingPalette.Surface, null,
             new(0, 0, Bounds.Width, RulerHeight));
-        var desired = 70 / PixelsPerSecond;
-        var exponent = Math.Pow(10, Math.Floor(Math.Log10(Math.Max(0.0001, desired))));
-        var step = exponent * (desired / exponent <= 2 ? 2 : desired / exponent <= 5 ? 5 : 10);
-        for (var tick = Math.Ceiling(ViewStart / step) * step; tick <= ViewStart + VisibleDuration; tick += step)
+        var step = TimelineTimeScale.MajorStep(PixelsPerSecond);
+        var minor = Seconds(TimelineTimeScale.MinorStep(PixelsPerSecond));
+        for (var index = Math.Ceiling(ViewStart / minor); index * minor <= ViewStart + VisibleDuration; index++)
         {
+            var tick = index * minor;
             var x = X(tick);
-            context.DrawLine(grid, new(x, RulerHeight - 4), new(x, Bounds.Height));
-            DrawText(context, TimeSpan.FromSeconds(tick).ToString(tick >= 3600 ? @"hh\:mm\:ss" : @"mm\:ss", CultureInfo.InvariantCulture),
-                new(x + 3, 2), foreground, 10);
+            if (x >= HeaderWidth)
+            {
+                context.DrawLine(grid, new(x, RulerHeight - 3), new(x, RulerHeight));
+            }
         }
+        for (var index = Math.Ceiling(ViewStart / step); index * step <= ViewStart + VisibleDuration; index++)
+        {
+            var tick = index * step;
+            var x = X(tick);
+            if (x >= HeaderWidth)
+            {
+                context.DrawLine(grid, new(x, RulerHeight - 6), new(x, Bounds.Height));
+                DrawText(context, TimelineTimeScale.Label(tick, step), new(x + 3, 2), foreground, 10);
+            }
+        }
+
+        DrawPropertyTitles(context, foreground);
+        DrawSnapIndicator(context);
+        DrawKeyframeMarkers(context);
 
         var playhead = X(Seconds(position));
         if (playhead >= HeaderWidth)
         {
-            context.DrawLine(new Pen(new SolidColorBrush(Color.Parse("#FF6B7A")), 2), new(playhead, 0), new(playhead, Bounds.Height));
+            context.DrawLine(drawingPalette.Playhead, new(playhead, 0), new(playhead, Bounds.Height));
         }
 
         if (ContentHeight > viewport.Height && viewport.Height > 0)
@@ -334,6 +446,26 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             context.DrawRectangle(new SolidColorBrush(Color.Parse("#998B9AB1")), null,
                 new(Bounds.Width - 5, thumbY, 4, thumbHeight), 2, 2);
         }
+
+        DrawHoveredLabel(context, foreground, dark);
+    }
+
+    private void DrawSnapIndicator(DrawingContext context)
+    {
+        if (!HasActiveDrag || !validDrop || snapTarget is not { } target)
+        {
+            return;
+        }
+
+        var x = X(Seconds(target));
+        if (x < HeaderWidth || x > Bounds.Width)
+        {
+            return;
+        }
+
+        using var body = context.PushClip(BodyRectangle());
+        context.DrawRectangle(drawingPalette.SnapFill, drawingPalette.SnapBorder,
+            new(x - 2, RulerHeight + 1, 4, Math.Max(0, Bounds.Height - RulerHeight - 2)));
     }
 
     /// <inheritdoc />
@@ -367,9 +499,9 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
                     RebuildRows();
                     PublishViewport(viewport);
                 }
-                else if (point.X < 46 + row.Depth * 8 && selectedLayer is { } selected && row.Clips.Any(clip => clip.Id == selected.Id))
+                else if (point.X < 46 + row.Depth * 8 && row.Clips.Any(clip => clip.Tracks.Any(track => !track.Keyframes.IsEmpty)))
                 {
-                    Toggle(collapsedAnimations, selected.Id);
+                    Toggle(collapsedAnimations, row.Id);
                     RebuildRows();
                     PublishViewport(viewport);
                 }
@@ -391,44 +523,29 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
         dragPointer = point.X;
         stretching = (e.KeyModifiers & KeyModifiers.Control) != 0;
-        if (selectedLayer is { } layer && row is not null)
+        if (row is not null && FindKeyframe(point) is { } hit)
         {
-            foreach (var animation in row.Animations)
+            var selection = new TimelineKeyframeEventArgs(hit.Identity.LayerId, hit.Identity.Property, hit.Identity.Time,
+                hit.Identity.Time, components: hit.Components);
+            KeyframeSelected?.Invoke(this, selection);
+            if (!selection.SelectionAccepted)
             {
-                if (CurveRectangle(layer.Id, animation.Property) is not { } curve || !curve.Contains(point))
-                {
-                    continue;
-                }
-
-                var track = layer.Tracks.Single(item => item.Property == animation.Property);
-                foreach (var key in track.Keyframes)
-                {
-                    var keyPoint = GetKeyframePoint(layer.Id, animation.Property, key.Time, key.Value);
-                    if (keyPoint is { } location && Math.Abs(point.X - location.X) <= 9 && Math.Abs(point.Y - location.Y) <= 9)
-                    {
-                        var selection = new TimelineKeyframeEventArgs(layer.Id, animation.Property, key.Time, key.Time);
-                        KeyframeSelected?.Invoke(this, selection);
-                        if (!selection.SelectionAccepted)
-                        {
-                            e.Handled = true;
-                            return;
-                        }
-
-                        var currentLayer = selectedLayer!;
-                        var currentTrack = currentLayer.Tracks.Single(item => item.Property == animation.Property);
-                        var currentKey = currentTrack.Keyframes.Single(item => item.Time == key.Time);
-                        BeginKeyframeDrag(currentLayer, currentKey, point.X, animation.Property, point.Y);
-                        if (HasActiveDrag)
-                        {
-                            capturedPointer = e.Pointer;
-                            e.Pointer.Capture(this);
-                        }
-
-                        e.Handled = true;
-                        return;
-                    }
-                }
+                e.Handled = true;
+                return;
             }
+
+            var currentLayer = layersById[hit.Identity.LayerId];
+            var currentTrack = currentLayer.Tracks.Single(item => item.Property == hit.Identity.Property);
+            var currentKey = currentTrack.Keyframes.Single(item => item.Time == hit.Identity.Time);
+            BeginKeyframeDrag(currentLayer, currentKey, point.X, hit.Identity.Property, point.Y, hit.Components);
+            hover = new(point, hit);
+            if (HasActiveDrag)
+            {
+                capturedPointer = e.Pointer;
+                e.Pointer.Capture(this);
+            }
+            e.Handled = true;
+            return;
         }
 
         if (row is not null)
@@ -455,7 +572,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
                 BeginTimingDrag(clip.Id, clip.Start, clip.End, mode, point.X, stretching);
                 originalTrackId = pendingTrackId = clip.SubtitleId is { } cueId
-                    ? document.Subtitles.First(cue => cue.Id == cueId).TrackId : null;
+                    ? cuesById[cueId].TrackId : null;
                 capturedPointer = e.Pointer;
                 e.Pointer.Capture(this);
                 UpdateCursor(point);
@@ -535,27 +652,42 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     {
         base.OnPointerMoved(e);
         var point = e.GetPosition(this);
-        var delta = TimeFromSeconds((point.X - dragPointer) / PixelsPerSecond, e.KeyModifiers);
+        var seconds = (point.X - dragPointer) / PixelsPerSecond;
+        var delta = IsStepEnabled && (e.KeyModifiers & KeyModifiers.Alt) == 0
+            ? new MediaTime((long)Math.Round(seconds * 1000000), 1000000)
+            : TimeFromSeconds(seconds, e.KeyModifiers);
         var minimum = new MediaTime(document.FrameRate.Denominator, document.FrameRate.Numerator);
+        snapTarget = null;
         switch (dragMode)
         {
             case TimelineDragMode.SEEK:
                 RequestSeek(TimeAt(point.X, e.KeyModifiers));
                 break;
             case TimelineDragMode.MOVE:
-                pendingStart = Max(MediaTime.Zero, originalStart + delta);
+                pendingStart = Max(MediaTime.Zero, QuantizeEdit(originalStart + delta, e.KeyModifiers));
                 pendingEnd = originalEnd + pendingStart - originalStart;
+                if (ShouldSnap(e.KeyModifiers))
+                {
+                    var snap = TimelineQuantization.ResolveSnapOffset(pendingStart, pendingEnd, snapBoundaries, PixelsPerSecond);
+                    pendingStart = Max(MediaTime.Zero, pendingStart + snap.Value);
+                    pendingEnd = pendingStart + originalEnd - originalStart;
+                    snapTarget = snap.Boundary == pendingStart || snap.Boundary == pendingEnd ? snap.Boundary : null;
+                }
                 break;
             case TimelineDragMode.TRIM_START:
-                pendingStart = Max(MediaTime.Zero, Min(originalEnd - minimum, originalStart + delta));
+                pendingStart = Max(MediaTime.Zero, Min(originalEnd - minimum, SnapEdit(originalStart + delta, e.KeyModifiers)));
+                snapTarget = snapTarget == pendingStart ? snapTarget : null;
                 break;
             case TimelineDragMode.TRIM_END:
-                pendingEnd = Max(originalStart + minimum, originalEnd + delta);
+                pendingEnd = Max(originalStart + minimum, SnapEdit(originalEnd + delta, e.KeyModifiers));
+                snapTarget = snapTarget == pendingEnd ? snapTarget : null;
                 break;
             case TimelineDragMode.KEYFRAME:
-                pendingKey = selectedLayer is { } keyLayer
-                    ? LayerAnimationTiming.ClampTime(keyLayer, originalKey + delta)
-                    : originalKey;
+                var keyLayer = layersById[dragId];
+                var sceneTime = keyLayer.Start + originalKey - keyLayer.AnimationOffset + delta;
+                pendingKey = LayerAnimationTiming.ClampTime(keyLayer,
+                    SnapEdit(sceneTime, e.KeyModifiers) - keyLayer.Start + keyLayer.AnimationOffset);
+                snapTarget = snapTarget == keyLayer.Start + pendingKey - keyLayer.AnimationOffset ? snapTarget : null;
                 pendingValue = Math.Clamp(originalValue + (dragPointerY - point.Y) / dragCurve.Height *
                     (valueMaximum - valueMinimum), valueMinimum, valueMaximum);
                 break;
@@ -565,6 +697,10 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         {
             var previousTrack = pendingTrackId;
             UpdateTimingDrop(point.Y);
+            if (!validDrop || snapTarget != pendingStart && snapTarget != pendingEnd)
+            {
+                snapTarget = null;
+            }
             if (previousTrack != pendingTrackId)
             {
                 RebuildRows();
@@ -576,6 +712,11 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             InvalidateVisual();
         }
 
+        if (dragMode is not (TimelineDragMode.NONE or TimelineDragMode.SEEK))
+        {
+            markersDirty = true;
+        }
+        UpdateHover(point);
         UpdateCursor(point);
     }
 
@@ -592,15 +733,15 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         var targetTrack = pendingTrackId;
         var canCommit = validDrop;
         CancelDrag();
-        if (mode == TimelineDragMode.KEYFRAME && (pendingKey != originalKey || !pendingValue.Equals(originalValue)) &&
-            selectedLayer is { } layer)
+        if (mode == TimelineDragMode.KEYFRAME && (pendingKey != originalKey || !pendingValue.Equals(originalValue)))
         {
-            KeyframeMoved?.Invoke(this, new(layer.Id, dragProperty, originalKey, pendingKey, pendingValue));
+            KeyframeMoved?.Invoke(this, new(dragId, dragProperty, originalKey, pendingKey,
+                UpdatedAnimationValue(), dragComponents));
         }
         else if (mode is TimelineDragMode.MOVE or TimelineDragMode.TRIM_START or TimelineDragMode.TRIM_END &&
                  canCommit && (pendingStart != originalStart || pendingEnd != originalEnd || targetTrack != originalTrackId))
         {
-            var editedLayer = Flatten(document.Layers).First(item => item.Id == dragId);
+            var editedLayer = layersById[dragId];
             TimingChanged?.Invoke(this, new(dragId, originalStart, pendingStart, pendingEnd,
                 stretching ? TimelineEditMode.STRETCH : TimelineEditMode.CROP, mode == TimelineDragMode.MOVE)
             {
@@ -643,6 +784,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         originalStart = pendingStart = start;
         originalEnd = pendingEnd = end;
         validDrop = true;
+        CacheSnapBoundaries(id);
     }
 
     internal void BeginKeyframeDrag(ProjectLayer layer, Keyframe key, double pointer)
@@ -650,26 +792,39 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         BeginKeyframeDrag(layer, key, pointer, layer.Tracks.First(track => track.Keyframes.Contains(key)).Property);
     }
 
-    private void BeginKeyframeDrag(ProjectLayer layer, Keyframe key, double pointer, AnimationProperty property, double? pointerY = null)
+    private void BeginKeyframeDrag(ProjectLayer layer, Keyframe key, double pointer, AnimationProperty property,
+        double? pointerY = null, TimelineComponentMask components = TimelineComponentMask.FIRST)
     {
         CancelDrag();
         dragMode = TimelineDragMode.KEYFRAME;
         dragPointer = pointer;
         originalKey = pendingKey = key.Time;
-        originalValue = pendingValue = key.Value;
+        originalAnimationValue = key.Value;
+        dragComponents = components;
+        var firstComponent = FirstComponent(components);
+        originalValue = pendingValue = key.Value.GetComponent(firstComponent);
         dragId = layer.Id;
         dragProperty = property;
-        dragCurve = CurveRectangle(layer.Id, property)!.Value;
-        (valueMinimum, valueMaximum) = ValueRange(layer.Tracks.Single(track => track.Property == property));
-        dragPointerY = pointerY ?? ValueY(key.Value, valueMinimum, valueMaximum, dragCurve);
+        dragCurve = ComponentCurve(CurveRectangle(layer.Id, property)!.Value, key.Value, firstComponent);
+        (valueMinimum, valueMaximum) = ComponentRange(key.Value, firstComponent,
+            ValueRange(layer.Tracks.Single(track => track.Property == property)));
+        dragPointerY = pointerY ?? ValueY(originalValue, valueMinimum, valueMaximum, dragCurve);
+        CacheSnapBoundaries(layer.Id);
     }
 
-    internal void CancelGesture() => CancelDrag();
+    internal void CancelGesture()
+    {
+        ClearHover();
+        CancelDrag();
+    }
 
     private void CancelDrag()
     {
         var wasDragging = HasActiveDrag;
+        snapTarget = null;
         dragMode = TimelineDragMode.NONE;
+        markersDirty = true;
+        ClearHover();
         Cursor = null;
         lastSeekRequest = null;
         var pointer = capturedPointer;
@@ -692,87 +847,294 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         }
     }
 
-    private void DrawEffects(DrawingContext context, IBrush foreground, AnimationProperty property, Rect curve)
+    private void DrawEffects(DrawingContext context, ProjectLayer source, AnimationProperty property, Rect curve)
     {
-        var layer = selectedLayer!;
-        if (dragMode == TimelineDragMode.MOVE && dragId == layer.Id)
-        {
-            layer = layer with { Start = pendingStart, End = pendingEnd };
-        }
-        else if (dragMode is TimelineDragMode.TRIM_START or TimelineDragMode.TRIM_END && dragId == layer.Id)
-        {
-            layer = LayerAnimationTiming.Retime(layer, pendingStart, pendingEnd,
-                stretching ? TimelineEditMode.STRETCH : TimelineEditMode.CROP);
-        }
-
-        DrawText(context, WorkbenchText.Property(property), new(HeaderWidth + 5, curve.Top - 15), foreground, 11);
-        var track = layer.Tracks.FirstOrDefault(item => item.Property == property);
-        if (track is null)
-        {
-            return;
-        }
-
-        var (minimum, maximum) =
-            dragMode == TimelineDragMode.KEYFRAME && dragProperty == property ? (valueMinimum, valueMaximum) : ValueRange(track);
-        if (dragMode == TimelineDragMode.KEYFRAME && dragProperty == property)
-        {
-            track = track with
-            {
-                Keyframes = track.Keyframes.Where(key => key.Time != pendingKey || key.Time == originalKey)
-                    .Select(key => key.Time == originalKey ? key with { Time = pendingKey, Value = pendingValue } : key)
-                    .OrderBy(key => key.Time).ToImmutableArray()
-            };
-        }
-
-        var curvePen = new Pen(new SolidColorBrush(Color.Parse("#CCD4FF")), 2);
-        Point? previous = null;
+        var layer = DisplayedLayer(source);
         var startX = Math.Max(HeaderWidth, X(Seconds(layer.Start)));
         var endX = Math.Min(Bounds.Width, X(Seconds(layer.End)));
         if (endX <= startX)
         {
             return;
         }
-
-        using var clip = context.PushClip(new Rect(startX, curve.Top, endX - startX, curve.Height));
-
-        var samples = Math.Max(2, (int)(endX - startX) / 3);
-        for (var sample = 0; sample <= samples; sample++)
+        var track = DisplayedTrack(layer, property);
+        if (track is null)
         {
-            var x = startX + sample * (endX - startX) / samples;
-            var time = new MediaTime((long)Math.Round((ViewStart + (x - HeaderWidth) / PixelsPerSecond) * 1000000), 1000000) -
-                layer.Start + layer.AnimationOffset;
-            var point = new Point(x, ValueY(SceneEvaluator.EvaluateTrack(track, time), minimum, maximum, curve));
-            if (previous is { } first)
-            {
-                context.DrawLine(curvePen, first, point);
-            }
-
-            previous = point;
+            return;
         }
-
-        foreach (var key in track.Keyframes)
+        var sharedRange = dragMode == TimelineDragMode.KEYFRAME && dragId == layer.Id && dragProperty == property &&
+            !(track.Keyframes[0].Value.IsColor && FirstComponent(dragComponents) == 3)
+            ? (valueMinimum, valueMaximum) : CachedValueRange(source, track);
+        using var clip = context.PushClip(new Rect(startX, curve.Top - 1, endX - startX, curve.Height + 2));
+        for (var component = 0; component < track.Keyframes[0].Value.ComponentCount; component++)
         {
-            var time = dragMode == TimelineDragMode.KEYFRAME && dragProperty == property && key.Time == originalKey ? pendingKey : key.Time;
-            var x = X(Seconds(layer.Start + time - layer.AnimationOffset));
-            var value = dragMode == TimelineDragMode.KEYFRAME && dragProperty == property && key.Time == originalKey ? pendingValue : key.Value;
-            var y = ValueY(value, minimum, maximum, curve);
+            var value = track.Keyframes[0].Value;
+            var area = ComponentCurve(curve, value, component);
+            var range = ComponentRange(value, component, sharedRange);
+            var curvePen = new Pen(ComponentBrush(value, component), 2);
+            if (value.IsColor && component == 3)
+            {
+                curvePen.DashStyle = DashStyle.Dash;
+            }
+            Point? previous = null;
+            var samples = Math.Max(2, (int)(endX - startX) / 3);
+            for (var sample = 0; sample <= samples; sample++)
+            {
+                var x = startX + sample * (endX - startX) / samples;
+                var time = new MediaTime((long)Math.Round((ViewStart + (x - HeaderWidth) / PixelsPerSecond) * 1000000), 1000000) -
+                    layer.Start + layer.AnimationOffset;
+                var point = new Point(x, ValueY(SceneEvaluator.EvaluateTrack(track, time).GetComponent(component),
+                    range.Minimum, range.Maximum, area));
+                if (previous is { } first)
+                {
+                    context.DrawLine(curvePen, first, point);
+                }
+                previous = point;
+            }
+        }
+    }
+
+    private void DrawPropertyTitles(DrawingContext context, IBrush foreground)
+    {
+        using var body = context.PushClip(BodyRectangle());
+        foreach (var row in rows)
+        {
+            foreach (var animation in row.Animations)
+            {
+                var top = RowY(row) + animation.Top;
+                if (top + animation.Height < RulerHeight || top > Bounds.Height)
+                {
+                    continue;
+                }
+                var title = WorkbenchText.Property(animation.Property);
+                var titleLayout = new FormattedText(title, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                    new Typeface(FontFamily.Default), 11, foreground);
+                context.DrawRectangle(drawingPalette.Surface, null,
+                    new(HeaderWidth + 2, top, titleLayout.Width + 6, titleLayout.Height + 3), 2, 2);
+                context.DrawText(titleLayout, new(HeaderWidth + 5, top + 2));
+                if (animation.Property is AnimationProperty.FILL or AnimationProperty.STROKE)
+                {
+                    DrawText(context, "R", new(HeaderWidth + 105, top + 2), drawingPalette.ColorComponents[0], 10);
+                    DrawText(context, "G", new(HeaderWidth + 118, top + 2), drawingPalette.ColorComponents[1], 10);
+                    DrawText(context, "B", new(HeaderWidth + 131, top + 2), drawingPalette.ColorComponents[2], 10);
+                    DrawText(context, "A  0–1", new(HeaderWidth + 5, top + animation.Height - 44), foreground, 10);
+                }
+            }
+        }
+    }
+
+    private void DrawKeyframeMarkers(DrawingContext context)
+    {
+        using var body = context.PushClip(BodyRectangle());
+        foreach (var marker in GetMarkers())
+        {
             var diamond = new StreamGeometry();
-            var radius = Math.Min(6, Math.Max(2, curve.Height / 5));
+            var point = marker.Position;
             using (var geometry = diamond.Open())
             {
-                geometry.BeginFigure(new(x, y - radius));
-                geometry.LineTo(new(x + radius, y));
-                geometry.LineTo(new(x, y + radius));
-                geometry.LineTo(new(x - radius, y));
+                geometry.BeginFigure(new(point.X, point.Y - 6));
+                geometry.LineTo(new(point.X + 6, point.Y));
+                geometry.LineTo(new(point.X, point.Y + 6));
+                geometry.LineTo(new(point.X - 6, point.Y));
                 geometry.EndFigure(true);
             }
+            var brush = IsMultiple(marker.Components) ? new SolidColorBrush(Colors.Gold) :
+                ComponentBrush(marker.Value, FirstComponent(marker.Components));
+            context.DrawGeometry(brush, IsMultiple(marker.Components) ? new Pen(Brushes.White, 1.5) : drawingPalette.MarkerBorder, diamond);
+        }
+    }
 
-            context.DrawGeometry(new SolidColorBrush(Color.Parse("#B7C6FF")), new Pen(Brushes.White), diamond);
-            if (Bounds.Height >= 120)
+    private void DrawHoveredLabel(DrawingContext context, IBrush foreground, bool dark)
+    {
+        if (hover is null)
+        {
+            return;
+        }
+        var marker = FindKeyframe(hover.Pointer);
+        hover = hover with { Marker = marker };
+        if (marker is null)
+        {
+            return;
+        }
+        using var body = context.PushClip(BodyRectangle());
+        var text = LabelText(marker);
+        var label = LabelRectangle(marker.Position, text);
+        context.DrawRectangle(new SolidColorBrush(Color.Parse(dark ? "#F0202C40" : "#F0E7EDF5")),
+            new Pen(new SolidColorBrush(Color.Parse(dark ? "#77869E" : "#9AA9BB"))), label, 3, 3);
+        DrawText(context, text, label.TopLeft + new Vector(4, 2), foreground, 11);
+    }
+
+    internal IReadOnlyList<TimelineKeyframeMarker> KeyframeMarkers => GetMarkers();
+    internal TimelineKeyframeMarker? HoveredKeyframe => hover?.Marker;
+
+    private IReadOnlyList<TimelineKeyframeMarker> GetMarkers()
+    {
+        if (!markersDirty)
+        {
+            return markers;
+        }
+        var result = new List<TimelineKeyframeMarker>();
+        foreach (var row in rows)
+        {
+            if (RowY(row) + row.CurveHeight < RulerHeight || RowY(row) > Bounds.Height)
             {
-                DrawText(context, value.ToString("0.##", CultureInfo.InvariantCulture), new(x + 8, y + 10), foreground, 11);
+                continue;
+            }
+            foreach (var source in ClipsForRow(row))
+            {
+                var layer = DisplayedLayer(source);
+                if (X(Seconds(layer.End)) < HeaderWidth - 6 || X(Seconds(layer.Start)) > Bounds.Width + 6)
+                {
+                    continue;
+                }
+                foreach (var animation in row.Animations)
+                {
+                    var track = DisplayedTrack(layer, animation.Property);
+                    if (track is null || CurveRectangle(layer.Id, animation.Property) is not { } curve)
+                    {
+                        continue;
+                    }
+                    var range = dragMode == TimelineDragMode.KEYFRAME && dragId == layer.Id &&
+                        dragProperty == animation.Property && !(track.Keyframes[0].Value.IsColor && FirstComponent(dragComponents) == 3)
+                        ? (valueMinimum, valueMaximum) : CachedValueRange(source, track);
+                    foreach (var key in track.Keyframes)
+                    {
+                        var x = X(Seconds(layer.Start + key.Time - layer.AnimationOffset));
+                        if (x >= HeaderWidth - 9 && x <= Bounds.Width + 9)
+                        {
+                            result.AddRange(CreateMarkers(layer, track.Property, key, curve, range));
+                        }
+                    }
+                }
             }
         }
+        markers = result;
+        markersDirty = false;
+        return markers;
+    }
+
+    private List<TimelineKeyframeMarker> CreateMarkers(ProjectLayer layer, AnimationProperty property,
+        Keyframe key, Rect curve, (double Minimum, double Maximum) range)
+    {
+        var x = X(Seconds(layer.Start + key.Time - layer.AnimationOffset));
+        var result = new List<TimelineKeyframeMarker>();
+        for (var component = 0; component < key.Value.ComponentCount; component++)
+        {
+            var area = ComponentCurve(curve, key.Value, component);
+            var limits = ComponentRange(key.Value, component, range);
+            var point = new Point(x, ValueY(key.Value.GetComponent(component), limits.Minimum, limits.Maximum, area));
+            var mask = ComponentMask(component);
+            var index = result.FindIndex(item => item.Curve == area &&
+                Enumerable.Range(0, key.Value.ComponentCount).Where(axis => Contains(item.Components, axis))
+                    .All(axis => Math.Abs(ValueY(key.Value.GetComponent(axis), limits.Minimum, limits.Maximum, area) - point.Y) <= 1));
+            if (index >= 0)
+            {
+                var previous = result[index];
+                var count = CountComponents(previous.Components);
+                result[index] = previous with
+                {
+                    Components = previous.Components | mask,
+                    Position = new(x, (previous.Position.Y * count + point.Y) / (count + 1))
+                };
+            }
+            else
+            {
+                result.Add(new(new(layer.Id, property, key.Time), key.Value, mask, point, area,
+                    limits.Minimum, limits.Maximum));
+            }
+        }
+        return result;
+    }
+
+    private ProjectLayer DisplayedLayer(ProjectLayer layer)
+    {
+        if (dragId != layer.Id)
+        {
+            return layer;
+        }
+        if (dragMode == TimelineDragMode.MOVE)
+        {
+            return layer with { Start = pendingStart, End = pendingEnd };
+        }
+        return dragMode is TimelineDragMode.TRIM_START or TimelineDragMode.TRIM_END
+            ? LayerAnimationTiming.Retime(layer, pendingStart, pendingEnd,
+                stretching ? TimelineEditMode.STRETCH : TimelineEditMode.CROP) : layer;
+    }
+
+    private AnimationTrack? DisplayedTrack(ProjectLayer layer, AnimationProperty property)
+    {
+        var track = layer.Tracks.FirstOrDefault(item => item.Property == property);
+        if (track is null || track.Keyframes.IsEmpty)
+        {
+            return null;
+        }
+        if (dragMode != TimelineDragMode.KEYFRAME || dragId != layer.Id || dragProperty != property)
+        {
+            return track;
+        }
+        return track with
+        {
+            Keyframes = track.Keyframes.Where(key => key.Time != pendingKey || key.Time == originalKey)
+                .Select(key => key.Time == originalKey ? key with { Time = pendingKey, Value = UpdatedAnimationValue() } : key)
+                .OrderBy(key => key.Time).ToImmutableArray()
+        };
+    }
+
+    private AnimationValue UpdatedAnimationValue()
+    {
+        var delta = pendingValue - originalValue;
+        var minimumDelta = double.NegativeInfinity;
+        var maximumDelta = double.PositiveInfinity;
+        for (var component = 0; component < originalAnimationValue.ComponentCount; component++)
+        {
+            if (!Contains(dragComponents, component))
+            {
+                continue;
+            }
+            var value = originalAnimationValue.GetComponent(component);
+            minimumDelta = Math.Max(minimumDelta,
+                Math.Max(valueMinimum, AnimationPropertyMetadata.GetMinimum(dragProperty, component)) - value);
+            maximumDelta = Math.Min(maximumDelta,
+                Math.Min(valueMaximum, AnimationPropertyMetadata.GetMaximum(dragProperty, component)) - value);
+        }
+        delta = Math.Clamp(delta, minimumDelta, maximumDelta);
+        var edited = originalAnimationValue;
+        for (var component = 0; component < edited.ComponentCount; component++)
+        {
+            if (Contains(dragComponents, component))
+            {
+                edited = edited.WithComponent(component, originalAnimationValue.GetComponent(component) + delta);
+            }
+        }
+        return edited;
+    }
+
+    private static TimelineComponentMask ComponentMask(int component) => (TimelineComponentMask)(1 << component);
+    private static bool Contains(TimelineComponentMask components, int component) => (components & ComponentMask(component)) != 0;
+    private static bool IsMultiple(TimelineComponentMask components) => CountComponents(components) > 1;
+    private static int CountComponents(TimelineComponentMask components) => System.Numerics.BitOperations.PopCount((uint)components);
+    private static int FirstComponent(TimelineComponentMask components) => System.Numerics.BitOperations.TrailingZeroCount((uint)components);
+
+    private static Rect ComponentCurve(Rect curve, AnimationValue value, int component)
+    {
+        if (!value.IsColor)
+        {
+            return curve;
+        }
+        var alphaHeight = Math.Min(22, Math.Max(8, curve.Height * 0.28));
+        return component == 3
+            ? new(curve.X, curve.Bottom - alphaHeight, curve.Width, alphaHeight)
+            : new(curve.X, curve.Y, curve.Width, Math.Max(1, curve.Height - alphaHeight - 10));
+    }
+
+    private static (double Minimum, double Maximum) ComponentRange(AnimationValue value, int component,
+        (double Minimum, double Maximum) shared)
+    {
+        return value.IsColor && component == 3 ? (0, 1) : shared;
+    }
+
+    private SolidColorBrush ComponentBrush(AnimationValue value, int component)
+    {
+        return value.IsColor ? drawingPalette.ColorComponents[component] : drawingPalette.Components[component];
     }
 
     private static (double Minimum, double Maximum) ValueRange(AnimationTrack track)
@@ -782,17 +1144,76 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         {
             return (0, 1);
         }
-
-        var minimum = track.Keyframes.Min(frame => frame.Value);
-        var maximum = track.Keyframes.Max(frame => frame.Value);
-        var margin = Math.Max(1, (maximum - minimum) * 0.15);
+        var values = track.Keyframes.SelectMany(frame => Enumerable.Range(0,
+            frame.Value.IsColor ? 3 : frame.Value.ComponentCount).Select(frame.Value.GetComponent)).ToArray();
+        var minimum = values.Min();
+        var maximum = values.Max();
+        if (track.Keyframes[0].Value.IsColor && minimum >= 0 && maximum <= 1)
+        {
+            return (0, 1);
+        }
+        var margin = Math.Max(track.Keyframes[0].Value.IsColor ? 0.1 : 1, (maximum - minimum) * 0.15);
         if (track.Property is AnimationProperty.BLUR or AnimationProperty.STROKE_WIDTH)
         {
             return (Math.Max(0, minimum - margin),
                 Math.Min(track.Property == AnimationProperty.BLUR ? 512 : 4096, maximum + margin));
         }
-
         return (minimum - margin, maximum + margin);
+    }
+
+    private (double Minimum, double Maximum) CachedValueRange(ProjectLayer layer, AnimationTrack track)
+    {
+        var key = (layer.Id, track.Property);
+        if (!valueRanges.TryGetValue(key, out var range))
+        {
+            range = ValueRange(layer.Tracks.Single(item => item.Property == track.Property));
+            valueRanges.Add(key, range);
+        }
+        return range;
+    }
+
+    private Rect LabelRectangle(Point anchor, string text)
+    {
+        var formatted = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            new Typeface(FontFamily.Default), 11, Brushes.White);
+        var body = BodyRectangle();
+        var width = Math.Min(body.Width, formatted.Width + 8);
+        var height = Math.Min(body.Height, formatted.Height + 4);
+        var left = Math.Clamp(anchor.X + 12, body.Left, Math.Max(body.Left, body.Right - width));
+        var top = Math.Clamp(anchor.Y + 6, body.Top, Math.Max(body.Top, body.Bottom - height));
+        return new(left, top, width, height);
+    }
+
+    private static string LabelText(TimelineKeyframeMarker marker)
+    {
+        return string.Join(Environment.NewLine, Enumerable.Range(0, marker.Value.ComponentCount)
+            .Where(component => Contains(marker.Components, component))
+            .Select(component => AnimationPropertyMetadata.GetComponentName(marker.Identity.Property, component) + " " +
+                marker.Value.GetComponent(component).ToString("0.###", CultureInfo.InvariantCulture)));
+    }
+
+    private Rect BodyRectangle() => new(HeaderWidth, RulerHeight, Math.Max(0, Bounds.Width - HeaderWidth),
+        Math.Max(0, Bounds.Height - RulerHeight));
+
+    private void UpdateHover(Point point)
+    {
+        var marker = BodyRectangle().Contains(point) ? FindKeyframe(point) : null;
+        var next = marker is null ? null : new TimelineHoverState(point, marker);
+        var changed = hover?.Marker != marker;
+        hover = next;
+        if (changed)
+        {
+            InvalidateVisual();
+        }
+    }
+
+    private void ClearHover()
+    {
+        if (hover is not null)
+        {
+            hover = null;
+            InvalidateVisual();
+        }
     }
 
     private static double ValueY(double value, double minimum, double maximum, Rect curve)
@@ -805,14 +1226,13 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         var value = spectrum!;
         var data = value.Waveform.Span;
         var duration = Seconds(value.Duration);
-        var pen = new Pen(new SolidColorBrush(Color.Parse("#6079D5DB")));
         var center = top + height / 2;
         var first = Math.Clamp((int)(ViewStart / duration * value.Width), 0, value.Width - 1);
         var last = Math.Clamp((int)((ViewStart + VisibleDuration) / duration * value.Width), first, value.Width - 1);
         for (var index = first; index <= last; index++)
         {
             var x = X(index / (double)value.Width * duration);
-            context.DrawLine(pen, new(x, center - data[index * 2 + 1] * height * 0.4),
+            context.DrawLine(waveformPen, new(x, center - data[index * 2 + 1] * height * 0.4),
                 new(x, center - data[index * 2] * height * 0.4));
         }
     }
@@ -839,32 +1259,44 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     }
 
     /// <summary>返回已展开属性曲线上关键帧的真实控件坐标。</summary>
-    public Point? GetKeyframePoint(Guid layerId, MediaTime time, double value)
+    public Point? GetKeyframePoint(Guid layerId, MediaTime time, AnimationValue value)
     {
         return GetKeyframePoint(layerId, EffectProperty, time, value);
     }
 
     /// <summary>返回指定属性行中关键帧的真实坐标。</summary>
-    public Point? GetKeyframePoint(Guid layerId, AnimationProperty property, MediaTime time, double value)
+    public Point? GetKeyframePoint(Guid layerId, AnimationProperty property, MediaTime time, AnimationValue value,
+        int? component = null)
     {
-        var layer = Flatten(document.Layers).FirstOrDefault(item => item.Id == layerId);
+        var layer = layersById.GetValueOrDefault(layerId);
         var track = layer?.Tracks.FirstOrDefault(item => item.Property == property);
         if (layer is null || track is null || CurveRectangle(layerId, property) is not { } curve)
         {
             return null;
         }
+        var range = CachedValueRange(layer, track);
+        return CreateMarkers(layer, property, new(time, value), curve, range)
+            .First(marker => Contains(marker.Components, component ?? 0)).Position;
+    }
 
-        var (minimum, maximum) = ValueRange(track);
-        return new(X(Seconds(layer.Start + time - layer.AnimationOffset)),
-            curve.Top + (1 - (value - minimum) / (maximum - minimum)) * curve.Height);
+    /// <summary>返回当前悬停关键帧的标签范围；未悬停时返回 null。</summary>
+    public Rect? GetKeyframeLabelRectangle(Guid layerId, AnimationProperty property, MediaTime time,
+        int? component = null)
+    {
+        var marker = hover?.Marker;
+        return marker?.Identity == new TimelineKeyframeIdentity(layerId, property, time) &&
+            Contains(marker.Components, component ?? 0)
+            ? LabelRectangle(marker.Position, LabelText(marker)) : null;
     }
 
     /// <summary>返回展开片段已有动画属性的显示顺序。</summary>
     public IReadOnlyList<AnimationProperty> GetAnimationProperties(Guid layerId)
     {
-        return selectedLayer?.Id == layerId
-            ? rows.FirstOrDefault(row => row.Clips.Any(clip => clip.Id == layerId))?.Animations.Select(row => row.Property).ToArray() ?? []
-            : [];
+        var layer = layersById.GetValueOrDefault(layerId);
+        var row = rowsByLayer.GetValueOrDefault(layerId);
+        return row?.Animations.Where(animation => layer?.Tracks.Any(track =>
+            track.Property == animation.Property && !track.Keyframes.IsEmpty) == true)
+            .Select(animation => animation.Property).ToArray() ?? [];
     }
 
     /// <summary>返回真实轨道头部的可见坐标，供面板和辅助功能导航。</summary>
@@ -894,22 +1326,19 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
     private Rect? CurveRectangle(Guid layerId, AnimationProperty property)
     {
-        if (selectedLayer?.Id != layerId)
-        {
-            return null;
-        }
-
-        var row = rows.FirstOrDefault(item => ClipsForRow(item).Any(clip => clip.Id == layerId));
+        var row = rowsByLayer.GetValueOrDefault(layerId);
         var animation = row?.Animations.FirstOrDefault(item => item.Property == property);
-        return row is not null && animation is not null
+        var layer = layersById.GetValueOrDefault(layerId);
+        return row is not null && animation is not null &&
+            layer?.Tracks.Any(track => track.Property == property && !track.Keyframes.IsEmpty) == true
             ? new Rect(HeaderWidth, RowY(row) + animation.Top + 20,
-                Math.Max(0, Bounds.Width - HeaderWidth), Math.Max(1, animation.Height - 24)) : null;
+                Math.Max(0, Bounds.Width - HeaderWidth), Math.Max(1, animation.Height - 34)) : null;
     }
 
     private void RebuildRows()
     {
         var result = new List<TimelineRow>();
-        var flattened = Flatten(document.Layers).ToArray();
+        var flattened = layersById.Values.ToArray();
         var byCue = flattened.Where(layer => layer.SubtitleId.HasValue).ToDictionary(layer => layer.SubtitleId!.Value);
         var top = 0d;
         foreach (var track in document.SubtitleTracks)
@@ -917,11 +1346,15 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
             var clips = document.Subtitles.Where(cue => cue.TrackId == track.Id).OrderBy(cue => cue.Start)
                 .Select(cue => byCue[cue.Id]).ToArray();
             var collapsed = collapsedTracks.Contains(track.Id);
-            var movingBetweenTracks = dragMode == TimelineDragMode.MOVE && originalTrackId.HasValue && selectedLayer?.Id == dragId;
-            var selectedInRow = selectedLayer is { } selected && (movingBetweenTracks
-                ? pendingTrackId == track.Id : clips.Any(clip => clip.Id == selected.Id));
-            var animated = !collapsed && selectedInRow && !collapsedAnimations.Contains(selectedLayer!.Id);
-            var animations = animated ? CreateAnimationRows(selectedLayer!) : [];
+            var displayedClips = clips.Where(clip => dragMode != TimelineDragMode.MOVE ||
+                clip.Id != dragId || pendingTrackId == track.Id).ToList();
+            if (dragMode == TimelineDragMode.MOVE && originalTrackId.HasValue &&
+                pendingTrackId == track.Id && originalTrackId != pendingTrackId)
+            {
+                displayedClips.Add(flattened.Single(layer => layer.Id == dragId));
+            }
+            var animations = !collapsed && !collapsedAnimations.Contains(track.Id)
+                ? CreateAnimationRows(displayedClips) : [];
             var curve = animations.Sum(animation => animation.Height);
             var height = 28 + curve;
             result.Add(new(track.Id, track.Id, track.Name, clips, 0, false, collapsed, top, height, animations));
@@ -930,6 +1363,10 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
         AddSceneRows(document.Layers, 0, result, ref top);
         rows = result;
+        markersDirty = true;
+        ClearHover();
+        rowsByLayer = result.SelectMany(row => ClipsForRow(row).Select(clip => (clip.Id, Row: row)))
+            .ToDictionary(value => value.Id, value => value.Row);
         contentHeight = top;
     }
 
@@ -944,8 +1381,8 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
             var group = layer.Kind == LayerKind.GROUP;
             var collapsed = group && collapsedGroups.Contains(layer.Id);
-            var animations = selectedLayer?.Id == layer.Id && !collapsedAnimations.Contains(layer.Id)
-                ? CreateAnimationRows(layer) : [];
+            var animations = !collapsedAnimations.Contains(layer.Id)
+                ? CreateAnimationRows([layer]) : [];
             var curve = animations.Sum(animation => animation.Height);
             var height = 28 + curve;
             result.Add(new(layer.Id, null, layer.Name, [layer], depth, group, collapsed, top, height, animations));
@@ -957,11 +1394,22 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         }
     }
 
-    private TimelineAnimationRow[] CreateAnimationRows(ProjectLayer layer)
+    private static TimelineAnimationRow[] CreateAnimationRows(IEnumerable<ProjectLayer> clips)
     {
-        var height = Math.Clamp(Bounds.Height - RulerHeight - 30, 36, 76);
-        return layer.Tracks.Where(track => !track.Keyframes.IsEmpty).OrderBy(track => track.Property)
-            .Select((track, index) => new TimelineAnimationRow(track.Property, index * height, height)).ToArray();
+        var result = new List<TimelineAnimationRow>();
+        var top = 0d;
+        foreach (var property in clips.SelectMany(layer => layer.Tracks).Where(track => !track.Keyframes.IsEmpty)
+                     .Select(track => track.Property).Distinct().OrderBy(property =>
+                     {
+                         var index = AnimationPropertyMetadata.CurrentProperties.IndexOf(property);
+                         return index >= 0 ? index : AnimationPropertyMetadata.CurrentProperties.Length + (int)property;
+                     }))
+        {
+            var height = property is AnimationProperty.FILL or AnimationProperty.STROKE ? 112 : 76;
+            result.Add(new(property, top, height));
+            top += height;
+        }
+        return result.ToArray();
     }
 
     private void UpdateCursor(Point point)
@@ -988,6 +1436,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
     protected override void OnPointerExited(PointerEventArgs e)
     {
         base.OnPointerExited(e);
+        ClearHover();
         if (!HasActiveDrag)
         {
             Cursor = null;
@@ -1006,7 +1455,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
         if (dragMode == TimelineDragMode.MOVE && originalTrackId.HasValue && pendingTrackId != originalTrackId && row.TrackId == pendingTrackId)
         {
-            yield return Flatten(document.Layers).First(layer => layer.Id == dragId);
+            yield return layersById[dragId];
         }
     }
 
@@ -1033,13 +1482,13 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
         }
 
         var offset = viewport.VerticalOffset;
-        if (row.Top < offset)
+        if (row.Top + row.Height <= offset)
         {
             offset = row.Top;
         }
-        else if (row.Top + row.Height > offset + viewport.Height)
+        else if (row.Top >= offset + viewport.Height)
         {
-            offset = row.Top + row.Height - viewport.Height;
+            offset = row.Top;
         }
 
         PublishViewport(viewport with { VerticalOffset = offset });
@@ -1064,7 +1513,7 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
     private void UpdateTimingDrop(double pointerY)
     {
-        var layer = Flatten(document.Layers).First(item => item.Id == dragId);
+        var layer = layersById[dragId];
         validDrop = true;
         if (layer.SubtitleId is not { } cueId || originalTrackId is not { } sourceTrack)
         {
@@ -1173,6 +1622,55 @@ public sealed class SubtitleTimelineControl : Control, IDisposable
 
         var frame = (long)Math.Round(value * document.FrameRate.Numerator / document.FrameRate.Denominator);
         return new(checked(frame * document.FrameRate.Denominator), document.FrameRate.Numerator);
+    }
+
+    private TimelineKeyframeMarker? FindKeyframe(Point point)
+    {
+        if (!BodyRectangle().Contains(point))
+        {
+            return null;
+        }
+        TimelineKeyframeMarker? hit = null;
+        var nearest = 81d;
+        foreach (var marker in GetMarkers())
+        {
+            var offset = point - marker.Position;
+            var distance = offset.X * offset.X + offset.Y * offset.Y;
+            if (distance <= 81 && (hit is null || distance < nearest || distance.Equals(nearest) &&
+                marker.Identity.LayerId == selectedLayer?.Id && hit.Identity.LayerId != selectedLayer?.Id))
+            {
+                hit = marker;
+                nearest = distance;
+            }
+        }
+        return hit;
+    }
+
+    private void CacheSnapBoundaries(Guid excludedLayerId)
+    {
+        snapBoundaries = layersById.Values.Where(layer => layer.Id != excludedLayerId)
+            .SelectMany(layer => new[] { layer.Start, layer.End }).Distinct().Order().ToArray();
+    }
+
+    private bool ShouldSnap(KeyModifiers modifiers) => IsSnapEnabled && (modifiers & KeyModifiers.Alt) == 0;
+
+    private MediaTime QuantizeEdit(MediaTime value, KeyModifiers modifiers)
+    {
+        return IsStepEnabled && (modifiers & KeyModifiers.Alt) == 0
+            ? TimelineQuantization.Quantize(value, TimelineTimeScale.MinorStep(PixelsPerSecond)) : value;
+    }
+
+    private MediaTime SnapEdit(MediaTime value, KeyModifiers modifiers)
+    {
+        var result = QuantizeEdit(value, modifiers);
+        if (!ShouldSnap(modifiers))
+        {
+            return result;
+        }
+
+        var snap = TimelineQuantization.ResolveSnap(result, snapBoundaries, PixelsPerSecond);
+        snapTarget = snap.Boundary;
+        return snap.Value;
     }
 
     private double X(double time) => HeaderWidth + (time - ViewStart) * PixelsPerSecond;

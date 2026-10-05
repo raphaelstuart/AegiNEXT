@@ -8,6 +8,7 @@ internal sealed class WindowChromeProbeReport
     public string Platform { get; } = RuntimeInformation.OSDescription;
     public string Architecture { get; } = RuntimeInformation.ProcessArchitecture.ToString();
     public List<WindowChromeProbeSample> Samples { get; } = [];
+    public List<AutoHeightDialogProbeSample> AutoHeightDialogs { get; } = [];
     public List<string> Failures { get; } = [];
     public bool AutomaticChecksCompleted { get; set; }
     public string NativeInteractionStatus { get; } = "Requires manual verification";

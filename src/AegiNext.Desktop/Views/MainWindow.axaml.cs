@@ -84,6 +84,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.DraftErrorFocusRequested += OnDraftErrorFocusRequested;
         Session.PreferencesChanged += OnPreferencesChanged;
         Session.StyleLibraryChanged += OnStyleLibraryChanged;
+        Session.EffectLibraryChanged += OnEffectLibraryChanged;
         Session.SelectionChanged += OnSelectionChanged;
         clockTimer.Tick += (_, _) => Session.Tick();
         Opened += (_, _) => clockTimer.Start();
@@ -176,6 +177,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             ViewModel.DraftErrorFocusRequested -= OnDraftErrorFocusRequested;
             Session.PreferencesChanged -= OnPreferencesChanged;
             Session.StyleLibraryChanged -= OnStyleLibraryChanged;
+            Session.EffectLibraryChanged -= OnEffectLibraryChanged;
             Session.SelectionChanged -= OnSelectionChanged;
             layouts.Changed -= OnLayoutChanged;
             layouts.Error -= OnLayoutError;
@@ -339,6 +341,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     {
         settingsWindow?.UpdateStyles(Session.StyleLibrary.Snapshot.Presets);
         settingsWindow?.SetStyleOperationBusy(Session.Styles.IsBusy);
+    }
+    private void OnEffectLibraryChanged(object? sender, EventArgs e)
+    {
+        settingsWindow?.UpdateEffects(Session.EffectScriptLibrary.Snapshot.Presets);
+        settingsWindow?.SetEffectOperationBusy(Session.EffectScripts.IsBusy);
+        if (!Session.EffectScripts.IsBusy && Session.LastError is { } error)
+        {
+            settingsWindow?.ShowError(error.Message);
+        }
     }
     private void OnSelectionChanged(object? sender, EventArgs e) => settingsWindow?.UpdateSelectionAvailability(Session.HasSelectedCue && !Session.IsProjectBusy && !Session.IsClosing);
     private void ApplyWindowPreferences()

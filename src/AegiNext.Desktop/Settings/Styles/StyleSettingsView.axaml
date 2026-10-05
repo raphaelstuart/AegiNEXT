@@ -2,10 +2,7 @@
              xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts" xmlns:presets="using:AegiNext.Core.Presets"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:settings="using:AegiNext.Desktop.Settings"
              xmlns:vm="using:AegiNext.Desktop.Settings.Styles"
-             x:Class="AegiNext.Desktop.Settings.Styles.StyleSettingsView" x:DataType="vm:StyleSettingsViewModel">
-  <UserControl.Resources>
-    <settings:SettingsSceneColorConverter x:Key="SceneConverter" />
-  </UserControl.Resources>
+             x:Class="AegiNext.Desktop.Settings.Styles.StyleSettingsView" Classes="business-surface" x:DataType="vm:StyleSettingsViewModel">
   <Grid Name="StylesPage" IsVisible="{Binding $parent[UserControl].IsVisible}" IsEnabled="{Binding IsAvailable}"
         RowDefinitions="Auto,*,Auto" RowSpacing="12">
     <WrapPanel>
@@ -55,15 +52,11 @@
           <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
             <StackPanel Spacing="8">
               <TextBlock Tag="Fill" Classes="field" />
-              <ColorPicker Name="FillPicker"
-                           Color="{Binding Fill, Mode=TwoWay, Converter={StaticResource SceneConverter}}"
-                           IsColorPaletteVisible="False" IsColorComponentsVisible="False" />
+              <controls:ColorDraftInput Name="FillPicker" Draft="{Binding FillDraft}" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">
               <TextBlock Tag="Stroke" Classes="field" />
-              <ColorPicker Name="StrokePicker"
-                           Color="{Binding Stroke, Mode=TwoWay, Converter={StaticResource SceneConverter}}"
-                           IsColorPaletteVisible="False" IsColorComponentsVisible="False" />
+              <controls:ColorDraftInput Name="StrokePicker" Draft="{Binding StrokeDraft}" />
             </StackPanel>
           </Grid>
           <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
@@ -125,9 +118,7 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Spacing="8">
                   <TextBlock Tag="ShadowColor" Classes="field" />
-                  <ColorPicker Name="ShadowPicker"
-                               Color="{Binding ShadowColor, Mode=TwoWay, Converter={StaticResource SceneConverter}}"
-                               IsColorPaletteVisible="False" IsColorComponentsVisible="False" />
+                  <controls:ColorDraftInput Name="ShadowPicker" Draft="{Binding ShadowDraft}" />
                 </StackPanel>
               </Grid>
             </StackPanel>

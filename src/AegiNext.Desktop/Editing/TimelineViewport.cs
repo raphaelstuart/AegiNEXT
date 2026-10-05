@@ -4,6 +4,7 @@ namespace AegiNext.Desktop.Editing;
 public sealed record TimelineViewport(double StartSeconds = 0, double PixelsPerSecond = 48,
     double VerticalOffset = 0, double Width = 0, double Height = 0)
 {
+    internal const double MAX_PIXELS_PER_SECOND = 20000;
     public double VisibleDuration => Width / PixelsPerSecond;
 
     /// <summary>将视口限制到有限工程范围和可滚动轨道范围。</summary>
@@ -12,7 +13,7 @@ public sealed record TimelineViewport(double StartSeconds = 0, double PixelsPerS
         var width = Finite(Width, 0, double.MaxValue, 0);
         var height = Finite(Height, 0, double.MaxValue, 0);
         var extent = Finite(duration, 0.001, double.MaxValue, 1);
-        var scale = Finite(PixelsPerSecond, Math.Min(0.01, width / extent), 2000, 48);
+        var scale = Finite(PixelsPerSecond, Math.Min(0.01, width / extent), MAX_PIXELS_PER_SECOND, 48);
         scale = Math.Max(0.000001, scale);
         return this with
         {

@@ -1,0 +1,18 @@
+# 固定淡入、随 Clip 时长伸缩的保持段、固定淡出。
+effect "fade-in-out" version 1
+short-clip compress
+
+segment enter fixed 300ms
+    at 0 opacity 0 ease-out
+    at 1 opacity base
+end
+
+segment stay flex 1
+    at 0 opacity base hold
+    at 1 opacity base
+end
+
+segment exit fixed 300ms
+    at 0 opacity base ease-in
+    at 1 opacity 0
+end

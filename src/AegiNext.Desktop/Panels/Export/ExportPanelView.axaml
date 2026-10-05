@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
     xmlns:vm="using:AegiNext.Desktop.Panels.Export" x:DataType="vm:ExportPanelViewModel"
-    x:Class="AegiNext.Desktop.Panels.Export.ExportPanelView">
+    x:Class="AegiNext.Desktop.Panels.Export.ExportPanelView" Classes="business-surface">
 <StackPanel Margin="4" Spacing="8">
               <TextBlock Tag="Codec" Classes="field" /><ComboBox Name="CodecCombo" ItemsSource="{Binding Codecs}" HorizontalAlignment="Stretch" SelectedIndex="{Binding Codec, Mode=TwoWay}" />
               <TextBlock Tag="Speed" Classes="field" /><ComboBox Name="SpeedCombo" ItemsSource="{Binding Speeds}" HorizontalAlignment="Stretch" SelectedIndex="{Binding Speed, Mode=TwoWay}" />

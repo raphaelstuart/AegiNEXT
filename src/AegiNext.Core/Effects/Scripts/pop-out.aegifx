@@ -1,0 +1,10 @@
+effect "pop-out" version 1
+short-clip compress
+
+segment stay flex 1
+end
+
+segment exit fixed 250ms
+    at 0 scale base ease-in
+    at 1 scale factor(0.2, 0.2)
+end

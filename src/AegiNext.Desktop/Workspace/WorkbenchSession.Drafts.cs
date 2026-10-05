@@ -13,12 +13,12 @@ internal sealed partial class WorkbenchSession
 {
     private static readonly HashSet<string> styleDraftProperties =
     [
-        "FontFamily", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "Bold", "Italic", "Alignment", "Position"
+        "FontFamily", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "Position"
     ];
     private static readonly HashSet<string> effectDraftProperties =
     [
-        "LayerName", "LayerStart", "LayerEnd", "LayerWidth", "LayerWidthText", "LayerHeight", "LayerHeightText", "PositionX", "PositionXText", "PositionY", "PositionYText", "ScaleX", "ScaleXText", "ScaleY", "ScaleYText",
-        "Rotation", "RotationText", "Opacity", "OpacityText", "Blur", "BlurText", "Blend", "InvertMask", "OrientPath", "KeyframeValue", "KeyframeValueText", "Interpolation"
+        "LayerStart", "LayerEnd", "LayerWidth", "LayerWidthText", "LayerHeight", "LayerHeightText", "PositionX", "PositionXText", "PositionY", "PositionYText", "ScaleX", "ScaleXText", "ScaleY", "ScaleYText",
+        "Rotation", "RotationText", "Opacity", "OpacityText", "Blur", "BlurText", "Blend", "InvertMask", "OrientPath", "KeyframeValue", "KeyframeValueText", "KeyframeValueY", "KeyframeValueYText", "KeyframeColorDraft", "Interpolation"
     ];
 
     private readonly HashSet<string> changedEffectFields = [];
@@ -70,8 +70,8 @@ internal sealed partial class WorkbenchSession
                     var line = prepared.Subtitles.Single(value => value.Id == id);
                     var fontSize = ReadNumber(vm.FontSizeText, line.Style.FontSize, "Size", "FontSizeInput");
                     var strokeWidth = PrepareStrokeWidth(ref prepared, selected, line.Style.StrokeWidth, vm.StrokeWidthText);
-                    var fill = PrepareColor(ref prepared, selected, vm.Fill, line.Style.Fill, false);
-                    var stroke = PrepareColor(ref prepared, selected, vm.Stroke, line.Style.Stroke, true);
+                    var fill = PrepareColor(ref prepared, selected, ReadColorDraft(vm.FillDraft, "FillPicker"), line.Style.Fill, false);
+                    var stroke = PrepareColor(ref prepared, selected, ReadColorDraft(vm.StrokeDraft, "StrokePicker"), line.Style.Stroke, true);
                     if (fontSize <= 0 || strokeWidth < 0 || string.IsNullOrWhiteSpace(vm.FontFamily))
                     {
                         throw new InvalidDataException(WorkbenchText.Get("Font") + ": " + WorkbenchText.Get("Size"));
@@ -100,8 +100,8 @@ internal sealed partial class WorkbenchSession
                 }
                 else
                 {
-                    var fill = PrepareColor(ref prepared, selected, vm.Fill, selected.Fill, false);
-                    var stroke = PrepareColor(ref prepared, selected, vm.Stroke, selected.Stroke, true);
+                    var fill = PrepareColor(ref prepared, selected, ReadColorDraft(vm.FillDraft, "FillPicker"), selected.Fill, false);
+                    var stroke = PrepareColor(ref prepared, selected, ReadColorDraft(vm.StrokeDraft, "StrokePicker"), selected.Stroke, true);
                     var width = PrepareStrokeWidth(ref prepared, selected, selected.StrokeWidth, vm.StrokeWidthText);
                     prepared = WorkspaceDraftOperations.UpdateLayer(prepared, selected.Id, layer => layer with
                     {
@@ -114,17 +114,12 @@ internal sealed partial class WorkbenchSession
             {
                 var vm = ViewModel.Effects;
                 ViewModel.InvalidPanelId = "effects";
-                var keyframeChanged = changedEffectFields.Contains("KeyframeValueText") || changedEffectFields.Contains("KeyframeValue");
-                var keyframeValue = keyframeChanged ? RequiredNumber(vm.KeyframeValueText, "Property", "KeyframeValueInput") : (double)(vm.KeyframeValue ?? 0);
-                if (keyframeChanged && (keyframeValue < (double)vm.KeyframeMinimum || keyframeValue > (double)vm.KeyframeMaximum))
-                {
-                    throw new InvalidDataException(WorkbenchText.Get("Property"));
-                }
+                var keyframeChanged = changedEffectFields.Overlaps(["KeyframeValueText", "KeyframeValue", "KeyframeValueY", "KeyframeValueYText", "KeyframeColorDraft"]);
+                var keyframeValue = ReadKeyframeDraft(vm, keyframeChanged);
                 ViewModel.InvalidFieldKey = "LayerStartInput";
                 var start = vm.LayerStart == TimelineTimeText.Format(selected.Start) ? selected.Start : TimelineTimeText.Parse(vm.LayerStart);
                 ViewModel.InvalidFieldKey = "LayerEndInput";
                 var end = vm.LayerEnd == TimelineTimeText.Format(selected.End) ? selected.End : TimelineTimeText.Parse(vm.LayerEnd);
-                ViewModel.InvalidFieldKey = "LayerNameInput";
                 if (selected.SubtitleId is { } id && (start != selected.Start || end != selected.End))
                 {
                     prepared = WorkspaceDraftOperations.UpdateSubtitle(prepared, id, line => line with { Start = start, End = end });
@@ -134,8 +129,8 @@ internal sealed partial class WorkbenchSession
                 var preparedLayer = Flatten(prepared.Layers).Single(value => value.Id == selected.Id);
                 var preparedPlacement = ResolvePlacement(prepared, preparedLayer);
                 var target = AnimationTarget!;
-                var positionX = InspectorValue(selected, AnimationProperty.POSITION_X, selected.Transform.X);
-                var positionY = InspectorValue(selected, AnimationProperty.POSITION_Y, selected.Transform.Y);
+                var positionX = InspectorVector(selected, AnimationProperty.POSITION, selected.Transform.Position).X;
+                var positionY = InspectorVector(selected, AnimationProperty.POSITION, selected.Transform.Position).Y;
                 if (originalPlacement.BasePosition is { } originalBase)
                 {
                     var displayedX = originalBase.X + positionX;
@@ -159,7 +154,6 @@ internal sealed partial class WorkbenchSession
 
                 prepared = WorkspaceDraftOperations.UpdateLayer(prepared, selected.Id, layer => layer with
                 {
-                    Name = vm.LayerName ?? string.Empty,
                     Start = start,
                     End = end,
                     AnimationOffset = layer.AnimationOffset + start - layer.Start,
@@ -177,8 +171,6 @@ internal sealed partial class WorkbenchSession
                 });
                 foreach (var (property, text, fallback, label, field) in new[]
                 {
-                    (AnimationProperty.SCALE_X, vm.ScaleXText, selected.Transform.ScaleX, "ScaleX", "ScaleXInput"),
-                    (AnimationProperty.SCALE_Y, vm.ScaleYText, selected.Transform.ScaleY, "ScaleY", "ScaleYInput"),
                     (AnimationProperty.ROTATION, vm.RotationText, selected.Transform.Rotation, "Rotation", "RotationInput"),
                     (AnimationProperty.OPACITY, vm.OpacityText, selected.Opacity, "Opacity", "OpacityInput"),
                     (AnimationProperty.BLUR, vm.BlurText, selected.Blur, "Blur", "BlurInput")
@@ -191,13 +183,23 @@ internal sealed partial class WorkbenchSession
                         prepared = AnimationEditOperations.SetValue(prepared, target, property, requested);
                     }
                 }
-                if (positionX != InspectorValue(selected, AnimationProperty.POSITION_X, selected.Transform.X))
+                var originalPosition = InspectorVector(selected, AnimationProperty.POSITION, selected.Transform.Position);
+                var requestedPosition = new ScenePoint(positionX, positionY);
+                if (requestedPosition != originalPosition)
                 {
-                    prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.POSITION_X, positionX);
+                    prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.POSITION, requestedPosition);
                 }
-                if (positionY != InspectorValue(selected, AnimationProperty.POSITION_Y, selected.Transform.Y))
+                var originalScale = InspectorVector(selected, AnimationProperty.SCALE, selected.Transform.Scale);
+                var requestedScale = new ScenePoint(
+                    ReadEffectNumber(vm.ScaleXText, originalScale.X, "ScaleX", "ScaleXInput", "ScaleXText"),
+                    ReadEffectNumber(vm.ScaleYText, originalScale.Y, "ScaleY", "ScaleYInput", "ScaleYText"));
+                if (requestedScale != originalScale)
                 {
-                    prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.POSITION_Y, positionY);
+                    prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.SCALE, requestedScale);
+                }
+                if (keyframeChanged)
+                {
+                    prepared = AnimationEditOperations.SetValue(prepared, target, target.Property ?? ActiveProperty, keyframeValue);
                 }
                 if (target.IsKeyframe && (keyframeChanged || changedEffectFields.Contains("Interpolation")))
                 {
@@ -208,7 +210,8 @@ internal sealed partial class WorkbenchSession
                         Value = keyframeChanged ? keyframeValue : frame.Value,
                         Interpolation = (KeyframeInterpolation)vm.Interpolation,
                         CurveStart = vm.Interpolation == (int)frame.Interpolation ? frame.CurveStart : 0,
-                        CurveEnd = vm.Interpolation == (int)frame.Interpolation ? frame.CurveEnd : 1
+                        CurveEnd = vm.Interpolation == (int)frame.Interpolation ? frame.CurveEnd : 1,
+                        ComponentCurves = vm.Interpolation == (int)frame.Interpolation ? frame.ComponentCurves : []
                     });
                 }
             }
@@ -279,8 +282,44 @@ internal sealed partial class WorkbenchSession
         }
     }
 
-    private static SceneColor PreserveColor(Avalonia.Media.Color draft, SceneColor original) =>
-        draft == SceneColorConversion.ToColor(original) ? original : SceneColorConversion.FromColor(draft);
+    private AnimationValue ReadKeyframeDraft(Panels.Effects.EffectsPanelViewModel vm, bool changed)
+    {
+        var property = SceneEditing.DraftTarget?.Property ?? ActiveProperty;
+        var vector = property is AnimationProperty.POSITION or AnimationProperty.SCALE;
+        if (property is AnimationProperty.FILL or AnimationProperty.STROKE)
+        {
+            return ReadColorDraft(vm.KeyframeColorDraft, "KeyframeColorInput");
+        }
+        var previous = SelectedLayer?.Tracks.FirstOrDefault(track => track.Property == property)?.Keyframes
+            .FirstOrDefault(frame => frame.Time == AnimationTarget?.LocalTime)?.Value;
+        double Read(string text, string field)
+        {
+            var value = RequiredNumber(text, "Property", field);
+            if (value < (double)vm.KeyframeMinimum || value > (double)vm.KeyframeMaximum)
+            {
+                throw new InvalidDataException(WorkbenchText.Get("Property"));
+            }
+            return value;
+        }
+        if (!vector)
+        {
+            return changed ? Read(vm.KeyframeValueText, "KeyframeValueInput") : previous ?? (double)(vm.KeyframeValue ?? 0);
+        }
+        var value = previous?.Vector ?? new ScenePoint((double)(vm.KeyframeValue ?? 0), (double)(vm.KeyframeValueY ?? 0));
+        var x = changedEffectFields.Overlaps(["KeyframeValue", "KeyframeValueText"]) ? Read(vm.KeyframeValueText, "KeyframeValueXInput") : value.X;
+        var y = changedEffectFields.Overlaps(["KeyframeValueY", "KeyframeValueYText"]) ? Read(vm.KeyframeValueYText, "KeyframeValueYInput") : value.Y;
+        return new ScenePoint(x, y);
+    }
+
+    private SceneColor ReadColorDraft(ColorDraft draft, string field)
+    {
+        if (!draft.TryCommit(out var value))
+        {
+            ViewModel.InvalidFieldKey = field;
+            throw new InvalidDataException(draft.Error ?? WorkbenchText.Get("Fill"));
+        }
+        return value;
+    }
 
     private double ReadNumber(string text, double original, string label, string fieldKey)
     {
@@ -376,6 +415,9 @@ internal sealed partial class WorkbenchSession
                 break;
             case "Blur":
                 ViewModel.Effects.BlurText = ViewModel.Effects.Blur?.ToString(InterfaceCulture) ?? string.Empty;
+                break;
+            case "KeyframeValueY":
+                ViewModel.Effects.KeyframeValueYText = ViewModel.Effects.KeyframeValueY?.ToString(InterfaceCulture) ?? string.Empty;
                 break;
             case "KeyframeValue":
                 ViewModel.Effects.KeyframeValueText = ViewModel.Effects.KeyframeValue?.ToString(InterfaceCulture) ?? string.Empty;
@@ -505,8 +547,8 @@ internal sealed partial class WorkbenchSession
             vm.FontDraft = style.FontFamily;
             vm.FontSize = (decimal)style.FontSize;
             vm.StrokeWidth = (decimal)(layer is null ? 0 : InspectorValue(layer, AnimationProperty.STROKE_WIDTH, cue is null ? layer.StrokeWidth : style.StrokeWidth));
-            vm.Fill = SceneColorConversion.ToColor(layer is null ? SceneColor.White : InspectorColor(layer, cue is null ? layer.Fill : style.Fill, false));
-            vm.Stroke = SceneColorConversion.ToColor(layer is null ? SceneColor.Black : InspectorColor(layer, cue is null ? layer.Stroke : style.Stroke, true));
+            vm.FillDraft.Load(layer is null ? SceneColor.White : InspectorColor(layer, cue is null ? layer.Fill : style.Fill, false));
+            vm.StrokeDraft.Load(layer is null ? SceneColor.Black : InspectorColor(layer, cue is null ? layer.Stroke : style.Stroke, true));
             vm.Bold = style.Bold;
             vm.Italic = style.Italic;
             vm.Alignment = Array.IndexOf(alignments, style.Alignment);
@@ -517,8 +559,7 @@ internal sealed partial class WorkbenchSession
                 {
                     Transform = layer.Transform with
                     {
-                        ScaleX = InspectorValue(layer, AnimationProperty.SCALE_X, layer.Transform.ScaleX),
-                        ScaleY = InspectorValue(layer, AnimationProperty.SCALE_Y, layer.Transform.ScaleY),
+                        Scale = InspectorVector(layer, AnimationProperty.SCALE, layer.Transform.Scale),
                         Rotation = InspectorValue(layer, AnimationProperty.ROTATION, layer.Transform.Rotation)
                     }
                 };
@@ -534,10 +575,8 @@ internal sealed partial class WorkbenchSession
             {
                 transform = transform with
                 {
-                    X = InspectorValue(layer, AnimationProperty.POSITION_X, transform.X),
-                    Y = InspectorValue(layer, AnimationProperty.POSITION_Y, transform.Y),
-                    ScaleX = InspectorValue(layer, AnimationProperty.SCALE_X, transform.ScaleX),
-                    ScaleY = InspectorValue(layer, AnimationProperty.SCALE_Y, transform.ScaleY),
+                    Position = InspectorVector(layer, AnimationProperty.POSITION, transform.Position),
+                    Scale = InspectorVector(layer, AnimationProperty.SCALE, transform.Scale),
                     Rotation = InspectorValue(layer, AnimationProperty.ROTATION, transform.Rotation)
                 };
             }
@@ -552,7 +591,6 @@ internal sealed partial class WorkbenchSession
             effects.LayerWidth = (decimal)(layer?.Shape?.Width ?? layer?.Image?.Width ?? 300);
             effects.LayerHeight = (decimal)(layer?.Shape?.Height ?? layer?.Image?.Height ?? 180);
             effects.CanResizeLayer = layer?.Shape is not null || layer?.Image is not null;
-            effects.LayerName = layer?.Name;
             effects.LayerStart = layer is null ? string.Empty : TimelineTimeText.Format(layer.Start);
             effects.LayerEnd = layer is null ? string.Empty : TimelineTimeText.Format(layer.End);
             effects.Blend = (int)(layer?.Blend ?? BlendMode.NORMAL);
@@ -562,13 +600,7 @@ internal sealed partial class WorkbenchSession
         }
 
         RefreshEditingTargetLabel();
-        var names = editor.Snapshot.Presets.Select(value => value.Name).ToArray();
-        if (!effects.Presets.SequenceEqual(names))
-        {
-            effects.Presets = names;
-        }
-
-        effects.Preset = names.Length == 0 ? -1 : Math.Clamp(effects.Preset, 0, names.Length - 1);
+        effectScripts?.RefreshChoices();
     }
 
     private Rendering.LayerPlacementResolution ResolvePlacement(ProjectDocument document, ProjectLayer? layer)

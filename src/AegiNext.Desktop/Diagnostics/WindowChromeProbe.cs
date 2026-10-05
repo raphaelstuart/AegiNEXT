@@ -1,8 +1,12 @@
 using System.Text.Json;
+using AegiNext.Desktop.Controls.Common;
+using AegiNext.Desktop.Views;
+using AegiNext.Desktop.Windowing;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Diagnostics;
 
@@ -74,6 +78,8 @@ internal sealed class WindowChromeProbe : IDisposable
             await SettleAsync();
             Capture("normal-restored");
             VerifySize(originalSize);
+            await VerifyAutoHeightDialogAsync(false);
+            await VerifyAutoHeightDialogAsync(true);
             MainWindow.RejectNextClose = true;
             MainWindow.Close();
             if (!MainWindow.IsVisible)
@@ -113,6 +119,69 @@ internal sealed class WindowChromeProbe : IDisposable
             Math.Abs(MainWindow.ClientSize.Height - expected.Height) > 1)
         {
             report.Failures.Add($"Client size drift: expected {expected}, actual {MainWindow.ClientSize}.");
+        }
+    }
+
+    private async Task VerifyAutoHeightDialogAsync(bool wrapped)
+    {
+        var dialog = new UnsavedProjectDialog();
+        var body = (StackPanel)dialog.Content!;
+        var message = (TextBlock)body.Children[0];
+        var originalMessage = message.Text;
+        var wrappedMessage = string.Join(" ", Enumerable.Repeat("The project contains unsaved changes. Please choose whether to save them before continuing.", 4));
+        if (wrapped)
+        {
+            message.Text = wrappedMessage;
+        }
+        var titleBar = new WindowTitleBar();
+        var root = new DockPanel();
+        DockPanel.SetDock(titleBar, Avalonia.Controls.Dock.Top);
+        root.Children.Add(titleBar);
+        dialog.Content = null;
+        root.Children.Add(body);
+        dialog.Content = root;
+        using var chrome = WindowChrome.Attach(dialog, titleBar);
+        Task<int>? completion = null;
+        try
+        {
+            completion = dialog.ShowDialog<int>(MainWindow);
+            await SettleAsync();
+            dialog.UpdateLayout();
+            CaptureAutoHeightDialog(dialog, root, body, chrome, wrapped ? "wrapped" : "short");
+            if (!wrapped)
+            {
+                message.Text = wrappedMessage;
+                await SettleAsync();
+                dialog.UpdateLayout();
+                CaptureAutoHeightDialog(dialog, root, body, chrome, "grown");
+                message.Text = originalMessage;
+                await SettleAsync();
+                dialog.UpdateLayout();
+                CaptureAutoHeightDialog(dialog, root, body, chrome, "shrunk");
+            }
+        }
+        finally
+        {
+            dialog.Close(0);
+            if (completion is not null)
+            {
+                await completion;
+            }
+        }
+    }
+
+    private void CaptureAutoHeightDialog(Window dialog, Control root, StackPanel body, IWindowChrome chrome, string scenario)
+    {
+        var button = dialog.GetVisualDescendants().OfType<Button>().Single(control => control.Name == "SaveButton");
+        var bottom = button.TranslatePoint(new Point(0, button.Bounds.Height), dialog)!.Value.Y;
+        var gap = dialog.ClientSize.Height - bottom;
+        var failure = OperatingSystem.IsWindows() && chrome is WindowsWindowChrome native ? native.LastError?.ToString() : null;
+        report.AutoHeightDialogs.Add(new(scenario, dialog.SizeToContent.ToString(),
+            dialog.ClientSize.Height, root.DesiredSize.Height, gap, failure));
+        if (dialog.SizeToContent != SizeToContent.Height || Math.Abs(dialog.ClientSize.Height - root.DesiredSize.Height) > 2 ||
+            Math.Abs(gap - body.Margin.Bottom) > 2 || failure is not null)
+        {
+            report.Failures.Add($"Auto-height dialog did not fit its contents ({scenario}): client={dialog.ClientSize.Height}, desired={root.DesiredSize.Height}, bottom gap={gap}, native={failure}.");
         }
     }
 

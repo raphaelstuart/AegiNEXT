@@ -4,10 +4,13 @@ using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Localization;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Automation;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using AegiNext.Desktop.Styling;
 
 namespace AegiNext.Desktop.Panels.Timeline;
 
@@ -18,6 +21,10 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private readonly SubtitleTimelineControl timeline;
     private readonly TimelineOverviewControl overview;
     private readonly MenuItem collapseTrackItem;
+    private readonly ToggleButton snapButton;
+    private readonly ToggleButton stepButton;
+    private readonly ToggleButton spectrumButton;
+    private readonly ToggleButton waveformButton;
     private AegiNext.Media.Analysis.SpectrogramData? spectrum;
     private bool disposed;
     private bool applying;
@@ -28,7 +35,15 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
         timeline = this.FindControl<SubtitleTimelineControl>("Timeline")!;
+        timeline.SetAudioGraphPalette(session.Preferences.AudioGraph);
         overview = this.FindControl<TimelineOverviewControl>("TimelineMinimap")!;
+        snapButton = this.FindControl<ToggleButton>("TimelineSnapButton")!;
+        stepButton = this.FindControl<ToggleButton>("TimelineStepButton")!;
+        spectrumButton = this.FindControl<ToggleButton>("TimelineSpectrumButton")!;
+        waveformButton = this.FindControl<ToggleButton>("TimelineWaveformButton")!;
+        this.FindControl<PathIcon>("TimelineSnapIcon")!.Data = WorkbenchIcon.Create("Magnet").Data;
+        this.FindControl<PathIcon>("TimelineSpectrumIcon")!.Data = WorkbenchIcon.Create("Spectrum").Data;
+        this.FindControl<PathIcon>("TimelineWaveformIcon")!.Data = WorkbenchIcon.Create("Waveform").Data;
         TrackMenu = new();
         TrackMenu.Items.Add(new MenuItem { Name = "AddSubtitleTrackMenuItem", Tag = "AddTrack", Command = viewModel.AddTrackCommand });
         TrackMenu.Items.Add(new MenuItem { Name = "RenameSubtitleTrackMenuItem", Tag = "RenameTrack", Command = viewModel.RenameTrackCommand });
@@ -121,6 +136,10 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         {
             timeline.Position = viewModel.Position;
             timeline.EffectProperty = viewModel.EffectProperty;
+            timeline.IsSnapEnabled = viewModel.IsSnapEnabled;
+            timeline.IsStepEnabled = viewModel.IsStepEnabled;
+            timeline.IsSpectrumVisible = viewModel.IsSpectrumVisible;
+            timeline.IsWaveformVisible = viewModel.IsWaveformVisible;
             timeline.SetDocument(viewModel.Document, viewModel.SelectedCueId, viewModel.SelectedLayer,
                 viewModel.SelectedLayerIds.Count == 0 && viewModel.SelectedLayer is { } selected ? [selected.Id] : viewModel.SelectedLayerIds,
                 viewModel.SelectedTrackId);
@@ -160,6 +179,14 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     }
     private void RefreshTrackMenu()
     {
+        ToolTip.SetTip(snapButton, WorkbenchText.Get("TimelineSnapHint"));
+        ToolTip.SetTip(stepButton, WorkbenchText.Get("TimelineStepHint"));
+        AutomationProperties.SetName(snapButton, WorkbenchText.Get("TimelineSnap"));
+        AutomationProperties.SetName(stepButton, WorkbenchText.Get("TimelineStep"));
+        ToolTip.SetTip(spectrumButton, WorkbenchText.Get("TimelineSpectrum"));
+        ToolTip.SetTip(waveformButton, WorkbenchText.Get("TimelineWaveform"));
+        AutomationProperties.SetName(spectrumButton, WorkbenchText.Get("TimelineSpectrum"));
+        AutomationProperties.SetName(waveformButton, WorkbenchText.Get("TimelineWaveform"));
         foreach (var item in TrackMenu.Items.OfType<MenuItem>().Where(item => item.Tag is string))
         {
             item.Header = WorkbenchText.Get((string)item.Tag!);
@@ -173,6 +200,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     {
         ControlLocalization.Apply(this);
         RefreshTrackMenu();
+        timeline.SetAudioGraphPalette(session.Preferences.AudioGraph);
+        timeline.InvalidateVisual();
     }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     public void Dispose()

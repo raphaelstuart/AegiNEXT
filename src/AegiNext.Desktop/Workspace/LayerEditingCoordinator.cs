@@ -3,6 +3,7 @@ using System.Globalization;
 using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Editing;
+using AegiNext.Core.Effects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
@@ -12,7 +13,10 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
 {
-    internal AnimationProperty ActiveProperty => (AnimationProperty)Math.Max(0, session.ViewModel.Effects.Property);
+    private Guid? valueLayerId;
+    private AnimationProperty? valueProperty;
+
+    internal AnimationProperty ActiveProperty => session.ViewModel.Effects.Property;
     internal Keyframe? SelectedKeyframe => session.SelectedKeyTime is { } time
         ? session.SelectedLayer?.Tracks.FirstOrDefault(track => track.Property == ActiveProperty)?.Keyframes.FirstOrDefault(frame => frame.Time == time)
         : null;
@@ -70,19 +74,6 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         }
     }
 
-    internal void AddShape(ShapeKind kind)
-    {
-        var start = session.SelectedCue?.Start ?? session.ProjectPosition;
-        var layer = new ProjectLayer
-        {
-            Name = WorkbenchText.Get(kind == ShapeKind.RECTANGLE ? "Rectangle" : "Ellipse"), Kind = LayerKind.SHAPE,
-            Start = start, End = session.SelectedCue?.End ?? start + new MediaTime(5), Shape = new(kind, 300, 180),
-            Transform = new(session.Editor.Snapshot.Width / 3d, session.Editor.Snapshot.Height / 3d), Fill = new(0.1, 0.3, 0.9, 0.8)
-        };
-        session.SelectedLayerId = layer.Id;
-        session.Editor.AddLayer(layer);
-    }
-
     internal async Task ImportFontAsync()
     {
         if (session.SelectedLayer?.SubtitleId is not { } id || session.IsProjectBusy || !session.TryCommitDrafts())
@@ -116,107 +107,47 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         }
     }
 
-    internal async Task ImportImageAsync()
-    {
-        if (session.IsProjectBusy || !session.TryCommitDrafts())
-        {
-            return;
-        }
-
-        var path = await dialogs.OpenFileAsync("Image", "Images", ["*.png", "*.jpg", "*.jpeg", "*.webp"]);
-        if (path is null)
-        {
-            return;
-        }
-
-        session.SetProjectBusy(true);
-        try
-        {
-            var asset = await ProjectResources.ImportAsync(path, ProjectAssetKind.IMAGE, session.ProjectDirectory);
-            var start = session.SelectedCue?.Start ?? session.ProjectPosition;
-            var layer = new ProjectLayer
-            {
-                Name = WorkbenchText.Get("Image"), Kind = LayerKind.IMAGE, Start = start,
-                End = session.SelectedCue?.End ?? start + new MediaTime(5), Image = new(asset.Id, 300, 180),
-                Transform = new(session.Editor.Snapshot.Width / 3d, session.Editor.Snapshot.Height / 3d)
-            };
-            session.SelectedLayerId = layer.Id;
-            session.Editor.Apply("Import image",
-                document => document with { Assets = document.Assets.Add(asset), Layers = document.Layers.Add(layer) });
-        }
-        finally
-        {
-            session.SetProjectBusy(false);
-        }
-    }
-
-    internal void GroupLayers()
-    {
-        var ids = session.ViewModel.Effects.SelectedIds.ToImmutableArray();
-        session.Editor.Apply("Group layers",
-            document => ProjectEditingOperations.GroupLayers(document, ids, WorkbenchText.Get("Group")));
-    }
-
-    internal void MoveLayer(int offset)
-    {
-        if (session.SelectedLayer is not { } layer)
-        {
-            return;
-        }
-
-        var siblings = FindSiblings(session.Editor.Snapshot.Layers, layer.Id);
-        var index = siblings.IndexOf(layer);
-        var destination = Math.Clamp(index + offset, 0, siblings.Length - 1);
-        if (destination != index)
-        {
-            session.Editor.Apply("Reorder layer",
-                document => ProjectEditingOperations.MoveLayer(document, layer.Id, destination));
-        }
-    }
-
-    internal static ImmutableArray<ProjectLayer> FindSiblings(ImmutableArray<ProjectLayer> layers, Guid id)
-    {
-        if (layers.Any(value => value.Id == id))
-        {
-            return layers;
-        }
-
-        foreach (var layer in layers)
-        {
-            var children = FindSiblings(layer.Children, id);
-            if (!children.IsEmpty)
-            {
-                return children;
-            }
-        }
-
-        return [];
-    }
-
-    internal void BeginPathEdit(bool mask)
+    internal void BeginPathEdit()
     {
         var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
-        var width = layer.Shape?.Width ?? layer.Image?.Width ?? session.Editor.Snapshot.Width;
-        var height = layer.Shape?.Height ?? layer.Image?.Height ?? session.Editor.Snapshot.Height;
-        if (mask && layer.Mask is null)
-        {
-            var path = new PathGeometry(new(0, 0),
-            [
-                new(new(width / 3, 0), new(width * 2 / 3, 0), new(width, 0)),
-                new(new(width, height / 3), new(width, height * 2 / 3), new(width, height)),
-                new(new(width * 2 / 3, height), new(width / 3, height), new(0, height)),
-                new(new(0, height * 2 / 3), new(0, height / 3), new(0, 0))
-            ], true);
-            session.Editor.UpdateLayer(layer.Id, value => value with { Mask = new(path) });
-        }
-        else if (!mask && layer.MotionPath is null)
+        if (layer.MotionPath is null)
         {
             var path = new PathGeometry(new(0, 0), [new(new(120, -120), new(240, 120), new(360, 0))]);
             session.Editor.UpdateLayer(layer.Id, value => value with { MotionPath = new(path, layer.End - layer.Start) });
         }
+        session.ViewModel.Effects.EditMode = CanvasEditMode.PATH;
+    }
 
-        session.ViewModel.Effects.EditMode = mask ? CanvasEditMode.MASK : CanvasEditMode.PATH;
+    internal void AddPathPoint()
+    {
+        UpdateLayer(layer =>
+        {
+            var path = layer.MotionPath?.Path ?? new PathGeometry(new(0, 0), [new(new(40, 0), new(80, 0), new(120, 0))]);
+            var end = path.Segments[^1].End;
+            var edited = PathOperations.AppendPoint(path, new(end.X + 120, end.Y));
+            return layer with { MotionPath = new(edited, layer.MotionPath?.Duration ?? layer.End - layer.Start, layer.MotionPath?.OrientToPath ?? false) };
+        });
+        session.ViewModel.Effects.EditMode = CanvasEditMode.PATH;
+    }
 
+    internal void RemovePathPoint()
+    {
+        if (session.SelectedLayer?.MotionPath is not { } path || path.Path.Segments.Length <= 1)
+        {
+            return;
+        }
+        UpdateLayer(layer => layer with { MotionPath = path with { Path = PathOperations.RemovePoint(path.Path, path.Path.Segments.Length) } });
+    }
+
+    internal void ResetAutomaticPosition()
+    {
+        if (session.SelectedCue is { } cue)
+        {
+            session.ViewModel.CancelGestures();
+            ClearKeyframeSelection();
+            session.Editor.ResetSubtitlePosition(cue.Id);
+            session.ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
+        }
     }
 
     internal void CreateKaraoke()
@@ -263,8 +194,8 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         {
             return false;
         }
-        var layer = session.SelectedLayer;
-        if (layer is null || layer.Id != e.LayerId || layer.Tracks
+        var layer = WorkbenchSession.Flatten(session.Editor.Snapshot.Layers).FirstOrDefault(value => value.Id == e.LayerId);
+        if (layer is null || layer.Tracks
                 .FirstOrDefault(track => track.Property == e.Property)?.Keyframes
                 .FirstOrDefault(frame => frame.Time == e.OldTime) is null)
         {
@@ -276,8 +207,11 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         session.IsUpdating = true;
         try
         {
+            session.SelectedLayerId = layer.Id;
+            session.SelectedCueId = layer.SubtitleId;
+            session.ViewModel.Effects.SelectedIds = [layer.Id];
             session.SelectedKeyTime = e.OldTime;
-            session.ViewModel.Effects.Property = (int)e.Property;
+            session.ViewModel.Effects.Property = e.Property;
             session.ViewModel.Timeline.EffectProperty = e.Property;
             session.RefreshDocument();
             RefreshKeyframeInspector();
@@ -306,24 +240,29 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         {
             var frame = SelectedKeyframe;
 
-            var (minimum, maximum) = ActiveProperty switch
-            {
-                AnimationProperty.OPACITY or AnimationProperty.FILL_ALPHA or AnimationProperty.STROKE_ALPHA
-                    or AnimationProperty.PATH_PROGRESS => (0m, 1m),
-                AnimationProperty.BLUR => (0m, 512m),
-                AnimationProperty.STROKE_WIDTH => (0m, 4096m),
-                AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y => (-10000m, 10000m),
-                AnimationProperty.FILL_RED or AnimationProperty.FILL_GREEN or AnimationProperty.FILL_BLUE
-                    or AnimationProperty.STROKE_RED or AnimationProperty.STROKE_GREEN
-                    or AnimationProperty.STROKE_BLUE => (-65504m, 65504m),
-                _ => (-1000000000m, 1000000000m)
-            };
+            var minimum = (decimal)AnimationPropertyMetadata.GetMinimum(ActiveProperty, 0);
+            var maximum = (decimal)AnimationPropertyMetadata.GetMaximum(ActiveProperty, 0);
             var input = session.ViewModel.Effects;
             input.KeyframeMaximum = maximum;
             input.KeyframeMinimum = minimum;
-            input.KeyframeValue = frame is not null
-                ? (decimal)frame.Value
-                : Math.Clamp(input.KeyframeValue ?? 0, minimum, maximum);
+            var fallback = session.SelectedLayer is { } layer ? BaseValue(layer, ActiveProperty) : AnimationValue.FromScalar(0);
+            var track = session.SelectedLayer?.Tracks.FirstOrDefault(value => value.Property == ActiveProperty);
+            var current = frame?.Value ?? (track is not null && session.AnimationTarget is { } target
+                ? SceneEvaluator.EvaluateTrack(track, target.LocalTime) : fallback);
+            if (frame is not null || track is not null || valueLayerId != session.SelectedLayerId || valueProperty != ActiveProperty)
+            {
+                if (current.IsColor)
+                {
+                    input.KeyframeColorDraft.Load(current.Color, !session.HasEffectDrafts);
+                }
+                else
+                {
+                    input.KeyframeValue = Math.Clamp((decimal)current.GetComponent(0), minimum, maximum);
+                    input.KeyframeValueY = current.IsVector ? Math.Clamp((decimal)current.Vector.Y, minimum, maximum) : 0;
+                }
+            }
+            valueLayerId = session.SelectedLayerId;
+            valueProperty = ActiveProperty;
             if (frame is not null)
             {
                 session.ViewModel.Effects.Interpolation = (int)frame.Interpolation;
@@ -336,6 +275,24 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         {
             session.IsUpdating = wasUpdating;
         }
+    }
+
+    private AnimationValue BaseValue(ProjectLayer layer, AnimationProperty property)
+    {
+        var style = layer.SubtitleId is { } id
+            ? session.DocumentSnapshot.Subtitles.Single(value => value.Id == id).Style : null;
+        return property switch
+        {
+            AnimationProperty.POSITION => layer.Transform.Position,
+            AnimationProperty.SCALE => layer.Transform.Scale,
+            AnimationProperty.ROTATION => layer.Transform.Rotation,
+            AnimationProperty.OPACITY => layer.Opacity,
+            AnimationProperty.BLUR => layer.Blur,
+            AnimationProperty.STROKE_WIDTH => style?.StrokeWidth ?? layer.StrokeWidth,
+            AnimationProperty.FILL => style?.Fill ?? layer.Fill,
+            AnimationProperty.STROKE => style?.Stroke ?? layer.Stroke,
+            _ => 0
+        };
     }
 
     internal void UpdateSelectedKeyframe(Func<Keyframe, Keyframe> change)
@@ -356,8 +313,13 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             return;
         }
 
+        var value = ActiveProperty is AnimationProperty.FILL or AnimationProperty.STROKE
+            ? AnimationValue.FromColor(session.ViewModel.Effects.KeyframeColorDraft.Value)
+            : ActiveProperty is AnimationProperty.POSITION or AnimationProperty.SCALE
+            ? AnimationValue.FromVector(new((double)(session.ViewModel.Effects.KeyframeValue ?? 0), (double)(session.ViewModel.Effects.KeyframeValueY ?? 0)))
+            : AnimationValue.FromScalar((double)(session.ViewModel.Effects.KeyframeValue ?? 0));
         session.Editor.SetKeyframe(layer.Id, ActiveProperty, new(time,
-            (double)(session.ViewModel.Effects.KeyframeValue ?? 0),
+            value,
             (KeyframeInterpolation)Math.Max(0, session.ViewModel.Effects.Interpolation)));
         session.ViewModel.Timeline.EffectProperty = ActiveProperty;
         SelectKeyframe(new(layer.Id, ActiveProperty, time, time));
@@ -411,95 +373,9 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             session.ProjectPosition - layer.Start + layer.AnimationOffset >= MediaTime.Zero;
     }
 
-    internal void SavePreset()
-    {
-        var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
-        var name = session.ViewModel.Effects.PresetName;
-        var origin = LayerAnimationTiming.GetRange(layer).Minimum;
-        var preset = new EffectPreset(Guid.NewGuid(),
-            string.IsNullOrWhiteSpace(name)
-                ? WorkbenchText.Get("Preset") + " " + (session.Editor.Snapshot.Presets.Length + 1)
-                : name,
-            layer.Tracks.Select(track => track with
-            {
-                Keyframes = track.Keyframes.Select(frame => frame with
-                {
-                    Time = frame.Time - origin
-                }).ToImmutableArray()
-            }).ToImmutableArray(), layer.MotionPath, layer.Mask, layer.Blend);
-        session.Editor.Apply("Save preset", document => document with { Presets = document.Presets.Add(preset) });
-    }
-
-    internal void ApplyBuiltinPreset(string name)
-    {
-        var layer = session.SelectedLayer ?? throw new InvalidOperationException(WorkbenchText.Get("NoSelection"));
-        var (offset, maximum) = LayerAnimationTiming.GetRange(layer);
-        var duration = maximum - offset;
-        if (duration <= MediaTime.Zero)
-        {
-            throw new InvalidOperationException("片段中没有可应用动画的时间。");
-        }
-
-        var edge = new MediaTime(1, 4);
-        if (duration < edge + edge)
-        {
-            edge = new(duration.Numerator, checked(duration.Denominator * 3));
-        }
-
-        var tracks = name switch
-        {
-            "Fade" => ImmutableArray.Create(new AnimationTrack(AnimationProperty.OPACITY,
-                [new(offset, 0), new(offset + edge, 1), new(offset + duration - edge, 1), new(offset + duration, 0)])),
-            "Pop" => ImmutableArray.Create(new AnimationTrack(AnimationProperty.SCALE_X,
-                    [new(offset, 0.2, KeyframeInterpolation.EASE_OUT), new(offset + edge, 1)]),
-                new AnimationTrack(AnimationProperty.SCALE_Y,
-                    [new(offset, 0.2, KeyframeInterpolation.EASE_OUT), new(offset + edge, 1)])),
-            _ => ImmutableArray.Create(new AnimationTrack(AnimationProperty.POSITION_X,
-            [
-                new(offset, layer.Transform.X - 250, KeyframeInterpolation.EASE_OUT),
-                new(offset + edge, layer.Transform.X)
-            ]))
-        };
-        session.Editor.UpdateLayer(layer.Id, value => value with
-        {
-            Tracks = value.Tracks.Where(track => !tracks.Any(added => added.Property == track.Property)).Concat(tracks)
-                .ToImmutableArray()
-        });
-        session.ViewModel.Effects.Property = (int)tracks[0].Property;
-    }
-
-    internal void AddRectangle() => AddShape(ShapeKind.RECTANGLE);
-    internal void AddEllipse() => AddShape(ShapeKind.ELLIPSE);
-    internal void DeleteLayer()
-    {
-        if (session.SelectedLayer is { } layer)
-        {
-            session.Editor.Apply("Remove layer", document => ProjectEditingOperations.RemoveLayer(document, layer.Id));
-        }
-    }
-    internal void UngroupLayer()
-    {
-        if (session.SelectedLayer is { } layer)
-        {
-            session.Editor.Apply("Ungroup layer", document => ProjectEditingOperations.UngroupLayer(document, layer.Id));
-        }
-    }
-    internal void MoveLayerUp() => MoveLayer(1);
-    internal void MoveLayerDown() => MoveLayer(-1);
-    internal void EditPath() => BeginPathEdit(false);
-    internal void EditMask() => BeginPathEdit(true);
-    internal void ClearPath() => UpdateLayer(layer => layer with { MotionPath = null });
-    internal void ClearMask() => UpdateLayer(layer => layer with { Mask = null });
-    internal void ApplyFade() => ApplyBuiltinPreset("Fade");
-    internal void ApplyPop() => ApplyBuiltinPreset("Pop");
-    internal void ApplySlide() => ApplyBuiltinPreset("Slide");
-    internal void ApplySelectedPreset()
-    {
-        if (session.SelectedLayer is { } layer && session.ViewModel.Effects.Preset is var index && index >= 0)
-        {
-            session.Editor.ApplyPreset(layer.Id, session.Editor.Snapshot.Presets[index]);
-        }
-    }
+    internal void EditPath() => BeginPathEdit();
+    internal void ClearPath() => UpdateLayer(layer => layer with { MotionPath = null, Tracks = layer.Tracks.Where(track => track.Property != AnimationProperty.PATH_PROGRESS).ToImmutableArray() });
+    internal void ApplySelectedPreset() => session.EffectScripts.ApplySelected();
     internal void ClearKaraoke()
     {
         if (session.SelectedCue is { } cue)

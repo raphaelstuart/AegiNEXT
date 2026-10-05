@@ -7,7 +7,6 @@ using AegiNext.Desktop.Controls;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Media.Analysis;
-using Avalonia.Media;
 
 namespace AegiNext.Desktop.Panels.Preview;
 
@@ -27,6 +26,9 @@ internal sealed class PreviewPanelViewModel : ObservableObject
     private double duration = 1;
     private double volume = 1;
     private bool isMuted;
+    private bool isPlaying;
+    private string muteLabel = string.Empty;
+    private string volumeLabel = string.Empty;
     private bool isScrubbing;
 
     internal PreviewPanelViewModel(WorkbenchSession session)
@@ -77,6 +79,24 @@ internal sealed class PreviewPanelViewModel : ObservableObject
     {
         get => playLabel;
         set => SetProperty(ref playLabel, value);
+    }
+
+    public string MuteLabel
+    {
+        get => muteLabel;
+        set => SetProperty(ref muteLabel, value);
+    }
+
+    public string VolumeLabel
+    {
+        get => volumeLabel;
+        set => SetProperty(ref volumeLabel, value);
+    }
+
+    public bool IsPlaying
+    {
+        get => isPlaying;
+        set => SetProperty(ref isPlaying, value);
     }
 
     public string EmptyLabel

@@ -70,18 +70,22 @@ internal sealed partial class WorkbenchSession
         var transform = layer.Transform;
         foreach (var (property, changed, original) in new[]
         {
-            (AnimationProperty.POSITION_X, value.Transform.X, transform.X),
-            (AnimationProperty.POSITION_Y, value.Transform.Y, transform.Y),
-            (AnimationProperty.SCALE_X, value.Transform.ScaleX, transform.ScaleX),
-            (AnimationProperty.SCALE_Y, value.Transform.ScaleY, transform.ScaleY),
-            (AnimationProperty.ROTATION, value.Transform.Rotation, transform.Rotation)
+            (AnimationProperty.POSITION, value.Transform.Position, transform.Position),
+            (AnimationProperty.SCALE, value.Transform.Scale, transform.Scale)
         })
         {
             if (changed != original)
             {
                 var evaluated = AnimationEditOperations.Value(layer, property, target, original);
-                prepared = AnimationEditOperations.SetValue(prepared, target, property, evaluated + changed - original);
+                prepared = AnimationEditOperations.SetValue(prepared, target, property,
+                    new ScenePoint(evaluated.X + changed.X - original.X, evaluated.Y + changed.Y - original.Y));
             }
+        }
+        if (value.Transform.Rotation != transform.Rotation)
+        {
+            var evaluated = AnimationEditOperations.Value(layer, AnimationProperty.ROTATION, target, transform.Rotation);
+            prepared = AnimationEditOperations.SetValue(prepared, target, AnimationProperty.ROTATION,
+                evaluated + value.Transform.Rotation - transform.Rotation);
         }
         if (prepared != document)
         {
@@ -119,45 +123,28 @@ internal sealed partial class WorkbenchSession
     private double InspectorValue(ProjectLayer layer, AnimationProperty property, double fallback) =>
         AnimationTarget is { } target ? AnimationEditOperations.Value(layer, property, target, fallback) : fallback;
 
-    private SceneColor InspectorColor(ProjectLayer layer, SceneColor color, bool stroke)
-    {
-        var first = stroke ? AnimationProperty.STROKE_RED : AnimationProperty.FILL_RED;
-        return new(InspectorValue(layer, first, color.Red), InspectorValue(layer, first + 1, color.Green),
-            InspectorValue(layer, first + 2, color.Blue), InspectorValue(layer, first + 3, color.Alpha));
-    }
+    private ScenePoint InspectorVector(ProjectLayer layer, AnimationProperty property, ScenePoint fallback) =>
+        AnimationTarget is { } target ? AnimationEditOperations.Value(layer, property, target, fallback) : fallback;
 
-    private SceneColor PrepareColor(ref ProjectDocument document, ProjectLayer layer, Avalonia.Media.Color draft, SceneColor original, bool stroke)
+    private SceneColor InspectorColor(ProjectLayer layer, SceneColor color, bool stroke) =>
+        AnimationTarget is { } target
+            ? AnimationEditOperations.Value(layer, stroke ? AnimationProperty.STROKE : AnimationProperty.FILL, target, color)
+            : color;
+
+    private SceneColor PrepareColor(ref ProjectDocument document, ProjectLayer layer, SceneColor requested, SceneColor original, bool stroke)
     {
         var displayed = InspectorColor(layer, original, stroke);
-        var requested = PreserveColor(draft, displayed);
-        var result = original;
-        var properties = stroke
-            ? new[] { AnimationProperty.STROKE_RED, AnimationProperty.STROKE_GREEN, AnimationProperty.STROKE_BLUE, AnimationProperty.STROKE_ALPHA }
-            : new[] { AnimationProperty.FILL_RED, AnimationProperty.FILL_GREEN, AnimationProperty.FILL_BLUE, AnimationProperty.FILL_ALPHA };
-        var values = new[] { requested.Red, requested.Green, requested.Blue, requested.Alpha };
-        var previous = new[] { displayed.Red, displayed.Green, displayed.Blue, displayed.Alpha };
-        for (var index = 0; index < properties.Length; index++)
+        var property = stroke ? AnimationProperty.STROKE : AnimationProperty.FILL;
+        if (requested == displayed)
         {
-            if (values[index] == previous[index])
-            {
-                continue;
-            }
-            if (AnimationTarget is { } target && (target.IsKeyframe || layer.Tracks.Any(track => track.Property == properties[index])))
-            {
-                document = AnimationEditOperations.SetValue(document, target, properties[index], values[index]);
-            }
-            else
-            {
-                result = index switch
-                {
-                    0 => result with { Red = values[index] },
-                    1 => result with { Green = values[index] },
-                    2 => result with { Blue = values[index] },
-                    _ => result with { Alpha = values[index] }
-                };
-            }
+            return original;
         }
-        return result;
+        if (AnimationTarget is { } target && (target.IsKeyframe || layer.Tracks.Any(track => track.Property == property)))
+        {
+            document = AnimationEditOperations.SetValue(document, target, property, requested);
+            return original;
+        }
+        return requested;
     }
 
     private double PrepareStrokeWidth(ref ProjectDocument document, ProjectLayer layer, double baseValue, string text)

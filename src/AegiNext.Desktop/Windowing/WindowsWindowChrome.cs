@@ -31,11 +31,6 @@ internal sealed class WindowsWindowChrome : IWindowChrome
     {
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(titleBar);
-        if (window.SizeToContent != SizeToContent.Manual)
-        {
-            throw new ArgumentException("原生 Windows 标题栏要求显式客户区尺寸。", nameof(window));
-        }
-
         var platformHandle = window.TryGetPlatformHandle();
         if (platformHandle is not { HandleDescriptor: "HWND", Handle: not 0 })
         {
@@ -51,7 +46,8 @@ internal sealed class WindowsWindowChrome : IWindowChrome
             throw new ArgumentException("标题栏必须提供正数高度。", nameof(titleBar));
         }
 
-        if (double.IsFinite(window.Width) && window.Width > 0 && double.IsFinite(window.Height) && window.Height > 0)
+        if (window.SizeToContent == SizeToContent.Manual && double.IsFinite(window.Width) && window.Width > 0 &&
+            double.IsFinite(window.Height) && window.Height > 0)
         {
             openingClientSize = new(window.Width, window.Height);
         }
@@ -64,6 +60,7 @@ internal sealed class WindowsWindowChrome : IWindowChrome
         window.Opened += OnOpened;
         window.Closed += OnClosed;
         window.Resized += OnResized;
+        window.LayoutUpdated += OnLayoutUpdated;
         window.ScalingChanged += OnScalingChanged;
         window.PropertyChanged += OnWindowPropertyChanged;
         titleBar.PropertyChanged += OnTitleBarPropertyChanged;
@@ -136,6 +133,7 @@ internal sealed class WindowsWindowChrome : IWindowChrome
         window.Opened -= OnOpened;
         window.Closed -= OnClosed;
         window.Resized -= OnResized;
+        window.LayoutUpdated -= OnLayoutUpdated;
         window.ScalingChanged -= OnScalingChanged;
         window.PropertyChanged -= OnWindowPropertyChanged;
         titleBar.PropertyChanged -= OnTitleBarPropertyChanged;
@@ -418,6 +416,7 @@ internal sealed class WindowsWindowChrome : IWindowChrome
             }
 
             RefreshCaptionGeometry();
+            FitClientToContent();
         }
         catch (Exception error) when (error is Win32Exception or COMException or OverflowException or ArgumentException)
         {
@@ -455,6 +454,56 @@ internal sealed class WindowsWindowChrome : IWindowChrome
         QueueRefresh(true);
     }
 
+    private void OnLayoutUpdated(object? sender, EventArgs e)
+    {
+        if (TryGetContentClientSize(out _))
+        {
+            QueueRefresh(false);
+        }
+    }
+
+    private void FitClientToContent()
+    {
+        if (!TryGetContentClientSize(out var size))
+        {
+            return;
+        }
+
+        var sizing = window.SizeToContent;
+        ResizeClient(size);
+        window.SetCurrentValue(Window.SizeToContentProperty, sizing);
+    }
+
+    private bool TryGetContentClientSize(out Size size)
+    {
+        size = default;
+        if (disposed || LastError is not null || !window.IsVisible || window.WindowState != WindowState.Normal ||
+            window.SizeToContent == SizeToContent.Manual || window.Content is not Control content ||
+            !content.IsMeasureValid || !content.IsArrangeValid)
+        {
+            return false;
+        }
+
+        var desired = content.DesiredSize;
+        var padding = window.Padding;
+        var border = window.BorderThickness;
+        var width = window.SizeToContent.HasFlag(SizeToContent.Width)
+            ? Math.Clamp(desired.Width + padding.Left + padding.Right + border.Left + border.Right, window.MinWidth, window.MaxWidth)
+            : window.ClientSize.Width;
+        var height = window.SizeToContent.HasFlag(SizeToContent.Height)
+            ? Math.Clamp(desired.Height + padding.Top + padding.Bottom + border.Top + border.Bottom, window.MinHeight, window.MaxHeight)
+            : window.ClientSize.Height;
+        if (!double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0)
+        {
+            return false;
+        }
+
+        size = new(width, height);
+        var dpi = ReadDpi();
+        return Math.Abs(WindowsChromeGeometry.ToPixels(width, dpi) - WindowsChromeGeometry.ToPixels(window.ClientSize.Width, dpi)) > 1 ||
+               Math.Abs(WindowsChromeGeometry.ToPixels(height, dpi) - WindowsChromeGeometry.ToPixels(window.ClientSize.Height, dpi)) > 1;
+    }
+
     private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
         if (e.Property == Window.WindowStateProperty || e.Property == Window.CanResizeProperty ||
@@ -462,6 +511,10 @@ internal sealed class WindowsWindowChrome : IWindowChrome
             e.Property == TopLevel.ActualThemeVariantProperty)
         {
             QueueRefresh(true);
+        }
+        else if (e.Property == Window.SizeToContentProperty)
+        {
+            QueueRefresh(false);
         }
     }
 

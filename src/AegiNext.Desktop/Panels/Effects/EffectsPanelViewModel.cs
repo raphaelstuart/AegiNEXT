@@ -31,7 +31,6 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     private MediaTime position = MediaTime.Zero;
     private LayerListItem[] layers = [];
     private LayerListItem? selectedItem;
-    private string? layerName;
     private string layerStart = string.Empty;
     private string layerEnd = string.Empty;
     private decimal? layerWidth = 300;
@@ -49,7 +48,7 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     private string[] blends = [];
     private bool? invertMask = false;
     private bool? orientPath = false;
-    private string[] properties = [];
+    private AnimationPropertyChoice[] properties = [];
     private decimal? keyframeValue = 1;
     private decimal keyframeMinimum = -65504;
     private decimal keyframeMaximum = 65504;
@@ -64,32 +63,16 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     internal EffectsPanelViewModel(WorkbenchSession session)
     {
         this.session = session;
-        RestoreInvalidFieldCommand = new RelayCommand(() =>
-        {
-            if (InvalidFieldKey is { } field)
-            {
-                RestoreField(field);
-            }
-        });
-        RectangleCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddRectangle)));
-        EllipseCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddEllipse)));
-        DeleteLayerCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.DeleteLayer)));
-        GroupCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.GroupLayers)));
-        UngroupCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.UngroupLayer)));
-        LayerUpCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.MoveLayerUp)));
-        LayerDownCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.MoveLayerDown)));
+        KeyframeColorDraft.Changed += (_, _) => OnPropertyChanged(nameof(KeyframeColorDraft));
+        ResetPositionCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ResetAutomaticPosition)));
+        AddPathPointCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddPathPoint)));
+        RemovePathPointCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.RemovePathPoint)));
+        ManageEffectScriptsCommand = new AsyncRelayCommand(() => session.RequestSettingsAsync(AegiNext.Desktop.Settings.SettingsPage.EFFECTS));
         PathCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.EditPath)));
-        MaskCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.EditMask)));
         ClearPathCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ClearPath)));
-        ClearMaskCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ClearMask)));
         KeyframeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddKeyframe)));
         DeleteKeyframeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.DeleteKeyframe)));
-        SavePresetCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.SavePreset)));
         ApplyPresetCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ApplySelectedPreset)));
-        FadeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ApplyFade)));
-        PopCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ApplyPop)));
-        SlideCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ApplySlide)));
-        ImageCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ImportImageAsync()));
     }
 
     public string? ValidationError
@@ -104,7 +87,6 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         internal set => SetProperty(ref invalidFieldKey, value);
     }
 
-    public ICommand RestoreInvalidFieldCommand { get; }
 
     public ProjectDocument Document
     {
@@ -115,8 +97,16 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     public ProjectLayer? SelectedLayer
     {
         get => selectedLayer;
-        set => SetProperty(ref selectedLayer, value);
+        set
+        {
+            if (SetProperty(ref selectedLayer, value))
+            {
+                OnPropertyChanged(nameof(CanResetPosition));
+            }
+        }
     }
+
+    public bool CanResetPosition => SelectedLayer?.SubtitleId is not null;
 
     public MediaTime Position
     {
@@ -160,12 +150,6 @@ internal sealed class EffectsPanelViewModel : ObservableObject
                 OnPropertyChanged();
             }
         }
-    }
-
-    public string? LayerName
-    {
-        get => layerName;
-        set => SetProperty(ref layerName, value);
     }
 
     public string LayerStart
@@ -278,9 +262,9 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         set => SetProperty(ref editTargetLabel, value);
     }
 
-    public int Property
+    public AnimationProperty Property
     {
-        get => (int)session.SceneEditing.Property;
+        get => session.SceneEditing.Property;
         set
         {
             if (Property == value)
@@ -292,16 +276,48 @@ internal sealed class EffectsPanelViewModel : ObservableObject
                 OnPropertyChanged();
                 return;
             }
-            session.SceneEditing.Property = (AnimationProperty)value;
+            session.SceneEditing.Property = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedProperty));
+            OnPropertyChanged(nameof(IsVectorProperty));
+            OnPropertyChanged(nameof(IsColorProperty));
+            OnPropertyChanged(nameof(IsScalarProperty));
         }
     }
 
-    public string[] Properties
+    public AnimationPropertyChoice[] Properties
     {
         get => properties;
-        set => SetProperty(ref properties, value);
+        set
+        {
+            if (SetProperty(ref properties, value))
+            {
+                OnPropertyChanged(nameof(SelectedProperty));
+            }
+        }
     }
+
+    public AnimationPropertyChoice? SelectedProperty
+    {
+        get => Properties.FirstOrDefault(choice => choice.Property == Property);
+        set
+        {
+            if (value is not null)
+            {
+                Property = value.Property;
+            }
+        }
+    }
+
+    public ColorDraft KeyframeColorDraft { get; } = new();
+
+    private decimal? keyframeValueY = 1;
+    private string keyframeValueYText = "1";
+    public decimal? KeyframeValueY { get => keyframeValueY; set => SetProperty(ref keyframeValueY, value); }
+    public string KeyframeValueYText { get => keyframeValueYText; set => SetProperty(ref keyframeValueYText, value); }
+    public bool IsVectorProperty => session.SceneEditing.Property is AnimationProperty.POSITION or AnimationProperty.SCALE;
+    public bool IsColorProperty => session.SceneEditing.Property is AnimationProperty.FILL or AnimationProperty.STROKE;
+    public bool IsScalarProperty => !IsVectorProperty && !IsColorProperty;
 
     public decimal? KeyframeValue
     {
@@ -363,43 +379,35 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         set => SetProperty(ref presetName, value);
     }
 
-    public ICommand RectangleCommand { get; }
 
-    public ICommand EllipseCommand { get; }
 
-    public ICommand DeleteLayerCommand { get; }
 
-    public ICommand GroupCommand { get; }
 
-    public ICommand UngroupCommand { get; }
 
-    public ICommand LayerUpCommand { get; }
 
-    public ICommand LayerDownCommand { get; }
+
+    public ICommand ResetPositionCommand { get; }
+    public ICommand AddPathPointCommand { get; }
+    public ICommand RemovePathPointCommand { get; }
+    public ICommand ManageEffectScriptsCommand { get; }
+
 
     public ICommand PathCommand { get; }
 
-    public ICommand MaskCommand { get; }
 
     public ICommand ClearPathCommand { get; }
 
-    public ICommand ClearMaskCommand { get; }
 
     public ICommand KeyframeCommand { get; }
 
     public ICommand DeleteKeyframeCommand { get; }
 
-    public ICommand SavePresetCommand { get; }
 
     public ICommand ApplyPresetCommand { get; }
 
-    public ICommand FadeCommand { get; }
 
-    public ICommand PopCommand { get; }
 
-    public ICommand SlideCommand { get; }
 
-    public ICommand ImageCommand { get; }
     /// <summary>同步图层及多选标识。</summary>
     public void SelectLayer(Guid id, Guid[] selectedIds) => session.SelectLayer(id, selectedIds);
     /// <summary>提交画布完成后的变换与路径参数。</summary>

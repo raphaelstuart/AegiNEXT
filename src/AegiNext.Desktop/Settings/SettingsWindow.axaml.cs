@@ -1,4 +1,5 @@
 using AegiNext.Core.Presets;
+using AegiNext.Application.Presets;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Shortcuts;
@@ -30,6 +31,7 @@ public sealed partial class SettingsWindow : Window
         AvaloniaXamlLoader.Load(this);
         TitleBar = this.FindControl<WindowTitleBar>("SettingsTitleBar")!;
         viewModel.Appearance.Changed += (_, value) => AppearanceChanged?.Invoke(this, value);
+        viewModel.Colors.Changed += (_, value) => ColorsChanged?.Invoke(this, value);
         viewModel.Shortcuts.Changed += (_, value) => ShortcutsChanged?.Invoke(this, value);
         viewModel.Styles.UpsertRequested += (_, value) => UpsertStyleRequested?.Invoke(this, value);
         viewModel.Styles.DeleteRequested += (_, value) => DeleteStyleRequested?.Invoke(this, value);
@@ -37,12 +39,17 @@ public sealed partial class SettingsWindow : Window
         viewModel.Styles.CaptureRequested += (_, _) => CaptureStyleRequested?.Invoke(this, EventArgs.Empty);
         viewModel.Styles.ImportRequested += (_, _) => ImportStylesRequested?.Invoke(this, EventArgs.Empty);
         viewModel.Styles.ExportRequested += (_, _) => ExportStylesRequested?.Invoke(this, EventArgs.Empty);
-        Deactivated += (_, _) => viewModel.Shortcuts.IsRecording = false;
-        Closed += (_, _) => viewModel.Shortcuts.IsRecording = false;
+        viewModel.Effects.SaveRequested += (_, value) => UpsertEffectRequested?.Invoke(this, value);
+        viewModel.Effects.DeleteRequested += (_, value) => DeleteEffectRequested?.Invoke(this, value);
+        viewModel.Effects.ImportRequested += (_, _) => ImportEffectRequested?.Invoke(this, EventArgs.Empty);
+        viewModel.Effects.ExportRequested += (_, value) => ExportEffectRequested?.Invoke(this, value);
+        Deactivated += (_, _) => viewModel.Shortcuts.CancelCapture();
+        Closed += (_, _) => viewModel.Shortcuts.CancelCapture();
         UpdatePreferences(preferences);
     }
 
     public event EventHandler<SettingsAppearanceChangedEventArgs>? AppearanceChanged;
+    public event EventHandler<SettingsColorsChangedEventArgs>? ColorsChanged;
     public event EventHandler<SettingsShortcutsChangedEventArgs>? ShortcutsChanged;
     public event EventHandler<SettingsStyleEventArgs>? UpsertStyleRequested;
     public event EventHandler<SettingsStyleDeleteEventArgs>? DeleteStyleRequested;
@@ -50,10 +57,14 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler<SettingsStyleEventArgs>? ApplyStyleRequested;
     public event EventHandler? ImportStylesRequested;
     public event EventHandler? ExportStylesRequested;
+    public event EventHandler<SettingsEffectEventArgs>? UpsertEffectRequested;
+    public event EventHandler<SettingsEffectDeleteEventArgs>? DeleteEffectRequested;
+    public event EventHandler? ImportEffectRequested;
+    public event EventHandler<SettingsEffectEventArgs>? ExportEffectRequested;
     public SettingsWindowViewModel ViewModel { get; }
     public WindowTitleBar TitleBar { get; }
     public SettingsPage CurrentPage => ViewModel.CurrentPage;
-    public bool IsShortcutCaptureActive => ViewModel.Shortcuts.IsRecording;
+    public bool IsShortcutCaptureActive => ViewModel.Shortcuts.IsCaptureActive;
 
     /// <summary>选择页面，所有草稿保持在页面模型中。</summary>
     public void SelectPage(SettingsPage page)
@@ -78,10 +89,11 @@ public sealed partial class SettingsWindow : Window
             _ => ThemeVariant.Default
         };
         ViewModel.Appearance.UpdatePreferences(value);
+        ViewModel.Colors.UpdatePreferences(value);
         RefreshLanguage();
     }
 
-    /// <summary>即时刷新三个页面的语言，保留未确认输入。</summary>
+    /// <summary>即时刷新五个页面的语言，保留未确认输入。</summary>
     public void RefreshLanguage()
     {
         SettingsViewLocalization.Apply(this);
@@ -98,6 +110,18 @@ public sealed partial class SettingsWindow : Window
     public void UpdateStyles(IEnumerable<SubtitleStylePreset> presets, Guid? selectedId = null)
     {
         ViewModel.Styles.UpdateStyles(presets, selectedId);
+    }
+
+    /// <summary>同步个人脚本库；内置脚本始终只读，其他未保存草稿继续保留。</summary>
+    public void UpdateEffects(IEnumerable<EffectScriptPreset> presets, Guid? selectedId = null)
+    {
+        ViewModel.Effects.UpdateEffects(presets, selectedId);
+    }
+
+    /// <summary>脚本存储或工程工作流运行期间禁止重复提交。</summary>
+    public void SetEffectOperationBusy(bool busy)
+    {
+        ViewModel.Effects.IsBusy = busy;
     }
 
     /// <summary>为模板位置编辑注入真实字体测量，不将渲染资源交给设置页面。</summary>

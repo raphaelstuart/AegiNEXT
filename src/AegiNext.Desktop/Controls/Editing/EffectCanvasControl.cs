@@ -271,6 +271,19 @@ public sealed class EffectCanvasControl : Control, IDisposable
             handle = Array.FindIndex(points, value => DistanceSquared(ToPoint(value) * matrix, point) <= 100);
             if (handle < 0)
             {
+                if (EditMode == CanvasEditMode.PATH && e.ClickCount == 2 && matrix.TryInvert(out var inverse))
+                {
+                    var starting = new CanvasGestureStartingEventArgs();
+                    GestureStarting?.Invoke(this, starting);
+                    if (!starting.Cancel)
+                    {
+                        var local = point * inverse;
+                        var edited = AegiNext.Core.Editing.PathOperations.AppendPoint(path, new(local.X, local.Y));
+                        LayerEdited?.Invoke(this, new(selected.Id, selected.Transform,
+                            selected.MotionPath! with { Path = edited }, selected.Mask));
+                        e.Handled = true;
+                    }
+                }
                 return;
             }
         }
@@ -494,19 +507,16 @@ public sealed class EffectCanvasControl : Control, IDisposable
             return layerDraft;
         }
         var local = position - selected.Start + selected.AnimationOffset;
-        double Value(AnimationProperty property, double fallback)
-        {
-            var track = selected.Tracks.FirstOrDefault(track => track.Property == property);
-            return track is null ? fallback : SceneEvaluator.EvaluateTrack(track, local);
-        }
+        var track = selected.Tracks.FirstOrDefault(track => track.Property == AnimationProperty.POSITION);
+        var evaluated = track is null ? selected.Transform.Position : SceneEvaluator.EvaluateVectorTrack(track, local);
         return layerDraft with
         {
             Transform = layerDraft.Transform with
             {
-                X = Value(AnimationProperty.POSITION_X, selected.Transform.X) + layerDraft.Transform.X - selected.Transform.X,
-                Y = Value(AnimationProperty.POSITION_Y, selected.Transform.Y) + layerDraft.Transform.Y - selected.Transform.Y
+                Position = new(evaluated.X + layerDraft.Transform.X - selected.Transform.X,
+                    evaluated.Y + layerDraft.Transform.Y - selected.Transform.Y)
             },
-            Tracks = layerDraft.Tracks.Where(track => track.Property is not (AnimationProperty.POSITION_X or AnimationProperty.POSITION_Y)).ToImmutableArray()
+            Tracks = layerDraft.Tracks.Where(track => track.Property != AnimationProperty.POSITION).ToImmutableArray()
         };
     }
 
@@ -585,13 +595,9 @@ public sealed class EffectCanvasControl : Control, IDisposable
     private Matrix PathOrigin(ProjectLayer layer)
     {
         var local = position - layer.Start + layer.AnimationOffset;
-        double Value(AnimationProperty property, double fallback)
-        {
-            var track = layer.Tracks.FirstOrDefault(track => track.Property == property);
-            return track is null ? fallback : SceneEvaluator.EvaluateTrack(track, local);
-        }
-        return Matrix.CreateTranslation(basePosition.X + Value(AnimationProperty.POSITION_X, layer.Transform.X),
-            basePosition.Y + Value(AnimationProperty.POSITION_Y, layer.Transform.Y));
+        var track = layer.Tracks.FirstOrDefault(track => track.Property == AnimationProperty.POSITION);
+        var value = track is null ? layer.Transform.Position : SceneEvaluator.EvaluateVectorTrack(track, local);
+        return Matrix.CreateTranslation(basePosition.X + value.X, basePosition.Y + value.Y);
     }
 
     private Matrix Fit()

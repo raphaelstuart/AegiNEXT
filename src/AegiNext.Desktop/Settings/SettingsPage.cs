@@ -5,5 +5,7 @@ public enum SettingsPage
 {
     APPEARANCE,
     SHORTCUTS,
-    STYLES
+    STYLES,
+    EFFECTS,
+    COLORS
 }

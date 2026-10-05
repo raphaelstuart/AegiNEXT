@@ -1,0 +1,185 @@
+namespace AegiNext.Application.Presets;
+
+/// <summary>串行提交个人脚本库；仅在原子写入成功后发布不可变快照。</summary>
+public sealed class EffectScriptPresetLibrary : IDisposable
+{
+    private readonly string filePath;
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly Lock lifetime = new();
+    private EffectScriptPresetDocument snapshot = new();
+    private bool loaded;
+    private bool disposed;
+    private int operations;
+
+    /// <summary>由组合根提供个人数据目录内的绝对文件路径。</summary>
+    public EffectScriptPresetLibrary(string absoluteFilePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(absoluteFilePath);
+        if (!Path.IsPathFullyQualified(absoluteFilePath))
+        {
+            throw new ArgumentException("特效脚本库路径必须为绝对路径。", nameof(absoluteFilePath));
+        }
+
+        filePath = Path.GetFullPath(absoluteFilePath);
+    }
+
+    public EffectScriptPresetDocument Snapshot => Volatile.Read(ref snapshot);
+
+    /// <summary>加载并验证完整库；不存在时使用空库，损坏时保留最后成功快照。</summary>
+    public Task LoadAsync(CancellationToken cancellationToken = default)
+    {
+        return ExecuteAsync(() => ReadAsync(cancellationToken), cancellationToken);
+    }
+
+    /// <summary>新增或修改个人模板，所有冲突在落盘之前拒绝。</summary>
+    public Task UpsertAsync(EffectScriptPreset preset, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        return ExecuteAsync(async () =>
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            var index = FindIndex(preset.Id);
+            var items = index < 0 ? snapshot.Presets.Add(preset) : snapshot.Presets.SetItem(index, preset);
+            await CommitAsync(snapshot with { Presets = items }, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken);
+    }
+
+    /// <summary>删除个人模板，失败时保留快照和磁盘内容。</summary>
+    public Task RemoveAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        return ExecuteAsync(async () =>
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            var index = FindIndex(id);
+            if (index < 0)
+            {
+                throw new InvalidDataException("特效模板不存在。");
+            }
+
+            await CommitAsync(snapshot with { Presets = snapshot.Presets.RemoveAt(index) }, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken);
+    }
+
+    /// <summary>原子导入单个 .aegifx；名称采用脚本标识，冲突明确失败。</summary>
+    public Task ImportAsync(string path, CancellationToken cancellationToken = default)
+    {
+        return ExecuteAsync(async () =>
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            var template = await EffectScriptPresetStore.ReadScriptAsync(path, cancellationToken).ConfigureAwait(false);
+            var preset = new EffectScriptPreset(Guid.NewGuid(), template.Script.Id, template.Source);
+            await CommitAsync(snapshot with { Presets = snapshot.Presets.Add(preset) }, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken);
+    }
+
+    /// <summary>按个人模板身份导出源文件，不允许覆盖当前个人库。</summary>
+    public Task ExportAsync(Guid id, string path, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(Path.GetFullPath(path), filePath,
+                OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("导出位置不能是当前特效脚本库。");
+        }
+
+        return ExecuteAsync(async () =>
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            var preset = snapshot.Presets.FirstOrDefault(item => item.Id == id) ?? throw new InvalidDataException("特效模板不存在。");
+            await EffectScriptPresetStore.WriteScriptAsync(preset.Source, path, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken);
+    }
+
+    /// <summary>宿主需先等待已有操作结束；释放后拒绝继续使用。</summary>
+    public void Dispose()
+    {
+        lock (lifetime)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            if (operations != 0)
+            {
+                throw new InvalidOperationException("请先等待特效脚本库异步操作完成。");
+            }
+
+            disposed = true;
+            gate.Dispose();
+        }
+    }
+
+    private async Task ExecuteAsync(Func<Task> action, CancellationToken cancellationToken)
+    {
+        lock (lifetime)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            operations++;
+        }
+
+        var acquired = false;
+        try
+        {
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            acquired = true;
+            await action().ConfigureAwait(false);
+        }
+        finally
+        {
+            if (acquired)
+            {
+                gate.Release();
+            }
+
+            lock (lifetime)
+            {
+                operations--;
+            }
+        }
+    }
+
+    private Task EnsureLoadedAsync(CancellationToken cancellationToken)
+    {
+        return loaded ? Task.CompletedTask : ReadAsync(cancellationToken);
+    }
+
+    private async Task ReadAsync(CancellationToken cancellationToken)
+    {
+        EffectScriptPresetDocument value;
+        try
+        {
+            value = await EffectScriptPresetStore.LoadAsync(filePath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FileNotFoundException)
+        {
+            value = new();
+        }
+        catch (DirectoryNotFoundException)
+        {
+            value = new();
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        Volatile.Write(ref snapshot, value);
+        loaded = true;
+    }
+
+    private async Task CommitAsync(EffectScriptPresetDocument value, CancellationToken cancellationToken)
+    {
+        await EffectScriptPresetStore.SaveAsync(value, filePath, cancellationToken).ConfigureAwait(false);
+        Volatile.Write(ref snapshot, value);
+    }
+
+    private int FindIndex(Guid id)
+    {
+        for (var index = 0; index < snapshot.Presets.Length; index++)
+        {
+            if (snapshot.Presets[index].Id == id)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+}

@@ -146,12 +146,19 @@ public static class LayerAnimationTiming
                     {
                         Interpolation = first.Interpolation,
                         CurveStart = Math.Clamp(first.CurveStart + range * Seconds(time - first.Time) / duration, first.CurveStart, first.CurveEnd),
-                        CurveEnd = Math.Clamp(first.CurveStart + range * Seconds(end - first.Time) / duration, first.CurveStart, first.CurveEnd)
+                        CurveEnd = Math.Clamp(first.CurveStart + range * Seconds(end - first.Time) / duration, first.CurveStart, first.CurveEnd),
+                        ComponentCurves = first.ComponentCurves.Select(curve => curve is null ? null : curve with
+                        {
+                            CurveStart = Math.Clamp(curve.CurveStart + (curve.CurveEnd - curve.CurveStart) * Seconds(time - first.Time) / duration,
+                                curve.CurveStart, curve.CurveEnd),
+                            CurveEnd = Math.Clamp(curve.CurveStart + (curve.CurveEnd - curve.CurveStart) * Seconds(end - first.Time) / duration,
+                                curve.CurveStart, curve.CurveEnd)
+                        }).ToImmutableArray()
                     };
                 }
                 else
                 {
-                    key = key with { Interpolation = KeyframeInterpolation.HOLD, CurveStart = 0, CurveEnd = 1 };
+                    key = key with { Interpolation = KeyframeInterpolation.HOLD, CurveStart = 0, CurveEnd = 1, ComponentCurves = [] };
                 }
             }
 

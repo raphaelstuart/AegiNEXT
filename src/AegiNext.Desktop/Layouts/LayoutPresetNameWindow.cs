@@ -10,7 +10,7 @@ internal sealed class LayoutPresetNameWindow : Window
         var culture = controller.Culture;
         Title = LayoutText.Get("SaveAs", culture).TrimEnd('…');
         Width = 380;
-        Height = 180;
+        SizeToContent = SizeToContent.Height;
         MinWidth = 300;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;

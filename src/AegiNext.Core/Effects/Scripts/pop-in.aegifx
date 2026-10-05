@@ -1,0 +1,11 @@
+# 倍率作用于应用前的完整缩放向量，保留已有的非等比缩放。
+effect "pop-in" version 1
+short-clip compress
+
+segment enter fixed 250ms
+    at 0 scale factor(0.2, 0.2) ease-out
+    at 1 scale base
+end
+
+segment stay flex 1
+end

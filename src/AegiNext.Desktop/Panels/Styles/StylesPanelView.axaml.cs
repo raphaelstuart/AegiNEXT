@@ -32,11 +32,12 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         bold.IsCheckedChanged += (_, _) => viewModel.CommitBold(bold.IsChecked == true);
         var italic = this.FindControl<CheckBox>("ItalicCheck")!;
         italic.IsCheckedChanged += (_, _) => viewModel.CommitItalic(italic.IsChecked == true);
-        this.FindControl<ColorPicker>("FillPicker")!.ColorChanged += (_, e) => viewModel.CommitFill(e.NewColor);
-        this.FindControl<ColorPicker>("StrokePicker")!.ColorChanged += (_, e) => viewModel.CommitStroke(e.NewColor);
+        viewModel.FillDraft.Committed += (_, _) => viewModel.CommitDrafts();
+        viewModel.StrokeDraft.Committed += (_, _) => viewModel.CommitDrafts();
         var alignment = this.FindControl<ComboBox>("AlignmentCombo")!;
         alignment.SelectionChanged += (_, _) => viewModel.CommitAlignment(alignment.SelectedIndex);
         var position = this.FindControl<SubtitlePositionEditor>("PositionEditor")!;
+        position.AutomaticPositionRequested += async (_, _) => await viewModel.RestoreAutomaticPositionAsync();
         position.ExplicitPositionChanged += (_, _) => viewModel.CommitDrafts();
         position.PresetPositionChanged += (_, _) => viewModel.CommitDrafts();
         viewModel.PropertyChanged += (_, e) =>
@@ -91,9 +92,18 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         }
 
         var control = fieldKey is null ? fonts : this.FindControl<Control>(fieldKey) ?? fonts;
+        if (control is ColorDraftInput color && color.TryFocusInvalidField())
+        {
+            return;
+        }
         control.Focus();
     }
-    private void OnPreferencesChanged(object? sender, EventArgs e) => ControlLocalization.Apply(this);
+    private void OnPreferencesChanged(object? sender, EventArgs e)
+    {
+        ControlLocalization.Apply(this);
+        this.FindControl<ColorDraftInput>("FillPicker")!.RefreshLanguage();
+        this.FindControl<ColorDraftInput>("StrokePicker")!.RefreshLanguage();
+    }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     public void Dispose()
     {

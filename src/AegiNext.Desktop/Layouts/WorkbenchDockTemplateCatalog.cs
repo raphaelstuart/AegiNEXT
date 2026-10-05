@@ -41,15 +41,21 @@ internal static class WorkbenchDockTemplateCatalog
                 }.RegisterInNameScope(scope);
                 DockProperties.SetIsDropArea(tracking, true);
                 DockProperties.SetIsDockTarget(tracking, true);
-                tracking.Children.Add(new WorkbenchToolChromeControl
+                var frame = new Border
                 {
-                    Content = new WorkbenchToolControl(),
-                    [!ToolChromeControl.IsActiveProperty] = new Binding(nameof(IToolDock.IsActive)),
+                    Name = "PART_WorkspaceFrame",
                     [!Avalonia.Visual.IsVisibleProperty] = new Binding("VisibleDockables.Count")
                     {
                         Converter = new FuncValueConverter<int, bool>(count => count > 0)
+                    },
+                    Child = new WorkbenchToolChromeControl
+                    {
+                        Content = new WorkbenchToolControl(),
+                        [!ToolChromeControl.IsActiveProperty] = new Binding(nameof(IToolDock.IsActive))
                     }
-                });
+                };
+                frame.Classes.Add("workspace-frame");
+                tracking.Children.Add(frame);
                 return tracking;
             })
         };

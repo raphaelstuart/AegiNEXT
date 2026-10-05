@@ -2,8 +2,8 @@
     xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
     xmlns:projects="using:AegiNext.Core.Projects"
     xmlns:vm="using:AegiNext.Desktop.Panels.Subtitles" x:DataType="vm:SubtitlesPanelViewModel"
-    x:Class="AegiNext.Desktop.Panels.Subtitles.SubtitlesPanelView">
-<Border Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+    x:Class="AegiNext.Desktop.Panels.Subtitles.SubtitlesPanelView" Classes="business-surface">
+<Border Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0" CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
       <Grid RowDefinitions="Auto,Auto,*">
         <WrapPanel Name="SubtitleToolbar" Margin="12,8,12,4">
           <TextBlock Name="PreviewLabel" Tag="Subtitles" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,4" />

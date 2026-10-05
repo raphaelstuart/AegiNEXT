@@ -28,6 +28,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly Func<Action, CancellationToken, Task> dispatch;
     private readonly WorkbenchPreferencesStore preferencesStore;
     private readonly SubtitleStylePresetLibrary styleLibrary;
+    private readonly EffectScriptPresetLibrary effectScriptLibrary;
+    private readonly EffectScriptLibraryCoordinator effectScripts;
     private readonly CultureInfo systemCulture;
     private readonly string scratchDirectory;
     private readonly Dictionary<Guid, int> textCarets = [];
@@ -69,6 +71,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         scratchDirectory = Path.Combine(Path.GetTempPath(), "AegiNext", Guid.NewGuid().ToString("N"));
         projectDirectory = scratchDirectory;
         styleLibrary = new(Path.Combine(this.preferencesStore.DirectoryPath, "subtitle-styles.aegistyles"));
+        effectScriptLibrary = new(Path.Combine(this.preferencesStore.DirectoryPath, "effect-scripts.json"));
         ViewModel = new(this);
         controller = controllerFactory?.Invoke(ApplyUpdate) ?? new(this.dispatch, ApplyUpdate,
             () => new ProjectPreviewConverter(() => Volatile.Read(ref previewState),
@@ -77,6 +80,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         analysis = new(this);
         export = new(this, dialogs, exportService ?? new VideoWorkbenchExportService(new AegiNext.Media.Encoding.VideoExporter()));
         styles = new(this, dialogs);
+        effectScripts = new(this, dialogs);
         layerEditing = new(this, dialogs);
         playback = new(this, controller);
         this.editor.Changed += OnDocumentChanged;
@@ -87,6 +91,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ApplyPreferences();
         RefreshDocument();
         styles.Initialize();
+        effectScripts.Initialize();
         if (this.preferencesStore.LoadError is { } error)
         {
             ShowError(error);
@@ -96,6 +101,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal event EventHandler<VideoPreviewUpdate>? PreviewUpdated;
     internal event EventHandler? PreferencesChanged;
     internal event EventHandler? StyleLibraryChanged;
+    internal event EventHandler? EffectLibraryChanged;
+    internal void NotifyEffectLibraryChanged() => EffectLibraryChanged?.Invoke(this, EventArgs.Empty);
     internal event EventHandler? SelectionChanged;
     internal event EventHandler? SubtitleScrollRequested;
     internal WorkbenchViewModel ViewModel { get; }
@@ -105,6 +112,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal WorkbenchPreferences Preferences => preferences;
     internal WorkbenchPreferencesStore PreferencesStore => preferencesStore;
     internal SubtitleStylePresetLibrary StyleLibrary => styleLibrary;
+    internal EffectScriptPresetLibrary EffectScriptLibrary => effectScriptLibrary;
+    internal EffectScriptLibraryCoordinator EffectScripts => effectScripts;
     internal ProjectDocument DocumentSnapshot => editor.Snapshot;
     internal CultureInfo InterfaceCulture => preferences.Language == "system" ? systemCulture : CultureInfo.GetCultureInfo(preferences.Language);
     internal bool IsClosing => closing;
@@ -272,7 +281,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         export.Cancel();
         try
         {
-            await Task.WhenAll(analysis.Completion, export.Completion, preferencesWrite, styles.Completion);
+            await Task.WhenAll(analysis.Completion, export.Completion, preferencesWrite, styles.Completion, effectScripts.Completion);
         }
         finally
         {
@@ -282,6 +291,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             analysis.Dispose();
             export.Dispose();
             styleLibrary.Dispose();
+            effectScriptLibrary.Dispose();
             preferencesStore.Dispose();
             DisposeJournal();
             PreviewUpdated = null;
@@ -305,7 +315,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             ViewModel.Preview.EmptyLabel = PreviewText.Get("Empty", InterfaceCulture);
             ViewModel.Styles.Alignments = alignments.Select(value => SettingsText.Get(value.ToString())).ToArray();
             ViewModel.Effects.Blends = blendKeys.Select(WorkbenchText.Get).ToArray();
-            ViewModel.Effects.Properties = Enum.GetValues<AnimationProperty>().Select(WorkbenchText.Property).ToArray();
+            ViewModel.Effects.Properties = AnimationPropertyMetadata.CurrentProperties.Select(value => new AnimationPropertyChoice(value, WorkbenchText.Property(value))).ToArray();
             ViewModel.Effects.Interpolations = interpolationKeys.Select(WorkbenchText.Get).ToArray();
             ViewModel.Export.RefreshChoices([WorkbenchText.Get("Automatic"), "H.264", "HEVC / H.265"],
                 speedKeys.Select(WorkbenchText.Get).ToArray(),
@@ -374,7 +384,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         preview.FileTitle = snapshot.FilePath is { } path ? Path.GetFileName(path) : PreviewText.Get("Preview", InterfaceCulture);
         preview.IsOpening = snapshot.IsOpening;
         preview.CanPlay = !closing && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
-        preview.PlayLabel = PreviewText.Get(snapshot.State == VideoPlaybackState.PLAYING ? "Pause" : "Play", InterfaceCulture);
+        preview.IsPlaying = snapshot.State == VideoPlaybackState.PLAYING;
+        preview.PlayLabel = PreviewText.Get(preview.IsPlaying ? "Pause" : "Play", InterfaceCulture);
+        preview.MuteLabel = PreviewText.Get(preview.IsMuted ? "Unmute" : "Mute", InterfaceCulture);
+        preview.VolumeLabel = PreviewText.Get("Volume", InterfaceCulture);
         preview.CanSeek = preview.CanPlay && snapshot.Duration is { } duration && duration > MediaTime.Zero;
         preview.Duration = snapshot.Duration is { } known ? Math.Max(0.001, ToSeconds(known)) : 1;
         if (!preview.IsScrubbing)

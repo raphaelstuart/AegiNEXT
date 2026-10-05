@@ -2,6 +2,7 @@ using System.ComponentModel;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Controllers;
+using AegiNext.Desktop.Styling;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Core.Timing;
 using Avalonia.Controls;
@@ -25,6 +26,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
         canvas = this.FindControl<EffectCanvasControl>("EffectCanvas")!;
+        ApplyTransportIcons();
         canvas.GestureStarting += (_, e) => e.Cancel = !viewModel.BeginCanvasGesture();
         canvas.GestureCancelled += (_, _) => viewModel.CancelCanvasGesture();
         canvas.LayerEdited += async (_, e) => await viewModel.CommitCanvasAsync(e);
@@ -87,6 +89,15 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         {
             ApplyScene();
         }
+        else if (e.PropertyName is nameof(PreviewPanelViewModel.IsPlaying) or nameof(PreviewPanelViewModel.IsMuted))
+        {
+            ApplyTransportIcons();
+        }
+    }
+    private void ApplyTransportIcons()
+    {
+        this.FindControl<Button>("PlayButton")!.Content = WorkbenchIcon.Create(viewModel.IsPlaying ? "Pause" : "Play");
+        this.FindControl<Button>("MuteButton")!.Content = WorkbenchIcon.Create(viewModel.IsMuted ? "Mute" : "Volume");
     }
     private void ApplyScene()
     {

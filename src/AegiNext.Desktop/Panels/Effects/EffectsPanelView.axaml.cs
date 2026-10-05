@@ -7,6 +7,7 @@ using AegiNext.Desktop.Workspace;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -30,12 +31,11 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         blend.SelectionChanged += (_, _) => viewModel.CommitBlend(blend.SelectedIndex);
         var interpolation = this.FindControl<ComboBox>("InterpolationCombo")!;
         interpolation.SelectionChanged += (_, _) => viewModel.CommitInterpolation(interpolation.SelectedIndex);
-        var invertMask = this.FindControl<CheckBox>("InvertMaskCheck")!;
-        invertMask.IsCheckedChanged += (_, _) => viewModel.CommitInvertMask(invertMask.IsChecked == true);
         var orientPath = this.FindControl<CheckBox>("OrientPathCheck")!;
         orientPath.IsCheckedChanged += (_, _) => viewModel.CommitOrientPath(orientPath.IsChecked == true);
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        viewModel.KeyframeColorDraft.Committed += OnColorCommitted;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         AddHandler(LostFocusEvent, (_, e) =>
         {
@@ -71,11 +71,22 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
             }
         }, DispatcherPriority.Background);
     }
-    public void FocusInvalidField(string? fieldKey) => (fieldKey is { } key ? this.FindControl<Control>(key) ?? this : this).Focus();
+    public void FocusInvalidField(string? fieldKey)
+    {
+        var control = fieldKey is { } key
+            ? this.FindControl<Control>(key) ?? this.GetLogicalDescendants().OfType<Control>().FirstOrDefault(control => control.Name == key)
+            : null;
+        if (control is ColorDraftInput color && color.TryFocusInvalidField())
+        {
+            return;
+        }
+        (control ?? this).Focus();
+    }
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
         suppressFocusCommit = false;
-        if (e.Key == Key.Escape && e.Source is Control source)
+        if (e.Key == Key.Escape && e.Source is Control source &&
+            !source.GetSelfAndVisualAncestors().OfType<ColorDraftInput>().Any())
         {
             var field = source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault() as Control ??
                 source.GetSelfAndVisualAncestors().OfType<TextBox>().FirstOrDefault(control => control.Name is not null && !control.Name.StartsWith("PART_", StringComparison.Ordinal));
@@ -86,6 +97,8 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
             }
         }
     }
+
+    private void OnColorCommitted(object? sender, ColorDraftCommittedEventArgs e) => viewModel.CommitDrafts();
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -98,13 +111,18 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         }
     }
 
-    private void OnPreferencesChanged(object? sender, EventArgs e) => ControlLocalization.Apply(this);
+    private void OnPreferencesChanged(object? sender, EventArgs e)
+    {
+        ControlLocalization.Apply(this);
+        this.FindControl<ColorDraftInput>("KeyframeColorInput")!.RefreshLanguage();
+    }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     public void Dispose()
     {
         if (!disposed)
         {
             disposed = true;
+            viewModel.KeyframeColorDraft.Committed -= OnColorCommitted;
             viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             session.PreferencesChanged -= OnPreferencesChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;

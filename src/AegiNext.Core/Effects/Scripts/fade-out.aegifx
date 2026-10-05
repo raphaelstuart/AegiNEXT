@@ -1,0 +1,10 @@
+effect "fade-out" version 1
+short-clip compress
+
+segment stay flex 1
+end
+
+segment exit fixed 300ms
+    at 0 opacity base ease-in
+    at 1 opacity 0
+end

@@ -439,9 +439,12 @@ public sealed partial class ProjectEditor
         UpdateLayer(layerId, layer =>
         {
             var origin = LayerAnimationTiming.GetRange(layer).Minimum;
+            var style = layer.SubtitleId is { } subtitleId ? snapshot.Subtitles[FindSubtitle(snapshot, subtitleId)].Style : null;
+            var tracks = LegacyAnimationTrackMigration.Merge(preset.Tracks, AnimationProperty.FILL, style?.Fill ?? layer.Fill);
+            tracks = LegacyAnimationTrackMigration.Merge(tracks, AnimationProperty.STROKE, style?.Stroke ?? layer.Stroke);
             return LayerAnimationTiming.Clip(layer with
             {
-                Tracks = preset.Tracks.Select(track => track with
+                Tracks = tracks.Select(track => track with
                 {
                     Keyframes = track.Keyframes.Select(frame => frame with { Time = frame.Time + origin }).ToImmutableArray()
                 }).ToImmutableArray(), MotionPath = preset.MotionPath, Mask = preset.Mask, Blend = preset.Blend

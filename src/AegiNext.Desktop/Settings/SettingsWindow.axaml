@@ -7,8 +7,10 @@
         xmlns:appearance="using:AegiNext.Desktop.Settings.Appearance"
         xmlns:shortcutPages="using:AegiNext.Desktop.Settings.Shortcuts"
         xmlns:stylePages="using:AegiNext.Desktop.Settings.Styles"
+        xmlns:effectPages="using:AegiNext.Desktop.Settings.Effects"
+        xmlns:colorPages="using:AegiNext.Desktop.Settings.Colors"
         x:Class="AegiNext.Desktop.Settings.SettingsWindow" x:DataType="settings:SettingsWindowViewModel"
-        Title="{Binding Title}"
+        Classes="business-surface" Title="{Binding Title}"
         Width="980" Height="720" MinWidth="860" MinHeight="580"
         WindowStartupLocation="CenterOwner" Background="{DynamicResource SettingsBackground}">
   <Window.Resources>
@@ -87,6 +89,18 @@
                 <TextBlock Tag="Styles" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Width="18" Height="18" Data="M12,2 L14,9 L22,12 L14,15 L12,22 L9,15 L2,12 L9,9 Z" />
+                <TextBlock Tag="Effects" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Width="18" Height="18" Data="M12,2 C6,2 2,6 2,12 C2,18 7,22 12,22 C15,22 16,20 15,18 C14,16 16,15 18,15 C21,15 22,13 22,10 C22,6 17,2 12,2 Z M7,7 A2,2 0 1 0 7,11 A2,2 0 1 0 7,7 Z M13,5 A2,2 0 1 0 13,9 A2,2 0 1 0 13,5 Z M17,9 A2,2 0 1 0 17,13 A2,2 0 1 0 17,9 Z" />
+                <TextBlock Tag="Colors" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
           </ListBox>
         </StackPanel>
       </Border>
@@ -103,6 +117,14 @@
         <Grid Grid.Row="1" IsVisible="{Binding IsStylesVisible}">
           <stylePages:StyleSettingsView Name="StylesView" DataContext="{Binding Styles}"
                                         IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsEffectsVisible}">
+          <effectPages:EffectSettingsView Name="EffectsView" DataContext="{Binding Effects}"
+                                         IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsColorsVisible}">
+          <colorPages:ColorsSettingsView Name="ColorsView" DataContext="{Binding Colors}"
+                                         IsVisible="{Binding $parent[Grid].IsVisible}" />
         </Grid>
         <TextBlock Name="SettingsError" Grid.Row="2" Text="{Binding Error}"
                    Foreground="{DynamicResource SettingsError}" IsVisible="{Binding HasError}" TextWrapping="Wrap"

@@ -10,7 +10,9 @@ namespace AegiNext.Desktop.Settings.Shortcuts;
 /// <summary>按键录入的局部适配，不持有工程或全局输入路由。</summary>
 public sealed partial class ShortcutSettingsView : UserControl
 {
+    private readonly HashSet<Key> capturedKeys = [];
     private ShortcutSettingsViewModel? model;
+    private Window? window;
 
     /// <summary>先隔离父级上下文，再加载编译绑定并接线局部键盘输入。</summary>
     public ShortcutSettingsView()
@@ -19,6 +21,9 @@ public sealed partial class ShortcutSettingsView : UserControl
         AvaloniaXamlLoader.Load(this);
         DataContextChanged += (_, _) => ChangeModel();
         AddHandler(KeyDownEvent, RecordShortcut, RoutingStrategies.Tunnel);
+        this.FindControl<TextBox>("GestureInput")!.AddHandler(TextInputEvent, RejectTextInput, RoutingStrategies.Tunnel);
+        AttachedToVisualTree += (_, _) => AttachWindow();
+        DetachedFromVisualTree += (_, _) => DetachWindow();
     }
 
     private void ChangeModel()
@@ -26,8 +31,10 @@ public sealed partial class ShortcutSettingsView : UserControl
         if (model is not null)
         {
             model.PropertyChanged -= ModelChanged;
+            model.IsWaitingForKeyRelease = false;
         }
 
+        capturedKeys.Clear();
         model = DataContext as ShortcutSettingsViewModel;
         if (model is not null)
         {
@@ -63,12 +70,20 @@ public sealed partial class ShortcutSettingsView : UserControl
 
     private void RecordShortcut(object? sender, KeyEventArgs e)
     {
+        if (capturedKeys.Contains(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (model?.IsRecording != true)
         {
             return;
         }
 
         e.Handled = true;
+        capturedKeys.Add(e.Key);
+        model.IsWaitingForKeyRelease = true;
         if (e.Key == Key.Escape)
         {
             model.IsRecording = false;
@@ -87,6 +102,60 @@ public sealed partial class ShortcutSettingsView : UserControl
         catch (Exception exception) when (exception is ArgumentException or InvalidDataException or FormatException)
         {
             model.RejectGesture();
+        }
+    }
+
+    private void ReleaseShortcut(object? sender, KeyEventArgs e)
+    {
+        if (capturedKeys.Remove(e.Key))
+        {
+            e.Handled = true;
+            if (model is not null)
+            {
+                model.IsWaitingForKeyRelease = capturedKeys.Count != 0;
+            }
+        }
+    }
+
+    private static void RejectTextInput(object? sender, TextInputEventArgs e)
+    {
+        e.Handled = true;
+    }
+
+    private void AttachWindow()
+    {
+        window = TopLevel.GetTopLevel(this) as Window;
+        if (window is not null)
+        {
+            window.Deactivated += OnWindowDeactivated;
+            window.AddHandler(KeyUpEvent, ReleaseShortcut, RoutingStrategies.Tunnel, true);
+        }
+    }
+
+    private void DetachWindow()
+    {
+        if (window is not null)
+        {
+            window.Deactivated -= OnWindowDeactivated;
+            window.RemoveHandler(KeyUpEvent, ReleaseShortcut);
+            window = null;
+        }
+
+        ResetCapture();
+    }
+
+    private void OnWindowDeactivated(object? sender, EventArgs e)
+    {
+        ResetCapture();
+    }
+
+    private void ResetCapture()
+    {
+        capturedKeys.Clear();
+        if (model is not null)
+        {
+            model.IsRecording = false;
+            model.IsWaitingForKeyRelease = false;
         }
     }
 }

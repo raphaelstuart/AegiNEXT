@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:editing="using:AegiNext.Desktop.Editing" xmlns:controls="using:AegiNext.Desktop.Controls"
+             x:Class="AegiNext.Desktop.Controls.ColorDraftInput" x:DataType="controls:ColorDraftInput">
+    <StackPanel Name="DraftRoot" Spacing="4" DataContext="{x:Null}" x:DataType="editing:ColorDraft">
+        <Border Name="InputBar" BorderThickness="1" CornerRadius="5" ClipToBounds="True"
+                BorderBrush="{DynamicResource PreviewBorder}" Background="{DynamicResource PreviewSurface}">
+            <Grid ColumnDefinitions="32,*,32,32" Height="32">
+                <ColorPreviewer Name="ColorPreview" Width="32" Height="32" IsAccentColorsVisible="False" />
+                <TextBox Name="ColorInput" Grid.Column="1" Text="{Binding InputText, Mode=TwoWay}"
+                         PlaceholderText="{Binding InputPlaceholder}" MaxLength="128" Padding="6,0"
+                         Height="32" MinHeight="32" BorderThickness="0" CornerRadius="0" Background="Transparent"
+                         FontSize="12" VerticalContentAlignment="Center" />
+                <Button Name="ModeButton" Grid.Column="2" Content="{Binding ModeLabel}"
+                        Width="32" Height="32" MinWidth="32" MinHeight="32" Padding="0" CornerRadius="0"
+                        FontSize="9" BorderThickness="0" Background="Transparent" />
+                <Button Name="PickerButton" Grid.Column="3" Width="32" Height="32" MinWidth="32" MinHeight="32"
+                        Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent">
+                    <PathIcon Width="16" Height="16" Data="M 12,1 L 15,4 L 12,7 L 11,6 L 5,12 L 2,13 L 3,10 L 9,4 L 8,3 Z M 4,10 L 5,11 L 10,6 L 9,5 Z" />
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedRight">
+                            <ColorView Name="Picker" IsColorPaletteVisible="False" IsColorComponentsVisible="False"
+                                       IsHexInputVisible="False" />
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+            </Grid>
+        </Border>
+        <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="Tomato" FontSize="11" TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

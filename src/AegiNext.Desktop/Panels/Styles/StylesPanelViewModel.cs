@@ -20,8 +20,6 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private string fontDraft = "Noto Sans CJK SC";
     private decimal? fontSize = 64;
     private decimal? strokeWidth = 2;
-    private Color fill = Colors.White;
-    private Color stroke = Colors.Black;
     private bool? bold = false;
     private bool? italic = false;
     private int alignment;
@@ -34,10 +32,12 @@ internal sealed class StylesPanelViewModel : ObservableObject
     internal StylesPanelViewModel(WorkbenchSession session)
     {
         this.session = session;
+        FillDraft.Changed += (_, _) => OnPropertyChanged(nameof(FillDraft));
+        StrokeDraft.Changed += (_, _) => OnPropertyChanged(nameof(StrokeDraft));
         Position.Changed += (_, _) => OnPropertyChanged(nameof(Position));
         ApplyStyleCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ApplySelectedStyleAsync()));
         ManageStylesCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.RequestSettingsAsync(AegiNext.Desktop.Settings.SettingsPage.STYLES)));
-        ImportFontCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ImportFontAsync()));
+        RestoreAutomaticPositionCommand = new AsyncRelayCommand(RestoreAutomaticPositionAsync);
         KaraokeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.CreateKaraoke)));
         ClearKaraokeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ClearKaraoke)));
     }
@@ -66,16 +66,31 @@ internal sealed class StylesPanelViewModel : ObservableObject
         set => SetProperty(ref strokeWidth, value);
     }
 
+    public ColorDraft FillDraft { get; } = new();
+    public ColorDraft StrokeDraft { get; } = new(SceneColor.Black);
+
     public Color Fill
     {
-        get => fill;
-        set => SetProperty(ref fill, value);
+        get => SceneColorConversion.ToColor(FillDraft.Value);
+        set
+        {
+            if (value != Fill)
+            {
+                FillDraft.SetValue(SceneColorConversion.FromColor(value));
+            }
+        }
     }
 
     public Color Stroke
     {
-        get => stroke;
-        set => SetProperty(ref stroke, value);
+        get => SceneColorConversion.ToColor(StrokeDraft.Value);
+        set
+        {
+            if (value != Stroke)
+            {
+                StrokeDraft.SetValue(SceneColorConversion.FromColor(value));
+            }
+        }
     }
 
     public bool? Bold
@@ -126,12 +141,15 @@ internal sealed class StylesPanelViewModel : ObservableObject
         set => SetProperty(ref canApplyPreset, value);
     }
 
+    /// <summary>通过会话事务恢复当前字幕的自动对齐与位置。</summary>
+    public Task RestoreAutomaticPositionAsync() => session.RunCommandAsync(() => session.EditAsync(session.ResetAutomaticPosition));
+
     public ICommand ApplyStyleCommand { get; }
     public SubtitlePositionDraft Position { get; } = new();
 
     public ICommand ManageStylesCommand { get; }
 
-    public ICommand ImportFontCommand { get; }
+    public ICommand RestoreAutomaticPositionCommand { get; }
 
     public ICommand KaraokeCommand { get; }
 

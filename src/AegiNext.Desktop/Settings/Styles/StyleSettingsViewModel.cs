@@ -45,6 +45,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
     /// <summary>创建样式命令；工程和存储操作交由会话处理。</summary>
     public StyleSettingsViewModel()
     {
+        FillDraft.Committed += (_, args) => Fill = args.Value;
+        StrokeDraft.Committed += (_, args) => Stroke = args.Value;
+        ShadowDraft.Committed += (_, args) => ShadowColor = args.Value;
         Position.Changed += (_, _) =>
         {
             if (Position.Validate() is null)
@@ -80,6 +83,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public RelayCommand ExportCommand { get; }
     public ImmutableArray<SubtitleStylePreset> Styles => styles;
     public SubtitlePositionDraft Position { get; } = new();
+    public ColorDraft FillDraft { get; } = new();
+    public ColorDraft StrokeDraft { get; } = new(SceneColor.Black);
+    public ColorDraft ShadowDraft { get; } = new(SceneColor.Black);
     public string? PositionMeasurementError => positionMeasurementError;
     public bool HasPositionMeasurementError => positionMeasurementError is not null;
     public SubtitleStylePreset? Draft => draft?.Preset;
@@ -280,6 +286,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
                 ChangeStyle(style => style with { Fill = value });
                 OnPropertyChanged();
             }
+            FillDraft.Load(Fill);
         }
     }
 
@@ -293,6 +300,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
                 ChangeStyle(style => style with { Stroke = value });
                 OnPropertyChanged();
             }
+            StrokeDraft.Load(Stroke);
         }
     }
 
@@ -306,6 +314,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
                 ChangeStyle(style => style with { ShadowColor = value });
                 OnPropertyChanged();
             }
+            ShadowDraft.Load(ShadowColor);
         }
     }
 
@@ -370,6 +379,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(Alignments));
             OnPropertyChanged(nameof(AlignmentIndex));
             OnPropertyChanged(nameof(FontSource));
+            FillDraft.RefreshLanguage();
+            StrokeDraft.RefreshLanguage();
+            ShadowDraft.RefreshLanguage();
             if (errorKey is not null)
             {
                 Error = SettingsText.Get(errorKey);
@@ -469,6 +481,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
             ShadowBlurText = FormatNumber(ShadowBlur);
             ShadowXText = FormatNumber(ShadowX);
             ShadowYText = FormatNumber(ShadowY);
+            FillDraft.Load(style.Fill);
+            StrokeDraft.Load(style.Stroke);
+            ShadowDraft.Load(style.ShadowColor);
             RefreshPositionMeasurement(true);
             foreach (var property in new[]
                      {
@@ -535,6 +550,20 @@ public sealed class StyleSettingsViewModel : ObservableObject
         }
 
         var preset = draft.Preset;
+        foreach (var color in new (ColorDraft Draft, string Key)[]
+                 { (FillDraft, "FillPicker"), (StrokeDraft, "StrokePicker"), (ShadowDraft, "ShadowPicker") })
+        {
+            if (!color.Draft.TryCommit(out _))
+            {
+                InvalidFieldKey = color.Key + "." + color.Draft.InvalidFieldKey;
+                SetError("StyleValidation");
+                return;
+            }
+        }
+        _ = FillDraft.TryCommit(out var fillColor);
+        _ = StrokeDraft.TryCommit(out var strokeColor);
+        _ = ShadowDraft.TryCommit(out var shadowColorValue);
+        preset = preset with { Style = preset.Style with { Fill = fillColor, Stroke = strokeColor, ShadowColor = shadowColorValue } };
         if (Position.Validate() is { } positionKey)
         {
             InvalidFieldKey = positionKey;
@@ -594,6 +623,10 @@ public sealed class StyleSettingsViewModel : ObservableObject
         errorKey = null;
         Error = null;
         InvalidFieldKey = null;
+        draft.UpdateStyle(preset.Style);
+        FillDraft.Load(fillColor);
+        StrokeDraft.Load(strokeColor);
+        ShadowDraft.Load(shadowColorValue);
         if (apply)
         {
             ApplyRequested?.Invoke(this, new(preset));

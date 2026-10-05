@@ -11,9 +11,19 @@ public static class ShortcutConfiguration
     /// <summary>拒绝重复命令、非法手势以及当前平台上的重复快捷键；空手势不占用键。</summary>
     public static void Validate(IEnumerable<ShortcutBinding?> bindings, bool? isMacOs = null)
     {
+        if (FindConflict(bindings, isMacOs) is { } conflict)
+        {
+            throw new InvalidDataException($"快捷键 {conflict.Gesture} 已被其他命令使用。");
+        }
+    }
+
+    /// <summary>校验全部格式并返回第一组真实冲突；同一命令的原绑定仅占用一次。</summary>
+    public static ShortcutConflict? FindConflict(IEnumerable<ShortcutBinding?> bindings, bool? isMacOs = null)
+    {
         ArgumentNullException.ThrowIfNull(bindings);
         var commands = new HashSet<WorkbenchCommand>();
         var gestures = new Dictionary<(Key Key, KeyModifiers Modifiers), WorkbenchCommand>();
+        ShortcutConflict? conflict = null;
         foreach (var binding in bindings)
         {
             if (binding is null || !Enum.IsDefined(binding.Command) || !commands.Add(binding.Command))
@@ -29,9 +39,12 @@ public static class ShortcutConfiguration
             var gesture = Parse(binding.Gesture, isMacOs ?? OperatingSystem.IsMacOS());
             if (gesture is not null && !gestures.TryAdd((gesture.Key, gesture.KeyModifiers), binding.Command))
             {
-                throw new InvalidDataException($"快捷键 {NormalizeGesture(binding.Gesture, isMacOs)} 已被其他命令使用。");
+                conflict ??= new(NormalizeGesture(binding.Gesture, isMacOs),
+                    gestures[(gesture.Key, gesture.KeyModifiers)], binding.Command);
             }
         }
+
+        return conflict;
     }
 
     /// <summary>将有效文本规范化为可持久化手势；当前平台主修饰键写为 CmdOrCtrl。</summary>

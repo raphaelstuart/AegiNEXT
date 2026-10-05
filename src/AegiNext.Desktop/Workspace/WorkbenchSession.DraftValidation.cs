@@ -5,6 +5,7 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class WorkbenchSession
 {
+    internal bool HasEffectDrafts => effectsDirty;
     private long draftRevision;
     private (long Revision, string? Panel, string? Field, string Message)? lastDraftDiagnostic;
     private (long Revision, string? Panel, string? Field)? lastDraftFocus;
@@ -48,22 +49,32 @@ internal sealed partial class WorkbenchSession
         {
             switch (propertyName)
             {
-                case "LayerName": vm.LayerName = layer.Name; break;
                 case "LayerStart": vm.LayerStart = TimelineTimeText.Format(layer.Start); break;
                 case "LayerEnd": vm.LayerEnd = TimelineTimeText.Format(layer.End); break;
                 case "LayerWidth": vm.LayerWidth = (decimal)(layer.Shape?.Width ?? layer.Image?.Width ?? 300); break;
                 case "LayerHeight": vm.LayerHeight = (decimal)(layer.Shape?.Height ?? layer.Image?.Height ?? 180); break;
-                case "PositionX": vm.PositionX = placement.BasePosition is { } x ? (decimal)(x.X + InspectorValue(layer, AnimationProperty.POSITION_X, layer.Transform.X)) : null; break;
-                case "PositionY": vm.PositionY = placement.BasePosition is { } y ? (decimal)(y.Y + InspectorValue(layer, AnimationProperty.POSITION_Y, layer.Transform.Y)) : null; break;
-                case "ScaleX": vm.ScaleX = (decimal)InspectorValue(layer, AnimationProperty.SCALE_X, layer.Transform.ScaleX); break;
-                case "ScaleY": vm.ScaleY = (decimal)InspectorValue(layer, AnimationProperty.SCALE_Y, layer.Transform.ScaleY); break;
+                case "PositionX": vm.PositionX = placement.BasePosition is { } x ? (decimal)(x.X + InspectorVector(layer, AnimationProperty.POSITION, layer.Transform.Position).X) : null; break;
+                case "PositionY": vm.PositionY = placement.BasePosition is { } y ? (decimal)(y.Y + InspectorVector(layer, AnimationProperty.POSITION, layer.Transform.Position).Y) : null; break;
+                case "ScaleX": vm.ScaleX = (decimal)InspectorVector(layer, AnimationProperty.SCALE, layer.Transform.Scale).X; break;
+                case "ScaleY": vm.ScaleY = (decimal)InspectorVector(layer, AnimationProperty.SCALE, layer.Transform.Scale).Y; break;
                 case "Rotation": vm.Rotation = (decimal)InspectorValue(layer, AnimationProperty.ROTATION, layer.Transform.Rotation); break;
                 case "Opacity": vm.Opacity = (decimal)InspectorValue(layer, AnimationProperty.OPACITY, layer.Opacity); break;
                 case "Blur": vm.Blur = (decimal)InspectorValue(layer, AnimationProperty.BLUR, layer.Blur); break;
+                case "KeyframeValueX":
+                case "KeyframeValueY":
                 case "KeyframeValue":
                     var frame = layer.Tracks.FirstOrDefault(track => track.Property == (target.Property ?? ActiveProperty))?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime);
-                    vm.KeyframeValue = (decimal?)frame?.Value ?? vm.KeyframeValue ?? 0;
-                    vm.KeyframeValueText = vm.KeyframeValue.Value.ToString(InterfaceCulture);
+                    if (propertyName == "KeyframeValueY")
+                    {
+                        vm.KeyframeValueY = frame?.Value.IsVector == true ? (decimal)frame.Value.Vector.Y : vm.KeyframeValueY ?? 0;
+                        vm.KeyframeValueYText = vm.KeyframeValueY.Value.ToString(InterfaceCulture);
+                    }
+                    else
+                    {
+                        vm.KeyframeValue = frame is null ? vm.KeyframeValue ?? 0 : (decimal)frame.Value.GetComponent(0);
+                        vm.KeyframeValueText = vm.KeyframeValue.Value.ToString(InterfaceCulture);
+                        propertyName = "KeyframeValue";
+                    }
                     break;
                 default: return;
             }

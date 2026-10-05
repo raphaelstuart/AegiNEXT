@@ -112,7 +112,7 @@ public static class ProjectValidator
             Require(preset.Id != Guid.Empty && presetIds.Add(preset.Id) &&
                 preset.Name is { Length: > 0 and <= 1024 } && Enum.IsDefined(preset.Blend), "预设无效。");
             ValidateText(preset.Name);
-            Tracks(preset.Tracks);
+            Tracks(preset.Tracks, allowLegacyColors: true);
             Motion(preset.MotionPath);
             if (preset.Mask is { } mask)
             {
@@ -247,38 +247,60 @@ public static class ProjectValidator
         }
     }
 
-    private static void Tracks(System.Collections.Immutable.ImmutableArray<AnimationTrack> tracks)
+    private static void Tracks(System.Collections.Immutable.ImmutableArray<AnimationTrack> tracks, bool allowLegacyColors = false)
     {
         Require(!tracks.IsDefault && tracks.Length <= 64, "关键帧轨道无效。");
         var properties = new HashSet<AnimationProperty>();
         foreach (var track in tracks)
         {
             NotNull(track, "数据项不能为 null。");
-            Require(Enum.IsDefined(track.Property) && properties.Add(track.Property) &&
-                !track.Keyframes.IsDefaultOrEmpty && track.Keyframes.Length <= 10000, "属性轨道重复、为空或过大。");
+            var legacyColor = track.Property is >= AnimationProperty.FILL_RED and <= AnimationProperty.STROKE_ALPHA;
+            Require(Enum.IsDefined(track.Property) &&
+                (!AnimationPropertyMetadata.IsLegacyComponent(track.Property) || allowLegacyColors && legacyColor) &&
+                properties.Add(track.Property), "动画属性未知、重复或尚未完成分量迁移。");
+            var dimension = AnimationPropertyMetadata.GetComponentCount(track.Property);
+            Require(!track.Keyframes.IsDefaultOrEmpty && track.Keyframes.Length <= 10000 * dimension,
+                "属性轨道为空或超出分量时间并集预算。");
             Timing.MediaTime? previous = null;
             foreach (var frame in track.Keyframes)
             {
                 NotNull(frame, "数据项不能为 null。");
-                Require(frame.Time >= Timing.MediaTime.Zero &&
-                    (!previous.HasValue || frame.Time > previous.Value) && Enum.IsDefined(frame.Interpolation), "关键帧时间必须非负且严格递增。");
-                Require(double.IsFinite(frame.CurveStart) && double.IsFinite(frame.CurveEnd) &&
-                    frame.CurveStart >= 0 && frame.CurveStart < frame.CurveEnd && frame.CurveEnd <= 1,
-                    "关键帧插值参数区间必须位于零到一之间。");
-                var limits = track.Property switch
+                Require(frame.Time >= Timing.MediaTime.Zero && (!previous.HasValue || frame.Time > previous.Value),
+                    "关键帧时间必须非负且严格递增。");
+                Curve(new(frame.Interpolation, frame.CurveStart, frame.CurveEnd));
+                Require(frame.Value.Kind == AnimationPropertyMetadata.GetValueKind(track.Property), "关键帧值维度与属性不一致。");
+                Require(!frame.ComponentCurves.IsDefault && (frame.ComponentCurves.IsEmpty || frame.ComponentCurves.Length == dimension - 1),
+                    "分量曲线数量与动画属性不一致。");
+                for (var component = 0; component < dimension; component++)
                 {
-                    AnimationProperty.OPACITY or AnimationProperty.FILL_ALPHA or AnimationProperty.STROKE_ALPHA or AnimationProperty.PATH_PROGRESS => (0d, 1d),
-                    AnimationProperty.BLUR => (0d, 512d),
-                    AnimationProperty.STROKE_WIDTH => (0d, 4096d),
-                    AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y => (-10000d, 10000d),
-                    AnimationProperty.FILL_RED or AnimationProperty.FILL_GREEN or AnimationProperty.FILL_BLUE or
-                        AnimationProperty.STROKE_RED or AnimationProperty.STROKE_GREEN or AnimationProperty.STROKE_BLUE => (-65504d, 65504d),
-                    _ => (-1e9, 1e9)
-                };
-                Number(frame.Value, limits.Item1, limits.Item2, "关键帧值");
+                    Number(frame.Value.GetComponent(component), AnimationPropertyMetadata.GetMinimum(track.Property, component),
+                        AnimationPropertyMetadata.GetMaximum(track.Property, component), "关键帧分量");
+                }
+
+                foreach (var curve in frame.ComponentCurves)
+                {
+                    if (curve is not null)
+                    {
+                        Curve(curve);
+                    }
+                }
+
                 previous = frame.Time;
             }
         }
+
+        foreach (var property in new[] { AnimationProperty.FILL, AnimationProperty.STROKE })
+        {
+            Require(!properties.Contains(property) || !AnimationPropertyMetadata.GetLegacyComponents(property).Any(properties.Contains),
+                "完整颜色轨道不能与同组旧分量同时存在。");
+        }
+    }
+
+    private static void Curve(AnimationCurve curve)
+    {
+        Require(Enum.IsDefined(curve.Interpolation) && double.IsFinite(curve.CurveStart) && double.IsFinite(curve.CurveEnd) &&
+            curve.CurveStart >= 0 && curve.CurveStart < curve.CurveEnd && curve.CurveEnd <= 1,
+            "关键帧插值及裁剪相位必须有效且位于零到一之间。");
     }
 
     private static void Motion(MotionPath? motion)

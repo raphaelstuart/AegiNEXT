@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:AegiNext.Desktop.Controls"
+             x:Class="AegiNext.Desktop.Controls.EffectScriptEditor" x:CompileBindings="False">
+  <UserControl.Resources>
+    <ControlTheme x:Key="ScriptTextBoxTheme" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="PART_BorderElement" Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
+            <ScrollViewer Name="PART_ScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <controls:EffectScriptTextPresenter Name="PART_TextPresenter" Text="{TemplateBinding Text, Mode=TwoWay}"
+                    CaretBlinkInterval="{TemplateBinding CaretBlinkInterval}" CaretIndex="{TemplateBinding CaretIndex}"
+                    SelectionStart="{TemplateBinding SelectionStart}" SelectionEnd="{TemplateBinding SelectionEnd}"
+                    TextAlignment="{TemplateBinding TextAlignment}" TextWrapping="{TemplateBinding TextWrapping}"
+                    LineHeight="{TemplateBinding LineHeight}" LetterSpacing="{TemplateBinding LetterSpacing}"
+                    SelectionBrush="{TemplateBinding SelectionBrush}" SelectionForegroundBrush="{TemplateBinding SelectionForegroundBrush}"
+                    CaretBrush="{TemplateBinding CaretBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" />
+            </ScrollViewer>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+  </UserControl.Resources>
+  <Grid RowDefinitions="*,Auto" RowSpacing="6">
+    <TextBox Name="ScriptTextInput" Classes="code-input" Theme="{StaticResource ScriptTextBoxTheme}"
+             Text="{Binding Source, RelativeSource={RelativeSource AncestorType=controls:EffectScriptEditor}, Mode=TwoWay}"
+             IsReadOnly="{Binding IsReadOnly, RelativeSource={RelativeSource AncestorType=controls:EffectScriptEditor}}"
+             AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" Padding="10"
+             FontFamily="Cascadia Code, Menlo, Consolas" FontSize="13" LineHeight="20"
+             VerticalContentAlignment="Top" HorizontalContentAlignment="Left" MinHeight="180"
+             MaxLength="262144" AutomationProperties.Name="Effect script source" />
+    <Popup Name="ScriptCompletionPopup" Placement="AnchorAndGravity" PlacementAnchor="BottomLeft"
+           PlacementGravity="BottomRight" ShouldUseOverlayLayer="True" TakesFocusFromNativeControl="False">
+      <Border Name="ScriptCompletionFrame" Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}"
+              BorderThickness="1" CornerRadius="6" Padding="3" MinWidth="220" MaxWidth="360">
+        <ListBox Name="ScriptCompletions" IsVisible="False" MaxHeight="160" Focusable="False"
+                 Background="Transparent" BorderThickness="0">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Focusable" Value="False" />
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ItemTemplate>
+            <DataTemplate DataType="controls:EffectScriptCompletion" x:CompileBindings="True">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{Binding Label}" FontFamily="Cascadia Code, Menlo, Consolas" />
+                <TextBlock Text="{Binding Hint}" FontSize="11" Opacity="0.75" TextWrapping="Wrap" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+    </Popup>
+    <Button Name="ScriptLocateError" Grid.Row="1" HorizontalAlignment="Right" Tag="LocateError" IsVisible="False" Click="LocateError" />
+  </Grid>
+</UserControl>

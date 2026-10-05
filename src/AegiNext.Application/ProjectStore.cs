@@ -100,7 +100,8 @@ public static class ProjectStore
                 throw new InvalidDataException($"只支持工程版本 {ProjectDocument.CURRENT_VERSION}，旧工程需要使用对应版本打开。");
             }
 
-            var document = parsed.RootElement.Deserialize<ProjectDocument>(options) ?? throw new JsonException("工程不能为空。");
+            var upgraded = VectorAnimationJsonMigration.Upgrade(parsed.RootElement, options);
+            var document = upgraded.Deserialize<ProjectDocument>(options) ?? throw new JsonException("工程不能为空。");
             ProjectValidator.Validate(document);
             return document;
         }
@@ -119,7 +120,8 @@ public static class ProjectStore
             {
                 foreach (var property in info.Properties)
                 {
-                    property.IsRequired = true;
+                    property.IsRequired = (property.Get is not null || property.Set is not null) &&
+                        !(info.Type == typeof(Keyframe) && property.Name == "componentCurves");
                 }
             }
         });

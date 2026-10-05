@@ -10,7 +10,6 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
     private int themeIndex;
     private int languageIndex;
     private int menuLocationIndex;
-    private string accentColor = "#5273E8";
     private string[] themes = [];
     private string[] languages = [];
     private string[] menuLocations = [];
@@ -64,18 +63,6 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
         }
     }
 
-    public string AccentColor
-    {
-        get => accentColor;
-        set
-        {
-            if (SetProperty(ref accentColor, value))
-            {
-                NotifyChanged();
-            }
-        }
-    }
-
     /// <summary>回填已应用的偏好，避免发出用户修改事件。</summary>
     public void UpdatePreferences(WorkbenchPreferences value)
     {
@@ -87,7 +74,6 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
             ThemeIndex = (int)value.Theme;
             LanguageIndex = value.Language switch { "zh-CN" => 1, "en-US" => 2, _ => 0 };
             MenuLocationIndex = value.WindowMenuOnMac ? 1 : 0;
-            AccentColor = value.AccentColor;
             RefreshLanguage();
         }
         finally
@@ -135,11 +121,11 @@ public sealed class AppearanceSettingsViewModel : ObservableObject
         var language = LanguageIndex switch { 1 => "zh-CN", 2 => "en-US", _ => "system" };
         var preferences = new WorkbenchPreferences
         {
-            Theme = (WorkbenchTheme)ThemeIndex, Language = language, AccentColor = AccentColor,
+            Theme = (WorkbenchTheme)ThemeIndex, Language = language,
             WindowMenuOnMac = MenuLocationIndex == 1
         };
         preferences.Validate();
         Changed?.Invoke(this,
-            new(preferences.Theme, preferences.Language, preferences.AccentColor, preferences.WindowMenuOnMac));
+            new(preferences.Theme, preferences.Language, preferences.WindowMenuOnMac));
     }
 }

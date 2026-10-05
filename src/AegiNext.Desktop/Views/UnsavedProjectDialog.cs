@@ -11,14 +11,13 @@ internal sealed class UnsavedProjectDialog : Window
     {
         Title = WorkbenchText.Get("UnsavedTitle");
         Width = 410;
-        Height = 230;
-        SizeToContent = SizeToContent.Manual;
+        SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
         foreach (var (key, result) in new[] { ("Cancel", 0), ("Discard", 2), ("Save", 1) })
         {
-            var button = new Button { Content = WorkbenchText.Get(key), Padding = new Thickness(14, 7) };
+            var button = new Button { Name = key + "Button", Content = WorkbenchText.Get(key), Padding = new Thickness(14, 7) };
             button.Click += (_, _) => Close(result);
             buttons.Children.Add(button);
         }
@@ -26,7 +25,7 @@ internal sealed class UnsavedProjectDialog : Window
         Content = new StackPanel
         {
             Margin = new Thickness(20), Spacing = 24,
-            Children = { new TextBlock { Text = WorkbenchText.Get("UnsavedText") }, buttons }
+            Children = { new TextBlock { Text = WorkbenchText.Get("UnsavedText"), TextWrapping = Avalonia.Media.TextWrapping.Wrap }, buttons }
         };
     }
 }

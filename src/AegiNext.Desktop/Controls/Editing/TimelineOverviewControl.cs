@@ -79,7 +79,8 @@ public sealed class TimelineOverviewControl : Control
         {
             var x = clip.Start / duration * Bounds.Width;
             var width = Math.Max(1, (clip.End - clip.Start) / duration * Bounds.Width);
-            context.DrawRectangle(new SolidColorBrush(Color.Parse(clip.Subtitle ? "#7396D9" : "#62B6B2")),
+            context.DrawRectangle(new SolidColorBrush(Color.Parse(clip.Subtitle
+                    ? dark ? "#7396D9" : "#557EB9" : dark ? "#62B6B2" : "#378B85")),
                 null, new(x, 3 + clip.Row * band, width, band * 0.75));
         }
 
@@ -88,7 +89,8 @@ public sealed class TimelineOverviewControl : Control
         context.DrawLine(new Pen(Brushes.RoyalBlue, 3), rectangle.TopLeft, rectangle.BottomLeft);
         context.DrawLine(new Pen(Brushes.RoyalBlue, 3), rectangle.TopRight, rectangle.BottomRight);
         var playhead = Seconds(position) / duration * Bounds.Width;
-        context.DrawLine(new Pen(new SolidColorBrush(Color.Parse("#FF6B7A")), 2), new(playhead, 0), new(playhead, Bounds.Height));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.Parse(dark ? "#FF6B7A" : "#B52542")), 2),
+            new(playhead, 0), new(playhead, Bounds.Height));
     }
 
     /// <inheritdoc />
@@ -129,7 +131,7 @@ public sealed class TimelineOverviewControl : Control
         }
 
         var delta = (e.GetPosition(this).X - pointerOrigin) / Math.Max(1, Bounds.Width) * duration;
-        var minimum = Math.Max(0.000001, original.Width / 2000);
+        var minimum = Math.Max(0.000001, original.Width / TimelineViewport.MAX_PIXELS_PER_SECOND);
         var start = original.StartSeconds;
         var end = start + original.VisibleDuration;
         switch (dragMode)

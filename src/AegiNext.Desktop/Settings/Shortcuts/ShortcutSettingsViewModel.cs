@@ -13,6 +13,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
     private ShortcutSettingRow[] rows = [];
     private ShortcutSettingRow? selectedRow;
     private bool recording;
+    private bool waitingForKeyRelease;
     private string? error;
 
     /// <summary>创建完整命令草稿和保存命令。</summary>
@@ -36,6 +37,19 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
     public RelayCommand ToggleRecordingCommand { get; }
     public ShortcutSettingRow[] Rows => rows;
     public bool HasSelection => SelectedRow is not null;
+    public bool IsCaptureActive => IsRecording || IsWaitingForKeyRelease;
+
+    public bool IsWaitingForKeyRelease
+    {
+        get => waitingForKeyRelease;
+        internal set
+        {
+            if (SetProperty(ref waitingForKeyRelease, value))
+            {
+                OnPropertyChanged(nameof(IsCaptureActive));
+            }
+        }
+    }
 
     public string? Error
     {
@@ -59,6 +73,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
             if (SetProperty(ref recording, value))
             {
                 OnPropertyChanged(nameof(RecordLabel));
+                OnPropertyChanged(nameof(IsCaptureActive));
             }
         }
     }
@@ -75,6 +90,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
                 OnPropertyChanged(nameof(HasSelection));
                 ClearCommand.NotifyCanExecuteChanged();
                 ToggleRecordingCommand.NotifyCanExecuteChanged();
+                Validate();
             }
         }
     }
@@ -89,6 +105,8 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
                 SelectedRow.Gesture = value;
                 OnPropertyChanged();
             }
+
+            Validate();
         }
     }
 
@@ -122,7 +140,15 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
     /// <summary>按键适配器拒绝不可表示的输入，保留原绑定。</summary>
     public void RejectGesture()
     {
-        Error = SettingsText.Get("ShortcutValidation");
+        IsRecording = false;
+        Error = SettingsText.Get("ShortcutFormatValidation");
+    }
+
+    /// <summary>宿主关闭或失焦时清理录制与等待释放状态。</summary>
+    public void CancelCapture()
+    {
+        IsRecording = false;
+        IsWaitingForKeyRelease = false;
     }
 
     private void ReplaceRows(IEnumerable<ShortcutBinding> bindings)
@@ -150,6 +176,10 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
         if (e.PropertyName == nameof(ShortcutSettingRow.Gesture))
         {
             Validate();
+            if (ReferenceEquals(sender, SelectedRow))
+            {
+                OnPropertyChanged(nameof(Gesture));
+            }
         }
     }
 
@@ -157,12 +187,23 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
     {
         try
         {
-            ShortcutConfiguration.Validate(rows.Select(value => value.ToBinding()));
-            Error = null;
+            var conflict = ShortcutConfiguration.FindConflict(rows.Select(value => value.ToBinding()));
+            if (conflict is null)
+            {
+                Error = null;
+                return;
+            }
+
+            var otherCommand = conflict.FirstCommand == SelectedRow?.Command
+                ? conflict.SecondCommand
+                : conflict.FirstCommand;
+            Error = SettingsText.Get("ShortcutConflictValidation")
+                .Replace("{0}", conflict.Gesture, StringComparison.Ordinal)
+                .Replace("{1}", SettingsText.Get(otherCommand.ToString()), StringComparison.Ordinal);
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidDataException or FormatException)
         {
-            Error = SettingsText.Get("ShortcutValidation");
+            Error = SettingsText.Get("ShortcutFormatValidation");
         }
     }
 

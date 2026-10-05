@@ -2,4 +2,7 @@
   <PropertyGroup>
     <RootNamespace>AegiNext.Core</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Effects/Scripts/*.aegifx" LogicalName="AegiNext.Effects.%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

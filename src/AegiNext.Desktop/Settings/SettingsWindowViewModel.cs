@@ -1,13 +1,15 @@
 using System.ComponentModel;
 using AegiNext.Desktop.Localization;
 using AegiNext.Desktop.Settings.Appearance;
+using AegiNext.Desktop.Settings.Colors;
+using AegiNext.Desktop.Settings.Effects;
 using AegiNext.Desktop.Settings.Shortcuts;
 using AegiNext.Desktop.Settings.Styles;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegiNext.Desktop.Settings;
 
-/// <summary>设置导航和三个独立页面的组合模型，不拥有工程或控件。</summary>
+/// <summary>设置导航和五个独立页面的组合模型，不拥有工程或控件。</summary>
 public sealed class SettingsWindowViewModel : ObservableObject
 {
     private int pageIndex;
@@ -20,25 +22,34 @@ public sealed class SettingsWindowViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(preferences);
         preferences.Validate();
         Appearance = new(preferences);
+        Colors = new(preferences);
         Shortcuts = new(preferences.ShortcutBindings);
         Styles = new();
+        Effects = new();
         Shortcuts.PropertyChanged += PageModelChanged;
         Styles.PropertyChanged += PageModelChanged;
+        Effects.PropertyChanged += PageModelChanged;
     }
 
     public AppearanceSettingsViewModel Appearance { get; }
+    public ColorsSettingsViewModel Colors { get; }
     public ShortcutSettingsViewModel Shortcuts { get; }
     public StyleSettingsViewModel Styles { get; }
+    public EffectSettingsViewModel Effects { get; }
     public string Title => title;
     public SettingsPage CurrentPage => (SettingsPage)PageIndex;
     public bool IsAppearanceVisible => CurrentPage == SettingsPage.APPEARANCE;
     public bool IsShortcutsVisible => CurrentPage == SettingsPage.SHORTCUTS;
     public bool IsStylesVisible => CurrentPage == SettingsPage.STYLES;
+    public bool IsEffectsVisible => CurrentPage == SettingsPage.EFFECTS;
+    public bool IsColorsVisible => CurrentPage == SettingsPage.COLORS;
 
     public string PageTitle => SettingsText.Get(CurrentPage switch
     {
         SettingsPage.SHORTCUTS => "Shortcuts",
         SettingsPage.STYLES => "Styles",
+        SettingsPage.EFFECTS => "Effects",
+        SettingsPage.COLORS => "Colors",
         _ => "Appearance"
     });
 
@@ -46,6 +57,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     {
         SettingsPage.SHORTCUTS => Shortcuts.Error,
         SettingsPage.STYLES => Styles.Error,
+        SettingsPage.EFFECTS => Effects.Error,
         _ => null
     });
 
@@ -68,6 +80,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsAppearanceVisible));
                 OnPropertyChanged(nameof(IsShortcutsVisible));
                 OnPropertyChanged(nameof(IsStylesVisible));
+                OnPropertyChanged(nameof(IsEffectsVisible));
+                OnPropertyChanged(nameof(IsColorsVisible));
                 OnPropertyChanged(nameof(PageTitle));
                 RefreshError();
             }
@@ -85,8 +99,10 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public void RefreshLanguage()
     {
         Appearance.RefreshLanguage();
+        Colors.RefreshLanguage();
         Shortcuts.RefreshLanguage();
         Styles.RefreshLanguage();
+        Effects.RefreshLanguage();
         title = SettingsText.Get("Settings");
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(PageTitle));

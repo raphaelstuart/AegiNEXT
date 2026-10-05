@@ -22,11 +22,17 @@ public sealed partial class MainWindow
         window.SetSubtitlePositionMeasurement(Session.MeasureStylePosition);
         window.UpdateShortcuts(Session.Preferences.ShortcutBindings);
         window.UpdateStyles(Session.StyleLibrary.Snapshot.Presets);
+        window.UpdateEffects(Session.EffectScriptLibrary.Snapshot.Presets);
+        window.SetEffectOperationBusy(Session.EffectScripts.IsBusy);
         window.UpdateSelectionAvailability(Session.HasSelectedCue && !Session.IsProjectBusy);
         window.SetStyleOperationBusy(Session.Styles.IsBusy);
         window.AppearanceChanged += (_, e) => Session.UpdatePreferences(Session.Preferences with
         {
-            Theme = e.Theme, Language = e.Language, AccentColor = e.AccentColor, WindowMenuOnMac = e.WindowMenuOnMac
+            Theme = e.Theme, Language = e.Language, WindowMenuOnMac = e.WindowMenuOnMac
+        });
+        window.ColorsChanged += (_, e) => Session.UpdatePreferences(Session.Preferences with
+        {
+            AccentColor = e.AccentColor, AudioGraph = e.AudioGraph
         });
         window.ShortcutsChanged += (_, e) =>
         {
@@ -39,6 +45,10 @@ public sealed partial class MainWindow
         window.ApplyStyleRequested += (_, e) => Session.Styles.Queue(() => Session.Styles.ApplyAsync(e.Preset));
         window.ImportStylesRequested += (_, _) => Session.Styles.Queue(Session.Styles.ImportAsync);
         window.ExportStylesRequested += (_, _) => Session.Styles.Queue(Session.Styles.ExportAsync);
+        window.UpsertEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.UpsertAsync(e.Preset));
+        window.DeleteEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.DeleteAsync(e.Id));
+        window.ImportEffectRequested += (_, _) => Session.EffectScripts.Queue(Session.EffectScripts.ImportAsync);
+        window.ExportEffectRequested += (_, e) => Session.EffectScripts.Queue(() => Session.EffectScripts.ExportAsync(e.Preset));
         window.Closed += (_, _) =>
         {
             if (ReferenceEquals(settingsWindow, window))

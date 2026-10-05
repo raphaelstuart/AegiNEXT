@@ -16,6 +16,14 @@ internal static class SettingsViewLocalization
             {
                 presets.RefreshLanguage();
             }
+            if (control is EffectScriptEditor scriptEditor)
+            {
+                scriptEditor.RefreshLanguage();
+            }
+            if (control is ColorDraftInput colorInput)
+            {
+                colorInput.RefreshLanguage();
+            }
             if (control.Tag is not string key)
             {
                 continue;

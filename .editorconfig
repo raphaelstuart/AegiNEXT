@@ -49,6 +49,10 @@ dotnet_naming_style.pascal.capitalization = pascal_case
 # 枚举常量遵循项目 ALL_UPPER 命名，覆盖 .NET 的公共成员下划线建议。
 dotnet_diagnostic.CA1707.severity = none
 
+[src/AegiNext.Core/Effects/{EffectScriptProperty,EffectScriptParser,EffectScriptValidator}.cs]
+# 脚本枚举和预算常量遵循项目 ALL_UPPER 命名。
+dotnet_diagnostic.CA1707.severity = none
+
 [src/AegiNext.Rendering/TextDirection.cs]
 # 枚举常量遵循项目 ALL_UPPER 命名。
 dotnet_diagnostic.CA1707.severity = none
@@ -59,4 +63,7 @@ dotnet_diagnostic.CA1707.severity = none
 
 [src/AegiNext.Media/Analysis/SpectrogramAnalyzer.cs]
 # 常量遵循项目 ALL_UPPER 命名。
+dotnet_diagnostic.CA1707.severity = none
+
+[src/AegiNext.Desktop/Editing/TimelineViewport.cs]
 dotnet_diagnostic.CA1707.severity = none

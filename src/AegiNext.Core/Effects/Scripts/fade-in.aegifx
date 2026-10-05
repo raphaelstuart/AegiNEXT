@@ -1,0 +1,10 @@
+effect "fade-in" version 1
+short-clip compress
+
+segment enter fixed 300ms
+    at 0 opacity 0 ease-out
+    at 1 opacity base
+end
+
+segment stay flex 1
+end

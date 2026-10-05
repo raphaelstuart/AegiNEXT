@@ -28,6 +28,10 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private double scrollMaximum = 1;
     private double viewportSize = 10;
     private bool isSeeking;
+    private bool isSnapEnabled = true;
+    private bool isStepEnabled;
+    private bool isSpectrumVisible = true;
+    private bool isWaveformVisible = true;
     private AnimationProperty effectProperty = AnimationProperty.OPACITY;
     private SpectrogramData? spectrogram;
     private string analysisStatus = string.Empty;
@@ -242,6 +246,30 @@ internal sealed class TimelinePanelViewModel : ObservableObject
                 session.SetInteractiveSeeking(value);
             }
         }
+    }
+
+    public bool IsSnapEnabled
+    {
+        get => isSnapEnabled;
+        set => SetProperty(ref isSnapEnabled, value);
+    }
+
+    public bool IsStepEnabled
+    {
+        get => isStepEnabled;
+        set => SetProperty(ref isStepEnabled, value);
+    }
+
+    public bool IsSpectrumVisible
+    {
+        get => isSpectrumVisible;
+        set => SetProperty(ref isSpectrumVisible, value);
+    }
+
+    public bool IsWaveformVisible
+    {
+        get => isWaveformVisible;
+        set => SetProperty(ref isWaveformVisible, value);
     }
 
     public AnimationProperty EffectProperty
