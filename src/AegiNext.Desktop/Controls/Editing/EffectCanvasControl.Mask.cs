@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
+using AegiNext.Desktop.Styling;
 using Avalonia;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -14,6 +15,7 @@ public sealed partial class EffectCanvasControl
     private MaskCanvasHandle? maskHandle;
     private bool maskDragging;
     private MaskCanvasHandle? maskDeletionHandle;
+    private MaskCanvasSegmentHandle? maskInsertionHandle;
     private bool creatingRectangle;
     private bool ignoreMaskCaptureLoss;
     private ImmutableArray<MaskNode> openContour = [];
@@ -24,6 +26,7 @@ public sealed partial class EffectCanvasControl
     public event EventHandler<CanvasMaskEditEventArgs>? MaskEdited;
     public event EventHandler<CanvasMaskEditEventArgs>? MaskNodeSelected;
     public event EventHandler<CanvasMaskNodeEventArgs>? MaskNodeDeleteRequested;
+    public event EventHandler<CanvasMaskSegmentEventArgs>? MaskSegmentInsertRequested;
     public event EventHandler? MaskEditingExited;
     public event EventHandler? MaskGestureCancelled;
     internal Guid? MaskSelectedNodeId
@@ -52,6 +55,59 @@ public sealed partial class EffectCanvasControl
     private static Point MaskPoint(ScenePoint point) => new(point.X, point.Y);
     private static ScenePoint Offset(ScenePoint point, Vector delta) => new(point.X + delta.X, point.Y + delta.Y);
     private static ScenePoint Add(ScenePoint a, ScenePoint b) => new(a.X + b.X, a.Y + b.Y);
+
+    internal IEnumerable<MaskCanvasNodeLabel> MaskNodeLabels()
+    {
+        if (EditMode is not (CanvasEditMode.MASK_VECTOR or CanvasEditMode.MASK_DRAW_VECTOR))
+        {
+            yield break;
+        }
+        var mask = EvaluatedMask() as VectorClipMask;
+        if (mask is not null)
+        {
+            var matrix = MaskMatrix(mask);
+            for (var contourIndex = 0; contourIndex < mask.Contours.Length; contourIndex++)
+            {
+                var contour = mask.Contours[contourIndex];
+                for (var nodeIndex = 0; nodeIndex < contour.Nodes.Length; nodeIndex++)
+                {
+                    var node = contour.Nodes[nodeIndex];
+                    yield return new(node.Id, FormattableString.Invariant($"{contourIndex + 1}:{nodeIndex + 1}"), MaskPoint(node.Position) * matrix);
+                }
+            }
+        }
+        var fit = mask is null ? Fit() : MaskMatrix(mask);
+        for (var index = 0; index < openContour.Length; index++)
+        {
+            yield return new(openContour[index].Id, FormattableString.Invariant($"{(mask?.Contours.Length ?? 0) + 1}:{index + 1}"), MaskPoint(openContour[index].Position) * fit);
+        }
+    }
+
+    private MaskCanvasSegmentHandle? HitMaskSegment(VectorClipMask mask, Point point, bool open)
+    {
+        var matrix = MaskMatrix(mask);
+        MaskCanvasSegmentHandle? closest = null;
+        var distance = 100d;
+        foreach (var contour in mask.Contours)
+        {
+            for (var index = 0; index < contour.Nodes.Length - (open ? 1 : 0); index++)
+            {
+                var node = contour.Nodes[index];
+                var next = contour.Nodes[(index + 1) % contour.Nodes.Length];
+                var start = MaskPoint(node.Position) * matrix;
+                var end = MaskPoint(next.Position) * matrix;
+                var hit = CubicBezierHitTest.FindNearest(start, MaskPoint(Add(node.Position, node.OutHandle)) * matrix,
+                    MaskPoint(Add(next.Position, next.InHandle)) * matrix, end, point, Math.Sqrt(distance));
+                if (hit is { Progress: > 0 and < 1 } result && result.DistanceSquared <= distance &&
+                    DistanceSquared(result.Position, start) > 0.25 && DistanceSquared(result.Position, end) > 0.25)
+                {
+                    distance = result.DistanceSquared;
+                    closest = new(contour.Id, node.Id, result.Position, result.Progress);
+                }
+            }
+        }
+        return closest;
+    }
     private MaskCanvasHandle[] MaskHandles(ClipMask mask)
     {
         var matrix = MaskMatrix(mask);
@@ -163,6 +219,21 @@ public sealed partial class EffectCanvasControl
                 }
             }
         }
+        foreach (var label in MaskNodeLabels())
+        {
+            if (!ProjectRectangle.Contains(label.Position))
+            {
+                continue;
+            }
+            using var layout = WorkbenchTextFormatting.CreateLayout(this, label.Text, 11, Brushes.Gold, lineHeight: 16);
+            var width = layout.Width + 6;
+            var height = layout.Height + 2;
+            var rectangle = new Rect(
+                Math.Clamp(label.Position.X + 8, ProjectRectangle.Left, Math.Max(ProjectRectangle.Left, ProjectRectangle.Right - width)),
+                Math.Clamp(label.Position.Y - height - 4, ProjectRectangle.Top, Math.Max(ProjectRectangle.Top, ProjectRectangle.Bottom - height)), width, height);
+            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(192, 16, 20, 26)), null, rectangle, 2, 2);
+            layout.Draw(context, WorkbenchTextFormatting.CenteredOrigin(layout, rectangle.Deflate(new Thickness(3, 0))));
+        }
     }
 
     private bool StartMaskGesture()
@@ -181,6 +252,8 @@ public sealed partial class EffectCanvasControl
         Focusable = true;
         Focus();
         var point = e.GetPosition(this);
+        maskCursorModifiers = e.KeyModifiers;
+        UpdateMaskCursor();
         var existingMask = EvaluatedMask();
         if ((e.KeyModifiers & KeyModifiers.Control) != 0)
         {
@@ -199,6 +272,36 @@ public sealed partial class EffectCanvasControl
             e.Pointer.Capture(this);
             capturedPointer = e.Pointer;
             return;
+        }
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        {
+            if (EditMode is CanvasEditMode.MASK_VECTOR or CanvasEditMode.MASK_DRAW_VECTOR)
+            {
+                e.Handled = true;
+                var vector = existingMask as VectorClipMask;
+                var insertingDraft = !openContour.IsEmpty;
+                if (ClipMaskAnimation.IsTopologyLocked(selected) || (vector?.Contours.Sum(contour => (long)contour.Nodes.Length) ?? 0) + openContour.Length >= 10000 ||
+                    insertingDraft && openContour.Length < 2)
+                {
+                    return;
+                }
+                var insertionMask = insertingDraft
+                    ? (vector ?? new VectorClipMask()) with { Contours = [new() { Id = openContourId!.Value, Nodes = openContour }] }
+                    : vector;
+                if (insertionMask is null)
+                {
+                    return;
+                }
+                var segment = HitMaskSegment(insertionMask, point, insertingDraft);
+                if (segment is null || !insertingDraft && !StartMaskGesture())
+                {
+                    return;
+                }
+                maskInsertionHandle = segment;
+                e.Pointer.Capture(this);
+                capturedPointer = e.Pointer;
+                return;
+            }
         }
         var creationMatrix = existingMask is VectorClipMask ? MaskMatrix(existingMask) : Fit();
         var engineering = creationMatrix.TryInvert(out var creationInverse) ? point * creationInverse : point * inverseFit;
@@ -276,6 +379,8 @@ public sealed partial class EffectCanvasControl
 
     private void MaskPointerMoved(PointerEventArgs e)
     {
+        maskCursorModifiers = e.KeyModifiers;
+        UpdateMaskCursor();
         if ((!maskDragging && !creatingNodeHandle) || !Fit().TryInvert(out var inverseFit))
         {
             return;
@@ -352,6 +457,31 @@ public sealed partial class EffectCanvasControl
         ignoreMaskCaptureLoss = true;
         pointer?.Capture(null);
         ignoreMaskCaptureLoss = false;
+        maskCursorModifiers = e.KeyModifiers;
+        UpdateMaskCursor();
+        if (maskInsertionHandle is { } insertion)
+        {
+            maskInsertionHandle = null;
+            var insertingDraft = insertion.ContourId == openContourId;
+            if (insertingDraft)
+            {
+                if (DistanceSquared(insertion.Position, e.GetPosition(this)) <= 100)
+                {
+                    var source = new VectorClipMask { Contours = [new() { Id = insertion.ContourId, Nodes = openContour }] };
+                    openContour = ClipMaskGeometryOperations.SubdivideSegment(source, insertion.ContourId, insertion.NodeId, insertion.Progress).Contours[0].Nodes;
+                }
+            }
+            else if (selected is { } layer && DistanceSquared(insertion.Position, e.GetPosition(this)) <= 100)
+            {
+                MaskSegmentInsertRequested?.Invoke(this, new(layer.Id, insertion.ContourId, insertion.NodeId, insertion.Progress));
+            }
+            else
+            {
+                MaskGestureCancelled?.Invoke(this, EventArgs.Empty);
+            }
+            InvalidateVisual();
+            return;
+        }
         if (maskDeletionHandle is { } deletion)
         {
             maskDeletionHandle = null;
@@ -435,8 +565,9 @@ public sealed partial class EffectCanvasControl
 
     private void CancelMaskGesture()
     {
-        var active = maskDragging || !openContour.IsEmpty || creatingNodeHandle || maskDeletionHandle is not null;
+        var active = maskDragging || !openContour.IsEmpty || creatingNodeHandle || maskDeletionHandle is not null || maskInsertionHandle is not null;
         maskDeletionHandle = null;
+        maskInsertionHandle = null;
         creatingRectangle = false;
         maskDragging = false;
         maskDraft = null;
@@ -455,6 +586,7 @@ public sealed partial class EffectCanvasControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         CancelDrag();
+        DetachMaskCursorHost();
         base.OnDetachedFromVisualTree(e);
     }
 

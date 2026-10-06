@@ -27,6 +27,20 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         vector.Contours.SelectMany(contour => contour.Nodes).Any(node => node.Id == session.SceneEditing.MaskNodeId);
     internal bool CanDeleteSelectedContour => !IsTopologyLocked && session.SelectedLayer?.Mask is VectorClipMask vector &&
         vector.Contours.Any(contour => contour.Id == session.SceneEditing.MaskContourId);
+    internal bool CanSubdivideSelectedNode => CanDeleteSelectedNode && session.SelectedLayer?.Mask is VectorClipMask vector &&
+        vector.Contours.Sum(contour => (long)contour.Nodes.Length) < 10000;
+
+    internal AnimationTrackTarget ResolveAnimationTarget(AnimationProperty property)
+    {
+        if (!AnimationPropertyMetadata.IsNodeProperty(property) || session.SelectedLayer?.Mask is not VectorClipMask vector)
+        {
+            return new(property);
+        }
+        var selectedNode = vector.Contours.SelectMany(contour => contour.Nodes)
+            .FirstOrDefault(node => node.Id == session.SceneEditing.MaskNodeId);
+        var contour = vector.Contours.FirstOrDefault(item => item.Id == session.SceneEditing.MaskContourId) ?? vector.Contours[0];
+        return new(property, selectedNode?.Id ?? contour.Nodes[0].Id);
+    }
 
     internal void Refresh(bool force = false)
     {
@@ -40,23 +54,38 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         {
             session.SceneEditing.MaskNodeId = null;
         }
-        if (AnimationPropertyMetadata.IsMaskProperty(session.SceneEditing.Target.Property))
+        var nextTarget = session.SceneEditing.Target;
+        if (AnimationPropertyMetadata.IsMaskProperty(nextTarget.Property))
         {
-            var identity = session.SceneEditing.Target;
+            var identity = nextTarget;
             if (layer?.Mask is null)
             {
-                session.SceneEditing.Target = new(AnimationProperty.OPACITY);
+                nextTarget = new(AnimationProperty.OPACITY);
             }
             else if (AnimationPropertyMetadata.IsNodeProperty(identity.Property))
             {
-                session.SceneEditing.Target = session.SceneEditing.MaskNodeId is { } node
+                nextTarget = session.SceneEditing.MaskNodeId is { } node
                     ? new(identity.Property, node) : new(AnimationProperty.MASK_POSITION);
             }
             else if (layer.Mask is not RectangleClipMask && identity.Property is (AnimationProperty.MASK_RECTANGLE_TOP_LEFT or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT))
             {
-                session.SceneEditing.Target = new(AnimationProperty.MASK_POSITION);
+                nextTarget = new(AnimationProperty.MASK_POSITION);
             }
         }
+        if (nextTarget != session.SceneEditing.Target)
+        {
+            var wasUpdating = session.IsUpdating;
+            session.IsUpdating = true;
+            try
+            {
+                session.ViewModel.Effects.Target = nextTarget;
+            }
+            finally
+            {
+                session.IsUpdating = wasUpdating;
+            }
+        }
+        session.ViewModel.Timeline.SelectedMaskNodeId = session.SceneEditing.MaskNodeId;
         if (layer?.Mask is VectorClipMask selectedVector)
         {
             var contour = selectedVector.Contours.FirstOrDefault(item => item.Nodes.Any(node => node.Id == session.SceneEditing.MaskNodeId));
@@ -354,6 +383,22 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         DeleteNode(source, e.NodeId);
     }
 
+    internal void CommitSegmentInsertion(CanvasMaskSegmentEventArgs e)
+    {
+        var source = gestureLayer;
+        CancelGesture();
+        if (source is null || e.LayerId != source.Id || session.SelectedLayerId != source.Id ||
+            !ReferenceEquals(gestureSource, session.DocumentSnapshot) || ClipMaskAnimation.IsTopologyLocked(source) || source.Mask is not VectorClipMask vector)
+        {
+            return;
+        }
+        if (!double.IsFinite(e.Progress) || e.Progress <= 0 || e.Progress >= 1)
+        {
+            return;
+        }
+        SubdivideSegment(source, vector, e.ContourId, e.NodeId, e.Progress);
+    }
+
     private void DeleteNode(ProjectLayer layer, Guid nodeId)
     {
         if (layer.Mask is not VectorClipMask vector)
@@ -467,6 +512,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
     internal void SelectGestureNode(Guid? id)
     {
         session.SceneEditing.MaskNodeId = id;
+        session.ViewModel.Timeline.SelectedMaskNodeId = id;
         session.RefreshMaskPreview();
     }
 
@@ -492,24 +538,26 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         {
             return;
         }
-        var index = contour.Nodes.IndexOf(contour.Nodes.Single(node => node.Id == session.SceneEditing.MaskNodeId));
-        var nextIndex = (index + 1) % contour.Nodes.Length;
-        var first = contour.Nodes[index];
-        var next = contour.Nodes[nextIndex];
-        static ScenePoint Add(ScenePoint a, ScenePoint b) => new(a.X + b.X, a.Y + b.Y);
-        static ScenePoint Sub(ScenePoint a, ScenePoint b) => new(a.X - b.X, a.Y - b.Y);
-        static ScenePoint Mid(ScenePoint a, ScenePoint b) => new((a.X + b.X) / 2, (a.Y + b.Y) / 2);
-        var a = Mid(first.Position, Add(first.Position, first.OutHandle));
-        var b = Mid(Add(first.Position, first.OutHandle), Add(next.Position, next.InHandle));
-        var c = Mid(Add(next.Position, next.InHandle), next.Position);
-        var d = Mid(a, b);
-        var e = Mid(b, c);
-        var center = Mid(d, e);
-        var inserted = new MaskNode { Position = center, InHandle = Sub(d, center), OutHandle = Sub(e, center) };
-        var nodes = contour.Nodes.SetItem(index, first with { OutHandle = Sub(a, first.Position) });
-        nodes = nodes.SetItem(nextIndex, nodes[nextIndex] with { InHandle = Sub(c, next.Position) }).Insert(index + 1, inserted);
-        session.Editor.SetClipMask(layer.Id, vector with { Contours = vector.Contours.SetItem(vector.Contours.IndexOf(contour), contour with { Nodes = nodes }) });
-        session.SceneEditing.MaskNodeId = inserted.Id;
+        SubdivideSegment(layer, vector, contour.Id, session.SceneEditing.MaskNodeId!.Value);
+    }
+
+    private void SubdivideSegment(ProjectLayer layer, VectorClipMask vector, Guid contourId, Guid nodeId, double progress = 0.5)
+    {
+        var contour = vector.Contours.FirstOrDefault(item => item.Id == contourId);
+        if (contour is null || vector.Contours.Sum(item => (long)item.Nodes.Length) >= 10000)
+        {
+            return;
+        }
+        var first = contour.Nodes.FirstOrDefault(node => node.Id == nodeId);
+        if (first is null)
+        {
+            return;
+        }
+        var index = contour.Nodes.IndexOf(first);
+        var changed = ClipMaskGeometryOperations.SubdivideSegment(vector, contourId, nodeId, progress);
+        session.Editor.SetClipMask(layer.Id, changed);
+        session.SceneEditing.MaskNodeId = changed.Contours[vector.Contours.IndexOf(contour)].Nodes[index + 1].Id;
         Refresh(true);
+        session.RefreshMaskPreview();
     }
 }

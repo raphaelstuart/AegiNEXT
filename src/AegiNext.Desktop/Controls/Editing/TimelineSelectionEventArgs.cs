@@ -12,4 +12,5 @@ public sealed class TimelineSelectionEventArgs : EventArgs
 
     public Guid Id { get; }
     public IReadOnlyList<Guid> SelectedIds { get; }
+    public bool SelectionAccepted { get; set; } = true;
 }

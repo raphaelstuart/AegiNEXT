@@ -18,6 +18,7 @@ namespace AegiNext.Desktop.Controls;
 public sealed class RichSubtitleEditor : Control, IDisposable
 {
     private readonly RichSubtitleInputMethodClient inputMethod;
+    private readonly Cursor textCursor = new(StandardCursorType.Ibeam);
     private ProjectSceneRenderer? renderer;
     private string? directory;
     private ProjectDocument? document;
@@ -44,6 +45,7 @@ public sealed class RichSubtitleEditor : Control, IDisposable
     public RichSubtitleEditor()
     {
         Focusable = true;
+        Cursor = textCursor;
         ClipToBounds = true;
         MinHeight = 120;
         inputMethod = new(this);
@@ -480,6 +482,7 @@ public sealed class RichSubtitleEditor : Control, IDisposable
         disposed = true;
         CancelSelectionGesture();
         bitmap?.Dispose();
+        textCursor.Dispose();
         bitmap = null;
         renderer?.Dispose();
         renderer = null;

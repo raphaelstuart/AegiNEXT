@@ -128,6 +128,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                 await ProjectStore.CreateAsync(document, path, cancellationToken);
             }
             session.SetProjectLocation(path, directory);
+            session.ClearTimelineClipboard();
             session.ResetSelection();
             session.Editor.Reset(document);
             session.ActivateProjectPersistence();
@@ -308,6 +309,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             }
 
             session.SetProjectLocation(path, directory);
+            session.ClearTimelineClipboard();
             session.ResetSelection();
             session.Editor.Reset(document);
             session.ActivateProjectPersistence();

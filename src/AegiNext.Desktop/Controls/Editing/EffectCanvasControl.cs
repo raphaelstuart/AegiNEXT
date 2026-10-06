@@ -82,13 +82,13 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             {
                 CancelDrag();
                 editMode = value;
-                Cursor = IsMaskMode ? new(StandardCursorType.Cross) : null;
+                UpdateMaskCursor();
                 InvalidateVisual();
             }
         }
     }
 
-    internal bool HasActiveDrag => dragging || maskDragging || !openContour.IsEmpty || maskDeletionHandle is not null;
+    internal bool HasActiveDrag => dragging || maskDragging || !openContour.IsEmpty || maskDeletionHandle is not null || maskInsertionHandle is not null;
     internal long PreviewSequence => previewSequence;
     internal long PresentedPreviewSequence => presentedPreviewSequence;
     internal Task PreviewCompletion => previewScheduler?.Completion ?? previewDrain;
@@ -644,6 +644,9 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             disposed = true;
             CancelDrag();
             video = null;
+            DetachMaskCursorHost();
+            maskCursors?.Dispose();
+            maskCursors = null;
             compositeFrame = null;
             compositeDocument = null;
             renderedVideo = null;

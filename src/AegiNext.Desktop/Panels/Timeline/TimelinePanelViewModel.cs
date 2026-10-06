@@ -20,6 +20,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private Guid? renamingTrackId;
     private string trackNameDraft = string.Empty;
     private ProjectLayer? selectedLayer;
+    private Guid? selectedMaskNodeId;
     private MediaTime position = MediaTime.Zero;
     private TimelineViewport viewport = new();
     private double mediaDuration;
@@ -35,6 +36,10 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private AnimationTrackTarget effectTarget = new(AnimationProperty.OPACITY);
     private SpectrogramData? spectrogram;
     private string analysisStatus = string.Empty;
+    private TimelineClipContextEventArgs? clipContext;
+    private ProjectDocument? clipContextDocument;
+    private Guid[] clipContextIds = [];
+    private Guid? clipContextPrimary;
 
     internal TimelinePanelViewModel(WorkbenchSession session)
     {
@@ -49,6 +54,10 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         ApplyTrackStyleCommand = new(request => request is null
             ? Task.CompletedTask : session.ApplySubtitleTrackStyleAsync(request.TrackId, request.PresetId));
         ToggleTrackAutoStyleCommand = new(session.ToggleTrackAutoApplyStyleAsync);
+        CopyClipsCommand = new(CopyContextClipsAsync, () => IsClipContextCurrent && clipContextIds.Length > 0);
+        PasteClipsCommand = new(PasteContextClipsAsync, () => IsClipContextCurrent && session.CanPasteTimelineClips);
+        DeleteClipsCommand = new(DeleteContextClipsAsync, () => IsClipContextCurrent && clipContextIds.Length > 0);
+        CreateSubtitleCommand = new(CreateContextSubtitleAsync, () => IsClipContextCurrent && clipContext?.TrackId is not null);
     }
 
     public ProjectDocument Document
@@ -62,8 +71,15 @@ internal sealed class TimelinePanelViewModel : ObservableObject
                     .Concat(value.Subtitles.Select(cue => Seconds(cue.End))).DefaultIfEmpty(1).Max());
                 OnPropertyChanged(nameof(FullDuration));
                 RefreshTrackCommands();
+                RefreshClipCommands();
             }
         }
+    }
+
+    public Guid? SelectedMaskNodeId
+    {
+        get => selectedMaskNodeId;
+        set => SetProperty(ref selectedMaskNodeId, value);
     }
 
     public Guid? SelectedTrackId
@@ -88,6 +104,14 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     public RelayCommand CancelTrackRenameCommand { get; }
     public AsyncRelayCommand<TrackStylePresetRequest> ApplyTrackStyleCommand { get; }
     public AsyncRelayCommand<Guid> ToggleTrackAutoStyleCommand { get; }
+    public AsyncRelayCommand CopyClipsCommand { get; }
+    public AsyncRelayCommand PasteClipsCommand { get; }
+    public AsyncRelayCommand DeleteClipsCommand { get; }
+    public AsyncRelayCommand CreateSubtitleCommand { get; }
+    public bool CanCopyClips => session.CanCopyTimelineClips;
+    public bool CanPasteClips => session.CanPasteTimelineClips;
+    private bool IsClipContextCurrent => clipContext is not null && ReferenceEquals(Document, clipContextDocument) &&
+        !session.IsClosing && !session.ViewModel.IsBusy;
     public StylePresetListItem[] StylePresets => session.StyleLibrary.Snapshot.Presets
         .Select(preset => new StylePresetListItem(preset.Id, preset.Name)).ToArray();
     public bool CanDeleteTrack => Document.SubtitleTracks.Length > 1 && SelectedTrackId is { } id &&
@@ -316,7 +340,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     /// <summary>同步非字幕片段对应的图层选择。</summary>
     public void SelectLayer(Guid id) => session.SelectLayer(id, [id]);
     /// <summary>将时间线的主层和多选集合同步到同一会话选择。</summary>
-    public void SelectLayers(TimelineSelectionEventArgs value) => session.SelectLayer(value.Id, value.SelectedIds.ToArray());
+    public bool SelectLayers(TimelineSelectionEventArgs value) => session.SelectTimelineLayers(value);
     /// <summary>切换当前字幕轨道，不改变工程合成顺序。</summary>
     public bool SelectTrack(Guid id) => session.SelectTrack(id);
     /// <summary>一次完成的时间线手势对应一次工程事务。</summary>
@@ -343,6 +367,54 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     public bool SelectKeyframe(TimelineKeyframeEventArgs value) => session.SelectKeyframe(value);
     /// <summary>提交完成的关键帧手势。</summary>
     public Task MoveKeyframeAsync(TimelineKeyframeEventArgs value) => session.RunCommandAsync(() => session.EditAsync(() => session.MoveKeyframe(value)));
+    /// <summary>提交冻结目标集合的一次整体平移。</summary>
+    public Task CommitClipsMoveAsync(TimelineClipsMoveEventArgs value) => session.CommitTimelineClipsMoveAsync(value);
+    /// <summary>捕获主体菜单打开时的工程、选择及时间。</summary>
+    public void SetClipContext(TimelineClipContextEventArgs value)
+    {
+        clipContext = value;
+        clipContextDocument = Document;
+        clipContextIds = session.TimelineClipIds().ToArray();
+        clipContextPrimary = SelectedLayer is { } primary && clipContextIds.Contains(primary.Id)
+            ? primary.Id : clipContextIds.Cast<Guid?>().FirstOrDefault();
+        RefreshClipCommands();
+    }
+
+    /// <summary>复制当前项目的时间线选择。</summary>
+    public async Task CopySelectedClipsAsync()
+    {
+        if (SelectedLayer is { } primary)
+        {
+            await session.CopyTimelineClipsAsync(primary.Id, session.TimelineClipIds());
+            RefreshClipCommands();
+        }
+    }
+    /// <summary>将已复制片段组粘贴到鼠标命中的时间和轨道。</summary>
+    public Task PasteSelectedClipsAsync(TimelineClipContextEventArgs target) => session.PasteTimelineClipsAtTargetAsync(target);
+    /// <summary>一次删除时间线选择。</summary>
+    public Task DeleteSelectedClipsAsync() => session.DeleteTimelineClipsAsync(session.TimelineClipIds());
+
+    private async Task CopyContextClipsAsync()
+    {
+        if (clipContextPrimary is { } id)
+        {
+            await session.CopyTimelineClipsAsync(id, clipContextIds, clipContextDocument);
+            RefreshClipCommands();
+        }
+    }
+    private Task PasteContextClipsAsync() => clipContext is { } context
+        ? session.PasteTimelineClipsAtTargetAsync(context, clipContextDocument) : Task.CompletedTask;
+    private Task DeleteContextClipsAsync() => session.DeleteTimelineClipsAsync(clipContextIds, clipContextDocument);
+    private Task CreateContextSubtitleAsync() => clipContext?.TrackId is { } trackId && clipContextDocument is { } source
+        ? session.CreateTimelineSubtitleAsync(trackId, clipContext.Time, source) : Task.CompletedTask;
+
+    private void RefreshClipCommands()
+    {
+        CopyClipsCommand.NotifyCanExecuteChanged();
+        PasteClipsCommand.NotifyCanExecuteChanged();
+        DeleteClipsCommand.NotifyCanExecuteChanged();
+        CreateSubtitleCommand.NotifyCanExecuteChanged();
+    }
     /// <summary>视口尺寸改变后重新计算滚动范围。</summary>
     public void RefreshViewport() => session.Tick();
 

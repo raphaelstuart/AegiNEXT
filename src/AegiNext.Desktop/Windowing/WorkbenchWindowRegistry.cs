@@ -220,6 +220,21 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             return;
         }
 
+        if (id is WorkbenchCommand.COPY_CLIPS or WorkbenchCommand.PASTE_CLIPS or WorkbenchCommand.DELETE_SUBTITLE)
+        {
+            if (TryExecuteFocusCommand(id, window))
+            {
+                invalidateTiming();
+                e.Handled = true;
+                entry.PressedKeys.Add(e.Key);
+                return;
+            }
+            if (id is WorkbenchCommand.COPY_CLIPS or WorkbenchCommand.PASTE_CLIPS)
+            {
+                return;
+            }
+        }
+
         if (id == WorkbenchCommand.END_TEXT_INPUT)
         {
             if (TryExecuteFocusCommand(id, window))

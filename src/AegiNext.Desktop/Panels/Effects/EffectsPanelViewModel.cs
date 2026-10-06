@@ -277,7 +277,7 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
     public AnimationProperty Property
     {
         get => Target.Property;
-        set => Target = new(value, AnimationPropertyMetadata.IsNodeProperty(value) ? session.SceneEditing.MaskNodeId : null);
+        set => Target = session.MaskEditing.ResolveAnimationTarget(value);
     }
 
     public AnimationTrackTarget Target
@@ -294,6 +294,11 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
                 OnPropertyChanged(nameof(SelectedProperty));
                 return;
             }
+            var nodeChanged = value.NodeId is { } nodeId && session.SceneEditing.MaskNodeId != nodeId;
+            if (nodeChanged)
+            {
+                session.SceneEditing.MaskNodeId = value.NodeId;
+            }
             session.SceneEditing.Target = value;
             if (!session.IsUpdating)
             {
@@ -307,6 +312,11 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
             OnPropertyChanged(nameof(IsColorProperty));
             OnPropertyChanged(nameof(IsScalarProperty));
             session.RefreshKeyframeInspector();
+            if (nodeChanged)
+            {
+                session.MaskEditing.Refresh();
+                session.RefreshMaskPreview();
+            }
         }
     }
 
@@ -315,6 +325,10 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
         get => properties;
         set
         {
+            if (properties.SequenceEqual(value))
+            {
+                return;
+            }
             if (SetProperty(ref properties, value))
             {
                 OnPropertyChanged(nameof(SelectedProperty));
@@ -324,12 +338,12 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
 
     public AnimationPropertyChoice? SelectedProperty
     {
-        get => Properties.FirstOrDefault(choice => choice.Target == Target);
+        get => Properties.FirstOrDefault(choice => choice.Property == Property);
         set
         {
             if (value is not null)
             {
-                Target = value.Target;
+                Property = value.Property;
             }
         }
     }
@@ -525,6 +539,10 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
 
     internal void RefreshChoices(string[] blendOptions, AnimationPropertyChoice[] propertyOptions, string[] interpolationOptions)
     {
+        if (Blends.SequenceEqual(blendOptions) && Properties.SequenceEqual(propertyOptions) && Interpolations.SequenceEqual(interpolationOptions))
+        {
+            return;
+        }
         var selection = (blend, interpolation);
         refreshingChoices = true;
         try

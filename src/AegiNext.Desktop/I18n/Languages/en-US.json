@@ -592,9 +592,10 @@
     "Workbench.MASK_POSITION": "Mask translation",
     "Workbench.MASK_SCALE": "Mask scale",
     "Workbench.MASK_ROTATION": "Mask rotation",
-    "Workbench.MASK_NODE_POSITION": "Node position",
-    "Workbench.MASK_NODE_IN_HANDLE": "Incoming handle",
-    "Workbench.MASK_NODE_OUT_HANDLE": "Outgoing handle",
+    "Workbench.MASK_NODE_POSITION": "Mask Node position (Bézier)",
+    "Workbench.MaskNodeAnimationRow": "{0} · Contour {1}, point {2}",
+    "Workbench.MASK_NODE_IN_HANDLE": "Mask Incoming handle (Bézier)",
+    "Workbench.MASK_NODE_OUT_HANDLE": "Mask Outgoing handle (Bézier)",
     "Layout.masks": "Masks",
     "Settings.VIEW_MASKS": "Masks",
     "Workbench.MaskDeleteContour": "Delete contour",
@@ -625,6 +626,14 @@
     "Workbench.BackupRestoreRequired": "Copy this backup into its project root directory before opening it.",
     "WorkflowLog.ProjectAutoSaved": "Project automatically saved",
     "WorkflowLog.ProjectBackedUp": "Project backup created",
-    "Workbench.NewProjectActivationFailed": "The project was created at {0}, but the workbench could not be opened: {1}"
+    "Workbench.NewProjectActivationFailed": "The project was created at {0}, but the workbench could not be opened: {1}",
+    "Workbench.CreateTimelineSubtitle": "Create subtitle clip",
+    "Workbench.CopyTimelineClips": "Copy clips",
+    "Workbench.PasteTimelineClips": "Paste clips",
+    "Workbench.DeleteTimelineClips": "Delete clips",
+    "Workbench.TimelineClipCollision": "The subtitle interval overlaps another clip on this track.",
+    "Workbench.TimelinePasteFailed": "Cannot paste clips at this position. Check the subtitle intervals, tracks and resources.",
+    "Settings.COPY_CLIPS": "Copy timeline clips",
+    "Settings.PASTE_CLIPS": "Paste timeline clips"
   }
 }

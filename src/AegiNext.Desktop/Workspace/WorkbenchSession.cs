@@ -106,6 +106,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ViewModel.Effects.PropertyChanged += OnEffectPropertyChanged;
         ViewModel.Preview.PropertyChanged += OnPreviewPropertyChanged;
         ViewModel.Export.PropertyChanged += OnExportPropertyChanged;
+        SubscribeTimelinePreferences();
         ApplyPreferences();
         RefreshDocument();
         styles.Initialize();
@@ -354,6 +355,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
 
         closing = true;
+        UnsubscribeTimelinePreferences();
+        ClearTimelineClipboard();
         ViewModel.CancelGestures();
         ViewModel.RefreshCommands();
         if (beforeDispose is not null)
@@ -432,6 +435,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         try
         {
             ViewModel.Preview.Volume = preferences.Volume;
+            ApplyTimelinePreferences();
             controller.SetVolume(preferences.Volume);
         }
         finally

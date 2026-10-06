@@ -592,9 +592,10 @@
     "Workbench.MASK_POSITION": "蒙版位移",
     "Workbench.MASK_SCALE": "蒙版缩放",
     "Workbench.MASK_ROTATION": "蒙版旋转",
-    "Workbench.MASK_NODE_POSITION": "节点位置",
-    "Workbench.MASK_NODE_IN_HANDLE": "入控制柄",
-    "Workbench.MASK_NODE_OUT_HANDLE": "出控制柄",
+    "Workbench.MASK_NODE_POSITION": "蒙版节点位置（贝塞尔）",
+    "Workbench.MaskNodeAnimationRow": "{0} · 轮廓 {1}，点 {2}",
+    "Workbench.MASK_NODE_IN_HANDLE": "蒙版入控制柄（贝塞尔）",
+    "Workbench.MASK_NODE_OUT_HANDLE": "蒙版出控制柄（贝塞尔）",
     "Layout.masks": "蒙版",
     "Settings.VIEW_MASKS": "蒙版",
     "Workbench.MaskDeleteContour": "删除轮廓",
@@ -625,6 +626,14 @@
     "Workbench.BackupRestoreRequired": "请先将此备份拷回项目根目录，再打开恢复项目。",
     "WorkflowLog.ProjectAutoSaved": "项目已自动保存",
     "WorkflowLog.ProjectBackedUp": "已创建项目备份",
-    "Workbench.NewProjectActivationFailed": "项目已创建于 {0}，但无法打开工作台：{1}"
+    "Workbench.NewProjectActivationFailed": "项目已创建于 {0}，但无法打开工作台：{1}",
+    "Workbench.CreateTimelineSubtitle": "创建字幕 clip",
+    "Workbench.CopyTimelineClips": "复制 clip",
+    "Workbench.PasteTimelineClips": "粘贴 clip",
+    "Workbench.DeleteTimelineClips": "删除 clip",
+    "Workbench.TimelineClipCollision": "字幕区间与本轨的其他 clip 重叠。",
+    "Workbench.TimelinePasteFailed": "无法在此位置粘贴 clip，请检查字幕区间、轨道和资源。",
+    "Settings.COPY_CLIPS": "复制时间线 clip",
+    "Settings.PASTE_CLIPS": "粘贴时间线 clip"
   }
 }

@@ -35,6 +35,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         canvas.MaskEdited += (_, e) => session.MaskEditing.CommitGesture(e);
         canvas.MaskNodeSelected += (_, e) => session.MaskEditing.SelectGestureNode(e.NodeId);
         canvas.MaskNodeDeleteRequested += (_, e) => session.MaskEditing.CommitNodeDeletion(e);
+        canvas.MaskSegmentInsertRequested += (_, e) => session.MaskEditing.CommitSegmentInsertion(e);
         canvas.MaskEditingExited += (_, _) => session.MaskEditing.ExitEditing();
         canvas.LayerEdited += async (_, e) => await viewModel.CommitCanvasAsync(e);
         canvas.RenderingFailed += (_, e) => viewModel.ReportRenderingError(e.Error);

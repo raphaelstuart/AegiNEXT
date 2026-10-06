@@ -48,7 +48,9 @@ public static class ShortcutDefaults
             new(WorkbenchCommand.END_TEXT_INPUT, "Escape"),
             new(WorkbenchCommand.CLOSE_PROJECT, ""),
             new(WorkbenchCommand.OPEN_ABOUT, ""),
-            new(WorkbenchCommand.VIEW_MASKS, "")
+            new(WorkbenchCommand.VIEW_MASKS, ""),
+            new(WorkbenchCommand.COPY_CLIPS, "CmdOrCtrl+C"),
+            new(WorkbenchCommand.PASTE_CLIPS, "CmdOrCtrl+V")
         ];
     }
 }

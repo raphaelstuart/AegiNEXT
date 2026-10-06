@@ -4,6 +4,14 @@
 
 The subtitle list always displays readable text. Its derived Type column shows Highlight when character timing exists, Rich text when local style overrides exist, and Plain otherwise. Highlight and rich text share one content model, so a highlighted subtitle can also contain different fonts, colors, and emphasis.
 
+## Main timeline clips
+
+Use Cmd/Ctrl to toggle clips in the selection and Shift to select a range, including subtitles, shapes, and images. Drag the body of an already selected clip to move the selection horizontally with its original tracks, durations, and relative timing intact. The whole group stops when its earliest start reaches zero. A move can pass other subtitles; if the final position overlaps a subtitle on the same track, every moving clip turns red and returns to its original position on release. Snap follows the grabbed clip's edges and ignores the moving selection's own boundaries. Single subtitles can still move between tracks, and dragging an edge edits only that clip. Clicking empty space in an expanded subtitle track's effects rows selects the track.
+
+When the timeline has focus, Cmd/Ctrl+C copies the selection, Cmd/Ctrl+V aligns its earliest start with the current pointer time, and Delete removes the entire selection. Paste aligns the track selected at copy time with the subtitle track under the pointer; other subtitles keep their track spacing and relative timing. Mapping beyond the existing tracks rejects the whole paste. Hover another track without clicking to set the destination; headers, the ruler, and positions outside the timeline have no paste target. The body context menu offers the same actions, with Paste using the time and track captured when the menu opens, and Create subtitle starting a two-second cue on the clicked subtitle track. Right clicking a selected clip preserves the selection; right clicking an unselected clip selects it alone. Copies preserve rich text, highlight timing, masks, effects, and original composition order within the current project. A subtitle collision rejects the entire paste or creation. Each move, paste, creation, or batch deletion can be undone once. Text inputs retain their ordinary copy, paste, and delete behavior.
+
+The main timeline's Snap, Step, Spectrum, and Waveform switches are global personal preferences and survive project changes and restart. Their defaults are on, off, on, and on. Alt temporarily bypasses snapping and stepping without changing the saved switches.
+
 ## Open, float, and dock
 
 Select a subtitle and use **Detail editor** on the subtitle toolbar or row context menu. The editor opens as a workspace child window. Drag its panel tab to dock it into the main workspace or float it again. Reopening activates the same panel, which follows the primary subtitle selection. Double clicking list text still selects words.

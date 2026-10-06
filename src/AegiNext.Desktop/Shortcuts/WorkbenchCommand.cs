@@ -41,5 +41,7 @@ public enum WorkbenchCommand
     END_TEXT_INPUT,
     CLOSE_PROJECT,
     OPEN_ABOUT,
-    VIEW_MASKS
+    VIEW_MASKS,
+    COPY_CLIPS,
+    PASTE_CLIPS
 }

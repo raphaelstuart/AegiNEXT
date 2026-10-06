@@ -159,6 +159,7 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
     {
         blend.EndInit();
         property.EndInit();
+        property.SelectedItem = viewModel.SelectedProperty;
         interpolation.EndInit();
     }
 

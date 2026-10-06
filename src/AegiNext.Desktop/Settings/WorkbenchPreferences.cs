@@ -21,6 +21,10 @@ public sealed record WorkbenchPreferences
     public bool WindowMenuOnMac { get; init; }
     public PreviewQuality PreviewQuality { get; init; } = PreviewQuality.LOW;
     public VideoDecodeMode PreviewDecodeMode { get; init; } = VideoDecodeMode.Auto;
+    public bool TimelineSnapEnabled { get; init; } = true;
+    public bool TimelineStepEnabled { get; init; }
+    public bool TimelineSpectrumVisible { get; init; } = true;
+    public bool TimelineWaveformVisible { get; init; } = true;
     public ProjectPreferences Projects { get; init; } = new();
 
     /// <summary>拒绝未知设置版本、语言、主题或非法音量。</summary>
@@ -70,6 +74,8 @@ public sealed record WorkbenchPreferences
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
                AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
+               TimelineSnapEnabled == other.TimelineSnapEnabled && TimelineStepEnabled == other.TimelineStepEnabled &&
+               TimelineSpectrumVisible == other.TimelineSpectrumVisible && TimelineWaveformVisible == other.TimelineWaveformVisible &&
                Projects == other.Projects && ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
     }
 
@@ -86,6 +92,10 @@ public sealed record WorkbenchPreferences
         hash.Add(WindowMenuOnMac);
         hash.Add(PreviewQuality);
         hash.Add(PreviewDecodeMode);
+        hash.Add(TimelineSnapEnabled);
+        hash.Add(TimelineStepEnabled);
+        hash.Add(TimelineSpectrumVisible);
+        hash.Add(TimelineWaveformVisible);
         hash.Add(Projects);
         foreach (var binding in ShortcutBindings)
         {

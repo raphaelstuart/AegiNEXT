@@ -234,7 +234,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
     private async Task HandleHostCommandAsync(WorkbenchHostCommandEventArgs request)
     {
-        if (request.Command == WorkbenchCommand.END_TEXT_INPUT)
+        if (request.Command is WorkbenchCommand.END_TEXT_INPUT or WorkbenchCommand.COPY_CLIPS or WorkbenchCommand.PASTE_CLIPS)
         {
             windowRegistry.TryExecuteFocusCommand(request.Command);
         }

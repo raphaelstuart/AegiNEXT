@@ -16,6 +16,8 @@ internal sealed partial class WorkbenchSession
 
         return command switch
         {
+            WorkbenchCommand.COPY_CLIPS => CanCopyTimelineClips,
+            WorkbenchCommand.PASTE_CLIPS => CanPasteTimelineClips,
             WorkbenchCommand.UNDO => editor.CanUndo,
             WorkbenchCommand.REDO => editor.CanRedo,
             WorkbenchCommand.PLAY_PAUSE or WorkbenchCommand.SEEK_BACKWARD or WorkbenchCommand.SEEK_FORWARD =>

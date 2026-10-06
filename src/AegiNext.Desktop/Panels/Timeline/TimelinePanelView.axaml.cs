@@ -12,10 +12,12 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using AegiNext.Desktop.Styling;
 using Material.Icons.Avalonia;
+using AegiNext.Desktop.Shortcuts;
+using AegiNext.Desktop.Windowing;
 
 namespace AegiNext.Desktop.Panels.Timeline;
 
-internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelView
+internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelView, IWorkbenchFocusCommandTarget
 {
     private readonly WorkbenchSession session;
     private readonly TimelinePanelViewModel viewModel;
@@ -73,13 +75,21 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         autoTrackStyleItem.Bind(MenuItem.HeaderProperty, Localization.Observe("Workbench.TrackStyleAutoApply").ToBinding());
         TrackMenu.Items.Add(trackStyleItem);
         TrackMenu.Items.Add(autoTrackStyleItem);
+        ClipMenu = new();
+        ClipMenu.Items.Add(CreateMenuItem("CreateTimelineSubtitleMenuItem", "CreateTimelineSubtitle", viewModel.CreateSubtitleCommand));
+        ClipMenu.Items.Add(new Separator());
+        ClipMenu.Items.Add(CreateMenuItem("CopyTimelineClipsMenuItem", "CopyTimelineClips", viewModel.CopyClipsCommand));
+        ClipMenu.Items.Add(CreateMenuItem("PasteTimelineClipsMenuItem", "PasteTimelineClips", viewModel.PasteClipsCommand));
+        ClipMenu.Items.Add(CreateMenuItem("DeleteTimelineClipsMenuItem", "DeleteTimelineClips", viewModel.DeleteClipsCommand));
         timeline.TrackContextRequested += OnTrackContextRequested;
+        timeline.ClipContextRequested += OnClipContextRequested;
         timeline.SeekRequested += async (_, e) => await viewModel.SeekAsync(e.Time);
-        timeline.ClipSelectionChanged += (_, e) => viewModel.SelectLayers(e);
+        timeline.ClipSelectionChanged += (_, e) => e.SelectionAccepted = viewModel.SelectLayers(e);
         timeline.TrackSelected += (_, e) => viewModel.SelectTrack(e.Id);
         timeline.ViewportChanged += OnViewportChanged;
         overview.ViewportChanged += OnViewportChanged;
         timeline.TimingChanged += async (_, e) => await viewModel.CommitTimingAsync(e);
+        timeline.ClipsMoveCompleted += async (_, e) => await viewModel.CommitClipsMoveAsync(e);
         timeline.KeyframeSelected += (_, e) => e.SelectionAccepted = viewModel.SelectKeyframe(e);
         timeline.KeyframeMoved += async (_, e) => await viewModel.MoveKeyframeAsync(e);
         timeline.AddHandler(PointerPressedEvent, (_, _) => viewModel.IsSeeking = timeline.IsSeeking, RoutingStrategies.Bubble, true);
@@ -115,6 +125,49 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
 
     public string PanelId => "timeline";
     internal ContextMenu TrackMenu { get; }
+    internal ContextMenu ClipMenu { get; }
+    public bool CanExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
+    {
+        if (!ReferenceEquals(focusedElement, timeline) || TrackMenu.IsOpen || ClipMenu.IsOpen)
+        {
+            return false;
+        }
+        return command switch
+        {
+            WorkbenchCommand.END_TEXT_INPUT => timeline.HasActiveDrag,
+            WorkbenchCommand.COPY_CLIPS or WorkbenchCommand.DELETE_SUBTITLE => viewModel.CanCopyClips,
+            WorkbenchCommand.PASTE_CLIPS => viewModel.CanPasteClips && timeline.GetClipPasteTarget() is not null,
+            _ => false
+        };
+    }
+
+    public bool TryExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
+    {
+        if (!CanExecuteFocusCommand(command, focusedElement))
+        {
+            return false;
+        }
+        switch (command)
+        {
+            case WorkbenchCommand.END_TEXT_INPUT:
+                CancelGestures();
+                break;
+            case WorkbenchCommand.COPY_CLIPS:
+                _ = viewModel.CopySelectedClipsAsync();
+                break;
+            case WorkbenchCommand.PASTE_CLIPS:
+                if (timeline.GetClipPasteTarget() is not { } target)
+                {
+                    return false;
+                }
+                _ = viewModel.PasteSelectedClipsAsync(target);
+                break;
+            case WorkbenchCommand.DELETE_SUBTITLE:
+                _ = viewModel.DeleteSelectedClipsAsync();
+                break;
+        }
+        return true;
+    }
     public void CancelGestures()
     {
         timeline.CancelGesture();
@@ -154,7 +207,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         {
             timeline.Position = viewModel.Position;
             timeline.EffectTarget = viewModel.EffectTarget;
-            timeline.SelectedMaskNodeId = session.SceneEditing.MaskNodeId;
+            timeline.SelectedMaskNodeId = viewModel.SelectedMaskNodeId;
             timeline.IsSnapEnabled = viewModel.IsSnapEnabled;
             timeline.IsStepEnabled = viewModel.IsStepEnabled;
             timeline.IsSpectrumVisible = viewModel.IsSpectrumVisible;
@@ -187,6 +240,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     }
     private void OnTrackContextRequested(object? sender, TimelineTrackContextEventArgs e)
     {
+        ClipMenu.Close();
         TrackMenu.Close();
         if (e.TrackId is { } id && !viewModel.SelectTrack(id))
         {
@@ -195,6 +249,13 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
 
         RefreshTrackMenu();
         TrackMenu.Open(timeline);
+    }
+    private void OnClipContextRequested(object? sender, TimelineClipContextEventArgs e)
+    {
+        TrackMenu.Close();
+        ClipMenu.Close();
+        viewModel.SetClipContext(e);
+        ClipMenu.Open(timeline);
     }
     private void RefreshTrackMenu()
     {
@@ -266,7 +327,9 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             timeline.ViewportChanged -= OnViewportChanged;
             overview.ViewportChanged -= OnViewportChanged;
             timeline.TrackContextRequested -= OnTrackContextRequested;
+            timeline.ClipContextRequested -= OnClipContextRequested;
             TrackMenu.Close();
+            ClipMenu.Close();
             overview.CancelGesture();
             timeline.Dispose();
         }

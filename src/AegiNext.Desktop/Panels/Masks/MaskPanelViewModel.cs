@@ -36,7 +36,7 @@ internal sealed class MaskPanelViewModel : ObservableObject
     public bool IsVectorTool => session.SceneEditing.Mode is CanvasEditMode.MASK_VECTOR or CanvasEditMode.MASK_DRAW_VECTOR;
     public bool CanEditVector => CanEditMask && (!session.MaskEditing.IsTopologyLocked || IsVectorMask);
     public bool CanClearNodeAnimation => session.SelectedLayer?.Tracks.Any(track => AnimationPropertyMetadata.IsNodeProperty(track.Property)) == true;
-    public bool CanSubdivide => CanEditMaskTopology && HasSelectedPoint;
+    public bool CanSubdivide => session.MaskEditing.CanSubdivideSelectedNode;
     public bool HasClipMask => session.SelectedLayer?.Mask is not null;
     public bool IsVectorMask => session.SelectedLayer?.Mask is VectorClipMask;
     public bool CanCreateRectangleMask => CanEditMask && (!session.MaskEditing.IsTopologyLocked || session.SelectedLayer?.Mask is RectangleClipMask);
@@ -135,18 +135,41 @@ internal sealed class MaskPanelViewModel : ObservableObject
             var mask = session.SelectedLayer is { } layer ? SceneEvaluator.EvaluateMask(layer, session.AnimationTarget?.LocalTime ?? new(0)) : null;
             if (mask is VectorClipMask vector)
             {
-                Contours = vector.Contours.Select((contour, index) => new MaskSelectionChoice(contour.Id, (index + 1).ToString(System.Globalization.CultureInfo.CurrentCulture))).ToArray();
+                var contours = vector.Contours.Select((contour, index) => new MaskSelectionChoice(contour.Id, (index + 1).ToString(System.Globalization.CultureInfo.CurrentCulture))).ToArray();
+                if (!Contours.SequenceEqual(contours))
+                {
+                    Contours = contours;
+                    OnPropertyChanged(nameof(Contours));
+                }
                 var contour = vector.Contours.FirstOrDefault(contour => contour.Id == session.SceneEditing.MaskContourId);
-                Points = contour?.Nodes.Select((node, index) => new MaskPointListItem(node.Id, index + 1, node.Position)).ToArray() ?? [];
+                var nodes = contour?.Nodes ?? [];
+                if (!Points.Select(point => point.Id).SequenceEqual(nodes.Select(node => node.Id)))
+                {
+                    var previous = Points.ToDictionary(point => point.Id);
+                    Points = nodes.Select((node, index) => previous.GetValueOrDefault(node.Id) ?? new MaskPointListItem(node.Id, index + 1, node.Position)).ToArray();
+                    OnPropertyChanged(nameof(Points));
+                }
+                for (var index = 0; index < nodes.Length; index++)
+                {
+                    Points[index].Update(index + 1, nodes[index].Position);
+                }
             }
             else
             {
-                Contours = [];
-                Points = [];
+                if (Contours.Length > 0)
+                {
+                    Contours = [];
+                    OnPropertyChanged(nameof(Contours));
+                }
+                if (Points.Length > 0)
+                {
+                    Points = [];
+                    OnPropertyChanged(nameof(Points));
+                }
             }
             foreach (var name in new[] { nameof(CanEditMask), nameof(IsRectangleTool), nameof(IsVectorTool), nameof(CanEditVector), nameof(CanClearNodeAnimation), nameof(CanSubdivide), nameof(HasClipMask), nameof(IsVectorMask), nameof(CanCreateRectangleMask), nameof(CanEditMaskTopology),
-                nameof(CanDeleteContour), nameof(CanDeleteNode), nameof(HasSelectedPoint), nameof(MaskInverted), nameof(MaskTopologyReason), nameof(Contours),
-                nameof(SelectedContour), nameof(Points), nameof(SelectedPoint), nameof(RectangleToolTip), nameof(ContourToolTip), nameof(DeleteContourToolTip),
+                nameof(CanDeleteContour), nameof(CanDeleteNode), nameof(HasSelectedPoint), nameof(MaskInverted), nameof(MaskTopologyReason),
+                nameof(SelectedContour), nameof(SelectedPoint), nameof(RectangleToolTip), nameof(ContourToolTip), nameof(DeleteContourToolTip),
                 nameof(DeleteNodeToolTip), nameof(SubdivideToolTip) })
             {
                 OnPropertyChanged(name);

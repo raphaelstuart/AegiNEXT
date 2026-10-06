@@ -35,15 +35,10 @@ public static class PathOperations
 
         var start = segmentIndex == 0 ? path.Start : path.Segments[segmentIndex - 1].End;
         var segment = path.Segments[segmentIndex];
-        var a = Lerp(start, segment.Control1, progress);
-        var b = Lerp(segment.Control1, segment.Control2, progress);
-        var c = Lerp(segment.Control2, segment.End, progress);
-        var d = Lerp(a, b, progress);
-        var e = Lerp(b, c, progress);
-        var point = Lerp(d, e, progress);
+        var split = CubicBezierSubdivision.Split(start, segment, progress);
         return path with
         {
-            Segments = path.Segments.SetItem(segmentIndex, new(a, d, point)).Insert(segmentIndex + 1, new(e, c, segment.End))
+            Segments = path.Segments.SetItem(segmentIndex, split.Before).Insert(segmentIndex + 1, split.After)
         };
     }
 
