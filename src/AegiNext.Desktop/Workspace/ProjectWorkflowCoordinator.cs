@@ -4,6 +4,7 @@ using AegiNext.Application;
 using AegiNext.Application.SubtitleFormats;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
+using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
 
@@ -12,6 +13,7 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
 {
     private const int MAX_SUBTITLE_FILE_BYTES = 16 * 1024 * 1024;
+    private UnavailableProjectMediaBinding? unavailableMediaBinding;
     internal async Task<bool> ConfirmDiscardOrSaveAsync()
     {
         if (!session.TryCommitDrafts())
@@ -62,8 +64,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         }
 
         var previousDocument = session.Editor.Snapshot;
-        var previousDirectory = session.ProjectDirectory;
-        var previousPosition = session.Controller.Snapshot.Position;
+        var previousPreview = session.Controller.Snapshot;
         var previewChanged = false;
         var committed = false;
         session.SetProjectBusy(true);
@@ -85,6 +86,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             session.SetProjectLocation(path, directory);
             session.ResetSelection();
             session.Editor.Reset(document);
+            unavailableMediaBinding = null;
             committed = true;
             await session.ApplicationContext.RecentProjects.RecordAsync(path);
             var diagnostics = new List<Exception>();
@@ -111,7 +113,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             {
                 try
                 {
-                    await RestorePreviewAsync(previousDocument, previousDirectory, previousPosition, error);
+                    await RestorePreviewAsync(previousDocument, previousPreview, error);
                 }
                 catch (Exception recoveryError)
                 {
@@ -181,31 +183,62 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
 
         session.SetProjectBusy(true);
         var previousDocument = session.Editor.Snapshot;
-        var previousDirectory = session.ProjectDirectory;
-        var previousPosition = session.Controller.Snapshot.Position;
+        var previousPreview = session.Controller.Snapshot;
+        var previewChanged = false;
+        Exception? unavailableMediaError = null;
         var committed = false;
         try
         {
             var document = await ProjectStore.LoadAsync(path, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             var directory = Path.GetDirectoryName(path)!;
-            var mediaPath = document.Media is { } binding
-                ? ProjectAssetLocation.Resolve(document.Assets.Single(asset => asset.Id == binding.AssetId), directory)
-                : null;
-            if (mediaPath is null)
+            string? mediaPath = null;
+            UnavailableProjectMediaBinding? deferredBinding = null;
+            if (document.Media is not { } binding)
             {
+                previewChanged = true;
                 await session.Controller.CloseMediaAsync();
             }
             else
             {
-                await session.Controller.OpenAsync(mediaPath, cancellationToken);
-                if (session.Controller.Snapshot.Error is { } error)
+                var asset = document.Assets.Single(asset => asset.Id == binding.AssetId);
+                try
                 {
-                    throw error;
+                    mediaPath = ProjectAssetLocation.Resolve(asset, directory);
+                    previewChanged = true;
+                    await session.Controller.OpenAsync(mediaPath, cancellationToken);
+                    if (session.Controller.Snapshot.Error is { } error)
+                    {
+                        throw error;
+                    }
+
+                    if (session.Controller.MediaInfo is null)
+                    {
+                        throw new InvalidDataException("媒体信息不可用。");
+                    }
+                }
+                catch (Exception error) when (error is not OperationCanceledException &&
+                    !cancellationToken.IsCancellationRequested && !session.IsClosing)
+                {
+                    unavailableMediaError = error;
+                    var reference = mediaPath ?? asset.ExternalPath ?? asset.RelativePath;
+                    var proceed = await dialogs.ConfirmUnavailableMediaAsync(reference, error.Message, cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!proceed || session.IsClosing)
+                    {
+                        throw new OperationCanceledException();
+                    }
+
+                    previewChanged = true;
+                    await session.Controller.CloseMediaAsync();
+                    mediaPath = null;
+                    deferredBinding = new(binding, reference);
                 }
 
-                var media = session.Controller.MediaInfo ?? throw new InvalidDataException("媒体信息不可用。");
-                ProjectMediaBindingValidator.Validate(document, media);
+                if (deferredBinding is null)
+                {
+                    ProjectMediaBindingValidator.Validate(document, session.Controller.MediaInfo!);
+                }
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -217,6 +250,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             session.SetProjectLocation(path, directory);
             session.ResetSelection();
             session.Editor.Reset(document);
+            unavailableMediaBinding = deferredBinding;
             committed = true;
             await session.ApplicationContext.RecentProjects.RecordAsync(path);
             var diagnostics = new List<Exception>();
@@ -262,13 +296,16 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         {
             if (!committed)
             {
-                try
+                if (previewChanged)
                 {
-                    await RestorePreviewAsync(previousDocument, previousDirectory, previousPosition, error);
-                }
-                catch (Exception recoveryError)
-                {
-                    return new(ProjectOpenStatus.FAILED, recoveryError);
+                    try
+                    {
+                        await RestorePreviewAsync(previousDocument, previousPreview, error);
+                    }
+                    catch (Exception recoveryError)
+                    {
+                        return new(ProjectOpenStatus.FAILED, recoveryError);
+                    }
                 }
 
                 return error is OperationCanceledException
@@ -280,6 +317,10 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         }
         finally
         {
+            if (unavailableMediaError is { } error && !ReferenceEquals(session.Controller.Snapshot.Error, error))
+            {
+                session.DismissError(error);
+            }
             session.SetProjectBusy(false);
         }
     }
@@ -294,8 +335,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         path = ProjectAssetLocation.ResolveInputPath(path, session.ProjectDirectory);
         session.SetProjectBusy(true);
         var previousDocument = session.Editor.Snapshot;
-        var previousDirectory = session.ProjectDirectory;
-        var previousPosition = session.Controller.Snapshot.Position;
+        var previousPreview = session.Controller.Snapshot;
         var committed = false;
         try
         {
@@ -329,7 +369,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         {
             if (!committed)
             {
-                await RestorePreviewAsync(previousDocument, previousDirectory, previousPosition, error);
+                await RestorePreviewAsync(previousDocument, previousPreview, error);
             }
 
             throw;
@@ -340,28 +380,29 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         }
     }
 
-    internal async Task RestorePreviewAsync(ProjectDocument document, string directory, MediaTime position,
+    private async Task RestorePreviewAsync(ProjectDocument document, VideoPreviewSnapshot previousPreview,
         Exception originalError)
     {
         try
         {
-            if (document.Media is not { } binding)
+            if (previousPreview.FilePath is not { } path)
             {
                 await session.Controller.CloseMediaAsync();
                 return;
             }
 
-            var path = ProjectAssetLocation.Resolve(document.Assets.Single(asset => asset.Id == binding.AssetId),
-                directory);
             await session.Controller.OpenAsync(path);
             if (session.Controller.Snapshot.Error is { } error)
             {
                 throw error;
             }
 
-            ProjectMediaBindingValidator.Validate(document,
-                session.Controller.MediaInfo ?? throw new InvalidDataException("媒体信息不可用。"));
-            await session.Controller.SeekAsync(position);
+            if (document.Media is not null)
+            {
+                ProjectMediaBindingValidator.Validate(document,
+                    session.Controller.MediaInfo ?? throw new InvalidDataException("媒体信息不可用。"));
+            }
+            await session.Controller.SeekAsync(previousPreview.Position);
         }
         catch (Exception recoveryError)
         {
@@ -554,13 +595,25 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         return new UTF8Encoding(false, true).GetString(bytes.AsSpan(offset));
     }
 
+    internal bool IsPreviewBindingSynchronized()
+    {
+        var document = session.Editor.Snapshot;
+        var path = document.Media is { } binding &&
+            unavailableMediaBinding?.Matches(document, session.ProjectDirectory) != true
+            ? ProjectAssetLocation.Resolve(document.Assets.Single(asset => asset.Id == binding.AssetId), session.ProjectDirectory)
+            : null;
+        return string.Equals(path, session.Controller.Snapshot.FilePath, OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
+
     internal async Task SynchronizePreviewBindingAsync()
     {
         session.SetProjectBusy(true);
         try
         {
             var document = session.Editor.Snapshot;
-            if (document.Media is not { } binding)
+            if (document.Media is not { } binding ||
+                unavailableMediaBinding?.Matches(document, session.ProjectDirectory) == true)
             {
                 await session.Controller.CloseMediaAsync();
                 await session.Analysis.ClearAsync();

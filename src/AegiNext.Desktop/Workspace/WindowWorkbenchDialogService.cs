@@ -2,6 +2,7 @@ using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Views;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -61,6 +62,17 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
         var dialog = new UnsavedProjectDialog();
         registerWindow?.Invoke(dialog);
         return dialog.ShowDialog<int>(ownerProvider());
+    }
+
+    /// <summary>确认是否在媒体不可用时继续打开项目；取消请求会关闭确认窗口。</summary>
+    public async Task<bool> ConfirmUnavailableMediaAsync(string mediaPath, string reason, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var dialog = new UnavailableProjectMediaDialog(mediaPath, reason);
+        registerWindow?.Invoke(dialog);
+        var answer = dialog.ShowDialog<bool>(ownerProvider());
+        using var registration = cancellationToken.Register(() => Dispatcher.UIThread.Post(() => dialog.Close(false)));
+        return await answer;
     }
 
     /// <summary>决定是否将更换的轨道预设同步到现有片段；默认仅更新后续创建样式。</summary>

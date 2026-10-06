@@ -53,6 +53,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private bool effectsDirty;
     private TaskCompletionSource projectIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task? disposeTask;
+    private Task documentChangeTask = Task.CompletedTask;
     private TimingSession timingSession = new();
 
     internal WorkbenchSession(IWorkbenchDialogService dialogs,
@@ -248,7 +249,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            LogInfo("Workflow", Localization.Get("Workbench.Cancelled"));
+            if (!closing)
+            {
+                LogInfo("Workflow", Localization.Get("Workbench.Cancelled"));
+            }
         }
         catch (Exception error)
         {
@@ -266,6 +270,15 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
                 RestorePlacementDiagnostic();
                 ViewModel.RefreshCommands();
             }
+        }
+    }
+
+    internal void DismissError(Exception error)
+    {
+        if (ReferenceEquals(LastError, error))
+        {
+            LastError = null;
+            ViewModel.Error = null;
         }
     }
 
@@ -300,9 +313,16 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     internal async Task WaitForProjectIdleAsync()
     {
-        while (projectBusy)
+        while (projectBusy || !documentChangeTask.IsCompleted)
         {
-            await projectIdle.Task;
+            if (projectBusy)
+            {
+                await projectIdle.Task;
+            }
+            else
+            {
+                await documentChangeTask;
+            }
         }
     }
 
@@ -364,6 +384,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         export.Cancel();
         try
         {
+            await documentChangeTask;
+            analysis.Cancel();
             await Task.WhenAll(analysis.Completion, export.Completion, styles.Completion, effectScripts.Completion);
         }
         finally
@@ -526,7 +548,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ViewModel.RefreshCommands();
     }
 
-    private async void OnDocumentChanged(object? sender, EventArgs e)
+    private void OnDocumentChanged(object? sender, EventArgs e)
     {
         ClearInspectorPreview();
         RefreshDocument();
@@ -535,13 +557,9 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             return;
         }
 
-        await RunCommandAsync(async () =>
+        documentChangeTask = RunCommandAsync(async () =>
         {
-            var document = editor.Snapshot;
-            var path = document.Media is { } binding
-                ? ProjectAssetLocation.Resolve(document.Assets.Single(asset => asset.Id == binding.AssetId), projectDirectory)
-                : null;
-            if (!string.Equals(path, controller.Snapshot.FilePath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            if (!workflow.IsPreviewBindingSynchronized())
             {
                 await workflow.SynchronizePreviewBindingAsync();
             }

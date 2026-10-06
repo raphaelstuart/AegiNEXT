@@ -49,7 +49,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         Placement = PlacementMode.BottomEdgeAlignedLeft, VerticalOffset = 4 };
     private readonly ToolbarToggleButton enableKaraoke = new() { Name = "EnableKaraokeToggle" };
     private readonly ToolbarToggleButton loop = new() { Name = "SubtitleLoopToggle", IsChecked = false };
-    private readonly CheckBox snap = new() { Name = "KaraokeSnapToggle", IsChecked = true };
+    private readonly ToolbarToggleButton snap = new() { Name = "KaraokeSnapToggle", IsChecked = true };
     private readonly Button play;
     private readonly StackPanel styleToolbar = new() { Name = "SelectionStyleToolbar", Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
     private readonly WrapPanel styleFields = new() { Name = "SelectionStyleFields" };
@@ -185,7 +185,10 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
                 await session.RunCommandAsync(() => coordinator.SetLoopEnabledAsync(loop.IsChecked == true));
             }
         };
-        ConfigureToggle(enableKaraoke, "Workbench.EnableKaraoke", WorkbenchIcon.Create("EnableHighlight"));
+        ConfigureToggle(snap, "Workbench.KaraokeSnap", WorkbenchIcon.Create("Magnet"), "Workbench.KaraokeSnapHint");
+        ConfigureToggle(enableKaraoke, "Workbench.EnableKaraoke", IconLabel("Workbench.EnableKaraoke", "EnableHighlight"));
+        enableKaraoke.Width = double.NaN;
+        enableKaraoke.Padding = new(8, 0);
         ConfigureToggle(highlightTarget, "Workbench.HighlightStyleTarget", WorkbenchIcon.Create("HighlightStyle"));
         highlightTarget.PropertyChanged += (_, e) =>
         {
@@ -203,14 +206,14 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         styleToolbar.Children.Add(ToolbarSeparator("PlaybackActionSeparator"));
         styleToolbar.Children.Add(play);
         styleToolbar.Children.Add(loop);
-        styleToolbar.Children.Add(enableKaraoke);
+        styleToolbar.Children.Add(snap);
         styleToolbar.Children.Add(highlightTarget);
-        var restore = Button("Workbench.RestoreDraft", () =>
+        var restore = Button("Workbench.RestoreDraft", "Reset", () =>
         {
             coordinator.Restore("All");
             return Task.CompletedTask;
         });
-        restore.Margin = new(8, 0, 0, 0);
+        restore.Margin = new(0);
         restore.Height = restore.MinHeight = 32;
         restore.VerticalAlignment = VerticalAlignment.Center;
         var toolbar = new Grid { Name = "SubtitleDetailsToolbar", ColumnDefinitions = new("*,Auto") };
@@ -220,8 +223,17 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
         });
-        Grid.SetColumn(restore, 1);
-        toolbar.Children.Add(restore);
+        var actions = new StackPanel
+        {
+            Name = "SubtitleDetailsActions",
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { enableKaraoke, restore }
+        };
+        Grid.SetColumn(actions, 1);
+        toolbar.Children.Add(actions);
         enableKaraoke.PropertyChanged += (_, e) =>
         {
             if (!synchronizing && e.Property == ToggleButton.IsCheckedProperty)
@@ -232,8 +244,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         };
         timingFields.Children.Add(Field("Workbench.ClipDuration", duration));
         timingFields.Children.Add(Field("Workbench.HighlightBehavior", kind));
-        bindings.Add(snap.Bind(ContentControl.ContentProperty, Localization.Observe("Workbench.KaraokeSnap").ToBinding()));
-        bindings.Add(snap.Bind(ToolTip.TipProperty, Localization.Observe("Workbench.KaraokeSnapHint").ToBinding()));
         snap.PropertyChanged += (_, e) =>
         {
             if (e.Property == ToggleButton.IsCheckedProperty)
@@ -241,7 +251,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
                 axis.IsSnapEnabled = snap.IsChecked == true;
             }
         };
-        timingFields.Children.Add(Field("Workbench.ClipDrag", snap));
         var popupFrame = new Border { Padding = new(12), BorderThickness = new(1), CornerRadius = new(6), Child = timingFields };
         popupFrame.Bind(Border.BackgroundProperty, new DynamicResourceExtension("PreviewSurface"));
         popupFrame.Bind(Border.BorderBrushProperty, new DynamicResourceExtension("PreviewBorder"));
@@ -435,12 +444,25 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         return label;
     }
 
-    private Button Button(string key, Func<Task> action)
+    private Button Button(string key, string icon, Func<Task> action)
     {
-        var button = new Button { Name = key[(key.LastIndexOf('.') + 1)..] + "Button", Margin = new Thickness(0, 0, 6, 6) };
-        bindings.Add(button.Bind(ContentControl.ContentProperty, Localization.Observe(key).ToBinding()));
+        var button = new Button
+        {
+            Name = key[(key.LastIndexOf('.') + 1)..] + "Button",
+            Content = IconLabel(key, icon),
+            Margin = new Thickness(0, 0, 6, 6)
+        };
+        bindings.Add(button.Bind(ToolTip.TipProperty, Localization.Observe(key).ToBinding()));
+        bindings.Add(button.Bind(AutomationProperties.NameProperty, Localization.Observe(key).ToBinding()));
         button.Click += async (_, _) => await session.RunCommandAsync(action);
         return button;
+    }
+
+    private IconText IconLabel(string key, string icon)
+    {
+        var content = new IconText { IconKey = icon };
+        bindings.Add(content.Bind(IconText.TextProperty, Localization.Observe(key).ToBinding()));
+        return content;
     }
 
     private Button IconButton(string key, string icon, Func<Task> action)
@@ -460,10 +482,10 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         return button;
     }
 
-    private void ConfigureToggle(ToolbarToggleButton toggle, string key, object content)
+    private void ConfigureToggle(ToolbarToggleButton toggle, string key, object content, string? hintKey = null)
     {
         toggle.Content = content;
-        bindings.Add(toggle.Bind(ToolTip.TipProperty, Localization.Observe(key).ToBinding()));
+        bindings.Add(toggle.Bind(ToolTip.TipProperty, Localization.Observe(hintKey ?? key).ToBinding()));
         bindings.Add(toggle.Bind(AutomationProperties.NameProperty, Localization.Observe(key).ToBinding()));
     }
 
