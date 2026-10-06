@@ -10,12 +10,16 @@ using AegiNext.Desktop.Settings.Preview;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
+using Avalonia.Threading;
 
 namespace AegiNext.Desktop.Settings;
 
 /// <summary>设置宿主，只组合页面、呈现主题并转发语义请求。</summary>
 public sealed partial class SettingsWindow : Window
 {
+    private bool allowClose;
+    private bool preparingClose;
+    internal Task CloseCompletion { get; private set; } = Task.CompletedTask;
     /// <summary>供 XAML 加载器构造默认设置宿主。</summary>
     public SettingsWindow() : this(new WorkbenchPreferences())
     {
@@ -53,6 +57,7 @@ public sealed partial class SettingsWindow : Window
         viewModel.Effects.ValidationFailed += OnEffectValidationFailed;
         Deactivated += OnDeactivated;
         Closed += OnClosed;
+        Closing += OnClosing;
         Localization.LanguageChanged += OnLanguageChanged;
         UpdatePreferences(preferences);
     }
@@ -68,11 +73,11 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler? CaptureStyleRequested;
     public event EventHandler<SettingsStyleEventArgs>? ApplyStyleRequested;
     public event EventHandler? ImportStylesRequested;
-    public event EventHandler? ExportStylesRequested;
+    public event EventHandler<SettingsStylesExportEventArgs>? ExportStylesRequested;
     public event EventHandler<SettingsEffectEventArgs>? UpsertEffectRequested;
     public event EventHandler<SettingsEffectDeleteEventArgs>? DeleteEffectRequested;
     public event EventHandler? ImportEffectRequested;
-    public event EventHandler<SettingsEffectEventArgs>? ExportEffectRequested;
+    public event EventHandler<SettingsEffectsExportEventArgs>? ExportEffectRequested;
     public event EventHandler<EffectScriptValidationFailedEventArgs>? EffectValidationFailed;
     public SettingsWindowViewModel ViewModel { get; }
     public WindowTitleBar TitleBar { get; }
@@ -120,6 +125,54 @@ public sealed partial class SettingsWindow : Window
         RefreshLanguage();
     }
 
+    internal void CloseImmediately()
+    {
+        allowClose = true;
+        Close();
+    }
+
+    private void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (allowClose || (ViewModel.Styles.SaveDraftAsync is null && ViewModel.Effects.SaveDraftAsync is null))
+        {
+            return;
+        }
+        if (!ViewModel.HasUnsavedTemplates && ViewModel.NavigationCompletion.IsCompleted &&
+            ViewModel.Styles.SelectionCompletion.IsCompleted && ViewModel.Effects.SelectionCompletion.IsCompleted)
+        {
+            return;
+        }
+        e.Cancel = true;
+        if (!preparingClose)
+        {
+            CloseCompletion = PrepareCloseAsync(e.CloseReason == WindowCloseReason.OwnerWindowClosing ? Owner as Window : null);
+        }
+    }
+
+    private async Task PrepareCloseAsync(Window? closingOwner)
+    {
+        preparingClose = true;
+        try
+        {
+            await ViewModel.NavigationCompletion;
+            await ViewModel.Styles.SelectionCompletion;
+            await ViewModel.Effects.SelectionCompletion;
+            if (allowClose || await ViewModel.Styles.PrepareToLeaveAsync() && await ViewModel.Effects.PrepareToLeaveAsync())
+            {
+                allowClose = true;
+                Close();
+                if (closingOwner is not null)
+                {
+                    Dispatcher.UIThread.Post(closingOwner.Close);
+                }
+            }
+        }
+        finally
+        {
+            preparingClose = false;
+        }
+    }
+
     private void OnClosed(object? sender, EventArgs e)
     {
         Localization.LanguageChanged -= OnLanguageChanged;
@@ -142,6 +195,7 @@ public sealed partial class SettingsWindow : Window
         ViewModel.Effects.ValidationFailed -= OnEffectValidationFailed;
         Deactivated -= OnDeactivated;
         Closed -= OnClosed;
+        Closing -= OnClosing;
         ViewModel.Shortcuts.CancelCapture();
     }
 
@@ -200,9 +254,9 @@ public sealed partial class SettingsWindow : Window
         ImportStylesRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OnExportStylesRequested(object? sender, EventArgs e)
+    private void OnExportStylesRequested(object? sender, SettingsStylesExportEventArgs e)
     {
-        ExportStylesRequested?.Invoke(this, EventArgs.Empty);
+        ExportStylesRequested?.Invoke(this, e);
     }
 
     private void OnUpsertEffectRequested(object? sender, SettingsEffectEventArgs e)
@@ -220,7 +274,7 @@ public sealed partial class SettingsWindow : Window
         ImportEffectRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OnExportEffectRequested(object? sender, SettingsEffectEventArgs e)
+    private void OnExportEffectRequested(object? sender, SettingsEffectsExportEventArgs e)
     {
         ExportEffectRequested?.Invoke(this, e);
     }

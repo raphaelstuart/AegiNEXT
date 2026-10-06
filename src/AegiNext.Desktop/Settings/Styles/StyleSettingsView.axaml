@@ -36,7 +36,7 @@
     </ScrollViewer>
     <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="16">
       <Grid>
-        <ListBox Name="StyleList" ItemsSource="{Binding Styles}" SelectedItem="{Binding SelectedStyle, Mode=TwoWay}"
+        <ListBox Name="StyleList" ItemsSource="{Binding Styles}" SelectionMode="Multiple"
                  Background="{DynamicResource SettingsSurface}">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="presets:SubtitleStylePreset">

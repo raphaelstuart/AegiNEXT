@@ -16,7 +16,8 @@ using Avalonia.Controls;
 
 namespace AegiNext.Desktop.Settings;
 
-internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applicationContext) : IDisposable
+internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applicationContext,
+    Func<Window, IWorkbenchDialogService>? createDialogs = null) : IDisposable
 {
     private WorkbenchSession? session;
     private IWorkbenchDialogService? dialogs;
@@ -48,7 +49,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         Window = window;
         this.session = session;
         presentedPreferences = applicationContext.Preferences;
-        dialogs = new WindowWorkbenchDialogService(window);
+        dialogs = createDialogs?.Invoke(window) ?? new WindowWorkbenchDialogService(window);
         try
         {
             Subscribe(window);
@@ -108,12 +109,17 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         }
 
         disposed = true;
-        Close();
+        Window?.CloseImmediately();
         EffectScriptErrorReported = null;
     }
 
     private void Subscribe(SettingsWindow window)
     {
+        window.ViewModel.Styles.SaveDraftAsync = preset => RunAsync(() => applicationContext.RunStyleOperationAsync(() => applicationContext.StyleLibrary.UpsertAsync(preset)));
+        window.ViewModel.Effects.SaveDraftAsync = preset => RunAsync(() =>
+            applicationContext.RunEffectOperationAsync(() => applicationContext.EffectScriptLibrary.UpsertAsync(preset)), true);
+        window.ViewModel.Styles.ConfirmLeaveAsync = () => dialogs!.ConfirmPresetChangesAsync(false);
+        window.ViewModel.Effects.ConfirmLeaveAsync = () => dialogs!.ConfirmPresetChangesAsync(true);
         applicationContext.PreferencesChanged += OnPreferencesChanged;
         applicationContext.StylesChanged += OnStylesChanged;
         applicationContext.EffectsChanged += OnEffectsChanged;
@@ -149,6 +155,10 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
 
     private void Unsubscribe(SettingsWindow window)
     {
+        window.ViewModel.Styles.SaveDraftAsync = null;
+        window.ViewModel.Effects.SaveDraftAsync = null;
+        window.ViewModel.Styles.ConfirmLeaveAsync = null;
+        window.ViewModel.Effects.ConfirmLeaveAsync = null;
         applicationContext.PreferencesChanged -= OnPreferencesChanged;
         applicationContext.StylesChanged -= OnStylesChanged;
         applicationContext.EffectsChanged -= OnEffectsChanged;
@@ -370,23 +380,27 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         var service = dialogs!;
         _ = RunAsync(() => applicationContext.RunStyleOperationAsync(async () =>
         {
-            var path = await service.OpenFileAsync("ImportStyles", "StyleFiles", ["*.aegistyles"]);
-            if (path is not null)
-            {
-                await applicationContext.StyleLibrary.ImportAsync(path);
-            }
+            var paths = await service.OpenFilesAsync("ImportStyles", "StyleFiles", ["*.aegistyles"]);
+            await applicationContext.StyleLibrary.ImportAsync(paths);
         }));
     }
 
-    private void OnExportStylesRequested(object? sender, EventArgs e)
+    private void OnExportStylesRequested(object? sender, SettingsStylesExportEventArgs e)
     {
         var service = dialogs!;
         _ = RunAsync(() => applicationContext.RunStyleOperationAsync(async () =>
         {
-            var path = await service.SaveFileAsync("ExportStyles", "StyleFiles", ["*.aegistyles"], ".aegistyles", "styles.aegistyles");
-            if (path is not null)
+            if (e.Presets.Length == 1)
             {
-                await applicationContext.StyleLibrary.ExportAsync(path);
+                var path = await service.SaveFileAsync("ExportStyles", "StyleFiles", ["*.aegistyles"], ".aegistyles", "styles.aegistyles");
+                if (path is not null)
+                {
+                    await applicationContext.StyleLibrary.ExportAsync(e.Presets[0], path);
+                }
+            }
+            else if (e.Presets.Length > 1 && await service.OpenFolderAsync("ExportStyles") is { } directory)
+            {
+                await PresetBatchExporter.ExportStylesAsync(e.Presets, directory);
             }
         }));
     }
@@ -414,33 +428,38 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         var service = dialogs!;
         _ = RunAsync(() => applicationContext.RunEffectOperationAsync(async () =>
         {
-            var path = await service.OpenFileAsync("ImportEffectScripts", "EffectScriptFiles", ["*.aegifx"]);
-            if (path is not null)
-            {
-                await applicationContext.EffectScriptLibrary.ImportAsync(path);
-            }
+            var paths = await service.OpenFilesAsync("ImportEffectScripts", "EffectScriptFiles", ["*.aegifx"]);
+            await applicationContext.EffectScriptLibrary.ImportAsync(paths);
         }), true);
     }
 
-    private void OnExportEffectRequested(object? sender, SettingsEffectEventArgs e)
+    private void OnExportEffectRequested(object? sender, SettingsEffectsExportEventArgs e)
     {
         var service = dialogs!;
         _ = RunAsync(() => applicationContext.RunEffectOperationAsync(async () =>
         {
-            var script = EffectScriptParser.Parse(e.Preset.Source);
-            var path = await service.SaveFileAsync("ExportEffectScripts", "EffectScriptFiles", ["*.aegifx"], ".aegifx", script.Id + ".aegifx");
-            if (path is not null)
+            if (e.Presets.Length == 1)
             {
-                await EffectScriptPresetStore.WriteScriptAsync(e.Preset.Source, path);
+                var preset = e.Presets[0];
+                var script = EffectScriptParser.Parse(preset.Source);
+                var path = await service.SaveFileAsync("ExportEffectScripts", "EffectScriptFiles", ["*.aegifx"], ".aegifx", script.Id + ".aegifx");
+                if (path is not null)
+                {
+                    await applicationContext.EffectScriptLibrary.ExportAsync(preset, path);
+                }
+            }
+            else if (e.Presets.Length > 1 && await service.OpenFolderAsync("ExportEffectScripts") is { } directory)
+            {
+                await PresetBatchExporter.ExportEffectsAsync(e.Presets, directory);
             }
         }), true);
     }
 
-    private async Task RunAsync(Func<Task> operation, bool effectOperation = false)
+    private async Task<bool> RunAsync(Func<Task> operation, bool effectOperation = false)
     {
         if (disposed || Window is not { } targetWindow)
         {
-            return;
+            return false;
         }
 
         var targetSession = session;
@@ -448,6 +467,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         try
         {
             await operation();
+            return true;
         }
         catch (OperationCanceledException)
         {
@@ -468,6 +488,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
                 targetSession.ShowError(error);
             }
         }
+        return false;
     }
 
     private void ReportEffectError(WorkbenchSession? targetSession, Exception error)

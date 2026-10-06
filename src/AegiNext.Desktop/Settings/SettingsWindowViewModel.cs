@@ -16,6 +16,10 @@ namespace AegiNext.Desktop.Settings;
 public sealed class SettingsWindowViewModel : ObservableObject
 {
     private int pageIndex;
+    private bool navigating;
+    internal Task NavigationCompletion { get; private set; } = Task.CompletedTask;
+    public bool IsNavigationAvailable => !navigating;
+    public bool HasUnsavedTemplates => Styles.IsDirty || Effects.IsDirty;
     private string? externalError;
     private string title = Localization.Get("Settings.Settings");
 
@@ -86,28 +90,77 @@ public sealed class SettingsWindowViewModel : ObservableObject
         get => pageIndex;
         set
         {
-            if (!Enum.IsDefined((SettingsPage)value))
+            if (!navigating)
             {
-                return;
-            }
-
-            if (SetProperty(ref pageIndex, value))
-            {
-                Shortcuts.IsRecording = false;
-                OnPropertyChanged(nameof(CurrentPage));
-                OnPropertyChanged(nameof(IsAppearanceVisible));
-                OnPropertyChanged(nameof(IsShortcutsVisible));
-                OnPropertyChanged(nameof(IsStylesVisible));
-                OnPropertyChanged(nameof(IsEffectsVisible));
-                OnPropertyChanged(nameof(IsColorsVisible));
-                OnPropertyChanged(nameof(IsMediaVisible));
-                OnPropertyChanged(nameof(IsProjectsVisible));
-                OnPropertyChanged(nameof(IsPreviewVisible));
-                OnPropertyChanged(nameof(PageTitle));
-                RefreshError();
+                NavigationCompletion = SelectPageAsync((SettingsPage)value);
             }
         }
     }
+
+    /// <summary>先处理当前页未保存的修改，再改变设置导航。</summary>
+    public async Task<bool> SelectPageAsync(SettingsPage page)
+    {
+        if (!Enum.IsDefined(page) || navigating)
+        {
+            OnPropertyChanged(nameof(PageIndex));
+            return false;
+        }
+        if (CurrentPage == page)
+        {
+            return true;
+        }
+        navigating = true;
+        OnPropertyChanged(nameof(IsNavigationAvailable));
+        try
+        {
+            if (CurrentPage == SettingsPage.STYLES)
+            {
+                await Styles.SelectionCompletion;
+            }
+            else if (CurrentPage == SettingsPage.EFFECTS)
+            {
+                await Effects.SelectionCompletion;
+            }
+            var accepted = CurrentPage switch
+            {
+                SettingsPage.STYLES when Styles.SaveDraftAsync is not null => await Styles.PrepareToLeaveAsync(),
+                SettingsPage.EFFECTS when Effects.SaveDraftAsync is not null => await Effects.PrepareToLeaveAsync(),
+                _ => true
+            };
+            if (!accepted)
+            {
+                OnPropertyChanged(nameof(PageIndex));
+                return false;
+            }
+            SetPageIndex((int)page);
+            return true;
+        }
+        finally
+        {
+            navigating = false;
+            OnPropertyChanged(nameof(IsNavigationAvailable));
+        }
+    }
+
+    private void SetPageIndex(int value)
+    {
+        if (SetProperty(ref pageIndex, value, nameof(PageIndex)))
+        {
+            Shortcuts.IsRecording = false;
+            OnPropertyChanged(nameof(CurrentPage));
+            OnPropertyChanged(nameof(IsAppearanceVisible));
+            OnPropertyChanged(nameof(IsShortcutsVisible));
+            OnPropertyChanged(nameof(IsStylesVisible));
+            OnPropertyChanged(nameof(IsEffectsVisible));
+            OnPropertyChanged(nameof(IsColorsVisible));
+            OnPropertyChanged(nameof(IsMediaVisible));
+            OnPropertyChanged(nameof(IsProjectsVisible));
+            OnPropertyChanged(nameof(IsPreviewVisible));
+            OnPropertyChanged(nameof(PageTitle));
+            RefreshError();
+        }
+    }
+
 
     /// <summary>外部存储或工程工作流返回错误时显示其结果。</summary>
     public void ShowError(string? message)

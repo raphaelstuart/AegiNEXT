@@ -83,14 +83,41 @@ public sealed class SubtitleStylePresetLibrary : IDisposable
     }
 
     /// <summary>整体导入自包含文件；任一标识、名称或载荷冲突均保留现有库。</summary>
-    public async Task ImportAsync(string path, CancellationToken cancellationToken = default)
+    public Task ImportAsync(string path, CancellationToken cancellationToken = default)
     {
+        return ImportAsync([path], cancellationToken);
+    }
+
+    /// <summary>读取并验证全部交换文件后一次提交；任一文件失败、冲突或取消均不部分入库。</summary>
+    public async Task ImportAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var inputs = paths.ToArray();
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (inputs.Length == 0)
+            {
+                return;
+            }
+
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-            var imported = await SubtitleStylePresetStore.LoadAsync(path, cancellationToken).ConfigureAwait(false);
-            var combined = snapshot with { Presets = snapshot.Presets.AddRange(imported.Presets) };
+            var items = snapshot.Presets;
+            foreach (var path in inputs)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var imported = await SubtitleStylePresetStore.LoadAsync(path, cancellationToken).ConfigureAwait(false);
+                items = items.AddRange(imported.Presets);
+            }
+
+            if (items == snapshot.Presets)
+            {
+                return;
+            }
+
+            var combined = snapshot with { Presets = items };
+            SubtitleStylePresetValidator.Validate(combined);
+            cancellationToken.ThrowIfCancellationRequested();
             await CommitAsync(combined, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -128,6 +155,29 @@ public sealed class SubtitleStylePresetLibrary : IDisposable
             }
 
             await SubtitleStylePresetStore.SaveAsync(exported, destination, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Exit();
+        }
+    }
+
+    /// <summary>将所选样式快照导出为单条自包含集合；不改变库，也不允许覆盖正在使用的库文件。</summary>
+    public async Task ExportAsync(SubtitleStylePreset preset, string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var destination = Path.GetFullPath(path);
+        if (string.Equals(destination, filePath, OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("导出位置不能是正在使用的样式库文件。");
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await SubtitleStylePresetStore.SaveAsync(new() { Presets = [preset] }, destination, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

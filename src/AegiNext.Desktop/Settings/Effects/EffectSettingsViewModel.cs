@@ -1,7 +1,6 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using AegiNext.Application.Presets;
 using AegiNext.Core.Effects;
 using AegiNext.Desktop.I18n;
@@ -10,12 +9,14 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Settings.Effects;
 
-/// <summary>个人特效脚本编辑与管理模型；只保存纯文本草稿并发出可等待工作流的语义请求。</summary>
+/// <summary>个人脚本库的选择与独立编辑草稿；持久化由组合根提供。</summary>
 public sealed class EffectSettingsViewModel : ObservableObject
 {
     private ImmutableArray<EffectScriptPreset> presets = [];
     private ImmutableArray<EffectScriptSettingsItem> items = [];
+    private ImmutableArray<Guid> selectedIds = [];
     private readonly Dictionary<Guid, EffectScriptPreset> drafts = new();
+    private EffectScriptPreset? newDraft;
     private EffectScriptSettingsItem? selectedEffect;
     private Guid? loadedDraftId;
     private string name = string.Empty;
@@ -26,48 +27,66 @@ public sealed class EffectSettingsViewModel : ObservableObject
     private int diagnosticColumn = 1;
     private bool loading;
     private bool busy;
+    private bool changingSelection;
+    private Task<bool>? pendingSave;
 
-    /// <summary>创建独立页面命令；实际个人库读写由组合根承担。</summary>
+    /// <summary>创建页面命令；实际个人库读写由组合根承担。</summary>
     public EffectSettingsViewModel()
     {
-        AddCommand = new(Add, () => !IsBusy);
-        DuplicateCommand = new(Duplicate, () => HasSelection && !IsBusy);
-        DeleteCommand = new(() => DeleteRequested?.Invoke(this, new(SelectedEffect!.Id)), () => CanDelete);
-        SaveCommand = new(() => Submit(true, SaveRequested), () => CanEdit);
-        ExportCommand = new(() => Submit(false, ExportRequested), () => HasSelection && !IsBusy);
-        ImportCommand = new(() => ImportRequested?.Invoke(this, EventArgs.Empty), () => !IsBusy);
-        ValidateCommand = new(Validate, () => HasSelection && !IsBusy);
+        AddCommand = new(() =>
+        {
+            var operation = AddAsync();
+            SelectionCompletion = operation;
+            return operation;
+        }, () => !IsBusy && !changingSelection);
+        DeleteCommand = new(Delete, () => CanDelete);
+        SaveCommand = new(() =>
+        {
+            var operation = SaveAsync();
+            SelectionCompletion = operation;
+            return operation;
+        }, () => CanEdit);
+        ExportCommand = new(Export, () => !SelectedIds.IsEmpty && !IsBusy && !changingSelection);
+        ImportCommand = new(() => ImportRequested?.Invoke(this, EventArgs.Empty), () => !IsBusy && !changingSelection);
+        ValidateCommand = new(() => ValidateDraft(false), () => HasDraft && SelectedIds.Length <= 1 && !IsBusy && !changingSelection);
         UpdateEffects([]);
     }
 
     public event EventHandler<SettingsEffectEventArgs>? SaveRequested;
     public event EventHandler<SettingsEffectDeleteEventArgs>? DeleteRequested;
-    public event EventHandler<SettingsEffectEventArgs>? ExportRequested;
+    public event EventHandler<SettingsEffectsExportEventArgs>? ExportRequested;
     public event EventHandler<EffectScriptValidationFailedEventArgs>? ValidationFailed;
     public event EventHandler? ImportRequested;
-    public RelayCommand AddCommand { get; }
-    public RelayCommand DuplicateCommand { get; }
+    public AsyncRelayCommand AddCommand { get; }
     public RelayCommand DeleteCommand { get; }
-    public RelayCommand SaveCommand { get; }
+    public AsyncRelayCommand SaveCommand { get; }
     public RelayCommand ExportCommand { get; }
     public RelayCommand ImportCommand { get; }
     public RelayCommand ValidateCommand { get; }
     public ImmutableArray<EffectScriptSettingsItem> Effects => items;
-    public bool HasSelection => selectedEffect is not null;
-    public bool IsReadOnly => selectedEffect?.IsBuiltin ?? true;
-    public bool CanEdit => HasSelection && !IsReadOnly && !IsBusy;
-    public bool CanDelete => CanEdit && presets.Any(item => item.Id == selectedEffect!.Id);
-    public bool IsDirty => selectedEffect is not null && drafts.ContainsKey(selectedEffect.Id);
-    public string EditorStatus => Localization.Get("Settings." + (IsReadOnly ? "BuiltinScriptReadOnly" : IsDirty ? "ScriptUnsaved" : "ScriptSaved"));
+    public ImmutableArray<Guid> SelectedIds => selectedIds;
+    public EffectScriptPreset? Draft => newDraft ?? (SelectedIds.Length == 1 && selectedEffect is { } selected
+        ? drafts.GetValueOrDefault(selected.Id) ?? selected.Preset : null);
+    public bool HasDraft => Draft is not null;
+    public bool HasSelection => !SelectedIds.IsEmpty;
+    public bool IsReadOnly => !HasDraft || SelectedIds.Length > 1 || newDraft is null && selectedEffect?.IsBuiltin != false;
+    public bool CanEdit => HasDraft && !IsReadOnly && !IsBusy && !changingSelection;
+    public bool CanDelete => CanEdit;
+    public bool IsDirty => newDraft is not null || SelectedIds.Length == 1 && selectedEffect is { } selected && drafts.ContainsKey(selected.Id);
+    public string EditorStatus => SelectedIds.Length > 1 ? Localization.Format("Settings.MultipleScriptsSelected", SelectedIds.Length) :
+        Localization.Get("Settings." + (IsReadOnly ? "BuiltinScriptReadOnly" : IsDirty ? "ScriptUnsaved" : "ScriptSaved"));
+    internal Func<EffectScriptPreset, Task<bool>>? SaveDraftAsync { get; set; }
+    internal Func<Task<int>>? ConfirmLeaveAsync { get; set; }
+    internal Task SelectionCompletion { get; private set; } = Task.CompletedTask;
 
     public EffectScriptSettingsItem? SelectedEffect
     {
         get => selectedEffect;
         set
         {
-            if (SetProperty(ref selectedEffect, value) && !loading)
+            if (!loading)
             {
-                LoadDraft();
+                SelectEffects(value?.Id, value is null ? [] : [value.Id]);
             }
         }
     }
@@ -132,13 +151,110 @@ public sealed class EffectSettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>同步成功提交的个人库；其他模板的未保存草稿继续保留。</summary>
+    /// <summary>按稳定标识同步列表选择；模型刷新期间忽略控件产生的临时清空。</summary>
+    public void SelectEffects(Guid? primaryId, IEnumerable<Guid> ids)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        if (loading)
+        {
+            return;
+        }
+
+        var selection = ids.ToHashSet();
+        var nextIds = items.Where(item => selection.Contains(item.Id)).Select(item => item.Id).ToImmutableArray();
+        var nextPrimary = items.FirstOrDefault(item => item.Id == primaryId && selection.Contains(item.Id)) ??
+            items.FirstOrDefault(item => nextIds.Contains(item.Id));
+        if (nextIds.SequenceEqual(SelectedIds) && nextPrimary?.Id == selectedEffect?.Id)
+        {
+            return;
+        }
+
+        newDraft = null;
+        selectedIds = nextIds;
+        selectedEffect = nextPrimary;
+        NotifySelection();
+        LoadDraft();
+    }
+
+    /// <summary>先处理未保存草稿，再切换列表选择；取消或保存失败时保留原选择。</summary>
+    public Task<bool> SelectEffectsAsync(Guid? primaryId, IEnumerable<Guid> ids)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        if (loading || changingSelection || IsBusy)
+        {
+            return Task.FromResult(false);
+        }
+
+        var selection = ids.ToImmutableArray();
+        if (newDraft is null && primaryId == selectedEffect?.Id && SelectedIds.ToHashSet().SetEquals(selection))
+        {
+            return Task.FromResult(true);
+        }
+
+        var operation = ChangeSelectionAsync(primaryId, selection);
+        SelectionCompletion = operation;
+        return operation;
+    }
+
+    /// <summary>保存有效的可编辑脏草稿；没有持久化回调或提交失败时拒绝丢弃草稿。</summary>
+    public Task<bool> SavePendingAsync()
+    {
+        if (pendingSave is { IsCompleted: false })
+        {
+            return pendingSave;
+        }
+
+        var operation = SavePendingCoreAsync();
+        pendingSave = operation;
+        return operation;
+    }
+
+    /// <summary>询问保存、不保存或取消；只有保存成功或明确丢弃后才能离开。</summary>
+    public async Task<bool> PrepareToLeaveAsync()
+    {
+        if (!IsDirty)
+        {
+            return true;
+        }
+
+        if (ConfirmLeaveAsync is { } confirm)
+        {
+            var decision = await confirm();
+            if (decision == 1)
+            {
+                DiscardDraft();
+                return true;
+            }
+            if (decision != 0)
+            {
+                return false;
+            }
+        }
+
+        return await SavePendingAsync();
+    }
+
+    /// <summary>恢复当前已保存脚本，或直接丢弃尚未入库的新草稿。</summary>
+    public void DiscardDraft()
+    {
+        if (newDraft is not null)
+        {
+            newDraft = null;
+        }
+        else if (selectedEffect is { } selected)
+        {
+            drafts.Remove(selected.Id);
+        }
+
+        LoadDraft();
+    }
+
+    /// <summary>同步成功提交的个人库；保留其他草稿、多选标识和当前诊断。</summary>
     public void UpdateEffects(IEnumerable<EffectScriptPreset> values, Guid? selectedId = null)
     {
         ArgumentNullException.ThrowIfNull(values);
         var updated = values.ToImmutableArray();
-        var removed = presets.Select(item => item.Id).Except(updated.Select(item => item.Id));
-        foreach (var id in removed)
+        foreach (var id in presets.Select(item => item.Id).Except(updated.Select(item => item.Id)))
         {
             drafts.Remove(id);
         }
@@ -146,35 +262,90 @@ public sealed class EffectSettingsViewModel : ObservableObject
         presets = updated;
         foreach (var preset in presets)
         {
-            if (drafts.TryGetValue(preset.Id, out var pending) && pending.Source == preset.Source &&
-                string.Equals(pending.Name.Trim(), preset.Name, StringComparison.Ordinal))
+            if (drafts.TryGetValue(preset.Id, out var pending) && Matches(pending, preset))
             {
                 drafts.Remove(preset.Id);
             }
         }
 
-        if (selectedId is { } savedId)
+        var savedNew = newDraft is { } created ? presets.FirstOrDefault(preset => Matches(created, preset)) : null;
+        if (savedNew is not null)
         {
-            drafts.Remove(savedId);
+            newDraft = null;
+            selectedId = savedNew.Id;
         }
 
-        RebuildItems(selectedId ?? selectedEffect?.Id);
+        RebuildItems(selectedId);
     }
 
-    /// <summary>语言切换仅更换内置名称与提示，个人名称和全部源代码保持原样。</summary>
+    /// <summary>仅刷新内置名称与提示，保留个人草稿、多选和诊断。</summary>
     public void RefreshLanguage()
     {
-        RebuildItems(selectedEffect?.Id);
-        OnPropertyChanged(nameof(EditorStatus));
+        RebuildItems(null);
         if (validationStatus is not null && Error is null)
         {
             ValidationStatus = Localization.Get("Settings.ScriptValid");
         }
     }
 
+    private async Task<bool> ChangeSelectionAsync(Guid? primaryId, ImmutableArray<Guid> ids)
+    {
+        changingSelection = true;
+        RefreshActions();
+        try
+        {
+            if (!await PrepareToLeaveAsync())
+            {
+                return false;
+            }
+
+            SelectEffects(primaryId, ids);
+            return true;
+        }
+        finally
+        {
+            changingSelection = false;
+            RefreshActions();
+        }
+    }
+
+    private async Task<bool> SavePendingCoreAsync()
+    {
+        if (!IsDirty || IsReadOnly)
+        {
+            return true;
+        }
+
+        if (!ValidateDraft(true) || SaveDraftAsync is not { } save || Draft is not { } pending)
+        {
+            return false;
+        }
+
+        return await save(pending with { Name = Name.Trim(), Source = Source });
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!CanEdit)
+        {
+            return;
+        }
+
+        if (SaveDraftAsync is not null)
+        {
+            await SavePendingAsync();
+        }
+        else if (ValidateDraft(true) && Draft is { } pending)
+        {
+            SaveRequested?.Invoke(this, new(pending with { Name = Name.Trim(), Source = Source }));
+        }
+    }
+
     private void RebuildItems(Guid? selectedId)
     {
         var wasLoading = loading;
+        var hadSelection = !SelectedIds.IsEmpty;
+        var initialize = items.IsEmpty;
         loading = true;
         try
         {
@@ -183,29 +354,45 @@ public sealed class EffectSettingsViewModel : ObservableObject
                 var id = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(template.Script.Id)).AsSpan(0, 16));
                 return new EffectScriptSettingsItem(new(id, Localization.Get("Settings.Effect_" + template.Script.Id), template.Source), true);
             });
-            var custom = presets.Concat(drafts.Values.Where(draft => presets.All(item => item.Id != draft.Id)))
-                .Select(preset => new EffectScriptSettingsItem(preset, false));
-            items = builtins.Concat(custom).ToImmutableArray();
+            items = builtins.Concat(presets.Select(preset => new EffectScriptSettingsItem(preset, false))).ToImmutableArray();
+            selectedIds = newDraft is not null ? [] :
+                selectedId is { } id && items.Any(item => item.Id == id) ? [id] :
+                items.Where(item => SelectedIds.Contains(item.Id)).Select(item => item.Id).ToImmutableArray();
+            if (newDraft is null && selectedIds.IsEmpty && (hadSelection || initialize))
+            {
+                selectedIds = items.IsEmpty ? [] : [items[0].Id];
+            }
+
+            selectedEffect = items.FirstOrDefault(item => item.Id == selectedId && selectedIds.Contains(item.Id)) ??
+                items.FirstOrDefault(item => item.Id == selectedEffect?.Id && selectedIds.Contains(item.Id)) ??
+                items.FirstOrDefault(item => selectedIds.Contains(item.Id));
             OnPropertyChanged(nameof(Effects));
-            SelectedEffect = items.FirstOrDefault(item => item.Id == selectedId) ?? items.FirstOrDefault();
+            NotifySelection();
+            LoadDraft();
         }
         finally
         {
             loading = wasLoading;
         }
-        LoadDraft();
+    }
+
+    private void NotifySelection()
+    {
+        OnPropertyChanged(nameof(SelectedIds));
+        OnPropertyChanged(nameof(SelectedEffect));
     }
 
     private void LoadDraft()
     {
+        var wasLoading = loading;
         loading = true;
-        var value = selectedEffect is null ? null : drafts.GetValueOrDefault(selectedEffect.Id) ?? selectedEffect.Preset;
-        var preserveDiagnostics = loadedDraftId == selectedEffect?.Id && Source == (value?.Source ?? string.Empty) &&
+        var value = Draft;
+        var preserveDiagnostics = loadedDraftId == value?.Id && Source == (value?.Source ?? string.Empty) &&
             Name == (value?.Name ?? string.Empty);
         Name = value?.Name ?? string.Empty;
         Source = value?.Source ?? string.Empty;
-        loadedDraftId = selectedEffect?.Id;
-        loading = false;
+        loadedDraftId = value?.Id;
+        loading = wasLoading;
         if (!preserveDiagnostics)
         {
             ClearDiagnostics();
@@ -215,13 +402,17 @@ public sealed class EffectSettingsViewModel : ObservableObject
 
     private void RecordDraft(bool sourceChanged)
     {
-        if (loading || selectedEffect is null || IsReadOnly)
+        if (loading || IsReadOnly || Draft is not { } current)
         {
             return;
         }
 
-        var value = new EffectScriptPreset(selectedEffect.Id, Name, Source);
-        if (presets.FirstOrDefault(item => item.Id == value.Id) == value)
+        var value = current with { Name = Name, Source = Source };
+        if (newDraft is not null)
+        {
+            newDraft = value;
+        }
+        else if (presets.FirstOrDefault(item => item.Id == value.Id) == value)
         {
             drafts.Remove(value.Id);
         }
@@ -237,28 +428,57 @@ public sealed class EffectSettingsViewModel : ObservableObject
         RefreshActions();
     }
 
-    private void Add()
+    private async Task AddAsync()
     {
-        var id = Guid.NewGuid();
-        var scriptId = "effect-" + id.ToString("N");
-        var template = new EffectScriptPreset(id, UniqueName(Localization.Get("Settings.NewEffect")),
-            $"effect \"{scriptId}\" version 1\nshort-clip compress\nsegment enter fixed 300ms\n    at 0 opacity 0 ease-out\n    at 1 opacity base\nend\nsegment stay flex 1\n    at 0 opacity base hold\n    at 1 opacity base\nend\n");
-        drafts[id] = template;
-        RebuildItems(id);
+        changingSelection = true;
+        RefreshActions();
+        try
+        {
+            if (!await PrepareToLeaveAsync())
+            {
+                return;
+            }
+
+            var id = Guid.NewGuid();
+            var scriptId = "effect-" + id.ToString("N");
+            newDraft = new(id, UniqueName(Localization.Get("Settings.NewEffect")),
+                $"effect \"{scriptId}\" version 1\nshort-clip compress\nsegment enter fixed 300ms\n    at 0 opacity 0 ease-out\n    at 1 opacity base\nend\nsegment stay flex 1\n    at 0 opacity base hold\n    at 1 opacity base\nend\n");
+            selectedEffect = null;
+            selectedIds = [];
+            NotifySelection();
+            LoadDraft();
+        }
+        finally
+        {
+            changingSelection = false;
+            RefreshActions();
+        }
     }
 
-    private void Duplicate()
+    private void Delete()
     {
-        if (selectedEffect is null)
+        if (!CanDelete)
         {
             return;
         }
 
-        var id = Guid.NewGuid();
-        var scriptId = "effect-" + id.ToString("N");
-        var rewritten = Regex.Replace(Source, "^effect\\s+\"[^\"]+\"", $"effect \"{scriptId}\"", RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
-        drafts[id] = new(id, UniqueName(Name + " " + Localization.Get("Settings.CopySuffix")), rewritten);
-        RebuildItems(id);
+        if (newDraft is not null)
+        {
+            DiscardDraft();
+        }
+        else if (selectedEffect is { IsBuiltin: false } selected)
+        {
+            DeleteRequested?.Invoke(this, new(selected.Id));
+        }
+    }
+
+    private void Export()
+    {
+        if (!SelectedIds.IsEmpty)
+        {
+            ExportRequested?.Invoke(this, new(items.Where(item => SelectedIds.Contains(item.Id))
+                .Select(item => item.Preset).ToImmutableArray()));
+        }
     }
 
     private string UniqueName(string proposed)
@@ -270,25 +490,19 @@ public sealed class EffectSettingsViewModel : ObservableObject
         {
             result = $"{proposed} {index++}";
         }
-
         return result;
-    }
-
-    private void Validate()
-    {
-        _ = ValidateDraft(false);
     }
 
     private bool ValidateDraft(bool saving)
     {
-        if (selectedEffect is null)
+        if (Draft is not { } current)
         {
             return false;
         }
 
         try
         {
-            var preset = new EffectScriptPreset(selectedEffect.Id, Name.Trim(), Source);
+            var preset = current with { Name = Name.Trim(), Source = Source };
             if (saving)
             {
                 var values = presets.Where(item => item.Id != preset.Id).Append(preset).ToImmutableArray();
@@ -321,12 +535,10 @@ public sealed class EffectSettingsViewModel : ObservableObject
         }
     }
 
-    private void Submit(bool saving, EventHandler<SettingsEffectEventArgs>? handler)
+    private static bool Matches(EffectScriptPreset pending, EffectScriptPreset saved)
     {
-        if (selectedEffect is not null && ValidateDraft(saving))
-        {
-            handler?.Invoke(this, new(new(selectedEffect.Id, Name.Trim(), Source)));
-        }
+        return pending.Id == saved.Id && pending.Source == saved.Source &&
+            string.Equals(pending.Name.Trim(), saved.Name, StringComparison.Ordinal);
     }
 
     private void ClearDiagnostics()
@@ -339,12 +551,12 @@ public sealed class EffectSettingsViewModel : ObservableObject
 
     private void RefreshActions()
     {
-        foreach (var property in new[] { nameof(HasSelection), nameof(IsReadOnly), nameof(CanEdit), nameof(CanDelete), nameof(IsDirty), nameof(EditorStatus) })
+        foreach (var property in new[] { nameof(Draft), nameof(HasDraft), nameof(HasSelection), nameof(IsReadOnly), nameof(CanEdit), nameof(CanDelete), nameof(IsDirty), nameof(EditorStatus) })
         {
             OnPropertyChanged(property);
         }
 
-        foreach (var command in new[] { AddCommand, DuplicateCommand, DeleteCommand, SaveCommand, ExportCommand, ImportCommand, ValidateCommand })
+        foreach (var command in new IRelayCommand[] { AddCommand, DeleteCommand, SaveCommand, ExportCommand, ImportCommand, ValidateCommand })
         {
             command.NotifyCanExecuteChanged();
         }

@@ -22,17 +22,12 @@
               ToolTip.Tip="{Binding ValidationStatus}">
         <controlsCommon:IconText Text="{Loc Key=Settings.ValidateScript}" IconKey="ValidateScript" />
       </Button>
-      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,6,6">
-        <Button Name="DuplicateEffectScriptButton" Command="{Binding DuplicateCommand}" Classes="accent">
-          <controlsCommon:IconText Text="{Loc Key=Settings.SaveEffectAs}" IconKey="SaveEffectAs" />
-        </Button>
-        <Button Name="SaveEffectScriptButton" Command="{Binding SaveCommand}" Classes="accent">
-          <controlsCommon:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
-        </Button>
-      </StackPanel>
+      <Button Name="SaveEffectScriptButton" Command="{Binding SaveCommand}" Classes="accent" Margin="0,0,6,6">
+        <controlsCommon:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
+      </Button>
     </WrapPanel>
     <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="12">
-      <ListBox Name="EffectScriptList" ItemsSource="{Binding Effects}" SelectedItem="{Binding SelectedEffect, Mode=TwoWay}" IsEnabled="{Binding !IsBusy}">
+      <ListBox Name="EffectScriptList" SelectionMode="Multiple" SelectionChanged="SelectionChanged" IsEnabled="{Binding !IsBusy}">
         <ListBox.ItemTemplate>
           <DataTemplate DataType="effects:EffectScriptSettingsItem">
             <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />

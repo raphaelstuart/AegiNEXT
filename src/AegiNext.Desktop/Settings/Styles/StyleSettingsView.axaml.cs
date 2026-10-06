@@ -2,6 +2,7 @@ using System.ComponentModel;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
 using Avalonia.Controls;
+using Avalonia.Controls.Selection;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 
@@ -11,6 +12,7 @@ namespace AegiNext.Desktop.Settings.Styles;
 public sealed partial class StyleSettingsView : UserControl
 {
     private StyleSettingsViewModel? model;
+    private bool synchronizingSelection;
 
     /// <summary>先隔离父级上下文，再加载编译绑定；本地控件仅提交字体语义值。</summary>
     public StyleSettingsView()
@@ -18,6 +20,7 @@ public sealed partial class StyleSettingsView : UserControl
         DataContext = null;
         AvaloniaXamlLoader.Load(this);
         DataContextChanged += (_, _) => ChangeModel();
+        this.FindControl<ListBox>("StyleList")!.SelectionChanged += SelectionChanged;
         this.FindControl<FontFamilyPicker>("FontInput")!.FamilyCommitted +=
             (_, value) => model?.CommitFont(value.Selection);
     }
@@ -27,19 +30,104 @@ public sealed partial class StyleSettingsView : UserControl
         if (model is not null)
         {
             model.PropertyChanged -= ModelChanged;
+            model.CommitPendingInputs = null;
+            model.HasPendingInputs = null;
         }
 
         model = DataContext as StyleSettingsViewModel;
         if (model is not null)
         {
             model.PropertyChanged += ModelChanged;
+            model.CommitPendingInputs = CommitFontInput;
+            model.HasPendingInputs = () =>
+            {
+                var picker = this.FindControl<FontFamilyPicker>("FontInput")!;
+                return picker.Text != picker.CurrentFont.DisplayName;
+            };
+            SynchronizeSelection();
             RefreshFontFamilies();
             LoadFont();
         }
     }
 
+    private async void SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (synchronizingSelection || model is null)
+        {
+            return;
+        }
+        var list = this.FindControl<ListBox>("StyleList")!;
+        var ids = list.Selection.SelectedItems.OfType<AegiNext.Core.Presets.SubtitleStylePreset>()
+            .Select(value => value.Id).ToArray();
+        var primary = e.AddedItems.OfType<AegiNext.Core.Presets.SubtitleStylePreset>().LastOrDefault()?.Id ??
+            (model.SelectedStyle is { } current && ids.Contains(current.Id) ? current.Id : ids.Cast<Guid?>().FirstOrDefault());
+        var currentModel = model;
+        SynchronizeSelection();
+        try
+        {
+            await currentModel.SelectStylesAsync(primary, ids);
+        }
+        finally
+        {
+            SynchronizeSelection();
+        }
+    }
+
+    private void SynchronizeSelection()
+    {
+        if (model is null || synchronizingSelection)
+        {
+            return;
+        }
+        var list = this.FindControl<ListBox>("StyleList")!;
+        var values = list.Items.OfType<AegiNext.Core.Presets.SubtitleStylePreset>().ToArray();
+        if (list.Selection.SelectedItems.OfType<AegiNext.Core.Presets.SubtitleStylePreset>().Select(value => value.Id)
+            .ToHashSet().SetEquals(model.SelectedIds))
+        {
+            return;
+        }
+        synchronizingSelection = true;
+        try
+        {
+            using var update = list.Selection.BatchUpdate();
+            list.Selection.Clear();
+            var primary = Array.FindIndex(values, value => value.Id == model.SelectedStyle?.Id);
+            if (primary >= 0 && model.SelectedIds.Contains(values[primary].Id))
+            {
+                list.Selection.Select(primary);
+            }
+            for (var index = 0; index < values.Length; index++)
+            {
+                if (index != primary && model.SelectedIds.Contains(values[index].Id))
+                {
+                    list.Selection.Select(index);
+                }
+            }
+        }
+        finally
+        {
+            synchronizingSelection = false;
+        }
+    }
+
+    private bool CommitFontInput()
+    {
+        var picker = this.FindControl<FontFamilyPicker>("FontInput")!;
+        if (picker.CommitText())
+        {
+            return true;
+        }
+        model?.RejectFont();
+        picker.Focus();
+        return false;
+    }
+
     private void ModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(StyleSettingsViewModel.SelectedIds) or nameof(StyleSettingsViewModel.Styles))
+        {
+            SynchronizeSelection();
+        }
         if (e.PropertyName is nameof(StyleSettingsViewModel.Styles) or nameof(StyleSettingsViewModel.Fonts))
         {
             RefreshFontFamilies();

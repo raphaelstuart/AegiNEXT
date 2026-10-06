@@ -9,7 +9,7 @@ internal sealed class UnsavedProjectDialog : Window
 {
     private readonly List<IDisposable> localizationBindings = [];
 
-    internal UnsavedProjectDialog()
+    internal UnsavedProjectDialog(string messageKey = "Workbench.UnsavedText")
     {
         localizationBindings.Add(this.Bind(TitleProperty, Localization.Observe("Workbench.UnsavedTitle").ToBinding()));
         Width = 410;
@@ -26,7 +26,7 @@ internal sealed class UnsavedProjectDialog : Window
         }
 
         var message = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-        localizationBindings.Add(message.Bind(TextBlock.TextProperty, Localization.Observe("Workbench.UnsavedText").ToBinding()));
+        localizationBindings.Add(message.Bind(TextBlock.TextProperty, Localization.Observe(messageKey).ToBinding()));
         Content = new StackPanel
         {
             Margin = new Thickness(20), Spacing = 24,

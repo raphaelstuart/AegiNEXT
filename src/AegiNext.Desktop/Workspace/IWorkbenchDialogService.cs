@@ -5,6 +5,9 @@ namespace AegiNext.Desktop.Workspace;
 internal interface IWorkbenchDialogService
 {
     Task<string?> OpenFileAsync(string title, string typeName, string[] patterns);
+    Task<IReadOnlyList<string>> OpenFilesAsync(string title, string typeName, string[] patterns);
+    Task<string?> OpenFolderAsync(string title);
+    Task<int> ConfirmPresetChangesAsync(bool effects);
     Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName);
     Task<bool> ShowNewProjectAsync(string workspaceRoot,
         Func<ProjectCreationRequest, CancellationToken, Task<ProjectOpenResult>> create,

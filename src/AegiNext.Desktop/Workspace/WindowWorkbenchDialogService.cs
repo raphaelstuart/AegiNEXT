@@ -36,6 +36,38 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
         return files.Count == 0 ? null : files[0].TryGetLocalPath() ?? throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
     }
 
+    /// <summary>选择多个本地文件，取消时返回空集合。</summary>
+    public async Task<IReadOnlyList<string>> OpenFilesAsync(string title, string typeName, string[] patterns)
+    {
+        var files = await (storageProvider?.Invoke() ?? ownerProvider().StorageProvider).OpenFilePickerAsync(new()
+        {
+            Title = Localization.Get("Workbench." + title), AllowMultiple = true,
+            FileTypeFilter = [new(Localization.Get("Workbench." + typeName)) { Patterns = patterns }]
+        });
+        return files.Select(file => file.TryGetLocalPath() ??
+            throw new NotSupportedException(Localization.Get("Preview.LocalFile"))).ToArray();
+    }
+
+    /// <summary>选择批量导出的本地目标目录。</summary>
+    public async Task<string?> OpenFolderAsync(string title)
+    {
+        var folders = await (storageProvider?.Invoke() ?? ownerProvider().StorageProvider).OpenFolderPickerAsync(new()
+        {
+            Title = Localization.Get("Workbench." + title), AllowMultiple = false
+        });
+        return folders.Count == 0 ? null : folders[0].TryGetLocalPath() ??
+            throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
+    }
+
+    /// <summary>询问个人样式或脚本草稿：保存、恢复或取消切换。</summary>
+    public async Task<int> ConfirmPresetChangesAsync(bool effects)
+    {
+        var dialog = new UnsavedProjectDialog(effects ? "Settings.UnsavedEffectText" : "Settings.UnsavedStyleText");
+        registerWindow?.Invoke(dialog);
+        var result = await dialog.ShowDialog<int>(ownerProvider());
+        return result switch { 1 => 0, 2 => 1, _ => 2 };
+    }
+
     /// <summary>选择带指定扩展名的本地保存路径，并由系统确认覆盖。</summary>
     public async Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName)
     {

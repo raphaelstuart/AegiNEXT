@@ -63,12 +63,34 @@ public sealed class EffectScriptPresetLibrary : IDisposable
     /// <summary>原子导入单个 .aegifx；名称采用脚本标识，冲突明确失败。</summary>
     public Task ImportAsync(string path, CancellationToken cancellationToken = default)
     {
+        return ImportAsync([path], cancellationToken);
+    }
+
+    /// <summary>读取全部脚本并验证合并集合后一次提交；失败、冲突或取消均不部分入库。</summary>
+    public Task ImportAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var inputs = paths.ToArray();
         return ExecuteAsync(async () =>
         {
+            if (inputs.Length == 0)
+            {
+                return;
+            }
+
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-            var template = await EffectScriptPresetStore.ReadScriptAsync(path, cancellationToken).ConfigureAwait(false);
-            var preset = new EffectScriptPreset(Guid.NewGuid(), template.Script.Id, template.Source);
-            await CommitAsync(snapshot with { Presets = snapshot.Presets.Add(preset) }, cancellationToken).ConfigureAwait(false);
+            var items = snapshot.Presets;
+            foreach (var path in inputs)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var template = await EffectScriptPresetStore.ReadScriptAsync(path, cancellationToken).ConfigureAwait(false);
+                items = items.Add(new(Guid.NewGuid(), template.Script.Id, template.Source));
+            }
+
+            var combined = snapshot with { Presets = items };
+            EffectScriptPresetService.Validate(combined);
+            cancellationToken.ThrowIfCancellationRequested();
+            await CommitAsync(combined, cancellationToken).ConfigureAwait(false);
         }, cancellationToken);
     }
 
@@ -87,6 +109,21 @@ public sealed class EffectScriptPresetLibrary : IDisposable
             var preset = snapshot.Presets.FirstOrDefault(item => item.Id == id) ?? throw new InvalidDataException("特效模板不存在。");
             await EffectScriptPresetStore.WriteScriptAsync(preset.Source, path, cancellationToken).ConfigureAwait(false);
         }, cancellationToken);
+    }
+
+    /// <summary>导出所选内置或个人模板快照的原文；不改变库，也不允许覆盖当前库文件。</summary>
+    public Task ExportAsync(EffectScriptPreset preset, string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var destination = Path.GetFullPath(path);
+        if (string.Equals(destination, filePath,
+                OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("导出位置不能是当前特效脚本库。");
+        }
+
+        return ExecuteAsync(() => EffectScriptPresetStore.WriteScriptAsync(preset.Source, destination, cancellationToken), cancellationToken);
     }
 
     /// <summary>宿主需先等待已有操作结束；释放后拒绝继续使用。</summary>

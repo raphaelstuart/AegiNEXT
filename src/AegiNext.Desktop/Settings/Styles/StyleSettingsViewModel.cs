@@ -23,6 +23,13 @@ public sealed class StyleSettingsViewModel : ObservableObject
     private bool busy;
     private bool hasSelectedSubtitle;
     private bool loading;
+    private bool switching;
+    private ImmutableArray<Guid> selectedIds = [];
+    internal Func<SubtitleStylePreset, Task<bool>>? SaveDraftAsync { get; set; }
+    internal Func<Task<int>>? ConfirmLeaveAsync { get; set; }
+    internal Func<bool>? CommitPendingInputs { get; set; }
+    internal Func<bool>? HasPendingInputs { get; set; }
+    internal Task SelectionCompletion { get; private set; } = Task.CompletedTask;
     private int draftVersion;
     private string[] alignments = [];
     private decimal? fontSize;
@@ -63,15 +70,27 @@ public sealed class StyleSettingsViewModel : ObservableObject
                 ChangeStyle(style => style with { Position = Position.CreatePosition() });
             }
         };
-        AddCommand = new(Add, () => !IsBusy);
-        DuplicateCommand = new(Duplicate, () => HasDraft && !IsBusy);
-        DeleteCommand = new(() => DeleteRequested?.Invoke(this, new(draft!.Preset.Id)), () => CanDelete);
-        SaveCommand = new(() => Submit(false), () => HasDraft && !IsBusy);
-        ApplyCommand = new(() => Submit(true), () => HasDraft && HasSelectedSubtitle && !IsBusy);
+        AddCommand = new(() => { SelectionCompletion = CreateDraftAsync(false); }, () => !IsBusy && !switching);
+        DuplicateCommand = new(() => { SelectionCompletion = CreateDraftAsync(true); }, () => CanEdit && !switching);
+        DeleteCommand = new(Delete, () => CanDelete);
+        SaveCommand = new(() =>
+        {
+            if (SaveDraftAsync is null)
+            {
+                Submit(false);
+            }
+            else
+            {
+                SelectionCompletion = SavePendingAsync();
+            }
+        }, () => CanEdit && !switching);
+        ApplyCommand = new(() => Submit(true), () => CanApply);
         CaptureCommand = new(() => CaptureRequested?.Invoke(this, EventArgs.Empty),
             () => HasSelectedSubtitle && !IsBusy);
         ImportCommand = new(() => ImportRequested?.Invoke(this, EventArgs.Empty), () => !IsBusy);
-        ExportCommand = new(() => ExportRequested?.Invoke(this, EventArgs.Empty), () => !IsEmpty && !IsBusy);
+        ExportCommand = new(() => ExportRequested?.Invoke(this,
+            new(styles.Where(value => selectedIds.Contains(value.Id)).ToImmutableArray())),
+            () => !selectedIds.IsEmpty && !IsBusy && !switching);
         RefreshLanguage();
     }
 
@@ -80,7 +99,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public event EventHandler<SettingsStyleDeleteEventArgs>? DeleteRequested;
     public event EventHandler? CaptureRequested;
     public event EventHandler? ImportRequested;
-    public event EventHandler? ExportRequested;
+    public event EventHandler<SettingsStylesExportEventArgs>? ExportRequested;
     public RelayCommand AddCommand { get; }
     public RelayCommand DuplicateCommand { get; }
     public RelayCommand DeleteCommand { get; }
@@ -99,8 +118,13 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public SubtitleStylePreset? Draft => draft?.Preset;
     public bool HasDraft => draft is not null;
     public bool IsEmpty => styles.IsEmpty;
-    public bool CanDelete => HasDraft && !IsBusy && styles.Any(value => value.Id == draft!.Preset.Id);
-    public bool CanEdit => HasDraft && !IsBusy;
+    public ImmutableArray<Guid> SelectedIds => selectedIds;
+    public bool IsDirty => HasDraft && (draft!.Preset != styles.FirstOrDefault(value => value.Id == draft.Preset.Id) ||
+        FillDraft.IsDirty || StrokeDraft.IsDirty || ShadowDraft.IsDirty || Position.Validate() is not null ||
+        new[] { FontSizeText, StrokeWidthText, MarginText, LineHeightText, ShadowBlurText, ShadowXText, ShadowYText }
+            .Any(value => ParseNumber(value) is null) || HasPendingInputs?.Invoke() == true);
+    public bool CanDelete => CanEdit && !switching;
+    public bool CanEdit => HasDraft && selectedIds.Length <= 1 && !IsBusy;
     public bool CanApply => CanEdit && HasSelectedSubtitle;
     public bool IsAvailable => !IsBusy;
     public string FontSource => Localization.Get("Settings." + (draft?.Preset.Font is null ? "SystemFont" : "EmbeddedFont"));
@@ -150,6 +174,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             if (SetProperty(ref selectedStyle, value) && !loading)
             {
+                SetSelection(value?.Id, value is null ? [] : [value.Id]);
                 LoadDraft(value is null ? null : new(value));
             }
         }
@@ -347,15 +372,203 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public void UpdateStyles(IEnumerable<SubtitleStylePreset> presets, Guid? selectedId = null)
     {
         ArgumentNullException.ThrowIfNull(presets);
-        var selection = selectedId ?? draft?.Preset.Id;
+        var pending = draft;
+        var dirty = IsDirty;
+        var wasNew = pending is not null && styles.All(value => value.Id != pending.Preset.Id);
+        var previousSelection = selectedIds;
         styles = presets.ToImmutableArray();
-        OnPropertyChanged(nameof(Styles));
+        var committed = pending is not null && styles.FirstOrDefault(value => value.Id == pending.Preset.Id) == pending.Preset;
+        var selection = selectedId ?? (committed ? pending?.Preset.Id : SelectedStyle?.Id);
         loading = true;
-        SelectedStyle = styles.FirstOrDefault(value => value.Id == selection) ?? styles.FirstOrDefault();
-        loading = false;
+        try
+        {
+            OnPropertyChanged(nameof(Styles));
+            if (wasNew && !committed && selectedId is null)
+            {
+                SetSelection(null, []);
+            }
+            else
+            {
+                var ids = selectedId is not null || committed
+                    ? (selection is { } id ? new[] { id } : [])
+                    : previousSelection.Where(id => styles.Any(value => value.Id == id)).ToArray();
+                if (ids.Length == 0 && !previousSelection.IsEmpty)
+                {
+                    ids = styles.Take(1).Select(value => value.Id).ToArray();
+                }
+                if (pending is null && ids.Length == 0)
+                {
+                    ids = styles.Take(1).Select(value => value.Id).ToArray();
+                }
+                SetSelection(selection, ids);
+            }
+        }
+        finally
+        {
+            loading = false;
+        }
+        if (dirty && !committed && selectedId is null && (wasNew || SelectedStyle?.Id == pending?.Preset.Id))
+        {
+            RefreshActions();
+            return;
+        }
         LoadDraft(SelectedStyle is null ? null : new(SelectedStyle));
-        errorKey = null;
-        Error = null;
+    }
+
+    /// <summary>按稳定身份同步列表选择；多选仅用于导出。</summary>
+    public void SelectStyles(Guid? primaryId, IEnumerable<Guid> ids)
+    {
+        if (loading)
+        {
+            return;
+        }
+        var previous = SelectedStyle?.Id;
+        SetSelection(primaryId, ids);
+        if (previous != SelectedStyle?.Id || draft is null)
+        {
+            LoadDraft(SelectedStyle is null ? null : new(SelectedStyle));
+        }
+        RefreshActions();
+    }
+
+    /// <summary>等待未保存修改的处理结果，再切换列表选择。</summary>
+    public Task<bool> SelectStylesAsync(Guid? primaryId, IEnumerable<Guid> ids)
+    {
+        if (switching || loading)
+        {
+            return Task.FromResult(false);
+        }
+        var values = ids.ToArray();
+        var completion = SelectStylesCoreAsync(primaryId, values);
+        SelectionCompletion = completion;
+        return completion;
+    }
+
+    private async Task<bool> SelectStylesCoreAsync(Guid? primaryId, Guid[] ids)
+    {
+        if (loading || switching)
+        {
+            return false;
+        }
+        if (SelectedStyle?.Id == primaryId && selectedIds.ToHashSet().SetEquals(ids))
+        {
+            return true;
+        }
+        switching = true;
+        RefreshActions();
+        try
+        {
+            if (!await PrepareToLeaveAsync())
+            {
+                return false;
+            }
+            SelectStyles(primaryId, ids);
+            return true;
+        }
+        finally
+        {
+            switching = false;
+            RefreshActions();
+        }
+    }
+
+    /// <summary>有未保存修改时，等待保存、恢复或取消的决定。</summary>
+    public async Task<bool> PrepareToLeaveAsync()
+    {
+        if (!IsDirty)
+        {
+            return true;
+        }
+        var choice = ConfirmLeaveAsync is null ? 0 : await ConfirmLeaveAsync();
+        if (choice == 1)
+        {
+            DiscardDraft();
+            return true;
+        }
+        return choice == 0 && await SavePendingAsync();
+    }
+
+    /// <summary>验证有效草稿并等待持久化，失败时保持编辑状态。</summary>
+    public async Task<bool> SavePendingAsync()
+    {
+        if (CommitPendingInputs?.Invoke() == false)
+        {
+            return false;
+        }
+        if (!IsDirty)
+        {
+            return true;
+        }
+        var preset = PreparePreset(false);
+        return preset is not null && SaveDraftAsync is not null && await SaveDraftAsync(preset);
+    }
+
+    /// <summary>恢复当前已保存样式，或直接丢弃尚未入库的新草稿。</summary>
+    public void DiscardDraft()
+    {
+        var saved = draft is null ? null : styles.FirstOrDefault(value => value.Id == draft.Preset.Id);
+        LoadDraft(saved is null ? null : new(saved));
+    }
+
+    private void SetSelection(Guid? primaryId, IEnumerable<Guid> ids)
+    {
+        var available = ids.ToHashSet();
+        selectedIds = styles.Where(value => available.Contains(value.Id)).Select(value => value.Id).ToImmutableArray();
+        var wasLoading = loading;
+        loading = true;
+        try
+        {
+            SelectedStyle = styles.FirstOrDefault(value => value.Id == primaryId && selectedIds.Contains(value.Id)) ??
+                styles.FirstOrDefault(value => selectedIds.Contains(value.Id));
+            OnPropertyChanged(nameof(SelectedIds));
+        }
+        finally
+        {
+            loading = wasLoading;
+        }
+    }
+
+    private async Task CreateDraftAsync(bool duplicate)
+    {
+        if (switching)
+        {
+            return;
+        }
+        switching = true;
+        RefreshActions();
+        try
+        {
+            if (SaveDraftAsync is not null && !await PrepareToLeaveAsync())
+            {
+                return;
+            }
+            if (duplicate)
+            {
+                Duplicate();
+            }
+            else
+            {
+                Add();
+            }
+        }
+        finally
+        {
+            switching = false;
+            RefreshActions();
+        }
+    }
+
+    private void Delete()
+    {
+        if (draft is not null && styles.Any(value => value.Id == draft.Preset.Id))
+        {
+            DeleteRequested?.Invoke(this, new(draft.Preset.Id));
+        }
+        else
+        {
+            ClearSelection();
+            LoadDraft(null);
+        }
     }
 
     /// <summary>注入组合根提供的纯测量入口；页面模型不拥有字体或原生渲染器。</summary>
@@ -450,9 +663,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
 
     private void ClearSelection()
     {
-        loading = true;
-        SelectedStyle = null;
-        loading = false;
+        SetSelection(null, []);
     }
 
     private void ChangeStyle(Func<SubtitleStyle, SubtitleStyle> change, bool clearFont = false)
@@ -563,6 +774,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
     private void RefreshActions()
     {
         OnPropertyChanged(nameof(HasDraft));
+        OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(CanApply));
@@ -578,11 +790,11 @@ public sealed class StyleSettingsViewModel : ObservableObject
         }
     }
 
-    private void Submit(bool apply)
+    private SubtitleStylePreset? PreparePreset(bool apply)
     {
         if (draft is null)
         {
-            return;
+            return null;
         }
 
         var preset = draft.Preset;
@@ -593,7 +805,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
             {
                 InvalidFieldKey = color.Key + "." + color.Draft.InvalidFieldKey;
                 SetError("StyleValidation");
-                return;
+                return null;
             }
         }
         _ = FillDraft.TryCommit(out var fillColor);
@@ -604,13 +816,13 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             InvalidFieldKey = positionKey;
             SetError("StyleValidation");
-            return;
+            return null;
         }
         if (string.IsNullOrWhiteSpace(preset.Name))
         {
             InvalidFieldKey = "StyleNameInput";
             SetError("NameRequired");
-            return;
+            return null;
         }
 
         if (!apply && styles.Any(value =>
@@ -618,13 +830,13 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             InvalidFieldKey = "StyleNameInput";
             SetError("DuplicateName");
-            return;
+            return null;
         }
 
         if (string.IsNullOrWhiteSpace(preset.Style.FontFamily))
         {
             RejectFont();
-            return;
+            return null;
         }
 
         foreach (var field in new (decimal? Value, decimal Minimum, decimal Maximum, string Key)[]
@@ -642,7 +854,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
             {
                 InvalidFieldKey = field.Key;
                 SetError("StyleValidation");
-                return;
+                return null;
             }
         }
 
@@ -653,7 +865,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         catch (InvalidDataException)
         {
             SetError("StyleValidation");
-            return;
+            return null;
         }
 
         errorKey = null;
@@ -663,6 +875,15 @@ public sealed class StyleSettingsViewModel : ObservableObject
         FillDraft.Load(fillColor);
         StrokeDraft.Load(strokeColor);
         ShadowDraft.Load(shadowColorValue);
+        return preset;
+    }
+
+    private void Submit(bool apply)
+    {
+        if (PreparePreset(apply) is not { } preset)
+        {
+            return;
+        }
         if (apply)
         {
             ApplyRequested?.Invoke(this, new(preset));
