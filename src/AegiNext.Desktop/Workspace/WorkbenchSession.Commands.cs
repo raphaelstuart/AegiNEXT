@@ -20,6 +20,9 @@ internal sealed partial class WorkbenchSession
             WorkbenchCommand.PASTE_CLIPS => CanPasteTimelineClips,
             WorkbenchCommand.UNDO => editor.CanUndo,
             WorkbenchCommand.REDO => editor.CanRedo,
+            WorkbenchCommand.AUDITION_BEFORE_SUBTITLE or WorkbenchCommand.AUDITION_AFTER_SUBTITLE or
+                WorkbenchCommand.AUDITION_SUBTITLE_BEGIN or WorkbenchCommand.AUDITION_SUBTITLE => CanAuditionSubtitle,
+            WorkbenchCommand.ADVANCE_SUBTITLE_ROW or WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK => false,
             WorkbenchCommand.PLAY_PAUSE or WorkbenchCommand.SEEK_BACKWARD or WorkbenchCommand.SEEK_FORWARD =>
                 controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
             WorkbenchCommand.TIMING_ENTER => playback.PendingPosition is null && controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
@@ -75,7 +78,11 @@ internal sealed partial class WorkbenchSession
                     TryCommitDrafts(false);
                     ViewModel.CancelGestures();
                     ClearKeyframeSelection();
-                    if (controller.Snapshot.State == VideoPlaybackState.PLAYING)
+                    if (controller.Snapshot.AudioAuditionActive)
+                    {
+                        await controller.ClearPlaybackRangeAsync();
+                    }
+                    else if (controller.Snapshot.State == VideoPlaybackState.PLAYING)
                     {
                         await controller.PauseAsync();
                     }
@@ -90,6 +97,12 @@ internal sealed partial class WorkbenchSession
                     break;
                 case WorkbenchCommand.SEEK_BACKWARD: await SeekRelativeAsync(-5); break;
                 case WorkbenchCommand.SEEK_FORWARD: await SeekRelativeAsync(5); break;
+                case WorkbenchCommand.AUDITION_BEFORE_SUBTITLE:
+                case WorkbenchCommand.AUDITION_AFTER_SUBTITLE:
+                case WorkbenchCommand.AUDITION_SUBTITLE_BEGIN:
+                case WorkbenchCommand.AUDITION_SUBTITLE:
+                    await PlaySubtitleAuditionAsync(command);
+                    break;
                 case WorkbenchCommand.UNDO:
                     if (TryCommitDrafts())
                     {

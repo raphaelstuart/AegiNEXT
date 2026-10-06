@@ -1,6 +1,7 @@
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Styling;
+using AegiNext.Desktop.Windowing;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Selection;
@@ -12,7 +13,7 @@ using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Panels.Subtitles;
 
-internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelView
+internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelView, IWorkbenchFocusCommandTarget
 {
     private readonly WorkbenchSession session;
     private readonly ListBox list;

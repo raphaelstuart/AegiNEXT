@@ -16,6 +16,7 @@ public sealed record WorkbenchPreferences
     public WorkbenchTheme Theme { get; init; }
     public string AccentColor { get; init; } = "#5273E8";
     public AudioGraphPalette AudioGraph { get; init; } = new();
+    public TimelineClipPalette TimelineClips { get; init; } = new();
     public ImmutableArray<ShortcutBinding> ShortcutBindings { get; init; } = ShortcutDefaults.CreateBindings();
     public float Volume { get; init; } = 1;
     public bool WindowMenuOnMac { get; init; }
@@ -33,12 +34,13 @@ public sealed record WorkbenchPreferences
         if (Version != 1 || !IsValidLanguage(Language) ||
             !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !Enum.IsDefined(PreviewDecodeMode) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
             AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
-            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || Projects is null)
+            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || TimelineClips is null || Projects is null)
         {
             throw new InvalidDataException("桌面偏好无效或版本不受支持。");
         }
 
         AudioGraph.Validate();
+        TimelineClips.Validate();
         Projects.Validate();
         ShortcutConfiguration.Validate(ShortcutBindings);
         if (ShortcutBindings.Length != Enum.GetValues<WorkbenchCommand>().Length)
@@ -73,7 +75,7 @@ public sealed record WorkbenchPreferences
     public bool Equals(WorkbenchPreferences? other)
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
-               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
+               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && TimelineClips == other.TimelineClips && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
                TimelineSnapEnabled == other.TimelineSnapEnabled && TimelineStepEnabled == other.TimelineStepEnabled &&
                TimelineSpectrumVisible == other.TimelineSpectrumVisible && TimelineWaveformVisible == other.TimelineWaveformVisible &&
                Projects == other.Projects && ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
@@ -88,6 +90,7 @@ public sealed record WorkbenchPreferences
         hash.Add(Theme);
         hash.Add(AccentColor);
         hash.Add(AudioGraph);
+        hash.Add(TimelineClips);
         hash.Add(Volume);
         hash.Add(WindowMenuOnMac);
         hash.Add(PreviewQuality);

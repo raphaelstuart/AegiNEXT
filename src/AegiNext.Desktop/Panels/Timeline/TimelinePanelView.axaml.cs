@@ -42,6 +42,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         DataContext = viewModel;
         timeline = this.FindControl<SubtitleTimelineControl>("Timeline")!;
         timeline.SetAudioGraphPalette(session.Preferences.AudioGraph);
+        timeline.SetClipPalette(session.Preferences.TimelineClips);
         overview = this.FindControl<TimelineOverviewControl>("TimelineMinimap")!;
         snapButton = this.FindControl<ToolbarToggleButton>("TimelineSnapButton")!;
         stepButton = this.FindControl<ToolbarToggleButton>("TimelineStepButton")!;
@@ -138,6 +139,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         }
         return command switch
         {
+            WorkbenchCommand.AUDITION_BEFORE_SUBTITLE or WorkbenchCommand.AUDITION_AFTER_SUBTITLE or
+                WorkbenchCommand.AUDITION_SUBTITLE_BEGIN or WorkbenchCommand.AUDITION_SUBTITLE => session.CanAuditionSubtitle && !timeline.HasActiveDrag,
             WorkbenchCommand.END_TEXT_INPUT => timeline.HasActiveDrag,
             WorkbenchCommand.COPY_CLIPS or WorkbenchCommand.DELETE_SUBTITLE => viewModel.CanCopyClips,
             WorkbenchCommand.PASTE_CLIPS => viewModel.CanPasteClips && timeline.GetClipPasteTarget() is not null,
@@ -153,6 +156,12 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         }
         switch (command)
         {
+            case WorkbenchCommand.AUDITION_BEFORE_SUBTITLE:
+            case WorkbenchCommand.AUDITION_AFTER_SUBTITLE:
+            case WorkbenchCommand.AUDITION_SUBTITLE_BEGIN:
+            case WorkbenchCommand.AUDITION_SUBTITLE:
+                _ = session.ExecuteCommandAsync(command);
+                break;
             case WorkbenchCommand.END_TEXT_INPUT:
                 CancelGestures();
                 break;
@@ -333,6 +342,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private void OnPreferencesChanged(object? sender, EventArgs e)
     {
         timeline.SetAudioGraphPalette(session.Preferences.AudioGraph);
+        timeline.SetClipPalette(session.Preferences.TimelineClips);
         timeline.InvalidateVisual();
     }
     private void OnLanguageChanged(object? sender, EventArgs e)

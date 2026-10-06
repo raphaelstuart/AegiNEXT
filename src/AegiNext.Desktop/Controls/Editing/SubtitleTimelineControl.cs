@@ -283,6 +283,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private void RefreshTheme()
     {
         drawingPalette = new(ActualThemeVariant == ThemeVariant.Dark);
+        RefreshClipAppearance();
         RefreshAudioGraph();
     }
 
@@ -332,6 +333,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         context.DrawRectangle(drawingPalette.Surface, null, new(Bounds.Size));
         var body = new Rect(HeaderWidth, RulerHeight, Math.Max(0, Bounds.Width - HeaderWidth),
             Math.Max(0, Bounds.Height - RulerHeight));
+        RefreshClipRangeProjection();
         using (context.PushClip(body))
         {
             if (IsSpectrumVisible && spectrum is not null && spectrumBitmap is not null)
@@ -351,6 +353,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             {
                 DrawWaveform(context, body.Top, body.Height);
             }
+
+            DrawClipRangeFills(context, body);
 
             foreach (var row in rows)
             {
@@ -392,10 +396,10 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                     }
 
                     var active = selectedIds.Contains(clip.Id);
-                    var invalid = HasActiveDrag && !validDrop && (dragId == clip.Id || movingClips.ContainsKey(clip.Id));
-                    context.DrawRectangle(invalid ? drawingPalette.InvalidClip : active ? drawingPalette.ActiveClip :
-                            clip.Kind == LayerKind.SUBTITLE ? drawingPalette.SubtitleClip : drawingPalette.SceneClip,
-                        new Pen(active ? drawingPalette.ActiveClipBorder : drawingPalette.ClipBorder, active ? 2 : 1), rectangle, 3, 3);
+                    var invalid = IsInvalidClipDrag(clip.Id);
+                    context.DrawRectangle(invalid ? drawingPalette.InvalidClip : active ? selectedClipBrush : inactiveClipBrush,
+                        active ? selectedClipBorder : inactiveClipBorder, rectangle, 3, 3);
+                    using var clipOpacity = context.PushOpacity(active || invalid ? 1 : 0.6);
                     var maskBadge = ClipMaskBadgeRectangle(clip, rectangle);
                     if (maskBadge is { } badge)
                     {
@@ -484,6 +488,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         }
 
         DrawPropertyTitles(context, foreground);
+        DrawClipBoundaries(context);
         DrawSnapIndicator(context);
         DrawKeyframeMarkers(context);
 

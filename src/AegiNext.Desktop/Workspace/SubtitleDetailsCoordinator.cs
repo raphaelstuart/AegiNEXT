@@ -74,7 +74,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
     internal string? SourceDiagnostic { get; private set; }
     internal bool CanEditSource => SourceDiagnostic is null;
     internal Guid? SelectedClipId { get; private set; }
-    internal bool IsPlaying => playbackCancellation is not null && session.Controller.IsRangePlaybackActive;
+    internal bool IsPlaying => playbackCancellation is { } cancellation && session.Controller.IsPlaybackRangeOwnedBy(cancellation.Token);
     internal bool IsKaraokeEnabled => draft is { Karaoke.IsEmpty: false };
     internal bool SelectionHasTimedKaraoke => draft is not null && draft.Karaoke.Any(clip =>
         styleSelectionLength == 0 || clip.Utf16Start < styleSelectionStart + styleSelectionLength &&
@@ -965,7 +965,10 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             {
                 return;
             }
-            await session.Controller.ClearPlaybackRangeAsync();
+            if (playbackCancellation is { } previous)
+            {
+                await session.Controller.ClearPlaybackRangeAsync(previous.Token);
+            }
             if (revision != playbackRevision || disposed)
             {
                 return;
@@ -986,9 +989,9 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
 
     internal Task SetLoopEnabledAsync(bool loop)
     {
-        if (IsPlaying)
+        if (playbackCancellation is { } cancellation)
         {
-            session.Controller.SetPlaybackRangeLoop(loop);
+            session.Controller.SetPlaybackRangeLoop(loop, cancellation.Token);
         }
         return Task.CompletedTask;
     }
@@ -999,12 +1002,19 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             return;
         }
-        ++playbackRevision;
+        var revision = ++playbackRevision;
         playbackCancellation?.Cancel();
         await playbackGate.WaitAsync();
         try
         {
-            await session.Controller.ClearPlaybackRangeAsync();
+            if (revision != playbackRevision)
+            {
+                return;
+            }
+            if (playbackCancellation is { } cancellation)
+            {
+                await session.Controller.ClearPlaybackRangeAsync(cancellation.Token);
+            }
             playbackCancellation?.Dispose();
             playbackCancellation = null;
             playbackRequested = false;

@@ -42,6 +42,35 @@
           </Grid>
         </StackPanel>
       </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Loc Key=Settings.TimelineClipColors}" />
+          <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.TimelineSelectedClip}" VerticalAlignment="Center" />
+            <controls:ColorDraftInput Name="TimelineSelectedClipPicker" Draft="{Binding SelectedClipDraft}" Grid.Column="1" />
+          </Grid>
+          <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.TimelineInactiveClip}" VerticalAlignment="Center" />
+            <controls:ColorDraftInput Name="TimelineInactiveClipPicker" Draft="{Binding InactiveClipDraft}" Grid.Column="1" />
+          </Grid>
+          <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.TimelineStartLine}" VerticalAlignment="Center" />
+            <controls:ColorDraftInput Name="TimelineStartLinePicker" Draft="{Binding StartLineDraft}" Grid.Column="1" />
+          </Grid>
+          <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.TimelineEndLine}" VerticalAlignment="Center" />
+            <controls:ColorDraftInput Name="TimelineEndLinePicker" Draft="{Binding EndLineDraft}" Grid.Column="1" />
+          </Grid>
+          <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.TimelineSelectedRangeFill}" VerticalAlignment="Center" />
+            <controls:ColorDraftInput Name="TimelineSelectedRangeFillPicker" Draft="{Binding SelectedRangeFillDraft}" Grid.Column="1" />
+          </Grid>
+          <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.TimelineInactiveRangeFill}" VerticalAlignment="Center" />
+            <controls:ColorDraftInput Name="TimelineInactiveRangeFillPicker" Draft="{Binding InactiveRangeFillDraft}" Grid.Column="1" />
+          </Grid>
+        </StackPanel>
+      </Border>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

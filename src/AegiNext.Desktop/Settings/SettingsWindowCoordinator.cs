@@ -279,7 +279,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
 
     private void OnColorsChanged(object? sender, SettingsColorsChangedEventArgs e)
     {
-        UpdatePreferences(value => value with { AccentColor = e.AccentColor, AudioGraph = e.AudioGraph });
+        UpdatePreferences(value => value with { AccentColor = e.AccentColor, AudioGraph = e.AudioGraph, TimelineClips = e.TimelineClips });
     }
 
     private void OnProjectsChanged(object? sender, ProjectPreferencesChangedEventArgs e)

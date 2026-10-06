@@ -6,12 +6,13 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Settings.Colors;
 
-/// <summary>主色与音频图个人配色草稿，提交后由工作台保存并应用。</summary>
+/// <summary>主色、音频图与时间轴个人配色草稿，提交后由工作台保存并应用。</summary>
 public sealed class ColorsSettingsViewModel : ObservableObject
 {
     private bool updating;
     private string accentColor = "#5273E8";
     private AudioGraphPalette audioGraph = new();
+    private TimelineClipPalette timelineClips = new();
     private readonly AudioGraphPaletteChoice[] schemes = Enumerable.Range(0, AudioGraphPalettes.CUSTOM_INDEX + 1)
         .Select(index => new AudioGraphPaletteChoice(index)).ToArray();
 
@@ -30,6 +31,12 @@ public sealed class ColorsSettingsViewModel : ObservableObject
         MidDraft.Committed += (_, args) => CommitPalette(audioGraph with { UseClassicSpectrum = false, Mid = ColorHexCodec.Format(args.Value, false) }, MidDraft);
         HighDraft.Committed += (_, args) => CommitPalette(audioGraph with { UseClassicSpectrum = false, High = ColorHexCodec.Format(args.Value, false) }, HighDraft);
         WaveformDraft.Committed += (_, args) => CommitPalette(audioGraph with { Waveform = ColorHexCodec.Format(args.Value, true) }, WaveformDraft);
+        SelectedClipDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { SelectedClip = ColorHexCodec.Format(args.Value, true) }, SelectedClipDraft);
+        InactiveClipDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { InactiveClip = ColorHexCodec.Format(args.Value, true) }, InactiveClipDraft);
+        StartLineDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { StartLine = ColorHexCodec.Format(args.Value, true) }, StartLineDraft);
+        EndLineDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { EndLine = ColorHexCodec.Format(args.Value, true) }, EndLineDraft);
+        SelectedRangeFillDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { SelectedRangeFill = ColorHexCodec.Format(args.Value, true) }, SelectedRangeFillDraft);
+        InactiveRangeFillDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { InactiveRangeFill = ColorHexCodec.Format(args.Value, true) }, InactiveRangeFillDraft);
         UpdatePreferences(preferences);
     }
 
@@ -40,8 +47,15 @@ public sealed class ColorsSettingsViewModel : ObservableObject
     public ColorDraft MidDraft { get; } = new() { IsAlphaEnabled = false };
     public ColorDraft HighDraft { get; } = new() { IsAlphaEnabled = false };
     public ColorDraft WaveformDraft { get; } = new();
+    public ColorDraft SelectedClipDraft { get; } = new();
+    public ColorDraft InactiveClipDraft { get; } = new();
+    public ColorDraft StartLineDraft { get; } = new();
+    public ColorDraft EndLineDraft { get; } = new();
+    public ColorDraft SelectedRangeFillDraft { get; } = new();
+    public ColorDraft InactiveRangeFillDraft { get; } = new();
     public string AccentColor => accentColor;
     public AudioGraphPalette AudioGraph => audioGraph;
+    public TimelineClipPalette TimelineClips => timelineClips;
     public AudioGraphPaletteChoice[] Schemes => schemes;
     public AudioGraphPaletteChoice SelectedScheme
     {
@@ -93,10 +107,13 @@ public sealed class ColorsSettingsViewModel : ObservableObject
         {
             accentColor = value.AccentColor;
             audioGraph = value.AudioGraph;
+            timelineClips = value.TimelineClips;
             AccentDraft.Load(Parse(accentColor), false);
             LoadPalette(false);
+            LoadTimelinePalette(false);
             OnPropertyChanged(nameof(AccentColor));
             OnPropertyChanged(nameof(AudioGraph));
+            OnPropertyChanged(nameof(TimelineClips));
             OnPropertyChanged(nameof(SchemeIndex));
             OnPropertyChanged(nameof(SelectedScheme));
             RefreshLanguage();
@@ -121,7 +138,11 @@ public sealed class ColorsSettingsViewModel : ObservableObject
             }
             OnPropertyChanged(nameof(SchemeIndex));
             OnPropertyChanged(nameof(SelectedScheme));
-            foreach (var draft in new[] { AccentDraft, LowDraft, MidDraft, HighDraft, WaveformDraft })
+            foreach (var draft in new[]
+                     {
+                         AccentDraft, LowDraft, MidDraft, HighDraft, WaveformDraft,
+                         SelectedClipDraft, InactiveClipDraft, StartLineDraft, EndLineDraft, SelectedRangeFillDraft, InactiveRangeFillDraft
+                     })
             {
                 draft.RefreshLanguage();
             }
@@ -151,10 +172,13 @@ public sealed class ColorsSettingsViewModel : ObservableObject
         {
             accentColor = defaults.AccentColor;
             audioGraph = defaults.AudioGraph;
+            timelineClips = defaults.TimelineClips;
             AccentDraft.Load(Parse(accentColor));
             LoadPalette(true);
+            LoadTimelinePalette(true);
             OnPropertyChanged(nameof(AccentColor));
             OnPropertyChanged(nameof(AudioGraph));
+            OnPropertyChanged(nameof(TimelineClips));
             OnPropertyChanged(nameof(SchemeIndex));
             OnPropertyChanged(nameof(SelectedScheme));
         }
@@ -174,12 +198,32 @@ public sealed class ColorsSettingsViewModel : ObservableObject
         WaveformDraft.Load(Parse(audioGraph.Waveform), discardDrafts);
     }
 
+    private void CommitTimelinePalette(TimelineClipPalette value, ColorDraft committed)
+    {
+        timelineClips = value with { AdaptToTheme = false };
+        committed.Load(committed.Value);
+        LoadTimelinePalette(false);
+        OnPropertyChanged(nameof(TimelineClips));
+        NotifyChanged();
+    }
+
+    private void LoadTimelinePalette(bool discardDrafts)
+    {
+        SelectedClipDraft.Load(Parse(timelineClips.SelectedClip), discardDrafts);
+        InactiveClipDraft.Load(Parse(timelineClips.InactiveClip), discardDrafts);
+        StartLineDraft.Load(Parse(timelineClips.StartLine), discardDrafts);
+        EndLineDraft.Load(Parse(timelineClips.EndLine), discardDrafts);
+        SelectedRangeFillDraft.Load(Parse(timelineClips.SelectedRangeFill), discardDrafts);
+        InactiveRangeFillDraft.Load(Parse(timelineClips.InactiveRangeFill), discardDrafts);
+    }
+
     private void NotifyChanged()
     {
         if (!updating)
         {
             audioGraph.Validate();
-            Changed?.Invoke(this, new(accentColor, audioGraph));
+            timelineClips.Validate();
+            Changed?.Invoke(this, new(accentColor, audioGraph, timelineClips));
         }
     }
 

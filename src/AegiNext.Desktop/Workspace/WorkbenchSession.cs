@@ -529,7 +529,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         preview.FileTitle = snapshot.FilePath is { } path ? Path.GetFileName(path) : Localization.Get("Preview.Preview");
         preview.IsOpening = snapshot.IsOpening || switchingPreviewDecodeMode;
         preview.CanPlay = !closing && !switchingPreviewDecodeMode && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
-        preview.IsPlaying = snapshot.State == VideoPlaybackState.PLAYING;
+        preview.IsPlaying = snapshot.State == VideoPlaybackState.PLAYING || snapshot.AudioAuditionActive;
         preview.PlayLabel = Localization.Get("Preview." + (preview.IsPlaying ? "Pause" : "Play"));
         preview.MuteLabel = Localization.Get("Preview." + (preview.IsMuted ? "Unmute" : "Mute"));
         preview.VolumeLabel = Localization.Get("Preview.Volume");

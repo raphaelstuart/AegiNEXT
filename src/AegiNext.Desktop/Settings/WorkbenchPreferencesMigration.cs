@@ -23,7 +23,8 @@ internal static class WorkbenchPreferencesMigration
         var projectCommands = commands.Where(command => command <= WorkbenchCommand.CLOSE_PROJECT);
         var aboutCommands = commands.Where(command => command <= WorkbenchCommand.OPEN_ABOUT);
         var maskCommands = commands.Where(command => command <= WorkbenchCommand.VIEW_MASKS);
-        if (!present.SetEquals(maskCommands) && !present.SetEquals(aboutCommands) && !present.SetEquals(legacy) && !present.SetEquals(previous) && !present.SetEquals(current) && !present.SetEquals(subtitleDetails) && !present.SetEquals(focusCommands) && !present.SetEquals(projectCommands))
+        var clipCommands = commands.Where(command => command <= WorkbenchCommand.PASTE_CLIPS);
+        if (!present.SetEquals(clipCommands) && !present.SetEquals(maskCommands) && !present.SetEquals(aboutCommands) && !present.SetEquals(legacy) && !present.SetEquals(previous) && !present.SetEquals(current) && !present.SetEquals(subtitleDetails) && !present.SetEquals(focusCommands) && !present.SetEquals(projectCommands))
         {
             return value;
         }

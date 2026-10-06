@@ -61,7 +61,7 @@ dotnet_diagnostic.CA1707.severity = none
 # 枚举常量遵循项目 ALL_UPPER 命名。
 dotnet_diagnostic.CA1707.severity = none
 
-[src/AegiNext.Media/Analysis/SpectrogramAnalyzer.cs]
+[src/AegiNext.Media/Analysis/{SpectrogramAnalyzer,WaveformAnalyzer,WaveformAnalysisRequest}.cs]
 # 常量遵循项目 ALL_UPPER 命名。
 dotnet_diagnostic.CA1707.severity = none
 

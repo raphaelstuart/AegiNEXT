@@ -12,6 +12,8 @@ public sealed partial class VideoPreviewController
     private long rangeRevision;
     private bool mediaRangeInstalled;
     private bool rangeLoop;
+    private bool audioOnlyRangeInstalled;
+    private CancellationToken rangeOwnerToken;
 
     /// <summary>当前媒体是否仍由字幕范围播放任务拥有；主窗口定位和暂停会立即撤销。</summary>
     public bool IsRangePlaybackActive
@@ -28,6 +30,27 @@ public sealed partial class VideoPreviewController
     /// <summary>在原始媒体时间范围内手动开始播放；首次开始后返回，循环由后台拥有者协调。</summary>
     public async Task PlayRangeAsync(MediaTime start, MediaTime end, bool loop, CancellationToken cancellationToken = default)
     {
+        await PlayRangeCoreAsync(start, end, loop, false, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>在原始媒体范围内独立试听音频，视频保持暂停位置与当前画面。</summary>
+    public async Task PlayAudioRangeAsync(MediaTime start, MediaTime end, CancellationToken cancellationToken = default)
+    {
+        await PlayRangeCoreAsync(start, end, false, true, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>判断当前正在播放的范围是否由指定取消令牌持有。</summary>
+    public bool IsPlaybackRangeOwnedBy(CancellationToken ownerToken)
+    {
+        lock (gate)
+        {
+            return rangeCancellation is { IsCancellationRequested: false } && rangeOwnerToken == ownerToken;
+        }
+    }
+
+    private async Task PlayRangeCoreAsync(MediaTime start, MediaTime end, bool loop, bool audioOnly,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         var requested = new MediaTimeRange(start, end);
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -39,17 +62,24 @@ public sealed partial class VideoPreviewController
             {
                 throw new InvalidOperationException("视频尚未就绪。");
             }
+            if (audioOnly && (run.AudioError is not null || run.Audio is not { Error: null }))
+            {
+                throw new InvalidOperationException("音频尚未就绪。", run.AudioError ?? run.Audio?.Error);
+            }
             var lower = run.Media.Start ?? MediaTime.Zero;
             var upper = run.Media.Duration is { } duration ? lower + duration : requested.End;
             start = requested.Start > lower ? requested.Start : lower;
             end = requested.End < upper ? requested.End : upper;
             var range = new MediaTimeRange(start, end);
             CancelPlaybackRangeUnderLock();
+            revision++;
+            pendingSeek = null;
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, run.Token);
             rangeCancellation = cancellation;
+            rangeOwnerToken = cancellationToken;
             rangeLoop = loop;
             var owner = ++rangeRevision;
-            rangeWorker = RunPlaybackRangeAsync(run, range, owner, cancellation, started);
+            rangeWorker = RunPlaybackRangeAsync(run, range, owner, cancellation, started, audioOnly);
         }
         await started.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -66,15 +96,49 @@ public sealed partial class VideoPreviewController
         }
     }
 
+    /// <summary>仅在指定取消令牌仍拥有当前范围时调整循环开关。</summary>
+    public void SetPlaybackRangeLoop(bool loop, CancellationToken ownerToken)
+    {
+        lock (gate)
+        {
+            if (rangeOwnerToken == ownerToken && rangeCancellation is { IsCancellationRequested: false })
+            {
+                rangeLoop = loop;
+            }
+        }
+    }
+
     /// <summary>立即撤销循环拥有者并暂停，等待旧任务排空后解除媒体范围。</summary>
     public async Task ClearPlaybackRangeAsync()
+    {
+        await ClearPlaybackRangeCoreAsync(null).ConfigureAwait(false);
+    }
+
+    /// <summary>仅撤销指定取消令牌持有的范围，旧拥有者无法停止较新的试听。</summary>
+    public async Task ClearPlaybackRangeAsync(CancellationToken ownerToken)
+    {
+        await ClearPlaybackRangeCoreAsync(ownerToken).ConfigureAwait(false);
+    }
+
+    private async Task ClearPlaybackRangeCoreAsync(CancellationToken? ownerToken)
     {
         Task worker;
         Task stop;
         long owner;
+        bool preservePausedFrame;
         VideoPreviewRun? run;
         lock (gate)
         {
+            if (rangeCancellation is null && !mediaRangeInstalled)
+            {
+                return;
+            }
+            if (ownerToken is { } expectedOwner && rangeOwnerToken != expectedOwner)
+            {
+                return;
+            }
+            preservePausedFrame = audioOnlyRangeInstalled && current?.Session?.Snapshot.State is
+                VideoPlaybackState.PAUSED or VideoPlaybackState.ENDED;
             CancelPlaybackRangeUnderLock();
             worker = rangeWorker;
             stop = rangeStop;
@@ -82,71 +146,95 @@ public sealed partial class VideoPreviewController
             run = current;
         }
         await Task.WhenAll(worker, stop).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        Task clear;
         lock (gate)
         {
             if (closed || opening || owner != rangeRevision || run is null || !IsCurrentUnderLock(run) || run.Session is null)
             {
                 return;
             }
-        }
-        await ExecuteAsync(async (ready, session, operationRevision) =>
-        {
-            lock (gate)
+            clear = ExecuteAsync(async (ready, session, operationRevision) =>
             {
-                if (owner != rangeRevision)
+                lock (gate)
                 {
-                    return;
+                    if (owner != rangeRevision)
+                    {
+                        return;
+                    }
+                    ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
                 }
-                ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
-            }
-            await ClearMediaRangeAsync(ready, session, operationRevision).ConfigureAwait(false);
-        }, true).ConfigureAwait(false);
+                await ClearMediaRangeAsync(ready, session, operationRevision).ConfigureAwait(false);
+            }, !preservePausedFrame);
+        }
+        try
+        {
+            await clear.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (IsRangeClearObsolete(run, owner))
+        {
+        }
+    }
+
+    private bool IsRangeClearObsolete(VideoPreviewRun run, long owner)
+    {
+        lock (gate)
+        {
+            return closed || owner != rangeRevision || !IsCurrentUnderLock(run);
+        }
     }
 
     private async Task RunPlaybackRangeAsync(VideoPreviewRun run, MediaTimeRange range, long owner,
-        CancellationTokenSource cancellation, TaskCompletionSource started)
+        CancellationTokenSource cancellation, TaskCompletionSource started, bool audioOnly)
     {
         var token = cancellation.Token;
         try
         {
             while (true)
             {
-                await ExecuteAsync(async (ready, session, operationRevision) =>
+                if (audioOnly)
                 {
-                    Task installAudio;
-                    lock (gate)
+                    await StartAudioRangeAsync(run, range, owner, token).ConfigureAwait(false);
+                }
+                else
+                {
+                    await ExecuteAsync(async (ready, session, operationRevision) =>
                     {
-                        RequireRangeOwnerUnderLock(run, owner, token);
-                        ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
-                        mediaRangeInstalled = true;
-                        session.SetPlaybackRange(range);
-                        installAudio = SubmitAudioCommandAsync(ready, operationRevision, audio => audio.SetPlaybackRangeAsync(range));
-                    }
-                    await installAudio.ConfigureAwait(false);
-                    Task seek;
-                    lock (gate)
-                    {
-                        RequireRangeOwnerUnderLock(run, owner, token);
-                        ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
-                        seek = session.SeekAsync(range.Start, token);
-                    }
-                    await seek.ConfigureAwait(false);
-                    Task audioPlay;
-                    lock (gate)
-                    {
-                        RequireRangeOwnerUnderLock(run, owner, token);
-                        audioPlay = SubmitAudioCommandAsync(ready, operationRevision, audio => audio.PlayAsync());
-                    }
-                    await audioPlay.ConfigureAwait(false);
-                    Task play;
-                    lock (gate)
-                    {
-                        RequireRangeOwnerUnderLock(run, owner, token);
-                        ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
-                        play = session.PlayAsync(token);
-                    }
-                    await play.ConfigureAwait(false);
-                }, true).ConfigureAwait(false);
+                        Task installAudio;
+                        lock (gate)
+                        {
+                            RequireRangeOwnerUnderLock(run, owner, token);
+                            ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
+                            mediaRangeInstalled = true;
+                            audioOnlyRangeInstalled = false;
+                            session.SetPlaybackRange(range);
+                            installAudio = SubmitAudioCommandAsync(ready, operationRevision, audio => audio.SetPlaybackRangeAsync(range));
+                        }
+                        await installAudio.ConfigureAwait(false);
+                        Task seek;
+                        lock (gate)
+                        {
+                            RequireRangeOwnerUnderLock(run, owner, token);
+                            ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
+                            seek = session.SeekAsync(range.Start, token);
+                        }
+                        await seek.ConfigureAwait(false);
+                        Task audioPlay;
+                        lock (gate)
+                        {
+                            RequireRangeOwnerUnderLock(run, owner, token);
+                            audioPlay = SubmitAudioCommandAsync(ready, operationRevision, audio => audio.PlayAsync());
+                        }
+                        await audioPlay.ConfigureAwait(false);
+                        Task play;
+                        lock (gate)
+                        {
+                            RequireRangeOwnerUnderLock(run, owner, token);
+                            ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
+                            play = session.PlayAsync(token);
+                        }
+                        await play.ConfigureAwait(false);
+                    }, true).ConfigureAwait(false);
+                }
                 started.TrySetResult();
                 while (true)
                 {
@@ -155,7 +243,12 @@ public sealed partial class VideoPreviewController
                     {
                         RequireRangeOwnerUnderLock(run, owner, token);
                     }
-                    if (run.Session!.Snapshot.State == VideoPlaybackState.ENDED || run.Audio is { ReachedPlaybackRangeEnd: true })
+                    if (audioOnly && (run.AudioError is not null || run.Audio?.Error is not null))
+                    {
+                        throw new InvalidOperationException("音频试听失败。", run.AudioError ?? run.Audio?.Error);
+                    }
+                    if (audioOnly ? run.Audio is { ReachedPlaybackRangeEnd: true }
+                        : run.Session!.Snapshot.State == VideoPlaybackState.ENDED)
                     {
                         break;
                     }
@@ -196,7 +289,14 @@ public sealed partial class VideoPreviewController
             {
                 if (IsCurrentUnderLock(run) && owner == rangeRevision)
                 {
-                    run.Error = error;
+                    if (audioOnly)
+                    {
+                        run.AudioError = error;
+                    }
+                    else
+                    {
+                        run.Error = error;
+                    }
                 }
             }
         }
@@ -232,6 +332,46 @@ public sealed partial class VideoPreviewController
         }
     }
 
+    private async Task StartAudioRangeAsync(VideoPreviewRun run, MediaTimeRange range, long owner,
+        CancellationToken token)
+    {
+        await ExecuteAsync(async (ready, session, operationRevision) =>
+        {
+            Task pause;
+            lock (gate)
+            {
+                RequireRangeOwnerUnderLock(run, owner, token);
+                ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
+                pause = session.Snapshot.State == VideoPlaybackState.PLAYING
+                    ? session.PauseAsync(token) : Task.CompletedTask;
+            }
+            await pause.ConfigureAwait(false);
+            Task installAudio;
+            lock (gate)
+            {
+                RequireRangeOwnerUnderLock(run, owner, token);
+                ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
+                session.SetPlaybackRange(null);
+                mediaRangeInstalled = true;
+                audioOnlyRangeInstalled = true;
+                installAudio = SubmitAudioCommandAsync(ready, operationRevision, audio => audio.SetPlaybackRangeAsync(range));
+            }
+            await installAudio.ConfigureAwait(false);
+            Task audioPlay;
+            lock (gate)
+            {
+                RequireRangeOwnerUnderLock(run, owner, token);
+                ThrowIfCommandObsoleteUnderLock(ready, operationRevision);
+                audioPlay = SubmitAudioCommandAsync(ready, operationRevision, audio => audio.PlayAsync());
+            }
+            await audioPlay.ConfigureAwait(false);
+            lock (gate)
+            {
+                RequireRangeOwnerUnderLock(run, owner, token);
+            }
+        }, false).ConfigureAwait(false);
+    }
+
     private void RequireRangeOwnerUnderLock(VideoPreviewRun run, long owner, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -256,13 +396,14 @@ public sealed partial class VideoPreviewController
             session.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED)
         {
             rangeStop = Task.WhenAll(run.Audio is { } audio ? TryAudioAsync(run, audio.PauseAsync) : Task.CompletedTask,
-                PauseRangeSessionAsync(session));
+                session.Snapshot.State == VideoPlaybackState.PAUSED ? Task.CompletedTask : PauseRangeSessionAsync(session));
         }
     }
 
     private async Task ClearMediaRangeAsync(VideoPreviewRun run, VideoPlaybackSession session, long operationRevision)
     {
         Task clearAudio;
+        bool restoreAudioPosition;
         lock (gate)
         {
             ThrowIfCommandObsoleteUnderLock(run, operationRevision);
@@ -271,10 +412,18 @@ public sealed partial class VideoPreviewController
                 return;
             }
             mediaRangeInstalled = false;
+            restoreAudioPosition = audioOnlyRangeInstalled;
+            audioOnlyRangeInstalled = false;
+            rangeOwnerToken = default;
             session.SetPlaybackRange(null);
             clearAudio = SubmitAudioCommandAsync(run, operationRevision, audio => audio.SetPlaybackRangeAsync(null));
         }
         await clearAudio.ConfigureAwait(false);
+        if (restoreAudioPosition)
+        {
+            await SubmitAudioCommandAsync(run, operationRevision, audio => audio.SeekAsync(session.Snapshot.Position))
+                .ConfigureAwait(false);
+        }
     }
 
     private Task SubmitAudioCommandAsync(VideoPreviewRun run, long operationRevision, Func<AudioPlaybackSession, Task> command)

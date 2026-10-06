@@ -1,9 +1,9 @@
 using AegiNext.Desktop.Editing;
+using AegiNext.Desktop.Shortcuts;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Panels.Subtitles;
@@ -11,7 +11,6 @@ namespace AegiNext.Desktop.Panels.Subtitles;
 internal sealed partial class SubtitlesPanelView
 {
     private TopLevel? keyboardRoot;
-    private bool enterPressed;
     private bool advancingRow;
     private int rowNavigationRevision;
 
@@ -22,7 +21,6 @@ internal sealed partial class SubtitlesPanelView
         if (!disposed)
         {
             keyboardRoot = TopLevel.GetTopLevel(this);
-            keyboardRoot?.AddHandler(KeyUpEvent, OnSubtitleKeyUp, RoutingStrategies.Tunnel, true);
             if (keyboardRoot is Window window)
             {
                 window.Deactivated += OnKeyboardRootDeactivated;
@@ -37,37 +35,48 @@ internal sealed partial class SubtitlesPanelView
         base.OnDetachedFromVisualTree(e);
     }
 
-    private async void OnSubtitleKeyDown(object? sender, KeyEventArgs e)
+    /// <summary>仅在字幕内容输入中执行可配置的换行和下一行命令，保留输入法候选确认。</summary>
+    public bool CanExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
     {
-        if (e.Key != Key.Enter || disposed || e.Handled)
-        {
-            return;
-        }
+        return !disposed && !session.IsClosing && !session.IsProjectBusy && !advancingRow && keyboardRoot is not null &&
+               (command is WorkbenchCommand.ADVANCE_SUBTITLE_ROW or WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK) &&
+               focusedElement is TextBox { AcceptsReturn: true, IsReadOnly: false, DataContext: SubtitleRow row } box &&
+               box.GetVisualAncestors().Contains(list) && viewModel.VisibleRows.Any(value => value.Id == row.Id) &&
+               list.ContextMenu?.IsOpen != true &&
+               !box.GetVisualDescendants().OfType<TextPresenter>().Any(presenter => !string.IsNullOrEmpty(presenter.PreeditText));
+    }
 
-        if (enterPressed)
+    /// <summary>在当前内容光标插入换行，或提交后跳转到后续内容输入。</summary>
+    public bool TryExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
+    {
+        if (!CanExecuteFocusCommand(command, focusedElement))
+        {
+            return false;
+        }
+        var box = (TextBox)focusedElement;
+        if (command == WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK)
+        {
+            box.RaiseEvent(new TextInputEventArgs { RoutedEvent = TextInputEvent, Text = "\n" });
+        }
+        else
+        {
+            _ = AdvanceRowAndFocusAsync((SubtitleRow)box.DataContext!);
+        }
+        return true;
+    }
+
+    private void OnSubtitleKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && !disposed && !e.Handled &&
+            e.Source is TextBox { AcceptsReturn: true, DataContext: SubtitleRow } box &&
+            !box.GetVisualDescendants().OfType<TextPresenter>().Any(presenter => !string.IsNullOrEmpty(presenter.PreeditText)))
         {
             e.Handled = true;
-            return;
         }
+    }
 
-        if (e.Source is not TextBox { AcceptsReturn: true, DataContext: SubtitleRow row } box ||
-            box.GetVisualDescendants().OfType<TextPresenter>().Any(presenter => !string.IsNullOrEmpty(presenter.PreeditText)))
-        {
-            return;
-        }
-
-        if (e.KeyModifiers == KeyModifiers.Shift)
-        {
-            return;
-        }
-
-        e.Handled = true;
-        if (e.KeyModifiers != KeyModifiers.None)
-        {
-            return;
-        }
-
-        enterPressed = true;
+    private async Task AdvanceRowAndFocusAsync(SubtitleRow row)
+    {
         if (advancingRow || keyboardRoot is not { } root)
         {
             return;
@@ -109,28 +118,16 @@ internal sealed partial class SubtitlesPanelView
         }
     }
 
-    private void OnSubtitleKeyUp(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && enterPressed)
-        {
-            enterPressed = false;
-            e.Handled = true;
-        }
-    }
-
     private void OnKeyboardRootDeactivated(object? sender, EventArgs e)
     {
-        enterPressed = false;
         rowNavigationRevision++;
     }
 
     private void ReleaseKeyboardRoot()
     {
         rowNavigationRevision++;
-        enterPressed = false;
         if (keyboardRoot is { } root)
         {
-            root.RemoveHandler(KeyUpEvent, OnSubtitleKeyUp);
             if (root is Window window)
             {
                 window.Deactivated -= OnKeyboardRootDeactivated;

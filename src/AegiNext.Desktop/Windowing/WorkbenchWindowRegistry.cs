@@ -220,6 +220,19 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             return;
         }
 
+        if (id is WorkbenchCommand.AUDITION_BEFORE_SUBTITLE or WorkbenchCommand.AUDITION_AFTER_SUBTITLE or
+            WorkbenchCommand.AUDITION_SUBTITLE_BEGIN or WorkbenchCommand.AUDITION_SUBTITLE or
+            WorkbenchCommand.ADVANCE_SUBTITLE_ROW or WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK)
+        {
+            invalidateTiming();
+            if (TryExecuteFocusCommand(id, window))
+            {
+                e.Handled = true;
+                entry.PressedKeys.Add(e.Key);
+            }
+            return;
+        }
+
         if (id is WorkbenchCommand.COPY_CLIPS or WorkbenchCommand.PASTE_CLIPS or WorkbenchCommand.DELETE_SUBTITLE)
         {
             if (TryExecuteFocusCommand(id, window))

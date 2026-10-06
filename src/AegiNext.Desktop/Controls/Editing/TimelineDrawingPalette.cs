@@ -13,12 +13,8 @@ internal sealed class TimelineDrawingPalette
         Track = Brush(dark ? "#202C40" : "#E2E9F3");
         SelectedTrack = Brush(dark ? "#354C73" : "#BED5F4");
         StyleBadge = Brush(dark ? "#415B86" : "#C9DAEF");
-        ActiveClip = Brush(dark ? "#B84568DC" : "#E4BCD2FA");
-        SubtitleClip = Brush(dark ? "#865F90C4" : "#E4D7E5FA");
-        SceneClip = Brush(dark ? "#864FB3AB" : "#E4CAE8E5");
         InvalidClip = Brush(dark ? "#BDAD4759" : "#F2EBC4CA");
         ActiveClipBorder = Brush(dark ? "#A5B8FF" : "#365BA8");
-        ClipBorder = Brush(dark ? "#77D4DF" : "#6A819F");
         ClipForeground = dark ? Brushes.White : Brush("#16263D");
         Components = dark
             ? [Brush("#B7C6FF"), Brush("#F5C979")]
@@ -39,12 +35,8 @@ internal sealed class TimelineDrawingPalette
     internal SolidColorBrush Track { get; }
     internal SolidColorBrush SelectedTrack { get; }
     internal SolidColorBrush StyleBadge { get; }
-    internal SolidColorBrush ActiveClip { get; }
-    internal SolidColorBrush SubtitleClip { get; }
-    internal SolidColorBrush SceneClip { get; }
     internal SolidColorBrush InvalidClip { get; }
     internal SolidColorBrush ActiveClipBorder { get; }
-    internal SolidColorBrush ClipBorder { get; }
     internal IBrush ClipForeground { get; }
     internal SolidColorBrush[] Components { get; }
     internal SolidColorBrush[] ColorComponents { get; }
