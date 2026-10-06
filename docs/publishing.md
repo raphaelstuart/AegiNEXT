@@ -40,11 +40,11 @@ pwsh -NoProfile -File ./publish.ps1 -RuntimeIdentifier win-x64 -Configuration Re
 
 Output must be new. SkipBuild reuses matching RID/Configuration native output but republishes both managed apps and validates SDKs. Publishing does not install/replace dependencies. Windows defaults to win-x64, with isolated RID obj avoiding Mac/ARM64 NuGet artifacts. Selected build tests build their project after solution build; Release|Any CPU does not enable all tests, so no presumed no-build DLL.
 
-## Locks and RID
+## Dependencies and RID
 
-Generic restores use packages.lock.json; explicit RIDs use packages.osx-arm64.lock.json/packages.osx-x64.lock.json/packages.win-x64.lock.json. Restore/build/test/both publish pass `-p:AegiNextRuntimeIdentifier=<RID>` for early evaluation; `-r` alone may set plural RuntimeIdentifiers too late.
+Packages use ordinary `PackageReference` restore with versions managed in `Directory.Packages.props`; no NuGet lock files are generated or maintained. Restore/build/test/both publish pass `-p:AegiNextRuntimeIdentifier=<RID>` for early evaluation; `-r` alone may set plural RuntimeIdentifiers too late.
 
-On first lock maintenance/dependency updates, Mac/Linux run `dotnet restore AegiNext.sln --force-evaluate` for generic, and `dotnet restore AegiNext.sln -r <RID> -p:AegiNextRuntimeIdentifier=<RID> --force-evaluate` for each RID. Review/version all locks. Windows defaults win-x64; generic maintenance needs empty `-p:RuntimeIdentifier=`. Normal builds stay locked.
+After dependency changes, use `dotnet restore AegiNext.sln`, or `dotnet restore AegiNext.sln -r <RID> -p:AegiNextRuntimeIdentifier=<RID>` for a specific platform. Build and publish scripts already perform this restore. Windows defaults to win-x64; RID intermediate files remain isolated in `obj/<rid>`.
 
 ## Native closure, licenses, identity
 

@@ -64,6 +64,7 @@ out/
 **/bin/
 **/obj/
 **/TestResults/
+packages*.lock.json
 .vs/
 *.user
 *.suo

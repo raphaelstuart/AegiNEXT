@@ -14,7 +14,9 @@ Describe 'Explicit headless UI test selection' {
         param($Platform, $Architecture)
         $hostInfo = [pscustomobject]@{ Platform = $Platform; Architecture = $Architecture; ProcessArchitecture = $Architecture }
         $plan = @(Get-AegiNextBuildPlan -RepositoryRoot $repository -Target Managed -HostInfo $hostInfo -RunTests -TestProjects 'Desktop.Ui')
-        $plan.Count | Should -Be 3
+        $plan.Count | Should -Be 4
+        $plan[-2].Label | Should -Be 'Restore test Desktop.Ui'
+        $plan[-2].Arguments | Should -Not -Contain '--locked-mode'
         $plan[-1].Label | Should -Be 'Test Desktop.Ui'
         $plan[-1].Arguments | Should -Contain (Join-Path $repository 'Tests/AegiNext.Desktop.Ui.Tests/AegiNext.Desktop.Ui.Tests.csproj')
         $plan[-1].Arguments | Should -Not -Contain '--no-build'

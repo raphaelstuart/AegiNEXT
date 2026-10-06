@@ -3,8 +3,8 @@
 
 BeforeAll {
     $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-    Import-Module (Join-Path $repository 'scripts/build/AegiNext.Build.psm1') -Force
     Import-Module (Join-Path $repository 'scripts/publish/AegiNext.Publish.psm1') -Force
+    Import-Module (Join-Path $repository 'scripts/build/AegiNext.Build.psm1')
 }
 
 Describe 'Platform publishing boundaries' {
@@ -148,7 +148,7 @@ Describe 'Platform publishing boundaries' {
             Should -Invoke Invoke-AegiNextPublishCommand -Times 2 -Exactly -ParameterFilter {
                 $FilePath -eq 'fixture-dotnet' -and $Arguments[0] -eq 'publish' -and
                 $Arguments -contains 'win-x64' -and $Arguments -contains '-p:AegiNextRuntimeIdentifier=win-x64' -and
-                $Arguments -contains '-p:RestoreLockedMode=true' -and $Arguments -contains '--self-contained' -and
+                $Arguments -notcontains '-p:RestoreLockedMode=true' -and $Arguments -contains '--self-contained' -and
                 $Arguments -contains "-p:Version=$ExpectedVersion" -and $Arguments -contains "-p:InformationalVersion=$ExpectedVersion" -and
                 $Arguments -contains $assemblyVersionArgument -and $Arguments -contains $fileVersionArgument
             }

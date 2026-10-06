@@ -25,7 +25,7 @@ Describe 'Workbench and Application selection' {
     It 'allows only Application tests without any native plan' {
         $hostInfo = [pscustomobject]@{ Platform = 'Windows'; Architecture = 'X64'; ProcessArchitecture = 'X64' }
         $plan = @(Get-AegiNextBuildPlan -RepositoryRoot $repository -Target Managed -HostInfo $hostInfo -RunTests -TestProjects Application)
-        $plan.Count | Should -Be 3
+        $plan.Count | Should -Be 4
         $plan[-1].Label | Should -Be 'Test Application'
         $plan[-1].Arguments | Should -Not -Contain '--no-build'
         $plan[-1].Arguments | Should -Contain '--no-restore'

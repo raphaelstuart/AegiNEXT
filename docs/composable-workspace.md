@@ -115,7 +115,7 @@ Tests use real ProjectEditor and controlled media/dialog/export boundaries for a
 Historical isolated-build commands were:
 
 ```sh
-dotnet restore AegiNext.sln --artifacts-path artifacts/workspace-build -p:RestoreLockedMode=true
+dotnet restore AegiNext.sln --artifacts-path artifacts/workspace-build
 dotnet test Tests/AegiNext.Desktop.Tests/AegiNext.Desktop.Tests.csproj --artifacts-path artifacts/workspace-build --no-restore
 dotnet test Tests/AegiNext.Desktop.Ui.Tests/AegiNext.Desktop.Ui.Tests.csproj --artifacts-path artifacts/workspace-build --no-restore
 dotnet build src/AegiNext.Desktop/AegiNext.Desktop.csproj -c Release --artifacts-path artifacts/workspace-build --no-restore

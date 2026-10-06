@@ -17,8 +17,8 @@ Editing previews are SDR. PQ/HLG export composites original high-precision video
 ## Development environment
 
 - .NET SDK `10.0.401`; stable patches in the same feature band are allowed.
-- Avalonia `12.1.3`; direct and transitive dependencies are centrally versioned in `Directory.Packages.props` and project lock files.
-- SkiaSharp / SkiaSharp.HarfBuzz `3.119.4`; HarfBuzzSharp and the participating native packages are locked to `8.3.1.5`.
+- Avalonia `12.1.3`; packages use `PackageReference` with versions managed centrally in `Directory.Packages.props` and ordinary NuGet restore.
+- SkiaSharp / SkiaSharp.HarfBuzz `3.119.4`; HarfBuzzSharp and the participating native packages are centrally pinned to `8.3.1.5`.
 - Development release targets: Apple Silicon macOS and Windows x64. The current local macOS dependency closure requires 27.0; each package records its actual minimum in its manifest.
 - PowerShell 7.2+. Dependency installation uses Homebrew on macOS and Scoop on Windows. Missing package managers are reported with setup instructions; scripts do not execute remote installers automatically.
 
@@ -31,7 +31,7 @@ pwsh -NoProfile -File ./build.ps1 -Target Workbench -InstallDependencies
 pwsh -NoProfile -File ./build.ps1 -RunTests -TestProjects Application,Desktop
 ```
 
-`Workbench` checks and builds Decoder → Audio → Export → Managed, producing the complete development workbench. The default target remains `Managed / Release`. Ordinary builds only check dependencies; installation requires `-InstallDependencies`. `-RunTests` accepts a project filter. SDK requirements, parameters, locks, and platform limitations are documented in [building](docs/building.md).
+`Workbench` checks and builds Decoder → Audio → Export → Managed, producing the complete development workbench. The default target remains `Managed / Release`. Ordinary builds only check dependencies; installation requires `-InstallDependencies`. `-RunTests` accepts a project filter. SDK requirements, parameters, dependency versions, and platform limitations are documented in [building](docs/building.md).
 
 Launch with the same RID, for example on Apple Silicon:
 
@@ -77,7 +77,7 @@ Playback and export use separate FFmpeg/SDL3 native modules. Development runs ac
 
 Use Allman braces, file-scoped namespaces, one top-level type per file, `var`, and target-typed `new()` where appropriate. Nullable checking, recommended .NET analyzers, and warnings-as-errors are enabled. Enum constants follow `ALL_UPPER`; conflicting CA1707 suppression is local to the relevant enum file.
 
-Keep layout space, feature panels, and reusable controls separate. Business view models must not hold controls, Dock objects, or bitmaps. Record focused tests, native runs, and outstanding manual acceptance separately at each checkpoint. Generated builds, reports, and screenshots stay in ignored directories; dependency locks are versioned.
+Keep layout space, feature panels, and reusable controls separate. Business view models must not hold controls, Dock objects, or bitmaps. Record focused tests, native runs, and outstanding manual acceptance separately at each checkpoint. Generated builds, reports, and screenshots stay in ignored directories; NuGet package versions are maintained in `Directory.Packages.props`; package lock files are not versioned.
 
 Project-specific Codex skills are available as `$aeginext-effect-dsl` for writing subtitle scripts and `$aeginext-controls` for developing and using shared controls. Their portable sources live in [.agents/skills](.agents/skills/aeginext-controls/SKILL.md).
 
@@ -90,4 +90,4 @@ feat: modernize workbench menus, settings and style presets
 fix: restore keyframe selection and parameter editing
 ```
 
-Keep commits scoped; inspect the index and preserve unrelated work. Source, documentation, relevant tests, lock files, `AegiNext.sln`, and `.csproj` files are versioned. Do not commit `bin/`, `obj/`, `TestResults/`, `testResults.xml`, `artifacts/`, IDE state, or local screenshots. Run `git diff --check` and affected builds/tests; do not treat compilation as platform runtime or visual acceptance.
+Keep commits scoped; inspect the index and preserve unrelated work. Source, documentation, relevant tests, `Directory.Packages.props`, `AegiNext.sln`, and `.csproj` files are versioned. Do not commit `bin/`, `obj/`, `TestResults/`, `testResults.xml`, `artifacts/`, IDE state, or local screenshots. Run `git diff --check` and affected builds/tests; do not treat compilation as platform runtime or visual acceptance.

@@ -613,10 +613,20 @@ function Get-AegiNextBuildPlan
 
     if ($Target -in @('Managed', 'All', 'Workbench'))
     {
-        $solution = Join-Path $RepositoryRoot 'AegiNext.sln'
+        if ($RunTests -and $TestProjects.Count -eq 0)
+        {
+            throw '-RunTests requires at least one managed test project.'
+        }
+        $isRelease = $Configuration -eq 'Release'
+        $solution = Join-Path $RepositoryRoot $(if ($isRelease) { 'AegiNext.Product.slnf' } else { 'AegiNext.sln' })
+        $restoreRuntimeArguments = [string[]]@()
+        if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows')
+        {
+            $restoreRuntimeArguments = [string[]]@('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid")
+        }
         $plan.Add([pscustomobject]@{
             Label = 'Restore managed'; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-            Arguments = [string[]](@('restore', $solution, '--locked-mode') + $(if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows') { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
+            Arguments = [string[]](@('restore', $solution) + $restoreRuntimeArguments)
         })
         $plan.Add([pscustomobject]@{
             Label = 'Build managed'; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
@@ -624,15 +634,19 @@ function Get-AegiNextBuildPlan
         })
         if ($RunTests)
         {
-            if ($TestProjects.Count -eq 0)
-            {
-                throw '-RunTests requires at least one managed test project.'
-            }
             foreach ($project in ($TestProjects | Select-Object -Unique))
             {
+                $testProject = Join-Path $RepositoryRoot "Tests/AegiNext.$project.Tests/AegiNext.$project.Tests.csproj"
+                if ($isRelease)
+                {
+                    $plan.Add([pscustomobject]@{
+                        Label = "Restore test $project"; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
+                        Arguments = [string[]](@('restore', $testProject) + $restoreRuntimeArguments)
+                    })
+                }
                 $plan.Add([pscustomobject]@{
                     Label = "Test $project"; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-                    Arguments = [string[]](@('test', (Join-Path $RepositoryRoot "Tests/AegiNext.$project.Tests/AegiNext.$project.Tests.csproj"),
+                    Arguments = [string[]](@('test', $testProject,
                         '--configuration', $Configuration, '--no-restore') + $(if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows') { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
                 })
             }

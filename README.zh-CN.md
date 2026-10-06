@@ -17,8 +17,8 @@ Clip 蒙版在工程坐标中裁切单个字幕的文字、描边、阴影、卡
 ## 开发环境
 
 - .NET SDK `10.0.401`，允许同一 feature band 的稳定补丁更新。
-- Avalonia `12.1.3`；依赖版本集中于 `Directory.Packages.props`，传递依赖由各项目的 `packages.lock.json` 锁定。
-- SkiaSharp / SkiaSharp.HarfBuzz `3.119.4`；HarfBuzzSharp 及已使用平台的原生包通过集中传递依赖锁定统一为 `8.3.1.5`。
+- Avalonia `12.1.3`；使用 `PackageReference` 与普通 NuGet 还原，包版本集中管理于 `Directory.Packages.props`。
+- SkiaSharp / SkiaSharp.HarfBuzz `3.119.4`；HarfBuzzSharp 及已使用平台的原生包通过集中传递依赖版本约束统一为 `8.3.1.5`。
 - 开发发布目标：Apple Silicon macOS、Windows x64；本机当前 macOS 包要求 27.0，具体包的最低版本由依赖闭包生成。构建与发布条件见 [平台发布说明](docs/zh-CN/publishing.md)。
 - PowerShell 7.2+。macOS 使用 Homebrew，Windows 使用 Scoop；缺少包管理器时脚本提供引导，不自动执行远程安装脚本。
 
@@ -82,7 +82,7 @@ pwsh -NoProfile -File ./build-debug-native.ps1 -RuntimeIdentifier win-x64
 
 - C# 使用 Allman 花括号、文件级命名空间、单文件单类型，优先 `var` 与目标类型 `new()`。
 - 开启可空检查、.NET 推荐分析器和警告视为错误。枚举常量按项目规则使用 `ALL_UPPER`；仅在对应枚举文件中覆盖冲突的 CA1707 命名建议。
-- 编译产物、测试结果与本地验证截图放在已忽略目录中，依赖锁文件纳入版本管理。
+- 编译产物、测试结果与本地验证截图放在已忽略目录中，NuGet 包版本在 `Directory.Packages.props` 中维护，不提交包锁文件。
 - 阶段开始前明确 Checkpoint，记录定向测试和实机验收边界。本轮按用户“继续执行全部”连续实施，见 [实施记录](docs/zh-CN/README.md#实施与验收记录)。
 
 项目专用 Codex Skill：`$aeginext-effect-dsl` 用于字幕特效脚本书写，`$aeginext-controls` 用于项目控件开发和接入。可移植定义位于 [.agents/skills](.agents/skills/aeginext-controls/SKILL.md)。
@@ -97,6 +97,6 @@ fix: restore keyframe selection and parameter editing
 ```
 
 - 一次提交围绕明确的功能或修复，提交前检查暂存范围，不混入无关改动。需要说明原因、验证或限制时，在空行后补充正文。
-- 源码、文档、对应测试和依赖锁文件需要提交。AegiNext 的 `.sln` 与 `.csproj` 是手工维护的工程入口，需要纳入版本管理；Nano Life 的 Unity 自动生成工程文件规则不适用于这些文件。
+- 源码、文档、对应测试和 `Directory.Packages.props` 需要提交。AegiNext 的 `.sln` 与 `.csproj` 是手工维护的工程入口，需要纳入版本管理；Nano Life 的 Unity 自动生成工程文件规则不适用于这些文件。
 - 不提交 `bin/`、`obj/`、`TestResults/`、`testResults.xml`、`artifacts/`、IDE 配置或本地截图，生成结果保留在本地并由 `.gitignore` 排除。
 - 提交前执行 `git diff --check` 和受影响的构建／测试；验收记录区分自动测试、实际运行及尚未验证的平台。

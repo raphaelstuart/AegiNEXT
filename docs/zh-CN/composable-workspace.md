@@ -117,7 +117,7 @@ Clip 起止线从标尺下沿贯穿时间轴内容区，选中边界为 1.5 DIP 
 当前构建使用隔离目录，避免跨平台共享 `obj` 中旧的 NuGet 路径干扰：
 
 ```sh
-dotnet restore AegiNext.sln --artifacts-path artifacts/workspace-build -p:RestoreLockedMode=true
+dotnet restore AegiNext.sln --artifacts-path artifacts/workspace-build
 dotnet test Tests/AegiNext.Desktop.Tests/AegiNext.Desktop.Tests.csproj --artifacts-path artifacts/workspace-build --no-restore
 dotnet test Tests/AegiNext.Desktop.Ui.Tests/AegiNext.Desktop.Ui.Tests.csproj --artifacts-path artifacts/workspace-build --no-restore
 dotnet build src/AegiNext.Desktop/AegiNext.Desktop.csproj -c Release --artifacts-path artifacts/workspace-build --no-restore

@@ -50,8 +50,7 @@ Three simulated hosts share window foundations, rather than claiming complete bu
 
 ```sh
 dotnet build src/AegiNext.Desktop/AegiNext.Desktop.csproj \
-  --configuration Release --artifacts-path artifacts/window-chrome-build \
-  -p:RestoreLockedMode=true
+  --configuration Release --artifacts-path artifacts/window-chrome-build
 
 dotnet artifacts/window-chrome-build/bin/AegiNext.Desktop/release/aegi-next.dll \
   --chrome-probe-auto \

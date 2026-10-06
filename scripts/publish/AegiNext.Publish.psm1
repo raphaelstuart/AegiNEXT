@@ -1,6 +1,6 @@
 #Requires -Version 7.2
 Set-StrictMode -Version Latest
-Import-Module ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../build/AegiNext.Build.psm1')))
+Import-Module ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../build/AegiNext.Build.psm1'))) -Force
 . (Join-Path $PSScriptRoot 'AegiNext.MacDependencies.ps1')
 . (Join-Path $PSScriptRoot 'AegiNext.WindowsDependencies.ps1')
 . (Join-Path $PSScriptRoot 'AegiNext.PublishMetadata.ps1')
@@ -234,7 +234,7 @@ function Invoke-AegiNextPublish
     $payload = if ($hostInfo.Platform -eq 'MacOS') { Join-Path $publishRoot 'AegiNext.app/Contents/MacOS' } else { Join-Path $publishRoot 'AegiNext' }
     [IO.Directory]::CreateDirectory($payload) | Out-Null
     $dotnet = Find-AegiNextCommand 'dotnet'
-    $common = @('-c', $Configuration, '-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid", '--self-contained', 'true', '-p:PublishSingleFile=false', '-p:PublishTrimmed=false', '-p:UseAppHost=true', '-p:RestoreLockedMode=true', '-p:AegiNextPublishWorkerSeparately=true')
+    $common = @('-c', $Configuration, '-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid", '--self-contained', 'true', '-p:PublishSingleFile=false', '-p:PublishTrimmed=false', '-p:UseAppHost=true', '-p:AegiNextPublishWorkerSeparately=true')
     $common += @("-p:Version=$versionText", "-p:InformationalVersion=$versionText", "-p:AssemblyVersion=$assemblyVersion", "-p:FileVersion=$assemblyVersion")
     foreach ($project in @('AegiNext.Desktop', 'AegiNext.ExportWorker'))
     {

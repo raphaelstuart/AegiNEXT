@@ -11,6 +11,7 @@ BeforeAll {
 
         [IO.Directory]::CreateDirectory((Join-Path $Root 'native')) | Out-Null
         Copy-Item -LiteralPath (Join-Path $sourceRoot 'global.json') -Destination $Root
+        Copy-Item -LiteralPath (Join-Path $sourceRoot 'AegiNext.Product.slnf') -Destination $Root
         Copy-Item -LiteralPath (Join-Path $sourceRoot 'native/dependencies.json') -Destination (Join-Path $Root 'native')
         Set-Content -LiteralPath (Join-Path $Root 'AegiNext.sln') -Value ''
     }
@@ -88,7 +89,7 @@ Describe 'Build plans are pure and preserve target boundaries' {
         $plan.Count | Should -Be 4
         @(foreach ($step in $plan) { Get-BuildTestExecutableName $step }) | Should -Be @('cmake', 'cmake', 'dotnet', 'dotnet')
         $plan[2].Arguments[0] | Should -Be 'restore'
-        $plan[2].Arguments | Should -Contain '--locked-mode'
+        $plan[2].Arguments | Should -Not -Contain '--locked-mode'
         $plan[3].Arguments[0] | Should -Be 'build'
         $plan[3].Arguments | Should -Contain '--no-restore'
         $plan[3].Arguments | Should -Contain 'Release'
@@ -101,6 +102,92 @@ Describe 'Build plans are pure and preserve target boundaries' {
 
         $plan.Count | Should -Be 2
         @(foreach ($step in $plan) { Get-BuildTestExecutableName $step }) | Should -Be @('dotnet', 'dotnet')
+    }
+
+    It 'restores and builds only product projects for Release <Target> on <Platform>' -TestCases @(
+        @{ Target = 'Managed'; Platform = 'MacOS'; Architecture = 'Arm64' }
+        @{ Target = 'Managed'; Platform = 'Windows'; Architecture = 'X64' }
+        @{ Target = 'All'; Platform = 'MacOS'; Architecture = 'Arm64' }
+        @{ Target = 'Workbench'; Platform = 'MacOS'; Architecture = 'Arm64' }
+        @{ Target = 'Workbench'; Platform = 'Windows'; Architecture = 'Arm64' }
+    ) {
+        param($Target, $Platform, $Architecture)
+
+        $parameters.Target = $Target
+        $parameters.HostInfo = New-BuildTestHost $Platform $Architecture
+        $parameters.NativePrefixes += @{ ffmpeg = '/ffmpeg'; sdl3 = '/sdl'; cc = 'cc'; cxx = 'c++'; cmake = 'cmake'; ninja = 'ninja' }
+        $plan = @(Get-AegiNextBuildPlan @parameters)
+        $managedSteps = @($plan | Where-Object { (Get-BuildTestExecutableName $_) -eq 'dotnet' })
+
+        $managedSteps.Count | Should -Be 2
+        @($managedSteps.Label) | Should -Be @('Restore managed', 'Build managed')
+        foreach ($step in $managedSteps)
+        {
+            $step.Arguments | Should -Contain (Join-Path $repository 'AegiNext.Product.slnf')
+            $step.Arguments | Should -Not -Contain (Join-Path $repository 'AegiNext.sln')
+            @($step.Arguments | Where-Object { $_ -like '*Tests*' }).Count | Should -Be 0
+        }
+        $managedSteps[0].Arguments | Should -Not -Contain '--locked-mode'
+        $managedSteps[1].Arguments | Should -Contain '--no-restore'
+        $managedSteps[1].Arguments | Should -Contain 'Release'
+        Test-Path -LiteralPath $repository | Should -BeFalse
+    }
+
+    It 'preserves the full solution entry point for Debug with RunTests <RunTests>' -TestCases @(
+        @{ RunTests = $false; ExpectedSteps = 2 }
+        @{ RunTests = $true; ExpectedSteps = 3 }
+    ) {
+        param($RunTests, $ExpectedSteps)
+
+        $plan = @(Get-AegiNextBuildPlan -RepositoryRoot $repository -Configuration Debug -HostInfo (New-BuildTestHost) -RunTests:$RunTests -TestProjects Media)
+
+        $plan.Count | Should -Be $ExpectedSteps
+        foreach ($step in $plan[0..1])
+        {
+            $step.Arguments | Should -Contain (Join-Path $repository 'AegiNext.sln')
+            $step.Arguments | Should -Not -Contain (Join-Path $repository 'AegiNext.Product.slnf')
+        }
+        $plan[0].Arguments | Should -Not -Contain '--locked-mode'
+        $plan[1].Arguments | Should -Contain '--no-restore'
+        $plan[1].Arguments | Should -Contain 'Debug'
+        if ($RunTests)
+        {
+            $plan[2].Label | Should -Be 'Test Media'
+            $plan[2].Arguments | Should -Contain '--no-restore'
+        }
+    }
+
+    It 'restores and runs only unique selected Release test projects' {
+        $plan = @(Get-AegiNextBuildPlan -RepositoryRoot $repository -HostInfo (New-BuildTestHost 'Windows' 'Arm64') -RunTests -TestProjects Core,Media,Core)
+
+        @($plan.Label) | Should -Be @('Restore managed', 'Build managed', 'Restore test Core', 'Test Core', 'Restore test Media', 'Test Media')
+        foreach ($index in @(2, 4))
+        {
+            $restore = $plan[$index]
+            $test = $plan[$index + 1]
+            $restore.Arguments[0] | Should -Be 'restore'
+            $restore.Arguments[1] | Should -Be $test.Arguments[1]
+            $restore.Arguments | Should -Not -Contain '--locked-mode'
+            $restore.Arguments | Should -Contain '-r'
+            $restore.Arguments | Should -Contain 'win-x64'
+            $restore.Arguments | Should -Contain '-p:AegiNextRuntimeIdentifier=win-x64'
+            $test.Arguments[0] | Should -Be 'test'
+            $test.Arguments | Should -Contain '--no-restore'
+            $test.Arguments | Should -Not -Contain '--no-build'
+        }
+        @($plan | Where-Object { $_.Arguments -contains (Join-Path $repository 'Tests/AegiNext.Desktop.Tests/AegiNext.Desktop.Tests.csproj') }).Count | Should -Be 0
+    }
+
+    It 'rejects an empty explicit test selection for <Configuration>' -TestCases @(
+        @{ Configuration = 'Debug' }
+        @{ Configuration = 'Release' }
+    ) {
+        param($Configuration)
+
+        $parameters.Configuration = $Configuration
+        $parameters.Target = 'Managed'
+        { Get-AegiNextBuildPlan @parameters -RunTests -TestProjects @() } |
+            Should -Throw '*at least one managed test project*'
     }
 
     It 'sets the early RID consistently for restore build and tests on <RuntimeIdentifier>' -TestCases @(
@@ -117,19 +204,28 @@ Describe 'Build plans are pure and preserve target boundaries' {
         }
         $plan[0].Arguments | Should -Contain '-r'
         $plan[0].Arguments | Should -Contain $RuntimeIdentifier
-        $plan[0].Arguments | Should -Contain '--locked-mode'
+        $plan[0].Arguments | Should -Not -Contain '--locked-mode'
         $plan[1].Arguments | Should -Not -Contain '-r'
         $plan[2].Arguments | Should -Contain '-r'
         $plan[2].Arguments | Should -Contain $RuntimeIdentifier
-        $plan[2].Arguments | Should -Contain '--no-restore'
+        $plan[2].Arguments | Should -Not -Contain '--locked-mode'
+        $plan[3].Arguments | Should -Contain '-r'
+        $plan[3].Arguments | Should -Contain $RuntimeIdentifier
+        $plan[3].Arguments | Should -Contain '--no-restore'
     }
 
-    It 'preserves portable Mac restore without assigning an implicit RID lock' {
-        $plan = @(Get-AegiNextBuildPlan -RepositoryRoot $repository -Target Managed -HostInfo (New-BuildTestHost))
+    It 'preserves portable Mac restore without assigning an implicit RID with RunTests <RunTests>' -TestCases @(
+        @{ RunTests = $false }
+        @{ RunTests = $true }
+    ) {
+        param($RunTests)
+
+        $plan = @(Get-AegiNextBuildPlan -RepositoryRoot $repository -Target Managed -HostInfo (New-BuildTestHost) -RunTests:$RunTests -TestProjects Core)
         foreach ($step in $plan)
         {
             $step.Arguments | Should -Not -Contain '-r'
             @($step.Arguments | Where-Object { $_ -like '-p:AegiNextRuntimeIdentifier=*' }).Count | Should -Be 0
+            @($step.Arguments | Where-Object { [string]::IsNullOrEmpty($_) }).Count | Should -Be 0
         }
     }
 
@@ -190,25 +286,27 @@ Describe 'Build plans are pure and preserve target boundaries' {
     It 'runs CTest before only the requested managed test project' {
         $plan = @(Get-AegiNextBuildPlan @parameters -RunTests -TestProjects @('Media'))
 
-        $plan.Count | Should -Be 6
+        $plan.Count | Should -Be 7
         Get-BuildTestExecutableName $plan[2] | Should -Be 'ctest'
         $plan[2].Arguments | Should -Contain '--output-on-failure'
-        $plan[5].Arguments[0] | Should -Be 'test'
-        $plan[5].Arguments | Should -Contain (Join-Path $repository 'Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj')
-        $plan[5].Arguments | Should -Not -Contain '--no-build'
-        $plan[5].Arguments | Should -Contain '--no-restore'
-        $plan[5].Arguments | Should -Contain 'Release'
+        $plan[5].Arguments[0] | Should -Be 'restore'
+        $plan[5].Arguments | Should -Not -Contain '--locked-mode'
+        $plan[6].Arguments[0] | Should -Be 'test'
+        $plan[6].Arguments | Should -Contain (Join-Path $repository 'Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj')
+        $plan[6].Arguments | Should -Not -Contain '--no-build'
+        $plan[6].Arguments | Should -Contain '--no-restore'
+        $plan[6].Arguments | Should -Contain 'Release'
     }
 
     It 'defaults RunTests to the five managed projects including application and desktop lifecycle tests' {
         $parameters.Target = 'Managed'
         $plan = @(Get-AegiNextBuildPlan @parameters -RunTests)
 
-        $plan.Count | Should -Be 7
+        $plan.Count | Should -Be 12
         foreach ($name in @('Core', 'Application', 'Rendering', 'Media', 'Desktop'))
         {
             @($plan | Where-Object { $_.Arguments -contains (Join-Path $repository "Tests/AegiNext.$name.Tests/AegiNext.$name.Tests.csproj") }).Count |
-                Should -Be 1
+                Should -Be 2
         }
     }
 
@@ -216,10 +314,12 @@ Describe 'Build plans are pure and preserve target boundaries' {
         $parameters.Target = 'Managed'
         $plan = @(Get-AegiNextBuildPlan @parameters -RunTests -TestProjects @('Desktop'))
 
-        $plan.Count | Should -Be 3
+        $plan.Count | Should -Be 4
         $plan[2].Arguments | Should -Contain (Join-Path $repository 'Tests/AegiNext.Desktop.Tests/AegiNext.Desktop.Tests.csproj')
-        $plan[2].Arguments | Should -Not -Contain '--no-build'
-        $plan[2].Arguments | Should -Contain '--no-restore'
+        $plan[2].Arguments | Should -Not -Contain '--locked-mode'
+        $plan[3].Arguments | Should -Contain (Join-Path $repository 'Tests/AegiNext.Desktop.Tests/AegiNext.Desktop.Tests.csproj')
+        $plan[3].Arguments | Should -Not -Contain '--no-build'
+        $plan[3].Arguments | Should -Contain '--no-restore'
     }
 
     It 'keeps Native independent from dotnet and xUnit' {
@@ -265,8 +365,42 @@ Describe 'Build plans are pure and preserve target boundaries' {
 
         { Get-AegiNextBuildPlan @parameters -RunTests -TestProjects @('Rendering') } | Should -Throw
         $plan = @(Get-AegiNextBuildPlan @parameters -RunTests -TestProjects @('Core', 'Media'))
-        $plan.Count | Should -Be 4
+        $plan.Count | Should -Be 6
         @($plan | Where-Object { $_.Arguments[0] -eq 'test' }).Count | Should -Be 2
+    }
+}
+
+Describe 'Product solution filter preserves the production dependency graph' {
+    It 'includes every source project exactly once and excludes test projects' {
+        $filter = Get-Content -LiteralPath (Join-Path $sourceRoot 'AegiNext.Product.slnf') -Raw | ConvertFrom-Json
+        $filter.solution.path | Should -Be 'AegiNext.sln'
+        $projects = @($filter.solution.projects | ForEach-Object { $_.Replace('\', '/') })
+        $sourceProjects = @(Get-ChildItem -Path (Join-Path $sourceRoot 'src/*/*.csproj') -File |
+            ForEach-Object { [IO.Path]::GetRelativePath($sourceRoot, $_.FullName).Replace('\', '/') })
+
+        $projects.Count | Should -BeGreaterThan 0
+        @($projects | Sort-Object) | Should -Be @($sourceProjects | Sort-Object)
+        @($projects | Sort-Object -Unique).Count | Should -Be $projects.Count
+        $solution = Get-Content -LiteralPath (Join-Path $sourceRoot $filter.solution.path) -Raw
+        foreach ($project in $filter.solution.projects)
+        {
+            $solution | Should -Match ([regex]::Escape('"' + $project + '"'))
+        }
+    }
+
+    It 'keeps every production project reference within the product filter' {
+        $filter = Get-Content -LiteralPath (Join-Path $sourceRoot 'AegiNext.Product.slnf') -Raw | ConvertFrom-Json
+        $projects = @($filter.solution.projects | ForEach-Object { $_.Replace('\', '/') })
+        foreach ($project in $projects)
+        {
+            $projectPath = Join-Path $sourceRoot $project
+            $document = [xml](Get-Content -LiteralPath $projectPath -Raw)
+            foreach ($reference in $document.SelectNodes('/Project/ItemGroup/ProjectReference'))
+            {
+                $referencePath = [IO.Path]::GetFullPath((Join-Path (Split-Path $projectPath) $reference.Include))
+                $projects | Should -Contain ([IO.Path]::GetRelativePath($sourceRoot, $referencePath).Replace('\', '/'))
+            }
+        }
     }
 }
 

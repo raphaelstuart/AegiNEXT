@@ -1,0 +1,13 @@
+{
+  "solution": {
+    "path": "AegiNext.sln",
+    "projects": [
+      "src\\AegiNext.Core\\AegiNext.Core.csproj",
+      "src\\AegiNext.Desktop\\AegiNext.Desktop.csproj",
+      "src\\AegiNext.Rendering\\AegiNext.Rendering.csproj",
+      "src\\AegiNext.Media\\AegiNext.Media.csproj",
+      "src\\AegiNext.Application\\AegiNext.Application.csproj",
+      "src\\AegiNext.ExportWorker\\AegiNext.ExportWorker.csproj"
+    ]
+  }
+}

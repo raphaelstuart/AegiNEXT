@@ -42,9 +42,9 @@ pwsh -NoProfile -File ./publish.ps1 -RuntimeIdentifier win-x64 -Configuration Re
 
 `build.ps1 -RunTests -TestProjects Media` 在方案构建之后独立构建并执行所选测试项目，保留 `--no-restore` 和对应 RID。默认 `Release|Any CPU` 方案配置没有启用全部测试项目的 Build，因此不会用 `--no-build` 假定测试 DLL 已生成。
 
-NuGet 无 RID 开发还原继续使用 `packages.lock.json`；RID 构建分别使用稳定的 `packages.osx-arm64.lock.json`、`packages.osx-x64.lock.json`、`packages.win-x64.lock.json`。restore、build、test 和两个 publish 都显式传 `-p:AegiNextRuntimeIdentifier=<RID>`，让 `Directory.Build.props` 早期就选择同一锁和中间目录；restore 的 `-r` 本身可能只设置复数 `RuntimeIdentifiers`，无法保证这一点。
+NuGet 使用普通 `PackageReference` 还原，包版本集中管理于 `Directory.Packages.props`，不生成或维护锁文件。restore、build、test 和两个 publish 都显式传 `-p:AegiNextRuntimeIdentifier=<RID>`，让 `Directory.Build.props` 早期就选择同一 RID 和中间目录；restore 的 `-r` 本身可能只设置复数 `RuntimeIdentifiers`，无法保证这一点。
 
-首次维护或依赖变化时，在 Mac/Linux 宿主使用 `dotnet restore AegiNext.sln --force-evaluate` 维护通用锁，三个 RID 各自使用 `dotnet restore AegiNext.sln -r <RID> -p:AegiNextRuntimeIdentifier=<RID> --force-evaluate`，审查并保留全部锁文件。Windows 默认设置 win-x64；维护通用锁时要显式传空的 `-p:RuntimeIdentifier=`。正常构建及发布仍使用 locked mode，不自动接受已有锁的依赖变化。
+依赖变化后使用 `dotnet restore AegiNext.sln` 正常还原即可；指定平台时使用 `dotnet restore AegiNext.sln -r <RID> -p:AegiNextRuntimeIdentifier=<RID>`。构建和发布脚本已自动执行还原。Windows 默认设置 win-x64，各 RID 的中间文件继续隔离在 `obj/<rid>`。
 
 macOS 发布器扫描实际 Mach-O 依赖和最低系统版本，复制非系统递归依赖至 `Contents/Frameworks`，改写相对加载路径，再签名验证。`-SigningIdentity` 默认 `-` 为本地 ad-hoc，可指定实际签名身份；公证由发行流程完成。包的 `LSMinimumSystemVersion` 是所有已收集二进制的真实最大要求，不以 CMake 的 14.0 目标代替验证。本机 Homebrew 依赖当前可能要求 macOS 27，发布器不会声称支持 macOS 14。
 

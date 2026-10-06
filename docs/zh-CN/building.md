@@ -127,7 +127,7 @@ macOS Native 额外检查：
 - Homebrew 中的 libplacebo、MoltenVK、Vulkan-Headers，以及开发头文件、动态库和 pkg-config 文件。
 - 依赖版本从 `native/dependencies.json` 读取；检查活动头文件版本和 libplacebo 的 Vulkan / vk_proc_addr / shaderc 能力，不仅检查包名或 DLL 是否存在。
 
-`-InstallDependencies` 只安装报告为 Missing 且已映射到包的项，然后重新探测。已安装但版本不符的 Invalid 项不会被自动升级／降级。包仓库未来更新后，安装到最新包不一定满足本项目锁定版本，复查仍会失败；需要明确准备匹配的版本，脚本不会修改锁文件来迁就环境。
+`-InstallDependencies` 只安装报告为 Missing 且已映射到包的项，然后重新探测。已安装但版本不符的 Invalid 项不会被自动升级／降级。包仓库未来更新后，安装到最新包不一定满足本项目锁定版本，复查仍会失败；需要明确准备匹配的版本，脚本不会修改原生依赖版本配置来迁就环境。
 
 暂未实现的 Windows HDR native 不会触发安装路径，独立 Decoder 的构建与其分开。
 
@@ -182,9 +182,13 @@ Decoder、Audio、Export 配置前会核对现有 `CMakeCache.txt` 的源目录�
 
 `scripts/build-native-macos.sh` 保留为 PowerShell 入口的薄封装，支持透传 `-Configuration`、`-RunTests` 等参数；默认配置改为 Release。旧 `AEGINEXT_NATIVE_BUILD_DIR` 不再接受，以确保配置隔离；`AEGINEXT_NATIVE_BUILD_JOBS` 仍可指定并发数，默认 2。
 
-托管 restore 使用 `--locked-mode`；build 使用 `--no-restore`；test 使用相同配置的 `--no-restore` 并构建选定的测试项目。默认 `Release|Any CPU` 方案配置没有启用全部测试项目的构建，因此不能用 `--no-build` 假设其 DLL 已存在。显式 RID 的 restore、build、test／publish 都传 `-p:AegiNextRuntimeIdentifier=<RID>`，让早期项目求值选择正确锁文件及中间目录。restore 的 `-r` 单独可能只设置复数 `RuntimeIdentifiers`；方案 build 则不能使用 `-r`。项目级 test／publish 保留 `-r` 并携带相同属性桥接。
+Release 的托管 restore／build 使用 `AegiNext.Product.slnf`，包含全部六个正式项目并排除 `Tests/`。该行为适用于 Managed、All、Workbench，以及 `publish.ps1`／`release.ps1` 调用的 Workbench 构建。不传 `-RunTests` 时，不还原也不编译测试项目；传入时，按 `-TestProjects` 去重，逐个还原选中的测试项目，再以 `dotnet test --no-restore` 编译并执行，未选中的测试项目不参与还原。Debug 保留完整 `AegiNext.sln` 的还原／编译入口及原有选定测试执行行为。
 
-无 RID 开发还原使用各项目的 `packages.lock.json`；显式 RID 分别使用 `packages.osx-arm64.lock.json`、`packages.osx-x64.lock.json`、`packages.win-x64.lock.json`。Windows 默认设置 `RuntimeIdentifier=win-x64`，即使未写 `-r` 也采用该锁。显式 RID 的中间文件位于 `obj/<rid>`，编译源排除所有 `obj`／`bin` 目录，避免共享仓库的旧生成代码混入另一平台。依赖变化时应分别维护各 RID 锁；正常构建不自动接受已有锁的依赖变化。维护命令见[平台发布说明](publishing.md)。临时工作目录、原生包搜索环境和调用者的 `LASTEXITCODE` 在命令结束或失败时恢复。
+发布和 release 入口会重新加载嵌套脚本模块，因此更新脚本后，在已有 PowerShell 会话中再次执行命令也会采用当前构建计划。构建脚本 QA 同时验证新增项目引用后可以正常还原，并且不生成 NuGet 锁文件。
+
+托管 restore 使用 `PackageReference` 与 `Directory.Packages.props` 的普通 NuGet 解析；build 使用 `--no-restore`；test 使用相同配置的 `--no-restore` 并构建选定的测试项目，因此不能用 `--no-build` 假设其 DLL 已存在。显式 RID 的 restore、build、test／publish 都传 `-p:AegiNextRuntimeIdentifier=<RID>`，让早期项目求值选择正确 RID 及中间目录。restore 的 `-r` 单独可能只设置复数 `RuntimeIdentifiers`；方案 build 则不能使用 `-r`。项目级 test／publish 保留 `-r` 并携带相同属性桥接。
+
+不生成或维护 NuGet 锁文件。包版本继续集中管理于 `Directory.Packages.props`，依赖图由 NuGet 在还原时解析。Windows 默认设置 `RuntimeIdentifier=win-x64`，即使未写 `-r` 也使用该 RID。显式 RID 的中间文件位于 `obj/<rid>`，编译源排除所有 `obj`／`bin` 目录，避免共享仓库的旧生成代码混入另一平台。新增或调整引用后正常还原即可，平台参数见[平台发布说明](publishing.md)。临时工作目录、原生包搜索环境和调用者的 `LASTEXITCODE` 在命令结束或失败时恢复。
 
 原生开发库仍链接本机 Homebrew。设置 macOS 14 部署目标不能消除依赖本身以 macOS 27 构建的限制；发布器记录所有实际二进制要求的最大最低系统版本，并写入 app 的 `LSMinimumSystemVersion`。
 

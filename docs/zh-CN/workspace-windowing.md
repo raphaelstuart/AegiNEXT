@@ -52,8 +52,7 @@ Windows 几何及互操作测试可在 macOS 执行，但不能证明系统按�
 
 ```sh
 dotnet build src/AegiNext.Desktop/AegiNext.Desktop.csproj \
-  --configuration Release --artifacts-path artifacts/window-chrome-build \
-  -p:RestoreLockedMode=true
+  --configuration Release --artifacts-path artifacts/window-chrome-build
 
 dotnet artifacts/window-chrome-build/bin/AegiNext.Desktop/release/aegi-next.dll \
   --chrome-probe-auto \

@@ -1,7 +1,7 @@
 #Requires -Version 7.2
 Set-StrictMode -Version Latest
-Import-Module ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../build/AegiNext.Build.psm1')))
-Import-Module (Join-Path $PSScriptRoot 'AegiNext.Publish.psm1')
+Import-Module ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../build/AegiNext.Build.psm1'))) -Force
+Import-Module (Join-Path $PSScriptRoot 'AegiNext.Publish.psm1') -Force
 
 function Invoke-AegiNextRelease
 {
