@@ -1,24 +1,38 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
-             xmlns:shortcuts="using:AegiNext.Desktop.Shortcuts" xmlns:presets="using:AegiNext.Core.Presets"
-             xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:settings="using:AegiNext.Desktop.Settings"
              xmlns:vm="using:AegiNext.Desktop.Settings.Shortcuts"
              x:Class="AegiNext.Desktop.Settings.Shortcuts.ShortcutSettingsView" Classes="business-surface"
              x:DataType="vm:ShortcutSettingsViewModel">
 
   <Grid Name="ShortcutsPage" IsVisible="{Binding $parent[UserControl].IsVisible}" RowDefinitions="Auto,*,Auto,Auto"
         RowSpacing="12">
-    <Grid ColumnDefinitions="*,220" Margin="12,0">
+    <Grid ColumnDefinitions="*,180" ColumnSpacing="12" Margin="12,0">
       <TextBlock Text="{Loc Key=Settings.Action}" Classes="field" /><TextBlock Grid.Column="1" Text="{Loc Key=Settings.Gesture}" Classes="field" />
     </Grid>
-    <ListBox Name="ShortcutList" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+    <ListBox Name="ShortcutList" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
              Grid.Row="1" Background="{DynamicResource SettingsSurface}">
+      <ListBox.Styles>
+        <Style Selector="ListBoxItem" x:DataType="vm:ShortcutSettingsListItem">
+          <Setter Property="IsEnabled" Value="{Binding IsCommand}" />
+          <Setter Property="Focusable" Value="{Binding IsCommand}" />
+          <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+      </ListBox.Styles>
       <ListBox.ItemTemplate>
-        <DataTemplate x:DataType="shortcuts:ShortcutSettingRow">
-          <Grid ColumnDefinitions="*,220" ColumnSpacing="12">
-            <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="{Binding Gesture}" VerticalAlignment="Center" FontFamily="monospace" />
-          </Grid>
+        <DataTemplate x:DataType="vm:ShortcutSettingsListItem">
+          <Panel>
+            <Border IsVisible="{Binding !IsCommand}" BorderBrush="{DynamicResource SettingsBorder}"
+                    BorderThickness="0,0,0,1" Padding="0,6,0,8">
+              <TextBlock Text="{Binding SectionTitle}" FontWeight="SemiBold"
+                         Foreground="{DynamicResource SettingsMuted}" />
+            </Border>
+            <Grid IsVisible="{Binding IsCommand}" ColumnDefinitions="*,180" ColumnSpacing="12">
+              <TextBlock Text="{Binding Row.DisplayName, FallbackValue='', TargetNullValue=''}"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Column="1" Text="{Binding Row.Gesture, FallbackValue='', TargetNullValue=''}" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" />
+            </Grid>
+          </Panel>
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>

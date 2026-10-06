@@ -11,6 +11,7 @@ namespace AegiNext.Desktop.Settings.Shortcuts;
 public sealed class ShortcutSettingsViewModel : ObservableObject
 {
     private ShortcutSettingRow[] rows = [];
+    private ShortcutSettingsListItem[] items = [];
     private ShortcutSettingRow? selectedRow;
     private bool recording;
     private bool waitingForKeyRelease;
@@ -36,6 +37,19 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
     public RelayCommand ClearCommand { get; }
     public RelayCommand ToggleRecordingCommand { get; }
     public ShortcutSettingRow[] Rows => rows;
+    public ShortcutSettingsListItem[] Items => items;
+    public ShortcutSettingsListItem? SelectedItem
+    {
+        get => items.FirstOrDefault(item => ReferenceEquals(item.Row, SelectedRow) && item.IsCommand);
+        set
+        {
+            if (value is null || value.IsCommand)
+            {
+                SelectedRow = value?.Row;
+            }
+        }
+    }
+
     public bool HasSelection => SelectedRow is not null;
     public bool IsCaptureActive => IsRecording || IsWaitingForKeyRelease;
 
@@ -86,6 +100,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
             if (SetProperty(ref selectedRow, value))
             {
                 IsRecording = false;
+                OnPropertyChanged(nameof(SelectedItem));
                 OnPropertyChanged(nameof(Gesture));
                 OnPropertyChanged(nameof(HasSelection));
                 ClearCommand.NotifyCanExecuteChanged();
@@ -161,12 +176,14 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
 
         rows = bindings.Select(value =>
             new ShortcutSettingRow(value.Command, Localization.Get("Settings." + value.Command.ToString()), value.Gesture)).ToArray();
+        items = ShortcutSettingsSections.CreateItems(rows);
         foreach (var row in rows)
         {
             row.PropertyChanged += OnRowChanged;
         }
 
         OnPropertyChanged(nameof(Rows));
+        OnPropertyChanged(nameof(Items));
         SelectedRow = rows.FirstOrDefault(value => value.Command == selection) ?? rows.FirstOrDefault();
         Validate();
     }

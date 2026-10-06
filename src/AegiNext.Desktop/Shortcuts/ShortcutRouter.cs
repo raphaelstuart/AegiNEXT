@@ -29,7 +29,8 @@ public sealed class ShortcutRouter
         {
             return false;
         }
-        return command == WorkbenchCommand.END_TEXT_INPUT || !isTextInput || !ProtectsTextInput(key, modifiers);
+        return command is WorkbenchCommand.END_TEXT_INPUT or WorkbenchCommand.ADVANCE_SUBTITLE_ROW or
+                   WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK || !isTextInput || !ProtectsTextInput(key, modifiers);
     }
 
     private static bool ProtectsTextInput(Key key, KeyModifiers modifiers)

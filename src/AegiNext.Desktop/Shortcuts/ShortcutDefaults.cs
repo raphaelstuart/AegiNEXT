@@ -50,7 +50,13 @@ public static class ShortcutDefaults
             new(WorkbenchCommand.OPEN_ABOUT, ""),
             new(WorkbenchCommand.VIEW_MASKS, ""),
             new(WorkbenchCommand.COPY_CLIPS, "CmdOrCtrl+C"),
-            new(WorkbenchCommand.PASTE_CLIPS, "CmdOrCtrl+V")
+            new(WorkbenchCommand.PASTE_CLIPS, "CmdOrCtrl+V"),
+            new(WorkbenchCommand.AUDITION_BEFORE_SUBTITLE, "Q"),
+            new(WorkbenchCommand.AUDITION_AFTER_SUBTITLE, "W"),
+            new(WorkbenchCommand.AUDITION_SUBTITLE_BEGIN, "E"),
+            new(WorkbenchCommand.AUDITION_SUBTITLE, "R"),
+            new(WorkbenchCommand.ADVANCE_SUBTITLE_ROW, "Enter"),
+            new(WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK, "Shift+Enter")
         ];
     }
 }
