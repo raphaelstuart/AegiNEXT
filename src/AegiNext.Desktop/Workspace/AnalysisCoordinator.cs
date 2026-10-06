@@ -1,16 +1,58 @@
+using System.ComponentModel;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Panels.Timeline;
 using AegiNext.Media.Analysis;
 
 namespace AegiNext.Desktop.Workspace;
 
-internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposable
+internal sealed class AnalysisCoordinator : IDisposable
 {
+    private readonly WorkbenchSession session;
+    private readonly WaveformAnalysisCoordinator waveform;
     private CancellationTokenSource? cancellation;
+    private Task spectrogramCompletion = Task.CompletedTask;
     private bool isAnalyzing;
-    public Task Completion { get; private set; } = Task.CompletedTask;
+    public Task Completion => Task.WhenAll(spectrogramCompletion, waveform.Completion);
 
-    internal void Cancel() => cancellation?.Cancel();
+    internal AnalysisCoordinator(WorkbenchSession session)
+    {
+        this.session = session;
+        waveform = new(PublishWaveform, error => session.LogError("Analysis", error));
+        session.ViewModel.Timeline.PropertyChanged += OnTimelineChanged;
+    }
+
+    internal void Cancel()
+    {
+        cancellation?.Cancel();
+        waveform.Cancel();
+    }
+
+    private void OnTimelineChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(TimelinePanelViewModel.Viewport) or nameof(TimelinePanelViewModel.RenderScaling) or
+            nameof(TimelinePanelViewModel.IsWaveformVisible))
+        {
+            RefreshWaveform();
+        }
+    }
+
+    private void RefreshWaveform()
+    {
+        var timeline = session.ViewModel.Timeline;
+        waveform.Request(timeline.Viewport, timeline.RenderScaling, timeline.IsWaveformVisible);
+    }
+
+    private void PublishWaveform(WaveformData? detail, WaveformData? overview, MediaTime duration)
+    {
+        if (!session.IsClosing)
+        {
+            var timeline = session.ViewModel.Timeline;
+            timeline.AudioDuration = duration;
+            timeline.WaveformOverview = overview;
+            timeline.Waveform = detail;
+        }
+    }
 
     internal void RefreshLanguage()
     {
@@ -22,8 +64,9 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
 
     internal async Task ClearAsync()
     {
-        cancellation?.Cancel();
+        Cancel();
         await Completion;
+        await waveform.ClearAsync();
         session.ViewModel.Timeline.Spectrogram = null;
         session.ViewModel.Timeline.AnalysisStatus = string.Empty;
     }
@@ -42,7 +85,10 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
 
         isAnalyzing = true;
         RefreshLanguage();
-        Completion = AnalyzeAsync(path, index, media.Start ?? MediaTime.Zero, duration, cancellation.Token);
+        var origin = media.Start ?? MediaTime.Zero;
+        await waveform.StartAsync((request, token) => WaveformAnalyzer.AnalyzeFileAsync(path, index, origin, request, token), duration);
+        RefreshWaveform();
+        spectrogramCompletion = AnalyzeAsync(path, index, origin, duration, cancellation.Token);
     }
 
     private async Task AnalyzeAsync(string path, int index, MediaTime start, MediaTime duration, CancellationToken token)
@@ -75,5 +121,10 @@ internal sealed class AnalysisCoordinator(WorkbenchSession session) : IDisposabl
     }
 
     /// <inheritdoc />
-    public void Dispose() => cancellation?.Dispose();
+    public void Dispose()
+    {
+        session.ViewModel.Timeline.PropertyChanged -= OnTimelineChanged;
+        waveform.Dispose();
+        cancellation?.Dispose();
+    }
 }

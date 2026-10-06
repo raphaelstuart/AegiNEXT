@@ -14,6 +14,8 @@ using AegiNext.Desktop.Styling;
 using Material.Icons.Avalonia;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Windowing;
+using AegiNext.Core.Timing;
+using AegiNext.Media.Analysis;
 
 namespace AegiNext.Desktop.Panels.Timeline;
 
@@ -31,6 +33,10 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private readonly ToolbarToggleButton spectrumButton;
     private readonly ToolbarToggleButton waveformButton;
     private AegiNext.Media.Analysis.SpectrogramData? spectrum;
+    private WaveformData? waveform;
+    private WaveformData? waveformOverview;
+    private MediaTime? audioDuration;
+    private TopLevel? scalingHost;
     private IPointer? animationRowCollapsePointer;
     private bool disposed;
     private bool applying;
@@ -263,6 +269,15 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
                 timeline.SetSpectrogram(spectrum);
             }
 
+            if (!ReferenceEquals(waveform, viewModel.Waveform) ||
+                !ReferenceEquals(waveformOverview, viewModel.WaveformOverview) || audioDuration != viewModel.AudioDuration)
+            {
+                waveform = viewModel.Waveform;
+                waveformOverview = viewModel.WaveformOverview;
+                audioDuration = viewModel.AudioDuration;
+                timeline.SetWaveform(waveform, waveformOverview, viewModel.AudioDuration);
+            }
+
             viewModel.Viewport = timeline.Viewport;
             overview.SetScene(viewModel.Document, viewModel.Viewport, viewModel.FullDuration, viewModel.Position);
         }
@@ -356,11 +371,53 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         return item;
     }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
+
+    /// <inheritdoc />
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        if (!disposed)
+        {
+            scalingHost = TopLevel.GetTopLevel(this);
+            if (scalingHost is not null)
+            {
+                scalingHost.ScalingChanged += OnRenderScalingChanged;
+                OnRenderScalingChanged(scalingHost, EventArgs.Empty);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        DetachScalingHost();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnRenderScalingChanged(object? sender, EventArgs e)
+    {
+        if (scalingHost is { } host && !disposed)
+        {
+            viewModel.RenderScaling = host.RenderScaling;
+            timeline.InvalidateVisual();
+        }
+    }
+
+    private void DetachScalingHost()
+    {
+        if (scalingHost is { } host)
+        {
+            host.ScalingChanged -= OnRenderScalingChanged;
+            scalingHost = null;
+        }
+    }
+
     public void Dispose()
     {
         if (!disposed)
         {
             disposed = true;
+            DetachScalingHost();
             viewModel.PropertyChanged -= OnViewModelChanged;
             session.PreferencesChanged -= OnPreferencesChanged;
             Localization.LanguageChanged -= OnLanguageChanged;

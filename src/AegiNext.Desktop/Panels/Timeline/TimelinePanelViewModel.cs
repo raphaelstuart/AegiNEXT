@@ -36,6 +36,10 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private bool isWaveformVisible = true;
     private AnimationTrackTarget effectTarget = new(AnimationProperty.OPACITY);
     private SpectrogramData? spectrogram;
+    private WaveformData? waveform;
+    private WaveformData? waveformOverview;
+    private MediaTime audioDuration;
+    private double renderScaling = 1;
     private string analysisStatus = string.Empty;
     private TimelineClipContextEventArgs? clipContext;
     private ProjectDocument? clipContextDocument;
@@ -332,6 +336,30 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     {
         get => spectrogram;
         set => SetProperty(ref spectrogram, value);
+    }
+
+    public WaveformData? Waveform
+    {
+        get => waveform;
+        internal set => SetProperty(ref waveform, value);
+    }
+
+    public WaveformData? WaveformOverview
+    {
+        get => waveformOverview;
+        internal set => SetProperty(ref waveformOverview, value);
+    }
+
+    public MediaTime AudioDuration
+    {
+        get => audioDuration;
+        internal set => SetProperty(ref audioDuration, value);
+    }
+
+    public double RenderScaling
+    {
+        get => renderScaling;
+        set => SetProperty(ref renderScaling, value);
     }
 
     public string AnalysisStatus

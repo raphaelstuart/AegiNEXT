@@ -36,7 +36,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private AudioGraphPalette audioGraphPalette = new();
     private TimelineDrawingPalette drawingPalette = new(false);
     private Color[] spectrumColors = AudioGraphColorRamp.Create(new());
-    private Pen waveformPen = new(new SolidColorBrush(AudioGraphColorRamp.Parse(new AudioGraphPalette().Waveform)));
+    private IBrush waveformBrush = new SolidColorBrush(AudioGraphColorRamp.Parse(new AudioGraphPalette().Waveform));
     private Guid? selectedCue;
     private Guid? selectedTrack;
     private ProjectLayer? selectedLayer;
@@ -262,6 +262,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     public void SetSpectrogram(SpectrogramData? value)
     {
         spectrum = value;
+        waveformGeometryDirty = true;
         RebuildSpectrogramBitmap();
         InvalidateVisual();
     }
@@ -291,7 +292,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     {
         var effective = AudioGraphPalettes.Resolve(audioGraphPalette, ActualThemeVariant != ThemeVariant.Dark);
         spectrumColors = AudioGraphColorRamp.Create(effective);
-        waveformPen = new(new SolidColorBrush(AudioGraphColorRamp.Parse(effective.Waveform)));
+        waveformBrush = new SolidColorBrush(AudioGraphColorRamp.Parse(effective.Waveform));
         RebuildSpectrogramBitmap();
         InvalidateVisual();
     }
@@ -349,9 +350,9 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
             }
 
-            if (IsWaveformVisible && spectrum is not null)
+            if (IsWaveformVisible)
             {
-                DrawWaveform(context, body.Top, body.Height);
+                DrawWaveform(context, body);
             }
 
             DrawClipRangeFills(context, body);
@@ -841,6 +842,9 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         CancelDrag();
         spectrumBitmap?.Dispose();
         spectrumBitmap = null;
+        waveformGeometry = null;
+        waveform = null;
+        waveformOverview = null;
     }
 
     /// <inheritdoc />
@@ -1393,22 +1397,6 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private static double ValueY(double value, double minimum, double maximum, Rect curve)
     {
         return curve.Top + (1 - (value - minimum) / (maximum - minimum)) * curve.Height;
-    }
-
-    private void DrawWaveform(DrawingContext context, double top, double height)
-    {
-        var value = spectrum!;
-        var data = value.Waveform.Span;
-        var duration = Seconds(value.Duration);
-        var center = top + height / 2;
-        var first = Math.Clamp((int)(ViewStart / duration * value.Width), 0, value.Width - 1);
-        var last = Math.Clamp((int)((ViewStart + VisibleDuration) / duration * value.Width), first, value.Width - 1);
-        for (var index = first; index <= last; index++)
-        {
-            var x = X(index / (double)value.Width * duration);
-            context.DrawLine(waveformPen, new(x, center - data[index * 2 + 1] * height * 0.4),
-                new(x, center - data[index * 2] * height * 0.4));
-        }
     }
 
     internal double ClipTop => selectedLayer is { } layer && GetClipRectangle(layer.Id) is { } rectangle
