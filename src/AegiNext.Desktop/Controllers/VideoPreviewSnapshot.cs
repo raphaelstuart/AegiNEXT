@@ -12,4 +12,5 @@ public sealed record VideoPreviewSnapshot(string? FilePath, VideoPlaybackState S
     MediaTime Position, MediaTime? Start, MediaTime? Duration, Exception? Error, long Epoch,
     MediaTime? PresentedFrameTime = null, MediaTime? PresentedAtPosition = null, long? PresentedGeneration = null,
     bool AudioAvailable = false, Exception? AudioError = null, float Volume = 1, bool IsMuted = false,
-    VideoDecodeSessionInfo? DecodeSessionInfo = null, bool AudioAuditionActive = false);
+    VideoDecodeSessionInfo? DecodeSessionInfo = null, bool AudioAuditionActive = false,
+    bool PlaybackRangeInstalled = false);

@@ -644,9 +644,9 @@
     "Workbench.TimelinePasteFailed": "无法在此位置粘贴 clip，请检查字幕区间、轨道和资源。",
     "Settings.COPY_CLIPS": "复制时间线 clip",
     "Settings.PASTE_CLIPS": "粘贴时间线 clip",
-    "Settings.AUDITION_BEFORE_SUBTITLE": "试听字幕开始前 500 毫秒",
-    "Settings.AUDITION_AFTER_SUBTITLE": "试听字幕结束后 500 毫秒",
-    "Settings.AUDITION_SUBTITLE_BEGIN": "试听字幕开头 500 毫秒",
+    "Settings.AUDITION_BEFORE_SUBTITLE": "试听字幕开始前的片段",
+    "Settings.AUDITION_AFTER_SUBTITLE": "试听字幕结束后的片段",
+    "Settings.AUDITION_SUBTITLE_BEGIN": "试听字幕开头的片段",
     "Settings.AUDITION_SUBTITLE": "试听当前整条字幕",
     "Settings.ADVANCE_SUBTITLE_ROW": "提交并转到下一条字幕",
     "Settings.INSERT_SUBTITLE_LINE_BREAK": "字幕内容换行",
@@ -656,6 +656,12 @@
     "Settings.TimelineStartLine": "开始线",
     "Settings.TimelineEndLine": "结束线",
     "Settings.TimelineSelectedRangeFill": "选中区间填充",
-    "Settings.TimelineInactiveRangeFill": "未选中区间填充"
+    "Settings.TimelineInactiveRangeFill": "未选中区间填充",
+    "Settings.Preview": "预览",
+    "Settings.SubtitleAuditionMilliseconds": "字幕试听长度（毫秒）",
+    "Settings.SubtitleAuditionMillisecondsInvalid": "请输入 1 到 2147483647 之间的整数毫秒值。",
+    "Workbench.TimelineClassicTiming": "经典 Aegisub 打轴",
+    "Workbench.TimelineClassicTimingHint": "经典 Aegisub 打轴：左键设置当前主选字幕的开始，右键设置结束。",
+    "Workbench.TimelineTimingInvalid": "字幕开始时间须不小于零，并早于结束时间。"
   }
 }

@@ -113,23 +113,8 @@ internal sealed partial class WorkbenchSession
             }
 
             var start = time < MediaTime.Zero ? MediaTime.Zero : time;
-            var cue = new SubtitleLine { TrackId = trackId, Start = start, End = start + new MediaTime(2) };
-            var presetId = ViewModel.Styles.SelectedPreset?.Id;
-            var snapshot = editor.Snapshot;
-            SetProjectBusy(true);
-            try
-            {
-                if (snapshot.Subtitles.Any(line => line.TrackId == trackId && start < line.End && line.Start < cue.End))
-                {
-                    throw new InvalidOperationException(Localization.Get("Workbench.TimelineClipCollision"));
-                }
-                await CreateSubtitleClipsAsync([cue], trackId, presetId);
-            }
-            finally
-            {
-                SetProjectBusy(false);
-            }
-            SelectCue(cue.Id);
+            InvalidateTimingSession();
+            await BeginTimingCueAsync(trackId, start);
         });
 
     internal void ClearTimelineClipboard() => timelineClipboard = null;

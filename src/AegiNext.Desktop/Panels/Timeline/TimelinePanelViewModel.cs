@@ -17,10 +17,13 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private ProjectDocument document = new();
     private TimelineViewState timelineViewState = new();
     private Guid? selectedCueId;
+    private Guid? pendingCenterCueId;
     private Guid? selectedTrackId;
     private Guid? renamingTrackId;
     private string trackNameDraft = string.Empty;
     private ProjectLayer? selectedLayer;
+    private TimelineTimingPreview? timingPreview;
+    private bool isClassicTimingEnabled;
     private Guid? selectedMaskNodeId;
     private MediaTime position = MediaTime.Zero;
     private TimelineViewport viewport = new();
@@ -199,13 +202,42 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     public Guid? SelectedCueId
     {
         get => selectedCueId;
-        set => SetProperty(ref selectedCueId, value);
+        set
+        {
+            if (selectedCueId != value)
+            {
+                pendingCenterCueId = null;
+            }
+            if (value is null)
+            {
+                ResumePlaybackFollow();
+            }
+            SetProperty(ref selectedCueId, value);
+        }
     }
 
     public ProjectLayer? SelectedLayer
     {
         get => selectedLayer;
         set => SetProperty(ref selectedLayer, value);
+    }
+
+    public TimelineTimingPreview? TimingPreview
+    {
+        get => timingPreview;
+        internal set
+        {
+            if (SetProperty(ref timingPreview, value))
+            {
+                OnPropertyChanged(nameof(FullDuration));
+            }
+        }
+    }
+
+    public bool IsClassicTimingEnabled
+    {
+        get => isClassicTimingEnabled;
+        set => SetProperty(ref isClassicTimingEnabled, value);
     }
 
     public MediaTime Position
@@ -246,6 +278,46 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         }
     }
 
+    internal bool IsPlaybackFollowEnabled { get; private set; } = true;
+
+    internal void CenterSubtitle(Guid cueId)
+    {
+        if (SelectedCueId != cueId || !Document.Subtitles.Any(cue => cue.Id == cueId))
+        {
+            return;
+        }
+
+        IsPlaybackFollowEnabled = false;
+        pendingCenterCueId = cueId;
+        ApplyPendingSubtitleCenter();
+    }
+
+    internal bool ApplyPendingSubtitleCenter()
+    {
+        if (pendingCenterCueId is not { } cueId || Viewport.Width <= 0)
+        {
+            return false;
+        }
+
+        var cue = Document.Subtitles.FirstOrDefault(value => value.Id == cueId);
+        if (SelectedCueId != cueId || cue is null)
+        {
+            ResumePlaybackFollow();
+            return false;
+        }
+
+        pendingCenterCueId = null;
+        var midpoint = (Seconds(cue.Start) + Seconds(cue.End)) / 2;
+        ViewStart = Math.Max(0, midpoint - VisibleDuration / 2);
+        return true;
+    }
+
+    internal void ResumePlaybackFollow()
+    {
+        IsPlaybackFollowEnabled = true;
+        pendingCenterCueId = null;
+    }
+
     public IReadOnlyList<Guid> SelectedLayerIds
     {
         get => selectedLayerIds;
@@ -264,7 +336,8 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         }
     }
 
-    public double FullDuration => Math.Max(Math.Max(1, mediaDuration), documentDuration);
+    public double FullDuration => Math.Max(Math.Max(Math.Max(1, mediaDuration), documentDuration),
+        timingPreview is { } preview ? Seconds(preview.End) : 0);
 
     public double ScrollMaximum
     {
@@ -398,6 +471,8 @@ internal sealed class TimelinePanelViewModel : ObservableObject
             }
         }));
     }
+    /// <summary>按经典鼠标输入修改当前主选字幕的单个时间边界。</summary>
+    public Task CommitClassicTimingAsync(TimelineClassicTimingEventArgs value) => session.CommitClassicTimingAsync(value);
     /// <summary>选择关键帧并同步属性检查器。</summary>
     public bool SelectKeyframe(TimelineKeyframeEventArgs value) => session.SelectKeyframe(value);
     /// <summary>更新工程的独立属性行视图状态，不提交内容草稿。</summary>

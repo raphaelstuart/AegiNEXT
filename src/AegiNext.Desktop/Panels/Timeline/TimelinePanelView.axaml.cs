@@ -4,6 +4,7 @@ using AegiNext.Desktop.Controls.Common;
 using System.Windows.Input;
 using Avalonia;
 using AegiNext.Desktop.Workspace;
+using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -97,6 +98,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         timeline.ViewportChanged += OnViewportChanged;
         overview.ViewportChanged += OnViewportChanged;
         timeline.TimingChanged += async (_, e) => await viewModel.CommitTimingAsync(e);
+        timeline.ClassicTimingRequested += async (_, e) => await viewModel.CommitClassicTimingAsync(e);
         timeline.ClipsMoveCompleted += async (_, e) => await viewModel.CommitClipsMoveAsync(e);
         timeline.KeyframeSelected += (_, e) => e.SelectionAccepted = viewModel.SelectKeyframe(e);
         timeline.KeyframeMoved += async (_, e) => await viewModel.MoveKeyframeAsync(e);
@@ -229,6 +231,13 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         {
             animationRowCollapsePointer = e.Pointer;
             e.Handled = true;
+            return;
+        }
+
+        if (ReferenceEquals(e.Source, timeline) &&
+            TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox { DataContext: SubtitleRow })
+        {
+            timeline.TryRequestClassicTiming(e, preserveFocus: true);
         }
     }
 
@@ -258,6 +267,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             timeline.IsStepEnabled = viewModel.IsStepEnabled;
             timeline.IsSpectrumVisible = viewModel.IsSpectrumVisible;
             timeline.IsWaveformVisible = viewModel.IsWaveformVisible;
+            timeline.IsClassicTimingEnabled = viewModel.IsClassicTimingEnabled;
+            timeline.SetTimingPreview(viewModel.TimingPreview);
             timeline.SetDocument(viewModel.Document, viewModel.SelectedCueId, viewModel.SelectedLayer,
                 viewModel.SelectedLayerIds.Count == 0 && viewModel.SelectedLayer is { } selected ? [selected.Id] : viewModel.SelectedLayerIds,
                 viewModel.SelectedTrackId);
@@ -279,7 +290,12 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             }
 
             viewModel.Viewport = timeline.Viewport;
-            overview.SetScene(viewModel.Document, viewModel.Viewport, viewModel.FullDuration, viewModel.Position);
+            if (viewModel.ApplyPendingSubtitleCenter())
+            {
+                timeline.SetViewport(viewModel.Viewport, viewModel.FullDuration);
+                viewModel.Viewport = timeline.Viewport;
+            }
+            overview.SetScene(viewModel.Document, viewModel.Viewport, viewModel.FullDuration, viewModel.Position, viewModel.TimingPreview);
         }
         finally
         {

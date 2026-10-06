@@ -7,6 +7,7 @@ using AegiNext.Desktop.Settings.Shortcuts;
 using AegiNext.Desktop.Settings.Styles;
 using AegiNext.Desktop.Settings.Media;
 using AegiNext.Desktop.Settings.Projects;
+using AegiNext.Desktop.Settings.Preview;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegiNext.Desktop.Settings;
@@ -30,10 +31,12 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Effects = new();
         Media = new(preferences);
         Projects = new(preferences.Projects);
+        Preview = new(preferences);
         Shortcuts.PropertyChanged += PageModelChanged;
         Styles.PropertyChanged += PageModelChanged;
         Effects.PropertyChanged += PageModelChanged;
         Projects.PropertyChanged += PageModelChanged;
+        Preview.PropertyChanged += PageModelChanged;
     }
 
     public AppearanceSettingsViewModel Appearance { get; }
@@ -43,6 +46,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public EffectSettingsViewModel Effects { get; }
     public MediaSettingsViewModel Media { get; }
     public ProjectSettingsViewModel Projects { get; }
+    public PreviewSettingsViewModel Preview { get; }
     public string Title => title;
     public SettingsPage CurrentPage => (SettingsPage)PageIndex;
     public bool IsAppearanceVisible => CurrentPage == SettingsPage.APPEARANCE;
@@ -52,6 +56,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public bool IsColorsVisible => CurrentPage == SettingsPage.COLORS;
     public bool IsMediaVisible => CurrentPage == SettingsPage.MEDIA;
     public bool IsProjectsVisible => CurrentPage == SettingsPage.PROJECTS;
+    public bool IsPreviewVisible => CurrentPage == SettingsPage.PREVIEW;
 
     public string PageTitle => Localization.Get("Settings." + (CurrentPage switch
     {
@@ -61,6 +66,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.COLORS => "Colors",
         SettingsPage.MEDIA => "Media",
         SettingsPage.PROJECTS => "Projects",
+        SettingsPage.PREVIEW => "Preview",
         _ => "Appearance"
     }));
 
@@ -69,6 +75,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.SHORTCUTS => Shortcuts.Error,
         SettingsPage.STYLES => Styles.Error,
         SettingsPage.PROJECTS => Projects.Error,
+        SettingsPage.PREVIEW => Preview.Error,
         _ => null
     });
 
@@ -95,6 +102,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsColorsVisible));
                 OnPropertyChanged(nameof(IsMediaVisible));
                 OnPropertyChanged(nameof(IsProjectsVisible));
+                OnPropertyChanged(nameof(IsPreviewVisible));
                 OnPropertyChanged(nameof(PageTitle));
                 RefreshError();
             }
@@ -118,6 +126,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Effects.RefreshLanguage();
         Media.RefreshLanguage();
         Projects.RefreshLanguage();
+        Preview.RefreshLanguage();
         title = Localization.Get("Settings.Settings");
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(PageTitle));

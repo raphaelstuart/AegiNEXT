@@ -1001,12 +1001,13 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             current?.Error is not null ? VideoPlaybackState.FAULTED : playback?.State ?? VideoPlaybackState.CREATED;
         var audioAuditionActive = !closed && !opening && current is { Error: null, AudioError: null, Audio: { Error: null } } &&
             playback is { Error: null } && rangeCancellation is { IsCancellationRequested: false } && audioOnlyRangeInstalled;
+        var playbackRangeInstalled = !closed && !opening && playback is not null && mediaRangeInstalled;
         return new(requestedPath, state, opening, playback?.Position ?? MediaTime.Zero,
             opening ? null : current?.Media?.Start, opening ? null : current?.Media?.Duration,
             opening ? null : current?.Error ?? playback?.Error, epoch,
             current?.PresentedFrameTime, current?.PresentedAtPosition, current?.PresentedGeneration,
             current?.Audio is not null, current?.AudioError ?? current?.Audio?.Error, volume, muted,
-            current?.Session?.DecodeSessionInfo, audioAuditionActive);
+            current?.Session?.DecodeSessionInfo, audioAuditionActive, playbackRangeInstalled);
     }
 
     private void BeginOperationUnderLock()

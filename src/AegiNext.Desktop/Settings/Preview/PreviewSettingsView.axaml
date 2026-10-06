@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:preview="using:AegiNext.Desktop.Settings.Preview"
+             xmlns:inputs="using:AegiNext.Desktop.Controls"
+             x:Class="AegiNext.Desktop.Settings.Preview.PreviewSettingsView"
+             x:DataType="preview:PreviewSettingsViewModel" Classes="business-surface">
+  <ScrollViewer Name="PreviewPage">
+    <StackPanel Spacing="16">
+      <Border Classes="card">
+        <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+          <TextBlock Text="{Loc Key=Settings.SubtitleAuditionMilliseconds}" VerticalAlignment="Center" />
+          <inputs:NumericDraftInput Name="SubtitleAuditionMillisecondsInput" Grid.Column="1"
+              RawText="{Binding SubtitleAuditionMillisecondsText, Mode=TwoWay}"
+              Minimum="1" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+        </Grid>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

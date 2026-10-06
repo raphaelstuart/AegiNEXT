@@ -23,6 +23,7 @@ internal sealed partial class WorkbenchSession
         primaryId = primaryId is { } candidate && selected.Contains(candidate) ? candidate : selected.IsEmpty ? null : selected[0];
         if (primaryId == SelectedCueId && selectedSubtitleIds.SequenceEqual(selected))
         {
+            CenterSubtitleSelection();
             return true;
         }
 
@@ -33,6 +34,7 @@ internal sealed partial class WorkbenchSession
         }
 
         ViewModel.CancelGestures();
+        InvalidateTimingSession();
         selectedSubtitleIds = selected;
         subtitleSelectionPrimaryId = primaryId;
         SelectedCueId = primaryId;
@@ -43,7 +45,20 @@ internal sealed partial class WorkbenchSession
         SelectedKeyTime = null;
         ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
         RefreshDocument();
+        CenterSubtitleSelection();
         return true;
+    }
+
+    private void CenterSubtitleSelection()
+    {
+        if (SelectedCueId is { } cueId)
+        {
+            ViewModel.Timeline.CenterSubtitle(cueId);
+        }
+        else
+        {
+            ViewModel.Timeline.ResumePlaybackFollow();
+        }
     }
 
     internal void FocusSubtitleRow(Guid id)

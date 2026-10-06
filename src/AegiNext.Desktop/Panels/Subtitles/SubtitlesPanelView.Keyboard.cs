@@ -35,24 +35,45 @@ internal sealed partial class SubtitlesPanelView
         base.OnDetachedFromVisualTree(e);
     }
 
-    /// <summary>仅在字幕内容输入中执行可配置的换行和下一行命令，保留输入法候选确认。</summary>
+    /// <summary>在字幕列表焦点执行试听，在字幕内容输入执行换行和下一行命令，保留文本与输入法输入。</summary>
     public bool CanExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
     {
-        return !disposed && !session.IsClosing && !session.IsProjectBusy && !advancingRow && keyboardRoot is not null &&
-               (command is WorkbenchCommand.ADVANCE_SUBTITLE_ROW or WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK) &&
+        if (disposed || session.IsClosing || session.IsProjectBusy || advancingRow || keyboardRoot is null ||
+            list.ContextMenu?.IsOpen == true)
+        {
+            return false;
+        }
+
+        if (IsSubtitleAuditionCommand(command))
+        {
+            return focusedElement is Visual focused && focused is not TextBox &&
+                   !focused.GetVisualAncestors().OfType<TextBox>().Any() &&
+                   (ReferenceEquals(focused, list) || focused.GetVisualAncestors().Contains(list)) &&
+                   session.CanAuditionSubtitle && viewModel.SelectedRow is { } selected &&
+                   selected.Id == session.SelectedCueId && viewModel.SelectedIds.Contains(selected.Id) &&
+                   viewModel.VisibleRows.Any(value => value.Id == selected.Id);
+        }
+
+        return (command is WorkbenchCommand.ADVANCE_SUBTITLE_ROW or WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK) &&
                focusedElement is TextBox { AcceptsReturn: true, IsReadOnly: false, DataContext: SubtitleRow row } box &&
                box.GetVisualAncestors().Contains(list) && viewModel.VisibleRows.Any(value => value.Id == row.Id) &&
-               list.ContextMenu?.IsOpen != true &&
                !box.GetVisualDescendants().OfType<TextPresenter>().Any(presenter => !string.IsNullOrEmpty(presenter.PreeditText));
     }
 
-    /// <summary>在当前内容光标插入换行，或提交后跳转到后续内容输入。</summary>
+    /// <summary>试听主选字幕，或在当前内容输入插入换行、提交并跳转后续内容输入。</summary>
     public bool TryExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
     {
         if (!CanExecuteFocusCommand(command, focusedElement))
         {
             return false;
         }
+
+        if (IsSubtitleAuditionCommand(command))
+        {
+            _ = session.ExecuteCommandAsync(command);
+            return true;
+        }
+
         var box = (TextBox)focusedElement;
         if (command == WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK)
         {
@@ -64,6 +85,10 @@ internal sealed partial class SubtitlesPanelView
         }
         return true;
     }
+
+    private static bool IsSubtitleAuditionCommand(WorkbenchCommand command) =>
+        command is WorkbenchCommand.AUDITION_BEFORE_SUBTITLE or WorkbenchCommand.AUDITION_AFTER_SUBTITLE or
+            WorkbenchCommand.AUDITION_SUBTITLE_BEGIN or WorkbenchCommand.AUDITION_SUBTITLE;
 
     private void OnSubtitleKeyDown(object? sender, KeyEventArgs e)
     {

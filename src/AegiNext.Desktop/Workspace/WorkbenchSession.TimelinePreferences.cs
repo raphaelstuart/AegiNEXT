@@ -20,6 +20,7 @@ internal sealed partial class WorkbenchSession
         ViewModel.Timeline.IsStepEnabled = preferences.TimelineStepEnabled;
         ViewModel.Timeline.IsSpectrumVisible = preferences.TimelineSpectrumVisible;
         ViewModel.Timeline.IsWaveformVisible = preferences.TimelineWaveformVisible;
+        ViewModel.Timeline.IsClassicTimingEnabled = preferences.TimelineClassicTimingEnabled;
     }
 
     private void OnTimelinePreferencePropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -31,6 +32,10 @@ internal sealed partial class WorkbenchSession
 
         switch (e.PropertyName)
         {
+            case nameof(ViewModel.Timeline.IsClassicTimingEnabled):
+                InvalidateTimingSession();
+                UpdatePreferences(current => current with { TimelineClassicTimingEnabled = ViewModel.Timeline.IsClassicTimingEnabled });
+                break;
             case nameof(ViewModel.Timeline.IsSnapEnabled):
                 UpdatePreferences(current => current with { TimelineSnapEnabled = ViewModel.Timeline.IsSnapEnabled });
                 break;

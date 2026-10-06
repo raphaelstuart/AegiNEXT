@@ -533,6 +533,11 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     {
         base.OnPointerPressed(e);
         clipPastePointer = e.GetPosition(this);
+        if (TryRequestClassicTiming(e))
+        {
+            return;
+        }
+
         if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
         {
             CancelDrag();
@@ -1189,6 +1194,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
     private ProjectLayer DisplayedLayer(ProjectLayer layer)
     {
+        layer = ApplyTimingPreview(layer);
         if (dragMode == TimelineDragMode.MOVE && movingClips.ContainsKey(layer.Id))
         {
             var offset = pendingStart - originalStart;
@@ -1650,6 +1656,12 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
     private void UpdateCursor(Point point)
     {
+        if (IsClassicTimingEnabled && point.X >= HeaderWidth && point.Y >= RulerHeight)
+        {
+            Cursor = null;
+            return;
+        }
+
         if (dragMode is TimelineDragMode.TRIM_START or TimelineDragMode.TRIM_END)
         {
             Cursor = resizeCursor;
@@ -1736,6 +1748,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
     private Rect ClipRectangle(ProjectLayer layer, TimelineRow row)
     {
+        layer = ApplyTimingPreview(layer);
         var start = layer.Start;
         var end = layer.End;
         if (dragMode == TimelineDragMode.MOVE && movingClips.ContainsKey(layer.Id))

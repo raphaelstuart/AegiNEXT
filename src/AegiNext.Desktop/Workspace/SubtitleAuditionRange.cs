@@ -7,10 +7,11 @@ namespace AegiNext.Desktop.Workspace;
 
 internal static class SubtitleAuditionRange
 {
-    private static readonly MediaTime auditionLength = new(1, 2);
-
-    internal static MediaTimeRange? Resolve(SubtitleLine cue, VideoPreviewMedia media, WorkbenchCommand command)
+    internal static MediaTimeRange? Resolve(SubtitleLine cue, VideoPreviewMedia media, WorkbenchCommand command,
+        int milliseconds = 500)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(milliseconds);
+        var auditionLength = new MediaTime(milliseconds, 1000);
         var origin = media.Start ?? MediaTime.Zero;
         var start = origin + cue.Start;
         var end = origin + cue.End;

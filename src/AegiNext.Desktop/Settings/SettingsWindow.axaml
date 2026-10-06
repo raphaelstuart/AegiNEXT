@@ -11,6 +11,7 @@
         xmlns:colorPages="using:AegiNext.Desktop.Settings.Colors"
         xmlns:mediaPages="using:AegiNext.Desktop.Settings.Media"
         xmlns:projectPages="using:AegiNext.Desktop.Settings.Projects"
+        xmlns:previewPages="using:AegiNext.Desktop.Settings.Preview"
         xmlns:materialIcons="using:Material.Icons.Avalonia"
         x:Class="AegiNext.Desktop.Settings.SettingsWindow" x:DataType="settings:SettingsWindowViewModel"
         Classes="business-surface" Title="{Binding Title}"
@@ -114,6 +115,12 @@
                 <TextBlock Text="{Loc Key=Settings.Projects}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Play" />
+                <TextBlock Text="{Loc Key=Settings.Preview}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
           </ListBox>
         </StackPanel>
       </Border>
@@ -145,6 +152,10 @@
         </Grid>
         <Grid Grid.Row="1" IsVisible="{Binding IsProjectsVisible}">
           <projectPages:ProjectSettingsView Name="ProjectsView" DataContext="{Binding Projects}"
+                                           IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsPreviewVisible}">
+          <previewPages:PreviewSettingsView Name="PreviewView" DataContext="{Binding Preview}"
                                            IsVisible="{Binding $parent[Grid].IsVisible}" />
         </Grid>
         <TextBlock Name="SettingsError" Grid.Row="2" Text="{Binding Error}"

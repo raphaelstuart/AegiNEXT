@@ -644,9 +644,9 @@
     "Workbench.TimelinePasteFailed": "Cannot paste clips at this position. Check the subtitle intervals, tracks and resources.",
     "Settings.COPY_CLIPS": "Copy timeline clips",
     "Settings.PASTE_CLIPS": "Paste timeline clips",
-    "Settings.AUDITION_BEFORE_SUBTITLE": "Play 500 ms before subtitle",
-    "Settings.AUDITION_AFTER_SUBTITLE": "Play 500 ms after subtitle",
-    "Settings.AUDITION_SUBTITLE_BEGIN": "Play first 500 ms of subtitle",
+    "Settings.AUDITION_BEFORE_SUBTITLE": "Play audio before subtitle",
+    "Settings.AUDITION_AFTER_SUBTITLE": "Play audio after subtitle",
+    "Settings.AUDITION_SUBTITLE_BEGIN": "Play subtitle beginning",
     "Settings.AUDITION_SUBTITLE": "Play current subtitle",
     "Settings.ADVANCE_SUBTITLE_ROW": "Submit and go to next subtitle",
     "Settings.INSERT_SUBTITLE_LINE_BREAK": "Insert subtitle line break",
@@ -656,6 +656,12 @@
     "Settings.TimelineStartLine": "Start line",
     "Settings.TimelineEndLine": "End line",
     "Settings.TimelineSelectedRangeFill": "Selected range fill",
-    "Settings.TimelineInactiveRangeFill": "Unselected range fill"
+    "Settings.TimelineInactiveRangeFill": "Unselected range fill",
+    "Settings.Preview": "Preview",
+    "Settings.SubtitleAuditionMilliseconds": "Subtitle audition length (ms)",
+    "Settings.SubtitleAuditionMillisecondsInvalid": "Enter a whole number of milliseconds from 1 to 2147483647.",
+    "Workbench.TimelineClassicTiming": "Classic Aegisub timing",
+    "Workbench.TimelineClassicTimingHint": "Classic Aegisub timing: left click sets the selected subtitle start; right click sets its end.",
+    "Workbench.TimelineTimingInvalid": "The subtitle start must be nonnegative and earlier than its end."
   }
 }

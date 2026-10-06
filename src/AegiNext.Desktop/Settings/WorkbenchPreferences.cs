@@ -22,18 +22,20 @@ public sealed record WorkbenchPreferences
     public bool WindowMenuOnMac { get; init; }
     public PreviewQuality PreviewQuality { get; init; } = PreviewQuality.LOW;
     public VideoDecodeMode PreviewDecodeMode { get; init; } = VideoDecodeMode.Auto;
+    public int SubtitleAuditionMilliseconds { get; init; } = 500;
+    public bool TimelineClassicTimingEnabled { get; init; }
     public bool TimelineSnapEnabled { get; init; } = true;
     public bool TimelineStepEnabled { get; init; }
     public bool TimelineSpectrumVisible { get; init; } = true;
     public bool TimelineWaveformVisible { get; init; } = true;
     public ProjectPreferences Projects { get; init; } = new();
 
-    /// <summary>拒绝未知设置版本、语言、主题或非法音量。</summary>
+    /// <summary>拒绝未知设置版本、语言、主题、非法音量或非正试听时长。</summary>
     public void Validate()
     {
         if (Version != 1 || !IsValidLanguage(Language) ||
             !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !Enum.IsDefined(PreviewDecodeMode) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
-            AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
+            SubtitleAuditionMilliseconds < 1 || AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
             AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || TimelineClips is null || Projects is null)
         {
             throw new InvalidDataException("桌面偏好无效或版本不受支持。");
@@ -76,6 +78,7 @@ public sealed record WorkbenchPreferences
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
                AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && TimelineClips == other.TimelineClips && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
+               SubtitleAuditionMilliseconds == other.SubtitleAuditionMilliseconds && TimelineClassicTimingEnabled == other.TimelineClassicTimingEnabled &&
                TimelineSnapEnabled == other.TimelineSnapEnabled && TimelineStepEnabled == other.TimelineStepEnabled &&
                TimelineSpectrumVisible == other.TimelineSpectrumVisible && TimelineWaveformVisible == other.TimelineWaveformVisible &&
                Projects == other.Projects && ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
@@ -95,6 +98,8 @@ public sealed record WorkbenchPreferences
         hash.Add(WindowMenuOnMac);
         hash.Add(PreviewQuality);
         hash.Add(PreviewDecodeMode);
+        hash.Add(SubtitleAuditionMilliseconds);
+        hash.Add(TimelineClassicTimingEnabled);
         hash.Add(TimelineSnapEnabled);
         hash.Add(TimelineStepEnabled);
         hash.Add(TimelineSpectrumVisible);

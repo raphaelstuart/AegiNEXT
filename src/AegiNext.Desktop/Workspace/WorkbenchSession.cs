@@ -349,6 +349,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
 
         await WaitForProjectIdleAsync();
+        InvalidateTimingSession();
         await using var persistencePause = await persistence.PauseAsync();
         if (!await workflow.ConfirmDiscardOrSaveAsync())
         {
@@ -386,6 +387,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private async Task DisposeCoreAsync()
     {
+        InvalidateTimingSession();
         closing = true;
         projectOperationsCancellation.Cancel();
         await persistence.DisposeAsync();
@@ -526,6 +528,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         RefreshPreviewDecodeSessionInfo(snapshot.DecodeSessionInfo);
         var preview = ViewModel.Preview;
         var relative = ProjectPosition;
+        UpdateTimingPreview(snapshot.State, relative);
         preview.FileTitle = snapshot.FilePath is { } path ? Path.GetFileName(path) : Localization.Get("Preview.Preview");
         preview.IsOpening = snapshot.IsOpening || switchingPreviewDecodeMode;
         preview.CanPlay = !closing && !switchingPreviewDecodeMode && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
@@ -554,7 +557,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             editor.Snapshot.Subtitles.Select(line => ToSeconds(line.End)).DefaultIfEmpty(60).Max());
         timeline.ScrollMaximum = Math.Max(0, durationSeconds - timeline.VisibleDuration);
         timeline.ViewportSize = Math.Max(1, timeline.VisibleDuration);
-        if (playback.PendingPosition is null && !timeline.IsSeeking && snapshot.State == VideoPlaybackState.PLAYING &&
+        if (timeline.IsPlaybackFollowEnabled && playback.PendingPosition is null && !timeline.IsSeeking && snapshot.State == VideoPlaybackState.PLAYING &&
             (ToSeconds(relative) < timeline.ViewStart || ToSeconds(relative) > timeline.ViewStart + timeline.VisibleDuration))
         {
             timeline.ViewStart = Math.Max(0, ToSeconds(relative) - timeline.VisibleDuration / 5);
@@ -612,12 +615,14 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     internal void ResetSelection()
     {
+        ViewModel.Timeline.ResumePlaybackFollow();
+        InvalidateTimingSession();
         ResetSubtitleSelection();
         ClearInspectorPreview();
         SelectedCueId = null;
         SelectedLayerId = null;
         SelectedKeyTime = null;
-        timingSession = timingSession.Reset();
+        ClearTimingPreview();
         stylesDirty = false;
         effectsDirty = false;
         SceneEditing.DraftTarget = null;

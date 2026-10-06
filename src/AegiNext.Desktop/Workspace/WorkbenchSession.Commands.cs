@@ -44,7 +44,11 @@ internal sealed partial class WorkbenchSession
 
         if (command == WorkbenchCommand.TIMING_EXIT && pendingTimingEntry is not null)
         {
-            pendingTimingEnd ??= ProjectPosition;
+            if (ViewModel.Timeline.TimingPreview is { } preview && timingPreviewTrackId is { } trackId)
+            {
+                pendingTimingEnd = ResolveTimingEnd(preview.CueId, trackId, preview.Start, ProjectPosition);
+                ClearTimingPreview();
+            }
             ViewModel.RefreshCommands();
             return;
         }
@@ -76,22 +80,28 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.EXPORT_ASS: await workflow.ExportSubtitlesAsync(true); break;
                 case WorkbenchCommand.EXPORT_VIDEO: await export.EncodeAsync(); break;
                 case WorkbenchCommand.PLAY_PAUSE:
+                    ViewModel.Timeline.ResumePlaybackFollow();
                     TryCommitDrafts(false);
                     ViewModel.CancelGestures();
                     ClearKeyframeSelection();
-                    if (controller.Snapshot.AudioAuditionActive)
+                    var playbackSnapshot = controller.Snapshot;
+                    if (playbackSnapshot.AudioAuditionActive)
                     {
                         await controller.ClearPlaybackRangeAsync();
                     }
-                    else if (controller.Snapshot.State == VideoPlaybackState.PLAYING)
+                    else if (playbackSnapshot.State == VideoPlaybackState.PLAYING)
                     {
                         await controller.PauseAsync();
                     }
                     else
                     {
-                        if (controller.Snapshot.State == VideoPlaybackState.ENDED)
+                        if (playbackSnapshot.State == VideoPlaybackState.ENDED)
                         {
-                            await SeekFromUserAsync(controller.Snapshot.Start ?? MediaTime.Zero);
+                            var mediaStart = playbackSnapshot.Start ?? MediaTime.Zero;
+                            var resumePosition = playbackSnapshot.PlaybackRangeInstalled &&
+                                (playbackSnapshot.Duration is not { } mediaDuration || playbackSnapshot.Position < mediaStart + mediaDuration)
+                                ? playbackSnapshot.Position : mediaStart;
+                            await SeekFromUserAsync(resumePosition);
                         }
                         await controller.PlayAsync();
                     }
@@ -174,13 +184,13 @@ internal sealed partial class WorkbenchSession
 
     internal void ResetTiming()
     {
-        timingSession = timingSession.Reset();
+        FreezeTimingPreview();
         ViewModel.RefreshCommands();
     }
 
     internal void InvalidateTimingSession()
     {
-        if (timingSession.ActiveCueId is not null)
+        if (timingSession.ActiveCueId is not null || pendingTimingEntry is not null || timingPreviewFollowing)
         {
             ResetTiming();
         }

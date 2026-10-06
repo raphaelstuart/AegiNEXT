@@ -43,6 +43,7 @@ internal sealed partial class WorkbenchSession
         }
 
         ViewModel.CancelGestures();
+        InvalidateTimingSession();
         currentTrackId = trackId;
         ResetSubtitleSelection();
         SelectedCueId = null;

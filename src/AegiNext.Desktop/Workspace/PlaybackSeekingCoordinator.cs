@@ -21,6 +21,7 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         IsInteractive = value;
         if (value)
         {
+            session.ViewModel.Timeline.ResumePlaybackFollow();
             session.TryCommitDrafts(false);
             session.CancelSceneGesture();
             session.ClearKeyframeSelection();
@@ -75,6 +76,7 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         session.InvalidateTimingSession();
         if (clearEditingTarget)
         {
+            session.ViewModel.Timeline.ResumePlaybackFollow();
             session.TryCommitDrafts(false);
             session.CancelSceneGesture();
             session.ClearKeyframeSelection();
@@ -128,6 +130,7 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
 
     internal Task SeekProjectTimeAsync(MediaTime time)
     {
+        session.ViewModel.Timeline.ResumePlaybackFollow();
         var target = (controller.Snapshot.Start ?? MediaTime.Zero) + time;
         if (!IsInteractive)
         {

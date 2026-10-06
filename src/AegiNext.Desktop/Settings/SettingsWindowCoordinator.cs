@@ -7,6 +7,7 @@ using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings.Effects;
 using AegiNext.Desktop.Settings.Projects;
+using AegiNext.Desktop.Settings.Preview;
 using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Workspace.Diagnostics;
@@ -123,6 +124,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ShortcutsChanged += OnShortcutsChanged;
         window.PreviewDecodeModeChanged += OnPreviewDecodeModeChanged;
         window.ProjectsChanged += OnProjectsChanged;
+        window.PreviewChanged += OnPreviewChanged;
         window.UpsertStyleRequested += OnUpsertStyleRequested;
         window.DeleteStyleRequested += OnDeleteStyleRequested;
         window.CaptureStyleRequested += OnCaptureStyleRequested;
@@ -157,6 +159,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ShortcutsChanged -= OnShortcutsChanged;
         window.PreviewDecodeModeChanged -= OnPreviewDecodeModeChanged;
         window.ProjectsChanged -= OnProjectsChanged;
+        window.PreviewChanged -= OnPreviewChanged;
         window.UpsertStyleRequested -= OnUpsertStyleRequested;
         window.DeleteStyleRequested -= OnDeleteStyleRequested;
         window.CaptureStyleRequested -= OnCaptureStyleRequested;
@@ -285,6 +288,11 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private void OnProjectsChanged(object? sender, ProjectPreferencesChangedEventArgs e)
     {
         UpdatePreferences(value => value with { Projects = e.Preferences });
+    }
+
+    private void OnPreviewChanged(object? sender, PreviewSettingsChangedEventArgs e)
+    {
+        UpdatePreferences(value => value with { SubtitleAuditionMilliseconds = e.SubtitleAuditionMilliseconds });
     }
 
     private void OnShortcutsChanged(object? sender, SettingsShortcutsChangedEventArgs e)

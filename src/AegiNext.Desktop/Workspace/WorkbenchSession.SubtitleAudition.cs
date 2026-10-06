@@ -13,12 +13,14 @@ internal sealed partial class WorkbenchSession
     internal async Task PlaySubtitleAuditionAsync(WorkbenchCommand command)
     {
         if (!CanAuditionSubtitle || !TryCommitDrafts(false) || SelectedCue is not { } cue ||
-            controller.MediaInfo is not { } media || SubtitleAuditionRange.Resolve(cue, media, command) is not { } range)
+            controller.MediaInfo is not { } media ||
+            SubtitleAuditionRange.Resolve(cue, media, command, Preferences.SubtitleAuditionMilliseconds) is not { } range)
         {
             return;
         }
 
+        ViewModel.Timeline.ResumePlaybackFollow();
         ViewModel.CancelGestures();
-        await controller.PlayAudioRangeAsync(range.Start, range.End);
+        await controller.PlayRangeAsync(range.Start, range.End, false);
     }
 }

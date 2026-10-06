@@ -8,6 +8,8 @@
           CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
     <Grid RowDefinitions="28,*" ColumnDefinitions="37,*">
       <Border Grid.RowSpan="2" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="*,Auto">
+        <ScrollViewer Name="TimelineToolbarScroller" Grid.Row="0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden">
         <StackPanel Spacing="4" Margin="2,4">
           <controlsCommon:ToolbarToggleButton Name="TimelineSnapButton" ToolTip.Tip="{Loc Key=Workbench.TimelineSnapHint}"
                         AutomationProperties.Name="{Loc Key=Workbench.TimelineSnap}"
@@ -32,6 +34,14 @@
                   StrokeThickness="1.7" />
           </controlsCommon:ToolbarToggleButton>
         </StackPanel>
+        </ScrollViewer>
+        <controlsCommon:ToolbarToggleButton Name="TimelineClassicTimingButton" Grid.Row="1" Margin="2,4"
+                        ToolTip.Tip="{Loc Key=Workbench.TimelineClassicTimingHint}"
+                        AutomationProperties.Name="{Loc Key=Workbench.TimelineClassicTiming}"
+                        IsChecked="{Binding IsClassicTimingEnabled, Mode=TwoWay}">
+          <materialIcons:MaterialIcon Kind="Mouse" Width="18" Height="18" />
+        </controlsCommon:ToolbarToggleButton>
+        </Grid>
       </Border>
       <controls:TimelineOverviewControl Name="TimelineMinimap" Grid.Column="1" Margin="4,2" />
       <controls:SubtitleTimelineControl Name="Timeline" Grid.Row="1" Grid.Column="1" />

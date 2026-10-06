@@ -41,47 +41,7 @@ internal sealed partial class WorkbenchSession
             return;
         }
         var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
-        var entered = timingSession.Enter(start);
-        if (entered.IsRepeated)
-        {
-            return;
-        }
-
-        var presetId = ViewModel.Styles.SelectedPreset?.Id;
-        pendingTimingEntry = entered;
-        pendingTimingEnd = null;
-        SetProjectBusy(true);
-        try
-        {
-            await CreateSubtitleClipsAsync([
-                new()
-                {
-                    Id = entered.CueId, TrackId = trackId, Start = entered.Start, End = entered.Start + new MediaTime(2),
-                    Text = string.Empty
-                }
-            ], trackId, presetId);
-        }
-        catch
-        {
-            pendingTimingEnd = null;
-            throw;
-        }
-        finally
-        {
-            pendingTimingEntry = null;
-            SetProjectBusy(false);
-        }
-
-        SelectCue(entered.CueId);
-        SubtitleScrollRequested?.Invoke(this, EventArgs.Empty);
-        timingSession = entered.Session;
-        if (pendingTimingEnd is { } end)
-        {
-            pendingTimingEnd = null;
-            SetCueEndAt(end);
-        }
-
-        ViewModel.RefreshCommands();
+        await BeginTimingCueAsync(trackId, start);
     }
 
     internal async Task CreateSubtitleClipsAsync(IEnumerable<SubtitleLine> lines, Guid trackId, Guid? fallbackPresetId)
@@ -104,13 +64,16 @@ internal sealed partial class WorkbenchSession
 
     private void SetCueEndAt(MediaTime end)
     {
-        if (timingSession.Exit(end) is not { } exited)
+        if (ViewModel.Timeline.TimingPreview is not { } preview || timingPreviewTrackId is not { } trackId ||
+            timingSession.ActiveCueId is null)
         {
             return;
         }
 
-        editor.SetSubtitleTiming(exited.CueId, exited.Start, exited.End, TimelineEditMode.CROP);
-        timingSession = exited.Session;
+        var finalEnd = ResolveTimingEnd(preview.CueId, trackId, preview.Start, end);
+        var exited = timingSession.Exit(finalEnd)!;
+        ClearTimingPreview();
+        CommitTimingPreview(preview with { End = exited.End });
         SelectCue(exited.CueId);
         ViewModel.RefreshCommands();
     }

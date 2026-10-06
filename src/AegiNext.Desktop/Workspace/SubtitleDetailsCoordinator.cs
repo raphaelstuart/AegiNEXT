@@ -975,6 +975,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             }
             playbackCancellation?.Dispose();
             playbackCancellation = new();
+            session.ViewModel.Timeline.ResumePlaybackFollow();
             await session.Controller.PlayRangeAsync(mediaOrigin + start, mediaOrigin + end, loop, playbackCancellation.Token);
         }
         catch (OperationCanceledException)

@@ -16,11 +16,12 @@ public sealed class TimelineOverviewControl : Control
     private TimelineViewport viewport = new();
     private double duration = 1;
     private MediaTime position;
+    private TimelineTimingPreview? timingPreview;
     private TimelineOverviewDragMode dragMode;
     private TimelineViewport original = new();
     private double pointerOrigin;
     private IPointer? capturedPointer;
-    private (double Start, double End, int Row, bool Subtitle)[] clips = [];
+    private (double Start, double End, int Row, bool Subtitle, Guid? CueId)[] clips = [];
 
     /// <summary>建立可聚焦的导航概览。</summary>
     public TimelineOverviewControl()
@@ -48,7 +49,8 @@ public sealed class TimelineOverviewControl : Control
     }
 
     /// <summary>呈现同一工程和视口，保持全部导航状态来自调用方。</summary>
-    public void SetScene(ProjectDocument value, TimelineViewport visible, double totalDuration, MediaTime playhead)
+    public void SetScene(ProjectDocument value, TimelineViewport visible, double totalDuration, MediaTime playhead,
+        TimelineTimingPreview? preview = null)
     {
         if (!ReferenceEquals(document, value))
         {
@@ -57,13 +59,14 @@ public sealed class TimelineOverviewControl : Control
             var cues = value.Subtitles.ToDictionary(cue => cue.Id);
             clips = Flatten(value.Layers).Select(layer => (Seconds(layer.Start), Seconds(layer.End),
                 layer.SubtitleId is { } cueId ? indices[cues[cueId].TrackId] : value.SubtitleTracks.Length,
-                layer.Kind == LayerKind.SUBTITLE)).ToArray();
+                layer.Kind == LayerKind.SUBTITLE, layer.SubtitleId)).ToArray();
         }
 
         document = value;
         viewport = visible;
         duration = Math.Max(0.001, totalDuration);
         position = playhead;
+        timingPreview = preview;
         InvalidateVisual();
     }
 
@@ -77,8 +80,10 @@ public sealed class TimelineOverviewControl : Control
         var band = Math.Max(0, Bounds.Height - 6) / Math.Max(1, tracks.Length + 1);
         foreach (var clip in clips)
         {
-            var x = clip.Start / duration * Bounds.Width;
-            var width = Math.Max(1, (clip.End - clip.Start) / duration * Bounds.Width);
+            var start = timingPreview is { } preview && clip.CueId == preview.CueId ? Seconds(preview.Start) : clip.Start;
+            var end = timingPreview is { } timing && clip.CueId == timing.CueId ? Seconds(timing.End) : clip.End;
+            var x = start / duration * Bounds.Width;
+            var width = Math.Max(1, (end - start) / duration * Bounds.Width);
             context.DrawRectangle(new SolidColorBrush(Color.Parse(clip.Subtitle
                     ? dark ? "#7396D9" : "#557EB9" : dark ? "#62B6B2" : "#378B85")),
                 null, new(x, 3 + clip.Row * band, width, band * 0.75));

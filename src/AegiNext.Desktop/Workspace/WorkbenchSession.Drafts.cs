@@ -112,6 +112,8 @@ internal sealed partial class WorkbenchSession
             {
                 if (prepared != document)
                 {
+                    prepared = OverlayTimingPreview(prepared);
+                    ProjectValidator.Validate(prepared);
                     InvalidateTimingSession();
                     editor.Apply("Commit workspace drafts", _ => prepared);
                 }
@@ -524,6 +526,7 @@ internal sealed partial class WorkbenchSession
         }
 
         ViewModel.CancelGestures();
+        InvalidateTimingSession();
         ResetSubtitleSelection(id);
         SelectedCueId = id;
         ViewModel.Effects.SelectedIds = [];
@@ -547,6 +550,10 @@ internal sealed partial class WorkbenchSession
         }
 
         ViewModel.CancelGestures();
+        if (id != SelectedLayerId || !ViewModel.Effects.SelectedIds.ToHashSet().SetEquals(selectedIds))
+        {
+            InvalidateTimingSession();
+        }
         SelectedLayerId = id;
         ViewModel.Effects.SelectedIds = selectedIds;
         SelectedKeyTime = null;
