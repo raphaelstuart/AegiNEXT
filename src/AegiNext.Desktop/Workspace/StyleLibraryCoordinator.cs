@@ -171,7 +171,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
             throw new KeyNotFoundException("字幕轨道不存在。") : null;
         if (track is { AutoApplyStyle: true, DefaultStyle: { } defaultStyle })
         {
-            return Task.FromResult(new PreparedSubtitleStyle(project, defaultStyle));
+            return Task.FromResult(new PreparedSubtitleStyle(project, defaultStyle, track.StylePresetName!));
         }
 
         var preset = session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == fallbackPresetId);

@@ -1,5 +1,6 @@
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
 
 namespace AegiNext.Desktop.Settings;
 
@@ -10,6 +11,11 @@ internal sealed class SettingsStyleDraft(SubtitleStylePreset preset)
     internal void Rename(string name)
     {
         Preset = Preset with { Name = name.Trim().Normalize() };
+    }
+
+    internal void UpdateTimingPostProcessor(TimingPostProcessorOptions? options)
+    {
+        Preset = Preset with { TimingPostProcessor = options };
     }
 
     internal void UpdateStyle(SubtitleStyle style, bool clearFont = false)

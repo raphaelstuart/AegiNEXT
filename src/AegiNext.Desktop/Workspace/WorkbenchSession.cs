@@ -4,6 +4,7 @@ using AegiNext.Application;
 using AegiNext.Application.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
+using AegiNext.Core.Media;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
@@ -65,9 +66,11 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         IWorkbenchExportService? exportService = null,
         WorkbenchPreferences? initialPreferences = null,
         DesktopApplicationContext? applicationContext = null,
-        TimeProvider? persistenceTimeProvider = null, IProjectPersistenceStorage? persistenceStorage = null)
+        TimeProvider? persistenceTimeProvider = null, IProjectPersistenceStorage? persistenceStorage = null,
+        Func<string, int, MediaTime, CancellationToken, Task<VideoTimingIndex>>? videoTimingProbe = null)
     {
         this.dialogs = dialogs;
+        this.videoTimingProbe = videoTimingProbe ?? ProbeVideoTimingAsync;
         this.dispatch = dispatch ?? DispatchAsync;
         this.editor = editor ?? new();
         ownsApplicationContext = applicationContext is null;
@@ -390,6 +393,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         InvalidateTimingSession();
         closing = true;
         projectOperationsCancellation.Cancel();
+        await timingProcessingCompletion.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
         await persistence.DisposeAsync();
         applicationContext.PreferencesChanged -= OnApplicationPreferencesChanged;
         applicationContext.StylesChanged -= OnApplicationStylesChanged;
@@ -414,6 +418,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         {
             await controller.DisposeAsync();
             previewFrames.Clear();
+            videoTimingCache = null;
             layerPlacement.Dispose();
             analysis.Dispose();
             export.Dispose();

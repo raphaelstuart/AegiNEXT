@@ -131,6 +131,7 @@ public static class AssSubtitleFormat
         foreach (var fields in events.OrderBy(row => AssFormatValues.Integer(Get(row, "Layer", "0"))))
         {
             var name = Get(fields, "Style", "Default");
+            ProjectValidator.ValidateSubtitleStyleName(name);
             var definition = styles.TryGetValue(name, out var declared) ? declared : fallback;
             var start = AssFormatValues.ParseTime(Required(fields, "Start"));
             var end = AssFormatValues.ParseTime(Required(fields, "End"));
@@ -138,7 +139,7 @@ public static class AssSubtitleFormat
             {
                 throw new InvalidDataException("ASS 结束时间必须晚于开始时间。");
             }
-            var line = new SubtitleLine { Start = start, End = end, Style = definition.Style };
+            var line = new SubtitleLine { Start = start, End = end, Style = definition.Style, StyleName = name };
             var marginL = AssFormatValues.Number(Get(fields, "MarginL", "0"));
             var marginR = AssFormatValues.Number(Get(fields, "MarginR", "0"));
             var marginV = AssFormatValues.Number(Get(fields, "MarginV", "0"));

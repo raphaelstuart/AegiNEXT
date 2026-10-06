@@ -1,0 +1,131 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:timing="using:AegiNext.Desktop.Settings.TimingPostProcessor"
+             xmlns:inputs="using:AegiNext.Desktop.Controls"
+             xmlns:icons="using:Material.Icons.Avalonia"
+             x:Class="AegiNext.Desktop.Settings.TimingPostProcessor.TimingPostProcessorSettingsView"
+             x:DataType="timing:TimingPostProcessorSettingsViewModel" Classes="business-surface">
+  <Grid RowDefinitions="*,Auto" RowSpacing="12">
+    <Grid Name="TimingPostProcessorContentGrid" ColumnDefinitions="170,*" ColumnSpacing="12" IsEnabled="{Binding !IsBusy}">
+      <Border Name="TimingPostProcessorStylesCard" Classes="card" Padding="8">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+          <TextBlock Text="{Loc Key=Settings.TimingApplyToStyles}" TextWrapping="Wrap" FontWeight="SemiBold" />
+          <ListBox Name="TimingPostProcessorStylesList" Grid.Row="1" ItemsSource="{Binding Styles}" SelectedItem="{Binding SelectedStyle, Mode=TwoWay}" Background="Transparent">
+            <ListBox.Resources>
+              <x:Double x:Key="CheckBoxMinHeight">24</x:Double>
+            </ListBox.Resources>
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="MinHeight" Value="26" />
+                <Setter Property="Padding" Value="4,1" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+              </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="timing:TimingStyleChoice">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                  <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Height="24" MinHeight="24" Padding="0"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <TextBlock Text="{Binding Name}" Margin="4,0,0,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                  </CheckBox>
+                  <TextBlock Grid.Column="1" Text="✓" IsVisible="{Binding IsAssociated}" VerticalAlignment="Center"
+                             ToolTip.Tip="{Loc Key=Settings.TimingStyleAssociated}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+            <Button Name="SelectAllTimingStylesButton" Classes="icon-button" Command="{Binding SelectAllCommand}" Padding="0"
+                    ToolTip.Tip="{Loc Key=Settings.TimingSelectAll}" AutomationProperties.Name="{Loc Key=Settings.TimingSelectAll}">
+              <icons:MaterialIcon Kind="CheckboxMultipleMarkedOutline" Width="18" Height="18" />
+            </Button>
+            <Button Name="SelectNoneTimingStylesButton" Classes="icon-button" Command="{Binding SelectNoneCommand}" Padding="0"
+                    ToolTip.Tip="{Loc Key=Settings.TimingSelectNone}" AutomationProperties.Name="{Loc Key=Settings.TimingSelectNone}">
+              <icons:MaterialIcon Kind="CheckboxMultipleBlankOutline" Width="18" Height="18" />
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+      <ScrollViewer Name="TimingPostProcessorParametersScrollViewer" Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="8">
+          <Border Classes="card" Padding="12">
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Loc Key=Settings.TimingLead}" FontWeight="SemiBold" />
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <StackPanel Spacing="4">
+                  <CheckBox Content="{Loc Key=Settings.TimingLeadIn}" IsChecked="{Binding LeadInEnabled, Mode=TwoWay}" />
+                  <inputs:NumericDraftInput Name="LeadInMillisecondsInput" RawText="{Binding LeadInMillisecondsText, Mode=TwoWay}"
+                      IsEnabled="{Binding LeadInEnabled}" Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <CheckBox Content="{Loc Key=Settings.TimingLeadOut}" IsChecked="{Binding LeadOutEnabled, Mode=TwoWay}" />
+                  <inputs:NumericDraftInput Name="LeadOutMillisecondsInput" RawText="{Binding LeadOutMillisecondsText, Mode=TwoWay}"
+                      IsEnabled="{Binding LeadOutEnabled}" Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Border>
+          <Border Classes="card" Padding="12">
+            <StackPanel Spacing="6">
+              <CheckBox Content="{Loc Key=Settings.TimingAdjacency}" IsChecked="{Binding AdjacencyEnabled, Mode=TwoWay}" FontWeight="SemiBold" />
+              <StackPanel Spacing="6" IsEnabled="{Binding AdjacencyEnabled}">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Loc Key=Settings.TimingMaximumGap}" TextWrapping="Wrap" />
+                    <inputs:NumericDraftInput Name="MaximumGapMillisecondsInput" RawText="{Binding MaximumGapMillisecondsText, Mode=TwoWay}"
+                        Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="4">
+                    <TextBlock Text="{Loc Key=Settings.TimingMaximumOverlap}" TextWrapping="Wrap" />
+                    <inputs:NumericDraftInput Name="MaximumOverlapMillisecondsInput" RawText="{Binding MaximumOverlapMillisecondsText, Mode=TwoWay}"
+                        Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+                  </StackPanel>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                  <TextBlock Text="{Loc Key=Settings.TimingBiasStart}" VerticalAlignment="Center" />
+                  <Slider Name="TimingBiasSlider" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding BiasPercent, Mode=TwoWay}"
+                          TickFrequency="1" IsSnapToTickEnabled="True" MinHeight="32" />
+                  <TextBlock Grid.Column="2" Text="{Loc Key=Settings.TimingBiasEnd}" VerticalAlignment="Center" />
+                </Grid>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+          <Border Classes="card" Padding="12" ToolTip.Tip="{Loc Key=Settings.TimingKeyframeHint}">
+            <StackPanel Spacing="6">
+              <CheckBox Name="TimingPostProcessorKeyframeSnapCheck" Content="{Loc Key=Settings.TimingKeyframeSnap}"
+                        IsChecked="{Binding KeyframeSnapEnabled, Mode=TwoWay}" FontWeight="SemiBold" />
+              <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="6" IsEnabled="{Binding KeyframeSnapEnabled}">
+                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
+                  <TextBlock Text="{Loc Key=Settings.TimingStartBefore}" TextWrapping="Wrap" />
+                  <inputs:NumericDraftInput Name="StartBeforeMillisecondsInput" RawText="{Binding StartBeforeMillisecondsText, Mode=TwoWay}"
+                      Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+                </StackPanel>
+                <StackPanel Grid.Row="0" Grid.Column="1" Spacing="4">
+                  <TextBlock Text="{Loc Key=Settings.TimingStartAfter}" TextWrapping="Wrap" />
+                  <inputs:NumericDraftInput Name="StartAfterMillisecondsInput" RawText="{Binding StartAfterMillisecondsText, Mode=TwoWay}"
+                      Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+                </StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="0" Spacing="4">
+                  <TextBlock Text="{Loc Key=Settings.TimingEndBefore}" TextWrapping="Wrap" />
+                  <inputs:NumericDraftInput Name="EndBeforeMillisecondsInput" RawText="{Binding EndBeforeMillisecondsText, Mode=TwoWay}"
+                      Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+                </StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
+                  <TextBlock Text="{Loc Key=Settings.TimingEndAfter}" TextWrapping="Wrap" />
+                  <inputs:NumericDraftInput Name="EndAfterMillisecondsInput" RawText="{Binding EndAfterMillisecondsText, Mode=TwoWay}"
+                      Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center" />
+      <Button Name="UnlinkTimingPostProcessorButton" Grid.Column="1" Content="{Loc Key=Settings.TimingUnlink}"
+              Command="{Binding UnlinkCommand}" />
+      <Button Name="AssociateTimingPostProcessorButton" Grid.Column="2" Content="{Loc Key=Settings.TimingAssociate}"
+              Command="{Binding AssociateCommand}" />
+    </Grid>
+  </Grid>
+</UserControl>

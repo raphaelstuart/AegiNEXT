@@ -179,7 +179,8 @@ internal sealed partial class WorkbenchSession
             }
 
             editor.Apply("Create subtitle clips", _ => ProjectEditingOperations.CreateSubtitleClips(prepared.Project,
-                [new() { Id = entered.CueId, TrackId = trackId, Start = start, End = initialEnd, Text = string.Empty }],
+                [new() { Id = entered.CueId, TrackId = trackId, Start = start, End = initialEnd, Text = string.Empty,
+                    StyleName = prepared.StyleName }],
                 trackId, prepared.Style));
             created = true;
             preview = ViewModel.Timeline.TimingPreview ?? preview;

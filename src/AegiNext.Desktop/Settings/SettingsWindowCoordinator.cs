@@ -8,6 +8,7 @@ using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings.Effects;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.Preview;
+using AegiNext.Desktop.Settings.TimingPostProcessor;
 using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Workspace.Diagnostics;
@@ -24,6 +25,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private WorkbenchPreferences? presentedPreferences;
     private bool disposed;
     private IWindowChrome? chrome;
+    internal Task TimingCompletion { get; private set; } = Task.CompletedTask;
 
     internal event Action<WorkbenchLogEntry>? EffectScriptErrorReported;
     internal SettingsWindow? Window { get; private set; }
@@ -115,7 +117,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
 
     private void Subscribe(SettingsWindow window)
     {
-        window.ViewModel.Styles.SaveDraftAsync = preset => RunAsync(() => applicationContext.RunStyleOperationAsync(() => applicationContext.StyleLibrary.UpsertAsync(preset)));
+        window.ViewModel.Styles.SaveDraftAsync = preset => RunAsync(() => SaveStylePresetAsync(preset));
         window.ViewModel.Effects.SaveDraftAsync = preset => RunAsync(() =>
             applicationContext.RunEffectOperationAsync(() => applicationContext.EffectScriptLibrary.UpsertAsync(preset)), true);
         window.ViewModel.Styles.ConfirmLeaveAsync = () => dialogs!.ConfirmPresetChangesAsync(false);
@@ -131,6 +133,9 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.PreviewDecodeModeChanged += OnPreviewDecodeModeChanged;
         window.ProjectsChanged += OnProjectsChanged;
         window.PreviewChanged += OnPreviewChanged;
+        window.TimingPreferencesChanged += OnTimingPreferencesChanged;
+        window.TimingAssociateRequested += OnTimingAssociationRequested;
+        window.TimingUnlinkRequested += OnTimingAssociationRequested;
         window.UpsertStyleRequested += OnUpsertStyleRequested;
         window.DeleteStyleRequested += OnDeleteStyleRequested;
         window.CaptureStyleRequested += OnCaptureStyleRequested;
@@ -170,6 +175,9 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.PreviewDecodeModeChanged -= OnPreviewDecodeModeChanged;
         window.ProjectsChanged -= OnProjectsChanged;
         window.PreviewChanged -= OnPreviewChanged;
+        window.TimingPreferencesChanged -= OnTimingPreferencesChanged;
+        window.TimingAssociateRequested -= OnTimingAssociationRequested;
+        window.TimingUnlinkRequested -= OnTimingAssociationRequested;
         window.UpsertStyleRequested -= OnUpsertStyleRequested;
         window.DeleteStyleRequested -= OnDeleteStyleRequested;
         window.CaptureStyleRequested -= OnCaptureStyleRequested;
@@ -221,6 +229,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private void OnStylesChanged(object? sender, EventArgs e)
     {
         Window?.UpdateStyles(applicationContext.StyleLibrary.Snapshot.Presets);
+        RefreshTimingStyles();
     }
 
     private void OnEffectsChanged(object? sender, EventArgs e)
@@ -261,6 +270,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         Window?.SetStyleOperationBusy(applicationContext.StylesBusy || projectBusy || session?.Styles.IsBusy == true);
         Window?.SetEffectOperationBusy(applicationContext.EffectsBusy || projectBusy || session?.EffectScripts.IsBusy == true);
         Window?.UpdateSelectionAvailability(session is { HasSelectedCue: true, IsProjectBusy: false, IsClosing: false });
+        RefreshTimingStyles();
     }
 
     private void OnSessionPreviewDecodeModeChanged(object? sender, EventArgs e)
@@ -305,6 +315,70 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         UpdatePreferences(value => value with { SubtitleAuditionMilliseconds = e.SubtitleAuditionMilliseconds });
     }
 
+    private void RefreshTimingStyles()
+    {
+        if (Window is { } window)
+        {
+            window.ViewModel.TimingPostProcessor.UpdateStyles(applicationContext.StyleLibrary.Snapshot.Presets);
+            window.ViewModel.TimingPostProcessor.IsBusy = applicationContext.StylesBusy;
+        }
+    }
+
+    private void OnTimingPreferencesChanged(object? sender, TimingPostProcessorPreferencesChangedEventArgs e)
+    {
+        UpdatePreferences(value => value with { TimingPostProcessor = e.Preferences });
+    }
+
+    private void OnTimingAssociationRequested(object? sender, TimingPostProcessorAssociationEventArgs e)
+    {
+        if (Window is not { } target || applicationContext.StylesBusy || !TimingCompletion.IsCompleted)
+        {
+            return;
+        }
+
+        TimingCompletion = SaveTimingAssociationAsync(target, e);
+    }
+
+    private async Task SaveTimingAssociationAsync(SettingsWindow target, TimingPostProcessorAssociationEventArgs request)
+    {
+        var model = target.ViewModel.TimingPostProcessor;
+        model.IsBusy = true;
+        target.ShowError(null);
+        var saved = false;
+        try
+        {
+            await applicationContext.RunStyleOperationAsync(() =>
+                applicationContext.StyleLibrary.SetTimingPostProcessorAsync(request.StyleIds, request.Options));
+            saved = true;
+        }
+        catch (Exception error)
+        {
+            if (ReferenceEquals(Window, target))
+            {
+                target.ShowError(Localization.Format("Settings.TimingAssociationFailed", error.Message));
+            }
+        }
+        finally
+        {
+            model.IsBusy = false;
+            if (ReferenceEquals(Window, target))
+            {
+                RefreshTimingStyles();
+                if (saved)
+                {
+                    if (request.Options is null)
+                    {
+                        model.ShowUnlinked(request.StyleIds.Count);
+                    }
+                    else
+                    {
+                        model.ShowResult(request.StyleIds.Count);
+                    }
+                }
+            }
+        }
+    }
+
     private void OnShortcutsChanged(object? sender, SettingsShortcutsChangedEventArgs e)
     {
         UpdatePreferences(value => value with { ShortcutBindings = e.Bindings });
@@ -343,7 +417,17 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
 
     private void OnUpsertStyleRequested(object? sender, SettingsStyleEventArgs e)
     {
-        _ = RunAsync(() => applicationContext.RunStyleOperationAsync(() => applicationContext.StyleLibrary.UpsertAsync(e.Preset)));
+        _ = RunAsync(() => SaveStylePresetAsync(e.Preset));
+    }
+
+    private Task SaveStylePresetAsync(SubtitleStylePreset preset)
+    {
+        return applicationContext.RunStyleOperationAsync(() =>
+        {
+            var current = applicationContext.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == preset.Id);
+            var updated = current is null ? preset : preset with { TimingPostProcessor = current.TimingPostProcessor };
+            return applicationContext.StyleLibrary.UpsertAsync(updated);
+        });
     }
 
     private void OnDeleteStyleRequested(object? sender, SettingsStyleDeleteEventArgs e)

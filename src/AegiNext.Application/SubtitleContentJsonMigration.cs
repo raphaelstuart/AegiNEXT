@@ -37,12 +37,22 @@ internal static class SubtitleContentJsonMigration
 
     internal static void UpgradeStyleLibrary(JsonObject collection, int version)
     {
-        if (version is not (1 or 2))
+        if (version is not (1 or 2 or 3))
         {
             return;
         }
         collection["version"] = SubtitleStylePresetCollection.CURRENT_VERSION;
-        AddDecorations(collection);
+        if (version is 1 or 2)
+        {
+            AddDecorations(collection);
+        }
+        if (collection["presets"] is JsonArray presets)
+        {
+            foreach (var preset in presets.OfType<JsonObject>())
+            {
+                preset.TryAdd("timingPostProcessor", null);
+            }
+        }
     }
 
     private static void AddDecorations(JsonNode? node)

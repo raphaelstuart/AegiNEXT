@@ -54,7 +54,8 @@ internal sealed partial class WorkbenchSession
 
         var prepared = await styles.PrepareCreationAsync(trackId, fallbackPresetId);
         editor.Apply("Create subtitle clips", _ =>
-            ProjectEditingOperations.CreateSubtitleClips(prepared.Project, imported, trackId, prepared.Style));
+            ProjectEditingOperations.CreateSubtitleClips(prepared.Project,
+                imported.Select(line => line with { StyleName = prepared.StyleName }), trackId, prepared.Style));
     }
 
     internal void SetCueEnd()

@@ -10,7 +10,7 @@ public sealed record AudioGraphPalette
     public string Low { get; init; } = "#121C16";
     public string Mid { get; init; } = "#2F53AC";
     public string High { get; init; } = "#FFF816";
-    public string Waveform { get; init; } = "#79D5DB60";
+    public string Waveform { get; init; } = "#79D5DB25";
 
     /// <summary>验证不透明语谱色和带透明度的波形色，拒绝损坏偏好。</summary>
     public void Validate()

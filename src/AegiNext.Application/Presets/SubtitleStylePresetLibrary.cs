@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using AegiNext.Core.Presets;
+using AegiNext.Core.Timing;
 
 namespace AegiNext.Application.Presets;
 
@@ -54,6 +55,52 @@ public sealed class SubtitleStylePresetLibrary : IDisposable
             var index = FindIndex(preset.Id);
             var items = index < 0 ? snapshot.Presets.Add(preset) : snapshot.Presets.SetItem(index, preset);
             await CommitAsync(snapshot with { Presets = items }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Exit();
+        }
+    }
+
+    /// <summary>整体设置或解除指定样式的时间处理器关联；任一标识或参数无效均拒绝，内容相同时不写入。</summary>
+    public async Task SetTimingPostProcessorAsync(IEnumerable<Guid> presetIds, TimingPostProcessorOptions? options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(presetIds);
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            var selection = presetIds.ToHashSet();
+            if (snapshot.Presets.Count(preset => selection.Contains(preset.Id)) != selection.Count)
+            {
+                throw new InvalidDataException("待关联时间后续处理器的样式预设不存在。");
+            }
+
+            try
+            {
+                options?.Validate();
+            }
+            catch (ArgumentOutOfRangeException error)
+            {
+                throw new InvalidDataException("字幕样式关联的时间后续处理器参数无效。", error);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var items = snapshot.Presets;
+            for (var index = 0; index < items.Length; index++)
+            {
+                var preset = items[index];
+                if (selection.Contains(preset.Id) && preset.TimingPostProcessor != options)
+                {
+                    items = items.SetItem(index, preset with { TimingPostProcessor = options });
+                }
+            }
+
+            if (items != snapshot.Presets)
+            {
+                await CommitAsync(snapshot with { Presets = items }, cancellationToken).ConfigureAwait(false);
+            }
         }
         finally
         {

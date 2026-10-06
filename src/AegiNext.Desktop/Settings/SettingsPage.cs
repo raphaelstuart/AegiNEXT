@@ -10,5 +10,6 @@ public enum SettingsPage
     COLORS,
     MEDIA,
     PROJECTS,
-    PREVIEW
+    PREVIEW,
+    TIMING_POST_PROCESSOR
 }

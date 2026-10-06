@@ -7,6 +7,7 @@ using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings.Effects;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.Preview;
+using AegiNext.Desktop.Settings.TimingPostProcessor;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
@@ -44,6 +45,9 @@ public sealed partial class SettingsWindow : Window
         viewModel.Media.DecodeModeChanged += OnPreviewDecodeModeChanged;
         viewModel.Projects.Changed += OnProjectsChanged;
         viewModel.Preview.Changed += OnPreviewChanged;
+        viewModel.TimingPostProcessor.Changed += OnTimingPreferencesChanged;
+        viewModel.TimingPostProcessor.AssociateRequested += OnTimingAssociateRequested;
+        viewModel.TimingPostProcessor.UnlinkRequested += OnTimingUnlinkRequested;
         viewModel.Styles.UpsertRequested += OnUpsertStyleRequested;
         viewModel.Styles.DeleteRequested += OnDeleteStyleRequested;
         viewModel.Styles.ApplyRequested += OnApplyStyleRequested;
@@ -68,6 +72,9 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler<SettingsPreviewDecodeModeChangedEventArgs>? PreviewDecodeModeChanged;
     public event EventHandler<ProjectPreferencesChangedEventArgs>? ProjectsChanged;
     public event EventHandler<PreviewSettingsChangedEventArgs>? PreviewChanged;
+    public event EventHandler<TimingPostProcessorPreferencesChangedEventArgs>? TimingPreferencesChanged;
+    public event EventHandler<TimingPostProcessorAssociationEventArgs>? TimingAssociateRequested;
+    public event EventHandler<TimingPostProcessorAssociationEventArgs>? TimingUnlinkRequested;
     public event EventHandler<SettingsStyleEventArgs>? UpsertStyleRequested;
     public event EventHandler<SettingsStyleDeleteEventArgs>? DeleteStyleRequested;
     public event EventHandler? CaptureStyleRequested;
@@ -111,6 +118,7 @@ public sealed partial class SettingsWindow : Window
         ViewModel.Media.UpdatePreferences(value);
         ViewModel.Projects.UpdatePreferences(value.Projects);
         ViewModel.Preview.UpdatePreferences(value);
+        ViewModel.TimingPostProcessor.UpdatePreferences(value);
         RefreshLanguage();
     }
 
@@ -182,6 +190,9 @@ public sealed partial class SettingsWindow : Window
         ViewModel.Media.DecodeModeChanged -= OnPreviewDecodeModeChanged;
         ViewModel.Projects.Changed -= OnProjectsChanged;
         ViewModel.Preview.Changed -= OnPreviewChanged;
+        ViewModel.TimingPostProcessor.Changed -= OnTimingPreferencesChanged;
+        ViewModel.TimingPostProcessor.AssociateRequested -= OnTimingAssociateRequested;
+        ViewModel.TimingPostProcessor.UnlinkRequested -= OnTimingUnlinkRequested;
         ViewModel.Styles.UpsertRequested -= OnUpsertStyleRequested;
         ViewModel.Styles.DeleteRequested -= OnDeleteStyleRequested;
         ViewModel.Styles.ApplyRequested -= OnApplyStyleRequested;
@@ -227,6 +238,21 @@ public sealed partial class SettingsWindow : Window
     private void OnPreviewChanged(object? sender, PreviewSettingsChangedEventArgs e)
     {
         PreviewChanged?.Invoke(this, e);
+    }
+
+    private void OnTimingPreferencesChanged(object? sender, TimingPostProcessorPreferencesChangedEventArgs e)
+    {
+        TimingPreferencesChanged?.Invoke(this, e);
+    }
+
+    private void OnTimingAssociateRequested(object? sender, TimingPostProcessorAssociationEventArgs e)
+    {
+        TimingAssociateRequested?.Invoke(this, e);
+    }
+
+    private void OnTimingUnlinkRequested(object? sender, TimingPostProcessorAssociationEventArgs e)
+    {
+        TimingUnlinkRequested?.Invoke(this, e);
     }
 
     private void OnUpsertStyleRequested(object? sender, SettingsStyleEventArgs e)

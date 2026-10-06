@@ -24,6 +24,15 @@ public static class SubtitleStylePresetValidator
         {
             ValidateFont(font);
         }
+
+        try
+        {
+            preset.TimingPostProcessor?.Validate();
+        }
+        catch (ArgumentOutOfRangeException error)
+        {
+            throw new InvalidDataException("字幕样式关联的时间后续处理器参数无效。", error);
+        }
     }
 
     /// <summary>验证版本、重复标识和名称，以及整个集合的字体总预算。</summary>

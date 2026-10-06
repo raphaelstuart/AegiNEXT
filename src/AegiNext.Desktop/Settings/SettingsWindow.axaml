@@ -12,6 +12,7 @@
         xmlns:mediaPages="using:AegiNext.Desktop.Settings.Media"
         xmlns:projectPages="using:AegiNext.Desktop.Settings.Projects"
         xmlns:previewPages="using:AegiNext.Desktop.Settings.Preview"
+        xmlns:timingPages="using:AegiNext.Desktop.Settings.TimingPostProcessor"
         xmlns:materialIcons="using:Material.Icons.Avalonia"
         x:Class="AegiNext.Desktop.Settings.SettingsWindow" x:DataType="settings:SettingsWindowViewModel"
         Classes="business-surface" Title="{Binding Title}"
@@ -121,6 +122,13 @@
                 <TextBlock Text="{Loc Key=Settings.Preview}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="ClockOutline" />
+                <TextBlock Text="{Loc Key=Settings.TimingNavigation}" VerticalAlignment="Center"
+                           ToolTip.Tip="{Loc Key=Settings.TimingPostProcessor}" />
+              </StackPanel>
+            </ListBoxItem>
           </ListBox>
         </StackPanel>
       </Border>
@@ -157,6 +165,10 @@
         <Grid Grid.Row="1" IsVisible="{Binding IsPreviewVisible}">
           <previewPages:PreviewSettingsView Name="PreviewView" DataContext="{Binding Preview}"
                                            IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsTimingPostProcessorVisible}">
+          <timingPages:TimingPostProcessorSettingsView Name="TimingPostProcessorView" DataContext="{Binding TimingPostProcessor}"
+                                                     IsVisible="{Binding $parent[Grid].IsVisible}" />
         </Grid>
         <TextBlock Name="SettingsError" Grid.Row="2" Text="{Binding Error}"
                    Foreground="{DynamicResource SettingsError}" IsVisible="{Binding HasError}" TextWrapping="Wrap"

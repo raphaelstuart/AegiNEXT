@@ -148,7 +148,7 @@ public static class ProjectStore
                         !(info.Type == typeof(Keyframe) && property.Name is "componentCurves" or "exponent") &&
                         !(info.Type == typeof(AnimationCurve) && property.Name == "exponent") &&
                         !(info.Type == typeof(AnimationTrack) && property.Name is "initialValue" or "transforms") &&
-                        !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "inactiveKaraoke") &&
+                        !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "inactiveKaraoke" or "styleName") &&
                         !(info.Type == typeof(SubtitleTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName" or "autoApplyStyle");
                     if (info.Type == typeof(SubtitleLine) && property.Name == "inactiveKaraoke")
                     {

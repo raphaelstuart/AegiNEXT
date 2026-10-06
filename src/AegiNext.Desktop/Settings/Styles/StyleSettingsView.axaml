@@ -26,9 +26,6 @@
         <Button Name="CaptureStyleButton" Command="{Binding CaptureCommand}">
           <controlsCommon:IconText Text="{Loc Key=Settings.Capture}" IconKey="Subtitles" />
         </Button>
-        <Button Name="ApplyStyleButton" Click="ApplyStyle" IsEnabled="{Binding CanApply}">
-          <controlsCommon:IconText Text="{Loc Key=Settings.Apply}" IconKey="Style" />
-        </Button>
         <Button Name="SaveStyleButton" Click="SaveStyle" IsEnabled="{Binding CanEdit}" Classes="accent">
           <controlsCommon:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
         </Button>

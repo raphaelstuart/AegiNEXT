@@ -80,6 +80,7 @@ public static class ProjectValidator
                 !line.InactiveKaraoke.IsDefault &&
                 !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
             ValidateText(line.Text);
+            ValidateSubtitleStyleName(line.StyleName);
             totalText += line.Text.Length;
             Require(totalText <= 8 * 1024 * 1024, "项目文本总量超过预算。");
             Style(line.Style, assets);
@@ -133,6 +134,14 @@ public static class ProjectValidator
             Tracks(preset.Tracks, allowLegacyColors: true);
             Motion(preset.MotionPath);
         }
+    }
+
+    /// <summary>Validates a stable subtitle style name as nonempty Unicode without control characters.</summary>
+    public static void ValidateSubtitleStyleName(string styleName)
+    {
+        Require(!string.IsNullOrWhiteSpace(styleName) && styleName.Length <= 1024 && !styleName.Any(char.IsControl),
+            "Subtitle style names must be nonempty, at most 1024 characters, and contain no control characters.");
+        ValidateText(styleName);
     }
 
     /// <summary>验证启用及禁用高亮的完整字素范围、共享标识、视觉覆盖和精确时钟，不裁剪旧时间。</summary>

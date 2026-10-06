@@ -4,6 +4,7 @@ using System.Globalization;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Media.Decoding;
 using AegiNext.Desktop.Settings.Projects;
+using AegiNext.Desktop.Settings.TimingPostProcessor;
 
 namespace AegiNext.Desktop.Settings;
 
@@ -29,6 +30,7 @@ public sealed record WorkbenchPreferences
     public bool TimelineSpectrumVisible { get; init; } = true;
     public bool TimelineWaveformVisible { get; init; } = true;
     public ProjectPreferences Projects { get; init; } = new();
+    public TimingPostProcessorPreferences TimingPostProcessor { get; init; } = new();
 
     /// <summary>拒绝未知设置版本、语言、主题、非法音量或非正试听时长。</summary>
     public void Validate()
@@ -36,7 +38,7 @@ public sealed record WorkbenchPreferences
         if (Version != 1 || !IsValidLanguage(Language) ||
             !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !Enum.IsDefined(PreviewDecodeMode) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
             SubtitleAuditionMilliseconds < 1 || AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
-            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || TimelineClips is null || Projects is null)
+            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || TimelineClips is null || Projects is null || TimingPostProcessor is null)
         {
             throw new InvalidDataException("桌面偏好无效或版本不受支持。");
         }
@@ -44,6 +46,7 @@ public sealed record WorkbenchPreferences
         AudioGraph.Validate();
         TimelineClips.Validate();
         Projects.Validate();
+        TimingPostProcessor.Validate();
         ShortcutConfiguration.Validate(ShortcutBindings);
         if (ShortcutBindings.Length != Enum.GetValues<WorkbenchCommand>().Length)
         {
@@ -81,7 +84,8 @@ public sealed record WorkbenchPreferences
                SubtitleAuditionMilliseconds == other.SubtitleAuditionMilliseconds && TimelineClassicTimingEnabled == other.TimelineClassicTimingEnabled &&
                TimelineSnapEnabled == other.TimelineSnapEnabled && TimelineStepEnabled == other.TimelineStepEnabled &&
                TimelineSpectrumVisible == other.TimelineSpectrumVisible && TimelineWaveformVisible == other.TimelineWaveformVisible &&
-               Projects == other.Projects && ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
+               Projects == other.Projects && TimingPostProcessor == other.TimingPostProcessor &&
+               ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
     }
 
     /// <inheritdoc />
@@ -105,6 +109,7 @@ public sealed record WorkbenchPreferences
         hash.Add(TimelineSpectrumVisible);
         hash.Add(TimelineWaveformVisible);
         hash.Add(Projects);
+        hash.Add(TimingPostProcessor);
         foreach (var binding in ShortcutBindings)
         {
             hash.Add(binding);

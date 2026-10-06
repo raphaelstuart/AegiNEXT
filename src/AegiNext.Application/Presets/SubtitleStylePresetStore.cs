@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
 
 namespace AegiNext.Application.Presets;
 
@@ -104,11 +105,13 @@ public static class SubtitleStylePresetStore
         resolver.Modifiers.Add(info =>
         {
             if (info.Kind == JsonTypeInfoKind.Object &&
-                (info.Type.Namespace == typeof(SubtitleStylePreset).Namespace || info.Type.Namespace == typeof(SubtitleStyle).Namespace))
+                (info.Type.Namespace == typeof(SubtitleStylePreset).Namespace || info.Type.Namespace == typeof(SubtitleStyle).Namespace ||
+                 info.Type == typeof(TimingPostProcessorOptions)))
             {
                 foreach (var property in info.Properties)
                 {
-                    property.IsRequired = !(info.Type == typeof(SubtitleStyle) && property.Name == "fontVariant") &&
+                    property.IsRequired = !(info.Type == typeof(SubtitleStylePreset) && property.Name == "timingPostProcessor") &&
+                        !(info.Type == typeof(SubtitleStyle) && property.Name == "fontVariant") &&
                         !(info.Type == typeof(SubtitleFontVariant) && property.Name == "postScriptName") &&
                         !(info.Type == typeof(SubtitleInlineStyleOverride) && property.Name is "fontVariant" or "clearFontVariant");
                 }

@@ -8,6 +8,7 @@ using AegiNext.Desktop.Settings.Styles;
 using AegiNext.Desktop.Settings.Media;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.Preview;
+using AegiNext.Desktop.Settings.TimingPostProcessor;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegiNext.Desktop.Settings;
@@ -36,11 +37,13 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Media = new(preferences);
         Projects = new(preferences.Projects);
         Preview = new(preferences);
+        TimingPostProcessor = new(preferences);
         Shortcuts.PropertyChanged += PageModelChanged;
         Styles.PropertyChanged += PageModelChanged;
         Effects.PropertyChanged += PageModelChanged;
         Projects.PropertyChanged += PageModelChanged;
         Preview.PropertyChanged += PageModelChanged;
+        TimingPostProcessor.PropertyChanged += PageModelChanged;
     }
 
     public AppearanceSettingsViewModel Appearance { get; }
@@ -51,6 +54,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public MediaSettingsViewModel Media { get; }
     public ProjectSettingsViewModel Projects { get; }
     public PreviewSettingsViewModel Preview { get; }
+    public TimingPostProcessorSettingsViewModel TimingPostProcessor { get; }
     public string Title => title;
     public SettingsPage CurrentPage => (SettingsPage)PageIndex;
     public bool IsAppearanceVisible => CurrentPage == SettingsPage.APPEARANCE;
@@ -61,6 +65,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public bool IsMediaVisible => CurrentPage == SettingsPage.MEDIA;
     public bool IsProjectsVisible => CurrentPage == SettingsPage.PROJECTS;
     public bool IsPreviewVisible => CurrentPage == SettingsPage.PREVIEW;
+    public bool IsTimingPostProcessorVisible => CurrentPage == SettingsPage.TIMING_POST_PROCESSOR;
 
     public string PageTitle => Localization.Get("Settings." + (CurrentPage switch
     {
@@ -71,6 +76,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.MEDIA => "Media",
         SettingsPage.PROJECTS => "Projects",
         SettingsPage.PREVIEW => "Preview",
+        SettingsPage.TIMING_POST_PROCESSOR => "TimingPostProcessor",
         _ => "Appearance"
     }));
 
@@ -80,6 +86,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.STYLES => Styles.Error,
         SettingsPage.PROJECTS => Projects.Error,
         SettingsPage.PREVIEW => Preview.Error,
+        SettingsPage.TIMING_POST_PROCESSOR => TimingPostProcessor.Error,
         _ => null
     });
 
@@ -156,6 +163,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsMediaVisible));
             OnPropertyChanged(nameof(IsProjectsVisible));
             OnPropertyChanged(nameof(IsPreviewVisible));
+            OnPropertyChanged(nameof(IsTimingPostProcessorVisible));
             OnPropertyChanged(nameof(PageTitle));
             RefreshError();
         }
@@ -180,6 +188,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Media.RefreshLanguage();
         Projects.RefreshLanguage();
         Preview.RefreshLanguage();
+        TimingPostProcessor.RefreshLanguage();
         title = Localization.Get("Settings.Settings");
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(PageTitle));

@@ -67,3 +67,11 @@ dotnet_diagnostic.CA1707.severity = none
 
 [src/AegiNext.Desktop/Editing/TimelineViewport.cs]
 dotnet_diagnostic.CA1707.severity = none
+
+[src/AegiNext.Desktop/Settings/SettingsPage.cs]
+# 设置枚举遵循项目 ALL_UPPER 命名。
+dotnet_diagnostic.CA1707.severity = none
+
+[src/AegiNext.Desktop/Settings/TimingPostProcessor/TimingPostProcessorField.cs]
+# 草稿字段身份遵循项目 ALL_UPPER 命名。
+dotnet_diagnostic.CA1707.severity = none

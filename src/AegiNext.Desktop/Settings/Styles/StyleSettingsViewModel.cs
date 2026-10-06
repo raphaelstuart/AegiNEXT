@@ -409,6 +409,11 @@ public sealed class StyleSettingsViewModel : ObservableObject
         }
         if (dirty && !committed && selectedId is null && (wasNew || SelectedStyle?.Id == pending?.Preset.Id))
         {
+            if (SelectedStyle is not null)
+            {
+                pending!.UpdateTimingPostProcessor(SelectedStyle.TimingPostProcessor);
+                OnPropertyChanged(nameof(Draft));
+            }
             RefreshActions();
             return;
         }
