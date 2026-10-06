@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Controls;
 
@@ -18,6 +19,10 @@ public sealed class KaraokeClipAxis : Control
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Avalonia styled property metadata uses the public NameProperty convention.")]
     public static readonly StyledProperty<bool> IsSnapEnabledProperty =
         AvaloniaProperty.Register<KaraokeClipAxis, bool>(nameof(IsSnapEnabled), true);
+    /// <summary>控制非拖拽期间是否常驻显示片段时长。</summary>
+    [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Avalonia styled property metadata uses the public NameProperty convention.")]
+    public static readonly StyledProperty<bool> KeepDurationLabelsVisibleProperty =
+        AvaloniaProperty.Register<KaraokeClipAxis, bool>(nameof(KeepDurationLabelsVisible));
     private SubtitleLine? line;
     private MediaTime offset;
     private Guid? selectedId;
@@ -34,6 +39,7 @@ public sealed class KaraokeClipAxis : Control
     private KaraokeAxisGestureKind? gestureKind;
     private readonly KaraokeDurationLabelsAdorner durationLabelsAdorner = new();
     private AdornerLayer? durationLabelLayer;
+    private readonly List<Visual> visibilityAncestors = [];
     internal IReadOnlyList<KaraokeDurationLabel> DurationLabels { get; private set; } = [];
 
     /// <summary>创建可捕获本地指针的卡拉 OK 编辑轴。</summary>
@@ -61,6 +67,12 @@ public sealed class KaraokeClipAxis : Control
         get => GetValue(IsSnapEnabledProperty);
         set => SetValue(IsSnapEnabledProperty, value);
     }
+    /// <summary>常驻显示片段的实际时长；关闭后仅在时长拖拽期间显示。</summary>
+    public bool KeepDurationLabelsVisible
+    {
+        get => GetValue(KeepDurationLabelsVisibleProperty);
+        set => SetValue(KeepDurationLabelsVisibleProperty, value);
+    }
     /// <summary>当前字轴是否超过字幕结束边界；越界只影响提示与最终裁剪。</summary>
     public bool HasOverflow => line is not null && line.Karaoke.Select((clip, index) =>
         ToSeconds(PreviewEnd(clip, index) - offset)).Any(end => end > Seconds);
@@ -81,6 +93,7 @@ public sealed class KaraokeClipAxis : Control
         line = value;
         offset = animationOffset;
         selectedId = selectedClipId;
+        UpdateDurationLabels();
         InvalidateVisual();
     }
 
@@ -97,9 +110,18 @@ public sealed class KaraokeClipAxis : Control
         snapTarget = null;
         snapBoundaries = [];
         pointer?.Capture(null);
-        DurationLabels = [];
-        durationLabelsAdorner.SetLabels(DurationLabels);
+        UpdateDurationLabels();
         InvalidateVisual();
+    }
+
+    /// <inheritdoc />
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == KeepDurationLabelsVisibleProperty || change.Property == BoundsProperty || change.Property == IsVisibleProperty)
+        {
+            UpdateDurationLabels();
+        }
     }
 
     private Rect Rectangle(KaraokeSegment clip, int index)
@@ -321,17 +343,20 @@ public sealed class KaraokeClipAxis : Control
 
     private void UpdateDurationLabels()
     {
-        if (!pointerMoved || gestureKind != KaraokeAxisGestureKind.DURATION || frozen is null)
+        var source = frozen ?? line;
+        var editingDuration = pointerMoved && gestureKind == KaraokeAxisGestureKind.DURATION && frozen is not null;
+        if (!IsVisible || visibilityAncestors.Any(ancestor => !ancestor.IsVisible) || Bounds.Width <= 0 || source is null ||
+            !KeepDurationLabelsVisible && !editingDuration)
         {
             DurationLabels = [];
             durationLabelsAdorner.SetLabels(DurationLabels);
             return;
         }
         var candidates = new List<KaraokeDurationLabel>();
-        for (var index = 0; index < frozen.Karaoke.Length; index++)
+        for (var index = 0; index < source.Karaoke.Length; index++)
         {
-            var clip = frozen.Karaoke[index];
-            var duration = clip.End - clip.Start + (index == draggingIndex ? delta : MediaTime.Zero);
+            var clip = source.Karaoke[index];
+            var duration = clip.End - clip.Start + (gestureKind == KaraokeAxisGestureKind.DURATION && index == draggingIndex ? delta : MediaTime.Zero);
             var value = ((decimal)duration.Numerator / duration.Denominator).ToString("0.#######", System.Globalization.CultureInfo.InvariantCulture) + " s";
             using var text = WorkbenchTextFormatting.CreateLayout(this, value, 11, Brushes.White, lineHeight: 20);
             var rect = Rectangle(clip, index);
@@ -362,6 +387,11 @@ public sealed class KaraokeClipAxis : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        foreach (var ancestor in this.GetVisualAncestors())
+        {
+            visibilityAncestors.Add(ancestor);
+            ancestor.PropertyChanged += OnVisibilityAncestorChanged;
+        }
         durationLabelLayer = AdornerLayer.GetAdornerLayer(this);
         if (durationLabelLayer is not null)
         {
@@ -369,15 +399,31 @@ public sealed class KaraokeClipAxis : Control
             AdornerLayer.SetIsClipEnabled(durationLabelsAdorner, false);
             durationLabelLayer.Children.Add(durationLabelsAdorner);
         }
+        UpdateDurationLabels();
     }
 
     /// <inheritdoc />
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         CancelGesture();
+        foreach (var ancestor in visibilityAncestors)
+        {
+            ancestor.PropertyChanged -= OnVisibilityAncestorChanged;
+        }
+        visibilityAncestors.Clear();
+        DurationLabels = [];
+        durationLabelsAdorner.SetLabels(DurationLabels);
         durationLabelLayer?.Children.Remove(durationLabelsAdorner);
         durationLabelLayer = null;
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnVisibilityAncestorChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == IsVisibleProperty)
+        {
+            UpdateDurationLabels();
+        }
     }
 
     /// <inheritdoc />

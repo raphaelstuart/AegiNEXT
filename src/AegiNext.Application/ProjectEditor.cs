@@ -102,6 +102,7 @@ public sealed partial class ProjectEditor
             try
             {
                 var next = edit(snapshot) ?? throw new InvalidOperationException("编辑不能返回空项目。");
+                ValidateMaskTopologyEdits(snapshot, next);
                 next = SubtitleKaraokeNormalization.Normalize(next);
                 if (next == snapshot)
                 {
@@ -306,13 +307,15 @@ public sealed partial class ProjectEditor
 
             var oldDuration = line.End - line.Start;
             var newDuration = end - start;
-            var karaoke = mode == TimelineEditMode.CROP ? line.Karaoke : line.Karaoke.Select(segment => segment with
-            {
-                Start = Scale(segment.Start, newDuration, oldDuration), End = Scale(segment.End, newDuration, oldDuration)
-            }).ToImmutableArray();
+            var karaoke = mode == TimelineEditMode.CROP ? line.Karaoke : ScaleKaraoke(line.Karaoke, newDuration, oldDuration);
+            var inactiveKaraoke = mode == TimelineEditMode.CROP
+                ? line.InactiveKaraoke : ScaleKaraoke(line.InactiveKaraoke, newDuration, oldDuration);
             return document with
             {
-                Subtitles = document.Subtitles.SetItem(index, line with { Start = start, End = end, Karaoke = karaoke }),
+                Subtitles = document.Subtitles.SetItem(index, line with
+                {
+                    Start = start, End = end, Karaoke = karaoke, InactiveKaraoke = inactiveKaraoke
+                }),
                 Layers = MapLayers(document.Layers, layer => layer.SubtitleId != id ? layer : LayerAnimationTiming.Retime(layer, start, end, mode))
             };
         });
@@ -396,6 +399,12 @@ public sealed partial class ProjectEditor
     /// <summary>插入或替换同一属性、同一精确时间的关键帧。</summary>
     public void SetKeyframe(Guid layerId, AnimationProperty property, Keyframe keyframe)
     {
+        SetKeyframe(layerId, new AnimationTrackTarget(property), keyframe);
+    }
+
+    /// <summary>插入或替换同一完整目标、同一精确时间的关键帧，拒绝隐式改写有序变换。</summary>
+    public void SetKeyframe(Guid layerId, AnimationTrackTarget target, Keyframe keyframe)
+    {
         ArgumentNullException.ThrowIfNull(keyframe);
         UpdateLayer(layerId, layer =>
         {
@@ -404,7 +413,12 @@ public sealed partial class ProjectEditor
                 throw new ArgumentOutOfRangeException(nameof(keyframe), "关键帧必须位于图层片段内。");
             }
 
-            var existing = layer.Tracks.FirstOrDefault(track => track.Property == property);
+            var existing = layer.Tracks.FirstOrDefault(track => track.Target == target);
+            if (existing?.IsOrdered == true)
+            {
+                throw new InvalidOperationException("有序变换必须按操作标识编辑，不能隐式替换为关键帧。");
+            }
+
             if (existing?.Keyframes.FirstOrDefault(frame => frame.Time == keyframe.Time) == keyframe)
             {
                 return layer;
@@ -414,7 +428,7 @@ public sealed partial class ProjectEditor
                 .Append(keyframe).OrderBy(frame => frame.Time).ToImmutableArray();
             return layer with
             {
-                Tracks = layer.Tracks.Where(track => track.Property != property).Append(new(property, frames)).ToImmutableArray()
+                Tracks = layer.Tracks.Where(track => track.Target != target).Append(new(target, frames)).ToImmutableArray()
             };
         });
     }
@@ -429,12 +443,21 @@ public sealed partial class ProjectEditor
             var style = layer.SubtitleId is { } subtitleId ? snapshot.Subtitles[FindSubtitle(snapshot, subtitleId)].Style : null;
             var tracks = LegacyAnimationTrackMigration.Merge(preset.Tracks, AnimationProperty.FILL, style?.Fill ?? layer.Fill);
             tracks = LegacyAnimationTrackMigration.Merge(tracks, AnimationProperty.STROKE, style?.Stroke ?? layer.Stroke);
+            if (tracks.Any(track => !track.IsOrdered && layer.Tracks.Any(existing => existing.Target == track.Target && existing.IsOrdered)))
+            {
+                throw new InvalidOperationException("预设不能隐式将已有有序变换替换为关键帧。");
+            }
+
             return LayerAnimationTiming.Clip(layer with
             {
                 Tracks = tracks.Select(track => track with
                 {
-                    Keyframes = track.Keyframes.Select(frame => frame with { Time = frame.Time + origin }).ToImmutableArray()
-                }).ToImmutableArray(), MotionPath = preset.MotionPath, Mask = preset.Mask, Blend = preset.Blend
+                    Keyframes = track.Keyframes.Select(frame => frame with { Time = frame.Time + origin }).ToImmutableArray(),
+                    Transforms = track.Transforms.Select(operation => operation with
+                    {
+                        Start = operation.Start + origin, End = operation.End + origin
+                    }).ToImmutableArray()
+                }).ToImmutableArray(), MotionPath = preset.MotionPath, Blend = preset.Blend
             });
         });
     }
@@ -514,5 +537,14 @@ public sealed partial class ProjectEditor
         var denominator = (BigInteger)time.Denominator * newDuration.Denominator * oldDuration.Numerator;
         var divisor = BigInteger.GreatestCommonDivisor(numerator, denominator);
         return new(checked((long)(numerator / divisor)), checked((long)(denominator / divisor)));
+    }
+
+    private static ImmutableArray<KaraokeSegment> ScaleKaraoke(ImmutableArray<KaraokeSegment> segments,
+        MediaTime newDuration, MediaTime oldDuration)
+    {
+        return segments.Select(segment => segment with
+        {
+            Start = Scale(segment.Start, newDuration, oldDuration), End = Scale(segment.End, newDuration, oldDuration)
+        }).ToImmutableArray();
     }
 }

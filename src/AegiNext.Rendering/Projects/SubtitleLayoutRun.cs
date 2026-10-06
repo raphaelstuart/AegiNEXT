@@ -8,6 +8,7 @@ internal sealed record SubtitleLayoutRun(string Text, int Utf16Offset, SubtitleS
     TextDirection Direction, SKPoint Position = default)
 {
     internal string ResolvedFontFamily { get; init; } = string.Empty;
+    internal SubtitleFontVariant? ResolvedFontVariant { get; init; }
     internal ImmutableArray<SubtitleGraphemeGeometry> Graphemes { get; init; } = [];
     internal ImmutableArray<SubtitleKaraokeSpan> Karaoke { get; init; } = [];
 }

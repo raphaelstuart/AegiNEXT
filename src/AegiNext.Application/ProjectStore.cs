@@ -12,7 +12,7 @@ public static class ProjectStore
     private const int MAXIMUM_BYTES = 32 * 1024 * 1024;
     private static readonly JsonSerializerOptions options = CreateOptions();
 
-    /// <summary>加载有限大小工程；重复键、未知字段、缺少字段与非法版本全部拒绝。</summary>
+    /// <summary>加载有限大小工程；重复键、未知字段、缺少必需字段与非法版本全部拒绝。</summary>
     public static async Task<ProjectDocument> LoadAsync(string path, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -96,16 +96,25 @@ public static class ProjectStore
             if (parsed.RootElement.ValueKind != JsonValueKind.Object ||
                 !parsed.RootElement.TryGetProperty("version", out var version) ||
                 version.ValueKind != JsonValueKind.Number ||
-                !version.TryGetInt32(out var number) || number is not (3 or ProjectDocument.CURRENT_VERSION))
+                !version.TryGetInt32(out var number) || number is not (3 or 4 or ProjectDocument.CURRENT_VERSION))
             {
-                throw new InvalidDataException($"只支持项目版本 3 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
+                throw new InvalidDataException($"只支持项目版本 3、4 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
             }
 
             var content = JsonNode.Parse(parsed.RootElement.GetRawText(), documentOptions: new() { MaxDepth = 128 })!.AsObject();
-            SubtitleContentJsonMigration.UpgradeProject(content, number);
-            using var normalized = JsonDocument.Parse(content.ToJsonString(new() { MaxDepth = 128 }), new() { MaxDepth = 128 });
-            var upgraded = VectorAnimationJsonMigration.Upgrade(normalized.RootElement, options);
-            var document = upgraded.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
+            if (number is 3 or 4)
+            {
+                SubtitleContentJsonMigration.UpgradeProject(content, number);
+                ClipMaskJsonMigration.UpgradeLegacy(content);
+                using var normalized = JsonDocument.Parse(content.ToJsonString(new() { MaxDepth = 128 }), new() { MaxDepth = 128 });
+                content = VectorAnimationJsonMigration.Upgrade(normalized.RootElement, options);
+            }
+            else
+            {
+                ClipMaskJsonMigration.RejectCurrentLegacyFields(content);
+            }
+
+            var document = content.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
             return SubtitleKaraokeNormalization.Normalize(document);
         }
         catch (Exception error) when (error is JsonException or ArgumentException or OverflowException)
@@ -124,9 +133,18 @@ public static class ProjectStore
                 foreach (var property in info.Properties)
                 {
                     property.IsRequired = (property.Get is not null || property.Set is not null) &&
-                        !(info.Type == typeof(Keyframe) && property.Name == "componentCurves") &&
-                        !(info.Type == typeof(SubtitleLine) && property.Name == "karaokeStyle") &&
+                        !(info.Type == typeof(SubtitleStyle) && property.Name == "fontVariant") &&
+                        !(info.Type == typeof(SubtitleFontVariant) && property.Name == "postScriptName") &&
+                        !(info.Type == typeof(SubtitleInlineStyleOverride) && property.Name is "fontVariant" or "clearFontVariant") &&
+                        !(info.Type == typeof(Keyframe) && property.Name is "componentCurves" or "exponent") &&
+                        !(info.Type == typeof(AnimationCurve) && property.Name == "exponent") &&
+                        !(info.Type == typeof(AnimationTrack) && property.Name is "initialValue" or "transforms") &&
+                        !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "inactiveKaraoke") &&
                         !(info.Type == typeof(SubtitleTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName" or "autoApplyStyle");
+                    if (info.Type == typeof(SubtitleLine) && property.Name == "inactiveKaraoke")
+                    {
+                        property.ShouldSerialize = static (instance, _) => !((SubtitleLine)instance).InactiveKaraoke.IsEmpty;
+                    }
                 }
             }
         });

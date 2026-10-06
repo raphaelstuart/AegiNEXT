@@ -488,6 +488,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             var text = await ReadSubtitleFileAsync(path);
             var prepared = captured;
             ImmutableArray<SubtitleLine> lines;
+            AssImportResult? assResult = null;
             if (ass)
             {
                 var result = AssSubtitleFormat.Parse(text, captured.Width, captured.Height);
@@ -496,6 +497,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                     return;
                 }
                 lines = result.Lines;
+                assResult = result;
             }
             else
             {
@@ -508,7 +510,9 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             {
                 return;
             }
-            var imported = ProjectEditingOperations.ImportSubtitleLines(prepared, lines, Path.GetFileNameWithoutExtension(path));
+            var imported = assResult is null
+                ? ProjectEditingOperations.ImportSubtitleLines(prepared, lines, Path.GetFileNameWithoutExtension(path))
+                : ProjectEditingOperations.ImportSubtitleLines(prepared, assResult, Path.GetFileNameWithoutExtension(path));
             session.Editor.Apply("Import subtitles", _ => imported);
             firstCueId = lines.IsEmpty ? null : lines[0].Id;
             session.LogInfo("Subtitles", $"{Localization.Get("WorkflowLog.SubtitlesImported")} ({lines.Length})", path);

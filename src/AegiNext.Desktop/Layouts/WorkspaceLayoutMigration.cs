@@ -4,11 +4,12 @@ internal static class WorkspaceLayoutMigration
 {
     internal static WorkspaceLayoutFile Upgrade(WorkspaceLayoutFile file)
     {
-        if (file.Version is not (1 or 2))
+        if (file.Version is not (1 or 2 or 3))
         {
             return file;
         }
-        var previousIds = WorkbenchPanelIds.All.Where(id => id != WorkbenchPanelIds.SUBTITLE_DETAILS &&
+        var previousIds = WorkbenchPanelIds.All.Where(id => id != WorkbenchPanelIds.MASKS &&
+            (file.Version >= 3 || id != WorkbenchPanelIds.SUBTITLE_DETAILS) &&
             (file.Version != 1 || id != WorkbenchPanelIds.LOG)).ToArray();
         WorkspaceLayoutSnapshot UpgradeSnapshot(WorkspaceLayoutSnapshot layout)
         {

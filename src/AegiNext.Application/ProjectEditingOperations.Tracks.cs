@@ -149,18 +149,19 @@ public static partial class ProjectEditingOperations
         }
 
         var karaoke = line.Karaoke;
+        var inactiveKaraoke = line.InactiveKaraoke;
         if (!move && mode == TimelineEditMode.STRETCH)
         {
-            karaoke = karaoke.Select(segment => segment with
-            {
-                Start = ScaleTrackTime(segment.Start, end - start, line.End - line.Start),
-                End = ScaleTrackTime(segment.End, end - start, line.End - line.Start)
-            }).ToImmutableArray();
+            karaoke = ScaleTrackKaraoke(karaoke, end - start, line.End - line.Start);
+            inactiveKaraoke = ScaleTrackKaraoke(inactiveKaraoke, end - start, line.End - line.Start);
         }
 
         return Verified(document with
         {
-            Subtitles = document.Subtitles.SetItem(index, line with { TrackId = trackId, Start = start, End = end, Karaoke = karaoke }),
+            Subtitles = document.Subtitles.SetItem(index, line with
+            {
+                TrackId = trackId, Start = start, End = end, Karaoke = karaoke, InactiveKaraoke = inactiveKaraoke
+            }),
             Layers = MapTrackLayers(document.Layers, layer => layer.SubtitleId != subtitleId ? layer : move
                 ? layer with { Start = start, End = end }
                 : LayerAnimationTiming.Retime(layer, start, end, mode))
@@ -204,5 +205,15 @@ public static partial class ProjectEditingOperations
         var denominator = (BigInteger)time.Denominator * newDuration.Denominator * oldDuration.Numerator;
         var divisor = BigInteger.GreatestCommonDivisor(numerator, denominator);
         return new(checked((long)(numerator / divisor)), checked((long)(denominator / divisor)));
+    }
+
+    private static ImmutableArray<KaraokeSegment> ScaleTrackKaraoke(ImmutableArray<KaraokeSegment> segments,
+        MediaTime newDuration, MediaTime oldDuration)
+    {
+        return segments.Select(segment => segment with
+        {
+            Start = ScaleTrackTime(segment.Start, newDuration, oldDuration),
+            End = ScaleTrackTime(segment.End, newDuration, oldDuration)
+        }).ToImmutableArray();
     }
 }

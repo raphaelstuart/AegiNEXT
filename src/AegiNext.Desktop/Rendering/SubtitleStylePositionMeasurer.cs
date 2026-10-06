@@ -2,12 +2,14 @@ using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
 using AegiNext.Rendering.Projects;
+using AegiNext.Rendering.Fonts;
 
 namespace AegiNext.Desktop.Rendering;
 
 internal static class SubtitleStylePositionMeasurer
 {
-    internal static SubtitlePositionMeasurement Measure(SubtitleStylePreset preset, int width, int height, string text)
+    internal static SubtitlePositionMeasurement Measure(SubtitleStylePreset preset, int width, int height, string text,
+        SystemFontCatalog? fontCatalog = null)
     {
         try
         {
@@ -28,7 +30,7 @@ internal static class SubtitleStylePositionMeasurer
             IProjectAssetResolver resolver = preset.Font is { } embedded
                 ? new EmbeddedPresetFontResolver(fontId, embedded)
                 : new DirectoryProjectAssetResolver(Path.GetTempPath());
-            using var renderer = new ProjectSceneRenderer(resolver);
+            using var renderer = new ProjectSceneRenderer(resolver, fontCatalog);
             var measurement = renderer.MeasureSubtitlePlacement(document, subtitle);
             return new(measurement.Position, new(new(width, height),
                 new(measurement.Bounds.Left, measurement.Bounds.Top),

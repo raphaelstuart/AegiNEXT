@@ -7,19 +7,29 @@ namespace AegiNext.Desktop.Controls;
 public sealed class TimelineKeyframeEventArgs : EventArgs
 {
     /// <summary>创建关键帧操作。</summary>
-    public TimelineKeyframeEventArgs(Guid layerId, AnimationProperty property, MediaTime oldTime, MediaTime newTime,
+    public TimelineKeyframeEventArgs(Guid layerId, AnimationTrackTarget target, MediaTime oldTime, MediaTime newTime,
         AnimationValue? newValue = null, TimelineComponentMask components = TimelineComponentMask.FIRST)
     {
         LayerId = layerId;
-        Property = property;
+        Target = target;
         OldTime = oldTime;
         NewTime = newTime;
         NewValue = newValue;
         Components = components;
     }
 
+    /// <summary>创建普通属性的关键帧操作。</summary>
+    public TimelineKeyframeEventArgs(Guid layerId, AnimationProperty property, MediaTime oldTime, MediaTime newTime,
+        AnimationValue? newValue = null, TimelineComponentMask components = TimelineComponentMask.FIRST)
+        : this(layerId, new AnimationTrackTarget(property), oldTime, newTime, newValue, components)
+    {
+    }
+
     public Guid LayerId { get; }
-    public AnimationProperty Property { get; }
+    public Guid? OperationId { get; init; }
+    public bool IsOperationStart { get; init; }
+    public AnimationTrackTarget Target { get; }
+    public AnimationProperty Property => Target.Property;
     public MediaTime OldTime { get; }
     public MediaTime NewTime { get; }
     public AnimationValue? NewValue { get; }

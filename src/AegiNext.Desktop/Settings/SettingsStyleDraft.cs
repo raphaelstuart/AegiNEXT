@@ -12,13 +12,13 @@ internal sealed class SettingsStyleDraft(SubtitleStylePreset preset)
         Preset = Preset with { Name = name.Trim().Normalize() };
     }
 
-    internal void UpdateStyle(SubtitleStyle style)
+    internal void UpdateStyle(SubtitleStyle style, bool clearFont = false)
     {
         ArgumentNullException.ThrowIfNull(style);
         Preset = Preset with
         {
             Style = style with { FontAssetId = null },
-            Font = string.Equals(style.FontFamily, Preset.Style.FontFamily, StringComparison.Ordinal)
+            Font = !clearFont && string.Equals(style.FontFamily, Preset.Style.FontFamily, StringComparison.Ordinal)
                 ? Preset.Font
                 : null
         };

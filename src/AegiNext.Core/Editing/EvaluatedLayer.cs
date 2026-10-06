@@ -9,6 +9,7 @@ public sealed record EvaluatedLayer(ProjectLayer Source, MediaTime LocalTime, La
     double Opacity, SceneColor Fill, SceneColor Stroke, double StrokeWidth, double Blur,
     SubtitleLine? Subtitle, ImmutableArray<EvaluatedLayer> Children)
 {
+    public ClipMask? Mask { get; init; }
     public bool HasFillAnimation { get; init; }
     public bool HasStrokeAnimation { get; init; }
     public bool HasStrokeWidthAnimation { get; init; }

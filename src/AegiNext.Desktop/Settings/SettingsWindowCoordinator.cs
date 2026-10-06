@@ -42,6 +42,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         }
 
         var window = new SettingsWindow(applicationContext.Preferences);
+        window.ViewModel.Styles.SetFonts(applicationContext.Fonts);
         Window = window;
         this.session = session;
         presentedPreferences = applicationContext.Preferences;
@@ -462,10 +463,10 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         }
     }
 
-    private static SubtitlePositionMeasurement MeasureDefaultPosition(SubtitleStylePreset preset)
+    private SubtitlePositionMeasurement MeasureDefaultPosition(SubtitleStylePreset preset)
     {
         var document = new ProjectDocument();
         return Rendering.SubtitleStylePositionMeasurer.Measure(preset, document.Width, document.Height,
-            Localization.Get("Workbench.SubtitlePreviewText"));
+            Localization.Get("Workbench.SubtitlePreviewText"), applicationContext.Fonts.Catalog);
     }
 }

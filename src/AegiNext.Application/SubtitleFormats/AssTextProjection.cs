@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Timing;
 
 namespace AegiNext.Application.SubtitleFormats;
@@ -10,29 +11,37 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
     ImmutableArray<SubtitleFormatDiagnostic> Diagnostics)
 {
     /// <summary>生成不含位置标签的工程来源与文字映射；时间相对内容原点零，保留 contentOrigin 可见窗口外的旧时间。</summary>
-    public static AssTextProjection Create(SubtitleLine line, MediaTime? contentOrigin = null, int canvasWidth = 1920, int canvasHeight = 1080)
+    public static AssTextProjection Create(SubtitleLine line, MediaTime? contentOrigin = null, int canvasWidth = 1920, int canvasHeight = 1080, ProjectLayer? layer = null)
     {
         ArgumentNullException.ThrowIfNull(line);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(canvasWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(canvasHeight);
         var written = AssTextWriter.Write(line, MediaTime.Zero, true);
-        var source = "{\\an" + AssFormatValues.Alignment(line.Style.Alignment).ToString(CultureInfo.InvariantCulture) + "}" + written.Text;
-        var parsed = Parser(line).Parse(source);
-        return new(source, parsed.SourceMap, written.Diagnostics);
+        var diagnostics = written.Diagnostics.ToBuilder();
+        var mask = layer is null ? string.Empty : AssMaskWriter.WriteTags(layer, MediaTime.Zero, diagnostics);
+        if (mask is null)
+        {
+            mask = AssMaskWriter.StaticTags(layer!.Mask!, line.Id, diagnostics);
+            diagnostics.Add(new("Ass.NativeMaskAnimation", "高级 ASS 代码显示蒙版基础几何；不能原生表达的蒙版动画在裁切标签未改写时保留。", SubtitleId: line.Id));
+        }
+        var source = "{\\an" + AssFormatValues.Alignment(line.Style.Alignment).ToString(CultureInfo.InvariantCulture) + mask + "}" + written.Text;
+        var parsed = Parser(line, canvasWidth, canvasHeight).Parse(source);
+        return new(source, parsed.SourceMap, diagnostics.ToImmutable());
     }
 
     /// <summary>解析工程来源，保留原行身份、句时间与原生位置；未改写的字时间、字体资源及精确颜色保持原值。</summary>
-    public static AssTextEditResult Apply(SubtitleLine original, string source, MediaTime? contentOrigin = null, int canvasWidth = 1920, int canvasHeight = 1080)
+    public static AssTextEditResult Apply(SubtitleLine original, string source, MediaTime? contentOrigin = null, int canvasWidth = 1920, int canvasHeight = 1080, ProjectLayer? layer = null)
     {
         ArgumentNullException.ThrowIfNull(original);
-        var projection = Create(original, contentOrigin, canvasWidth, canvasHeight);
+        var projection = Create(original, contentOrigin, canvasWidth, canvasHeight, layer);
         if (source == projection.Source)
         {
-            return new(SubtitleKaraokeNormalization.Normalize(original), projection.Diagnostics, projection.SourceMap);
+            return new(SubtitleKaraokeNormalization.Normalize(original), [], projection.SourceMap)
+            { Mask = layer?.Mask, MaskTracks = MaskTracks(layer) };
         }
-        var baselineResult = Parser(original).Parse(projection.Source);
+        var baselineResult = Parser(original, canvasWidth, canvasHeight).Parse(projection.Source);
         var baseline = baselineResult.Line;
-        var parsed = Parser(original).Parse(source);
+        var parsed = Parser(original, canvasWidth, canvasHeight).Parse(source);
         var line = parsed.Line with
         {
             Style = parsed.Line.Style with
@@ -44,18 +53,173 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
         line = line with { InlineSpans = RestorePrecision(original, baseline, line) };
         var previousIndices = MatchClipSources(projection.Source, baselineResult, source, parsed);
         var clips = line.Karaoke.Select((clip, index) => RestoreClip(original, baseline, parsed.Line, clip, previousIndices[index])).ToImmutableArray();
+        var inactiveKaraoke = RemapInactiveKaraoke(original, line.Text, clips);
         line = line with
         {
             Karaoke = original.Karaoke.SequenceEqual(clips) ? original.Karaoke : clips,
+            InactiveKaraoke = original.InactiveKaraoke.SequenceEqual(inactiveKaraoke) ? original.InactiveKaraoke : inactiveKaraoke,
             KaraokeStyle = original.KaraokeStyle
         };
         line = SubtitleKaraokeNormalization.Normalize(line);
         AssTextParser.ValidateLine(line);
-        return new(line == original ? original : line, parsed.Diagnostics, parsed.SourceMap);
+        var unchangedMask = AssOverrideTags.MaskIdentity(projection.Source) == AssOverrideTags.MaskIdentity(source);
+        var mask = unchangedMask ? layer?.Mask : PreserveMaskIdentity(layer?.Mask, parsed.Mask);
+        if (!unchangedMask && layer is not null && ClipMaskAnimation.IsTopologyLocked(layer) && !ClipMaskAnimation.HasSameTopology(layer.Mask, mask))
+        {
+            throw new InvalidOperationException("存在节点形变动画时不能从高级代码改变蒙版拓扑；请先清除节点形变轨道。");
+        }
+        var parsedMaskTracks = unchangedMask || layer?.Mask is null ? parsed.MaskTracks : RebaseMaskTracks(parsed.MaskTracks, mask, layer.Mask.Transform);
+        var maskTracks = unchangedMask ? MaskTracks(layer) : mask is null ? [] : parsedMaskTracks.AddRange(MaskTracks(layer)
+            .Where(track => track.Property is not (AnimationProperty.MASK_RECTANGLE_TOP_LEFT or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT)));
+        var diagnostics = RestoreProjectionDiagnostics(original, line, projection.Source, baselineResult, source, parsed);
+        return new(line == original ? original : line, diagnostics, parsed.SourceMap) { Mask = mask, MaskTracks = maskTracks };
     }
 
-    private static AssTextParser Parser(SubtitleLine line) => new(line,
-        new Dictionary<string, AssStyleDefinition>(StringComparer.Ordinal), line.Style.Fill, projectSource: true);
+    private static ImmutableArray<SubtitleFormatDiagnostic> RestoreProjectionDiagnostics(SubtitleLine original, SubtitleLine restored,
+        string baselineSource, AssTextEditResult baseline, string source, AssTextEditResult parsed)
+    {
+        var unchangedBlurTags = baseline.Diagnostics.Where(diagnostic => diagnostic.Code == "Ass.ShadowBlur" && diagnostic.SourceLength > 0)
+            .Select(diagnostic => baselineSource.Substring(diagnostic.SourceStart, diagnostic.SourceLength)).ToHashSet(StringComparer.Ordinal);
+        if (unchangedBlurTags.Count == 0)
+        {
+            return parsed.Diagnostics;
+        }
+        var textMap = original.Text == restored.Text ? null : MapTextChange(original.Text, restored.Text);
+        return parsed.Diagnostics.Where(diagnostic =>
+        {
+            if (diagnostic.Code != "Ass.ShadowBlur" || diagnostic.SourceLength <= 0 ||
+                !unchangedBlurTags.Contains(source.Substring(diagnostic.SourceStart, diagnostic.SourceLength)))
+            {
+                return true;
+            }
+            var mapping = parsed.SourceMap.FirstOrDefault(entry => entry.Utf16Length == 0 && entry.SourceStart <= diagnostic.SourceStart &&
+                entry.SourceStart + entry.SourceLength >= diagnostic.SourceStart + diagnostic.SourceLength);
+            if (mapping is null)
+            {
+                return true;
+            }
+            var offset = mapping.Utf16Start;
+            var originalOffset = textMap?.StyleSourceOffset(offset) ?? offset;
+            return !StyleAt(original, originalOffset).ShadowBlur.Equals(StyleAt(restored, offset).ShadowBlur);
+        }).ToImmutableArray();
+    }
+
+    private static ImmutableArray<AnimationTrack> MaskTracks(ProjectLayer? layer)
+    {
+        if (layer is null)
+        {
+            return [];
+        }
+        return layer.Tracks.All(track => AnimationPropertyMetadata.IsMaskProperty(track.Property)) ? layer.Tracks :
+            layer.Tracks.Where(track => AnimationPropertyMetadata.IsMaskProperty(track.Property)).ToImmutableArray();
+    }
+
+    private static ClipMask? PreserveMaskIdentity(ClipMask? original, ClipMask? parsed)
+    {
+        if (original is not null && parsed is not null)
+        {
+            parsed = AssMaskGeometry.Rebase(parsed, original.Transform);
+        }
+        if (original is not VectorClipMask previous || parsed is not VectorClipMask next || previous.Contours.Length != next.Contours.Length)
+        {
+            return parsed;
+        }
+        if (previous.Contours.Where((contour, index) => contour.Nodes.Length != next.Contours[index].Nodes.Length).Any())
+        {
+            return parsed;
+        }
+        return next with
+        {
+            Contours = next.Contours.Select((contour, index) => contour with
+            {
+                Id = previous.Contours[index].Id,
+                Nodes = contour.Nodes.Select((node, nodeIndex) => node with { Id = previous.Contours[index].Nodes[nodeIndex].Id }).ToImmutableArray()
+            }).ToImmutableArray()
+        };
+    }
+
+    private static ImmutableArray<AnimationTrack> RebaseMaskTracks(ImmutableArray<AnimationTrack> tracks, ClipMask? mask, MaskTransform transform)
+    {
+        if (tracks.IsEmpty)
+        {
+            return tracks;
+        }
+        if (mask is not RectangleClipMask || transform.Rotation % 360 != 0 || transform.Scale.X <= 0 || transform.Scale.Y <= 0)
+        {
+            throw new InvalidOperationException("带旋转或镜像的蒙版不能从 ASS 矩形变换反推原生轨道；请在蒙版面板编辑动画。");
+        }
+        return tracks.Select(track => track with
+        {
+            InitialValue = track.InitialValue is { } initial ? AnimationValue.FromVector(AssMaskGeometry.Inverse(initial.Vector, transform)) : null,
+            Keyframes = track.Keyframes.Select(key => key with { Value = AnimationValue.FromVector(AssMaskGeometry.Inverse(key.Value.Vector, transform)) }).ToImmutableArray(),
+            Transforms = track.Transforms.Select(operation => operation with { Value = AnimationValue.FromVector(AssMaskGeometry.Inverse(operation.Value.Vector, transform)) }).ToImmutableArray()
+        }).ToImmutableArray();
+    }
+
+    private static AssTextParser Parser(SubtitleLine line, int canvasWidth, int canvasHeight) => new(line,
+        new Dictionary<string, AssStyleDefinition>(StringComparer.Ordinal), line.Style.Fill, projectSource: true, canvasWidth: canvasWidth, canvasHeight: canvasHeight);
+
+    private static ImmutableArray<KaraokeSegment> RemapInactiveKaraoke(SubtitleLine original, string text,
+        ImmutableArray<KaraokeSegment> active)
+    {
+        var inactive = original.InactiveKaraoke;
+        if (!inactive.IsEmpty && original.Text != text)
+        {
+            var map = MapTextChange(original.Text, text);
+            if (map.OldStart < map.OldEnd && map.NewStart < map.NewEnd && CoversTextRange(active, map.NewStart, map.NewEnd))
+            {
+                inactive = inactive.Where(clip => clip.Utf16Start + clip.Utf16Length <= map.OldStart ||
+                    clip.Utf16Start >= map.OldEnd).ToImmutableArray();
+            }
+            if (!inactive.IsEmpty)
+            {
+                var saved = original with { Karaoke = [], InactiveKaraoke = inactive };
+                inactive = SubtitleContentEditing.RemapKaraoke(saved, map).InactiveKaraoke;
+            }
+        }
+        return PreserveInactiveKaraoke(inactive, active);
+    }
+
+    private static bool CoversTextRange(ImmutableArray<KaraokeSegment> active, int start, int end)
+    {
+        var cursor = start;
+        foreach (var clip in active)
+        {
+            if (clip.Utf16Start > cursor)
+            {
+                return false;
+            }
+            cursor = Math.Max(cursor, clip.Utf16Start + clip.Utf16Length);
+            if (cursor >= end)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static ImmutableArray<KaraokeSegment> PreserveInactiveKaraoke(ImmutableArray<KaraokeSegment> inactive,
+        ImmutableArray<KaraokeSegment> active)
+    {
+        if (inactive.IsEmpty || active.IsEmpty)
+        {
+            return inactive;
+        }
+        var result = ImmutableArray.CreateBuilder<KaraokeSegment>();
+        var activeIndex = 0;
+        foreach (var clip in inactive)
+        {
+            while (activeIndex < active.Length && active[activeIndex].Utf16Start + active[activeIndex].Utf16Length <= clip.Utf16Start)
+            {
+                activeIndex++;
+            }
+            if (activeIndex == active.Length || active[activeIndex].Utf16Start >= clip.Utf16Start + clip.Utf16Length)
+            {
+                result.Add(clip);
+            }
+        }
+        return result.Count == inactive.Length ? inactive : result.ToImmutable();
+    }
 
     private static int[] MatchClipSources(string previousSource, AssTextEditResult previous, string source, AssTextEditResult edited)
     {
@@ -170,6 +334,8 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
             var previousOverride = OverrideAt(original, oldOffset);
             var serialized = StyleAt(baseline, oldOffset);
             var next = StyleAt(edited, offset);
+            var preservesFont = next.FontFamily == serialized.FontFamily && next.Bold == serialized.Bold &&
+                next.Italic == serialized.Italic;
             var visual = RestoreVisualOverride(previousOverride is null ? null : new()
             {
                 Fill = previousOverride.Fill, Stroke = previousOverride.Stroke, StrokeWidth = previousOverride.StrokeWidth,
@@ -182,6 +348,8 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
                 FontFamily = next.FontFamily == serialized.FontFamily ? previousOverride?.FontFamily : next.FontFamily,
                 FontAssetId = next.FontFamily == serialized.FontFamily ? previousOverride?.FontAssetId : null,
                 ClearFontAsset = next.FontFamily == serialized.FontFamily ? previousOverride?.ClearFontAsset ?? false : true,
+                FontVariant = preservesFont ? previousOverride?.FontVariant : null,
+                ClearFontVariant = preservesFont ? previousOverride?.ClearFontVariant ?? false : true,
                 FontSize = next.FontSize.Equals(serialized.FontSize) ? previousOverride?.FontSize : next.FontSize,
                 Bold = next.Bold == serialized.Bold ? previousOverride?.Bold : next.Bold,
                 Italic = next.Italic == serialized.Italic ? previousOverride?.Italic : next.Italic,

@@ -1,0 +1,8 @@
+using System.Collections.Immutable;
+using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
+
+namespace AegiNext.Application.SubtitleFormats;
+
+/// <summary>字幕格式导入的原子片段：文字、工程坐标蒙版及蒙版动画。</summary>
+public sealed record SubtitleClipImport(SubtitleLine Line, ClipMask? Mask, ImmutableArray<AnimationTrack> Tracks, MediaTime ContentOffset = default);

@@ -26,6 +26,7 @@ internal sealed partial class WorkbenchSession
     internal void CancelSceneGesture()
     {
         CancelCanvasGesture();
+        MaskEditing.CancelGesture();
         SceneGestureCancellationRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -36,7 +37,7 @@ internal sealed partial class WorkbenchSession
             return;
         }
         var local = SelectedKeyTime ?? (inspectorTime ?? ProjectPosition) - layer.Start + layer.AnimationOffset;
-        SceneEditing.DraftTarget = new(layer.Id, LayerAnimationTiming.ClampTime(layer, local), SelectedKeyTime is not null, ActiveProperty);
+        SceneEditing.DraftTarget = new(layer.Id, LayerAnimationTiming.ClampTime(layer, local), SelectedKeyTime is not null, SceneEditing.Target);
         _ = RunCommandAsync(PauseForSceneEditAsync);
     }
 
@@ -66,7 +67,7 @@ internal sealed partial class WorkbenchSession
             return;
         }
         var document = editor.Snapshot;
-        var prepared = WorkspaceDraftOperations.UpdateLayer(document, layer.Id, item => item with { MotionPath = value.Path, Mask = value.Mask });
+        var prepared = WorkspaceDraftOperations.UpdateLayer(document, layer.Id, item => item with { MotionPath = value.Path });
         var transform = layer.Transform;
         foreach (var (property, changed, original) in new[]
         {
@@ -112,6 +113,8 @@ internal sealed partial class WorkbenchSession
             updatingWorkbench = previous;
         }
     }
+
+    internal void RefreshMaskPreview() => RefreshEditingPreview();
 
     private void RefreshEditingPreview()
     {

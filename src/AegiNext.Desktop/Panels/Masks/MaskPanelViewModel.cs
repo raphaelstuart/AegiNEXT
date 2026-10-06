@@ -1,0 +1,178 @@
+using System.Windows.Input;
+using AegiNext.Core.Editing;
+using AegiNext.Core.Projects;
+using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Workspace;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace AegiNext.Desktop.Panels.Masks;
+
+internal sealed class MaskPanelViewModel : ObservableObject
+{
+    private readonly WorkbenchSession session;
+    private MaskNumericField[] sourceFields = [];
+    private bool refreshingChoices;
+    private string? validationError;
+    private string? invalidFieldKey;
+
+    internal MaskPanelViewModel(WorkbenchSession session)
+    {
+        this.session = session;
+        EditRectangleMaskCommand = new RelayCommand(() => session.MaskEditing.EditRectangle());
+        EditVectorMaskCommand = new RelayCommand(() => session.MaskEditing.EditVector());
+        AddMaskContourCommand = new RelayCommand(() => session.MaskEditing.AddContour());
+        ClearMaskCommand = EditCommand(() => session.MaskEditing.Clear());
+        InvertMaskCommand = EditCommand(() => session.MaskEditing.Invert());
+        ClearNodeAnimationCommand = EditCommand(() => session.MaskEditing.ClearNodeAnimation());
+        SubdivideMaskCommand = EditCommand(() => session.MaskEditing.Subdivide());
+        DeleteContourCommand = EditCommand(() => session.MaskEditing.DeleteSelectedContour());
+        DeleteNodeCommand = EditCommand(() => session.MaskEditing.DeleteSelectedNode());
+    }
+
+    public bool CanEditMask => session.MaskEditing.CanEdit;
+    public bool IsRectangleTool => session.SceneEditing.Mode == CanvasEditMode.MASK_RECTANGLE;
+    public bool IsVectorTool => session.SceneEditing.Mode is CanvasEditMode.MASK_VECTOR or CanvasEditMode.MASK_DRAW_VECTOR;
+    public bool CanEditVector => CanEditMask && (!session.MaskEditing.IsTopologyLocked || IsVectorMask);
+    public bool CanClearNodeAnimation => session.SelectedLayer?.Tracks.Any(track => AnimationPropertyMetadata.IsNodeProperty(track.Property)) == true;
+    public bool CanSubdivide => CanEditMaskTopology && HasSelectedPoint;
+    public bool HasClipMask => session.SelectedLayer?.Mask is not null;
+    public bool IsVectorMask => session.SelectedLayer?.Mask is VectorClipMask;
+    public bool CanCreateRectangleMask => CanEditMask && (!session.MaskEditing.IsTopologyLocked || session.SelectedLayer?.Mask is RectangleClipMask);
+    public bool CanEditMaskTopology => IsVectorMask && !session.MaskEditing.IsTopologyLocked;
+    public bool CanDeleteContour => session.MaskEditing.CanDeleteSelectedContour;
+    public bool CanDeleteNode => session.MaskEditing.CanDeleteSelectedNode;
+    public bool HasSelectedPoint => SelectedPoint is not null;
+    public bool MaskInverted => session.SelectedLayer?.Mask?.Inverted == true;
+    public string RectangleToolTip => session.MaskEditing.IsTopologyLocked && session.SelectedLayer?.Mask is VectorClipMask
+        ? Localization.Get("Workbench.MaskTopologyLocked") : Localization.Get("Workbench.MaskRectangle");
+    public string ContourToolTip => MaskTopologyReason ?? Localization.Get("Workbench.MaskAddContour");
+    public string DeleteContourToolTip => MaskTopologyReason ?? Localization.Get("Workbench.MaskDeleteContour");
+    public string DeleteNodeToolTip => MaskTopologyReason ?? Localization.Get("Workbench.MaskDeleteNode");
+    public string SubdivideToolTip => MaskTopologyReason ?? Localization.Get("Workbench.MaskSubdivide");
+    public string? MaskTopologyReason => session.MaskEditing.IsTopologyLocked ? Localization.Get("Workbench.MaskTopologyLocked") : null;
+    public MaskVectorField[] GeometryFields { get; private set; } = [];
+    public MaskVectorField[] NodeFields { get; private set; } = [];
+    public MaskNumericField? RotationField { get; private set; }
+    public MaskSelectionChoice[] Contours { get; private set; } = [];
+    public MaskPointListItem[] Points { get; private set; } = [];
+    public string? ValidationError
+    {
+        get => validationError;
+        internal set => SetProperty(ref validationError, value);
+    }
+    public string? InvalidFieldKey
+    {
+        get => invalidFieldKey;
+        internal set => SetProperty(ref invalidFieldKey, value);
+    }
+    public MaskSelectionChoice? SelectedContour
+    {
+        get => Contours.FirstOrDefault(contour => contour.Id == session.SceneEditing.MaskContourId);
+        set
+        {
+            if (!refreshingChoices && !session.IsUpdating && value is not null && value.Id != session.SceneEditing.MaskContourId &&
+                session.SelectedLayer?.Mask is VectorClipMask vector)
+            {
+                if (!session.TryCommitDrafts())
+                {
+                    OnPropertyChanged(nameof(SelectedContour));
+                    return;
+                }
+                var contour = vector.Contours.Single(contour => contour.Id == value.Id);
+                session.SceneEditing.MaskContourId = contour.Id;
+                session.MaskEditing.SelectNode(contour.Nodes[0].Id);
+            }
+        }
+    }
+    public MaskPointListItem? SelectedPoint
+    {
+        get => Points.FirstOrDefault(point => point.Id == session.SceneEditing.MaskNodeId);
+        set
+        {
+            if (!refreshingChoices && !session.IsUpdating && value is not null && value.Id != session.SceneEditing.MaskNodeId)
+            {
+                session.MaskEditing.SelectNode(value.Id);
+                OnPropertyChanged(nameof(SelectedPoint));
+            }
+        }
+    }
+    public ICommand EditRectangleMaskCommand { get; }
+    public ICommand EditVectorMaskCommand { get; }
+    public ICommand AddMaskContourCommand { get; }
+    public ICommand ClearMaskCommand { get; }
+    public ICommand InvertMaskCommand { get; }
+    public ICommand ClearNodeAnimationCommand { get; }
+    public ICommand SubdivideMaskCommand { get; }
+    public ICommand DeleteContourCommand { get; }
+    public ICommand DeleteNodeCommand { get; }
+
+    internal void Refresh()
+    {
+        refreshingChoices = true;
+        try
+        {
+            var fields = session.MaskEditing.Fields;
+            if (!ReferenceEquals(sourceFields, fields))
+            {
+                sourceFields = fields;
+                var vectors = fields.Where(field => field.Target is null ||
+                    AnimationPropertyMetadata.GetComponentCount(field.Target.Value.Property) == 2)
+                    .GroupBy(field => field.Target).Select(group => new MaskVectorField(
+                        group.Single(field => field.Component == 0), group.Single(field => field.Component == 1))).ToArray();
+                GeometryFields = vectors.Where(field => field.Target is null || !AnimationPropertyMetadata.IsNodeProperty(field.Target.Value.Property)).ToArray();
+                NodeFields = vectors.Where(field => field.Target is { } target && AnimationPropertyMetadata.IsNodeProperty(target.Property)).ToArray();
+                RotationField = fields.FirstOrDefault(field => field.Target?.Property == AnimationProperty.MASK_ROTATION);
+                OnPropertyChanged(nameof(GeometryFields));
+                OnPropertyChanged(nameof(NodeFields));
+                OnPropertyChanged(nameof(RotationField));
+            }
+            foreach (var field in GeometryFields.Concat(NodeFields))
+            {
+                field.RefreshLabel();
+            }
+            var mask = session.SelectedLayer is { } layer ? SceneEvaluator.EvaluateMask(layer, session.AnimationTarget?.LocalTime ?? new(0)) : null;
+            if (mask is VectorClipMask vector)
+            {
+                Contours = vector.Contours.Select((contour, index) => new MaskSelectionChoice(contour.Id, (index + 1).ToString(System.Globalization.CultureInfo.CurrentCulture))).ToArray();
+                var contour = vector.Contours.FirstOrDefault(contour => contour.Id == session.SceneEditing.MaskContourId);
+                Points = contour?.Nodes.Select((node, index) => new MaskPointListItem(node.Id, index + 1, node.Position)).ToArray() ?? [];
+            }
+            else
+            {
+                Contours = [];
+                Points = [];
+            }
+            foreach (var name in new[] { nameof(CanEditMask), nameof(IsRectangleTool), nameof(IsVectorTool), nameof(CanEditVector), nameof(CanClearNodeAnimation), nameof(CanSubdivide), nameof(HasClipMask), nameof(IsVectorMask), nameof(CanCreateRectangleMask), nameof(CanEditMaskTopology),
+                nameof(CanDeleteContour), nameof(CanDeleteNode), nameof(HasSelectedPoint), nameof(MaskInverted), nameof(MaskTopologyReason), nameof(Contours),
+                nameof(SelectedContour), nameof(Points), nameof(SelectedPoint), nameof(RectangleToolTip), nameof(ContourToolTip), nameof(DeleteContourToolTip),
+                nameof(DeleteNodeToolTip), nameof(SubdivideToolTip) })
+            {
+                OnPropertyChanged(name);
+            }
+        }
+        finally
+        {
+            refreshingChoices = false;
+        }
+    }
+
+    internal void CommitDrafts() => session.TryCommitDrafts(false);
+
+    internal void RestoreField(string? key)
+    {
+        var field = session.MaskEditing.Fields.FirstOrDefault(field => field.Key == key);
+        if (field is not null)
+        {
+            session.MaskEditing.Restore(field);
+            if (InvalidFieldKey == key)
+            {
+                InvalidFieldKey = null;
+                ValidationError = null;
+            }
+        }
+    }
+
+    private AsyncRelayCommand EditCommand(Action action) => new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(action)));
+}

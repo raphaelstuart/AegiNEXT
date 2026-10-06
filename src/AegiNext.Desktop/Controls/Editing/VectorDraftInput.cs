@@ -14,6 +14,8 @@ public sealed class VectorDraftInput : UserControl
     public static readonly StyledProperty<decimal> MinimumProperty = AvaloniaProperty.Register<VectorDraftInput, decimal>(nameof(Minimum), -1000000000m);
     public static readonly StyledProperty<decimal> MaximumProperty = AvaloniaProperty.Register<VectorDraftInput, decimal>(nameof(Maximum), 1000000000m);
     public static readonly StyledProperty<decimal> IncrementProperty = AvaloniaProperty.Register<VectorDraftInput, decimal>(nameof(Increment), 1m);
+    public static readonly StyledProperty<string?> XFieldKeyProperty = AvaloniaProperty.Register<VectorDraftInput, string?>(nameof(XFieldKey));
+    public static readonly StyledProperty<string?> YFieldKeyProperty = AvaloniaProperty.Register<VectorDraftInput, string?>(nameof(YFieldKey));
     private readonly NumericDraftInput xInput;
     private readonly NumericDraftInput yInput;
 
@@ -41,8 +43,30 @@ public sealed class VectorDraftInput : UserControl
     public decimal Minimum { get => GetValue(MinimumProperty); set => SetValue(MinimumProperty, value); }
     public decimal Maximum { get => GetValue(MaximumProperty); set => SetValue(MaximumProperty, value); }
     public decimal Increment { get => GetValue(IncrementProperty); set => SetValue(IncrementProperty, value); }
-    public string? XFieldKey { get => xInput.Name; set => xInput.Name = value; }
-    public string? YFieldKey { get => yInput.Name; set => yInput.Name = value; }
+    public string? XFieldKey
+    {
+        get => GetValue(XFieldKeyProperty);
+        set => SetValue(XFieldKeyProperty, value);
+    }
+    public string? YFieldKey
+    {
+        get => GetValue(YFieldKeyProperty);
+        set => SetValue(YFieldKeyProperty, value);
+    }
+
+    /// <inheritdoc />
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == XFieldKeyProperty)
+        {
+            xInput.Name = XFieldKey;
+        }
+        else if (change.Property == YFieldKeyProperty)
+        {
+            yInput.Name = YFieldKey;
+        }
+    }
 
     /// <summary>按稳定分量字段标识定位输入；不依赖宿主 XAML 的名称范围。</summary>
     public bool FocusField(string fieldKey)

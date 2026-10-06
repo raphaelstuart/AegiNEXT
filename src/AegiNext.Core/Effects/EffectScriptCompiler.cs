@@ -46,7 +46,7 @@ public static class EffectScriptCompiler
         }
 
         var remaining = compress ? MediaTime.Zero : duration - fixedTotal;
-        var tracks = new Dictionary<AnimationProperty, List<Keyframe>>();
+        var tracks = new Dictionary<AnimationTrackTarget, List<Keyframe>>();
         var cursor = origin;
         foreach (var segment in script.Segments)
         {
@@ -56,44 +56,14 @@ public static class EffectScriptCompiler
             foreach (var frame in segment.Keyframes)
             {
                 var time = cursor + EffectScriptTiming.Scale(length, frame.Progress);
-                switch (frame.Property)
-                {
-                    case EffectScriptProperty.POSITION:
-                        Add(tracks, AnimationProperty.POSITION, frame, time, target.Transform.Position, origin);
-                        break;
-                    case EffectScriptProperty.SCALE:
-                        Add(tracks, AnimationProperty.SCALE, frame, time, target.Transform.Scale, origin);
-                        break;
-                    case EffectScriptProperty.ROTATION:
-                        Add(tracks, AnimationProperty.ROTATION, frame, time, target.Transform.Rotation, origin);
-                        break;
-                    case EffectScriptProperty.OPACITY:
-                        Add(tracks, AnimationProperty.OPACITY, frame, time, target.Opacity, origin);
-                        break;
-                    case EffectScriptProperty.BLUR:
-                        Add(tracks, AnimationProperty.BLUR, frame, time, target.Blur, origin);
-                        break;
-                    case EffectScriptProperty.STROKE_WIDTH:
-                        Add(tracks, AnimationProperty.STROKE_WIDTH, frame, time, subtitleStyle?.StrokeWidth ?? target.StrokeWidth, origin);
-                        break;
-                    case EffectScriptProperty.FILL:
-                        Add(tracks, AnimationProperty.FILL, frame, time, subtitleStyle?.Fill ?? target.Fill, origin);
-                        break;
-                    case EffectScriptProperty.STROKE:
-                        Add(tracks, AnimationProperty.STROKE, frame, time, subtitleStyle?.Stroke ?? target.Stroke, origin);
-                        break;
-                    case EffectScriptProperty.PATH_PROGRESS:
-                        Add(tracks, AnimationProperty.PATH_PROGRESS, frame, time, 0, origin);
-                        break;
-                    default:
-                        throw new EffectScriptException("未知脚本属性。", frame.Line, frame.Column);
-                }
+                var animationTarget = ResolveTarget(frame, target);
+                Add(tracks, animationTarget, frame, time, ResolveBaseValue(frame, animationTarget, target, subtitleStyle), origin);
             }
 
             cursor += length;
         }
 
-        return tracks.OrderBy(pair => pair.Key).Select(pair =>
+        return tracks.OrderBy(pair => pair.Key.Property).ThenBy(pair => pair.Key.NodeId).Select(pair =>
         {
             var frames = pair.Value;
             if (frames[^1].Time < end)
@@ -104,6 +74,59 @@ public static class EffectScriptCompiler
 
             return new AnimationTrack(pair.Key, frames.ToImmutableArray());
         }).ToImmutableArray();
+    }
+
+    private static AnimationTrackTarget ResolveTarget(EffectScriptKeyframe frame, ProjectLayer layer)
+    {
+        var property = EffectScriptPropertyMetadata.GetAnimationProperty(frame.Property);
+        if (!AnimationPropertyMetadata.IsNodeProperty(property))
+        {
+            return new(property);
+        }
+
+        var selector = frame.NodeSelector!.Value;
+        if (layer.Mask is not VectorClipMask vector || selector.ContourNumber > vector.Contours.Length ||
+            selector.NodeNumber > vector.Contours[selector.ContourNumber - 1].Nodes.Length)
+        {
+            throw new EffectScriptException($"蒙版轮廓 {selector.ContourNumber} 的节点 {selector.NodeNumber} 不存在。", frame.Line, frame.Column);
+        }
+
+        return new(property, vector.Contours[selector.ContourNumber - 1].Nodes[selector.NodeNumber - 1].Id);
+    }
+
+    private static AnimationValue ResolveBaseValue(EffectScriptKeyframe frame, AnimationTrackTarget animationTarget,
+        ProjectLayer layer, SubtitleStyle? subtitleStyle)
+    {
+        if (AnimationPropertyMetadata.IsMaskProperty(animationTarget.Property))
+        {
+            if (layer.Mask is not { } mask)
+            {
+                throw new EffectScriptException("目标 Clip 尚无蒙版；脚本只动画现有几何。", frame.Line, frame.Column);
+            }
+
+            try
+            {
+                return ClipMaskAnimation.GetBaseValue(mask, animationTarget);
+            }
+            catch (InvalidDataException error)
+            {
+                throw new EffectScriptException(error.Message, frame.Line, frame.Column, error);
+            }
+        }
+
+        return animationTarget.Property switch
+        {
+            AnimationProperty.POSITION => layer.Transform.Position,
+            AnimationProperty.SCALE => layer.Transform.Scale,
+            AnimationProperty.ROTATION => layer.Transform.Rotation,
+            AnimationProperty.OPACITY => layer.Opacity,
+            AnimationProperty.BLUR => layer.Blur,
+            AnimationProperty.STROKE_WIDTH => subtitleStyle?.StrokeWidth ?? layer.StrokeWidth,
+            AnimationProperty.FILL => subtitleStyle?.Fill ?? layer.Fill,
+            AnimationProperty.STROKE => subtitleStyle?.Stroke ?? layer.Stroke,
+            AnimationProperty.PATH_PROGRESS => 0,
+            _ => throw new EffectScriptException("未知脚本属性。", frame.Line, frame.Column)
+        };
     }
 
     private static double Resolve(EffectScriptValueKind kind, double baseValue, double literal)
@@ -117,7 +140,7 @@ public static class EffectScriptCompiler
         };
     }
 
-    private static void Add(Dictionary<AnimationProperty, List<Keyframe>> tracks, AnimationProperty property,
+    private static void Add(Dictionary<AnimationTrackTarget, List<Keyframe>> tracks, AnimationTrackTarget target,
         EffectScriptKeyframe source, MediaTime time, AnimationValue baseValue, MediaTime origin)
     {
         var value = baseValue;
@@ -133,24 +156,24 @@ public static class EffectScriptCompiler
         for (var component = 0; component < value.ComponentCount; component++)
         {
             var number = value.GetComponent(component);
-            if (!double.IsFinite(number) || number < AnimationPropertyMetadata.GetMinimum(property, component) ||
-                number > AnimationPropertyMetadata.GetMaximum(property, component))
+            if (!double.IsFinite(number) || number < AnimationPropertyMetadata.GetMinimum(target.Property, component) ||
+                number > AnimationPropertyMetadata.GetMaximum(target.Property, component))
             {
                 throw new EffectScriptException($"{source.Property} 的求值结果超出项目允许范围。", source.Line, source.Column);
             }
         }
 
-        if (!tracks.TryGetValue(property, out var frames))
+        if (!tracks.TryGetValue(target, out var frames))
         {
             frames = [];
-            tracks.Add(property, frames);
+            tracks.Add(target, frames);
             if (time > origin)
             {
                 frames.Add(new(origin, baseValue, KeyframeInterpolation.HOLD));
             }
         }
 
-        var key = new Keyframe(time, value, source.Interpolation);
+        var key = new Keyframe(time, value, source.Interpolation) { Exponent = source.Exponent };
         if (frames.Count > 0 && frames[^1].Time == time)
         {
             if (!frames[^1].Value.Equals(value))

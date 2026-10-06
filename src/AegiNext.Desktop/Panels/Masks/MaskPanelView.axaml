@@ -1,0 +1,128 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:masks="using:AegiNext.Desktop.Panels.Masks"
+             xmlns:workspace="using:AegiNext.Desktop.Workspace"
+             xmlns:controls="using:AegiNext.Desktop.Controls"
+             xmlns:common="using:AegiNext.Desktop.Controls.Common"
+             xmlns:icons="using:Material.Icons.Avalonia"
+             xmlns:converters="using:Avalonia.Data.Converters"
+             x:Class="AegiNext.Desktop.Panels.Masks.MaskPanelView"
+             x:DataType="masks:MaskPanelViewModel"
+             Classes="business-surface">
+  <UserControl.Styles>
+    <Style Selector="Separator.mask-toolbar-separator">
+      <Setter Property="Width" Value="1" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Margin" Value="4,0,8,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{DynamicResource PreviewBorder}" />
+        </ControlTemplate>
+      </Setter>
+    </Style>
+  </UserControl.Styles>
+  <ScrollViewer>
+    <StackPanel Name="ClipMaskSection" Margin="10" Spacing="8" IsEnabled="{Binding CanEditMask}">
+      <WrapPanel Name="MaskToolbar" Orientation="Horizontal">
+        <StackPanel Name="MaskCreationTools" Orientation="Horizontal" Spacing="4" Margin="0,0,4,4" VerticalAlignment="Center">
+          <common:ToolbarToggleButton Name="RectangleMaskButton" IsChecked="{Binding IsRectangleTool, Mode=OneWay}" Command="{Binding EditRectangleMaskCommand}"
+                  IsEnabled="{Binding CanCreateRectangleMask}" ToolTip.Tip="{Binding RectangleToolTip}" AutomationProperties.Name="{Loc Key=Workbench.MaskRectangle}">
+            <icons:MaterialIcon Kind="VectorRectangle" Width="16" Height="16" />
+          </common:ToolbarToggleButton>
+          <common:ToolbarToggleButton Name="VectorMaskButton" IsChecked="{Binding IsVectorTool, Mode=OneWay}" Command="{Binding EditVectorMaskCommand}" IsEnabled="{Binding CanEditVector}"
+                  ToolTip.Tip="{Loc Key=Workbench.MaskVectorGesture}" AutomationProperties.Name="{Loc Key=Workbench.MaskVector}">
+            <icons:MaterialIcon Kind="VectorBezier" Width="16" Height="16" />
+          </common:ToolbarToggleButton>
+        </StackPanel>
+        <StackPanel Name="MaskContourTools" Orientation="Horizontal" Spacing="4" Margin="0,0,4,4" VerticalAlignment="Center">
+          <Separator Name="MaskContourSeparator" Classes="mask-toolbar-separator" />
+          <Button Name="AddMaskContourButton" Classes="icon-button" Command="{Binding AddMaskContourCommand}"
+                  IsEnabled="{Binding CanEditMaskTopology}" ToolTip.Tip="{Binding ContourToolTip}" AutomationProperties.Name="{Loc Key=Workbench.MaskAddContour}">
+            <icons:MaterialIcon Kind="VectorSquarePlus" Width="16" Height="16" />
+          </Button>
+          <Button Name="DeleteMaskContourButton" Classes="icon-button" Command="{Binding DeleteContourCommand}"
+                  IsEnabled="{Binding CanDeleteContour}" ToolTip.Tip="{Binding DeleteContourToolTip}" AutomationProperties.Name="{Loc Key=Workbench.MaskDeleteContour}">
+            <icons:MaterialIcon Kind="VectorSquareMinus" Width="16" Height="16" />
+          </Button>
+        </StackPanel>
+        <StackPanel Name="MaskClipTools" Orientation="Horizontal" Spacing="4" Margin="0,0,4,4" VerticalAlignment="Center">
+          <Separator Name="MaskClipSeparator" Classes="mask-toolbar-separator" />
+          <common:ToolbarToggleButton Name="InvertClipMaskButton" Command="{Binding InvertMaskCommand}"
+                  IsChecked="{Binding MaskInverted, Mode=OneWay}" IsEnabled="{Binding HasClipMask}"
+                  ToolTip.Tip="{Loc Key=Workbench.InvertMask}" AutomationProperties.Name="{Loc Key=Workbench.InvertMask}">
+            <icons:MaterialIcon Kind="ContrastBox" Width="16" Height="16" />
+          </common:ToolbarToggleButton>
+          <Button Name="ClearClipMaskButton" Classes="icon-button" Command="{Binding ClearMaskCommand}"
+                  IsEnabled="{Binding HasClipMask}" ToolTip.Tip="{Loc Key=Workbench.MaskClear}" AutomationProperties.Name="{Loc Key=Workbench.MaskClear}">
+            <icons:MaterialIcon Kind="Close" Width="16" Height="16" />
+          </Button>
+        </StackPanel>
+        <StackPanel Name="MaskNodeTools" Orientation="Horizontal" Spacing="4" Margin="0,0,4,4" VerticalAlignment="Center">
+          <Separator Name="MaskNodeSeparator" Classes="mask-toolbar-separator" />
+          <Button Name="SubdivideMaskButton" Classes="icon-button" Command="{Binding SubdivideMaskCommand}"
+                  IsEnabled="{Binding CanSubdivide}" ToolTip.Tip="{Binding SubdivideToolTip}" AutomationProperties.Name="{Loc Key=Workbench.MaskSubdivide}">
+            <icons:MaterialIcon Kind="VectorPointPlus" Width="16" Height="16" />
+          </Button>
+          <Button Name="DeleteMaskNodeButton" Classes="icon-button" Command="{Binding DeleteNodeCommand}"
+                  IsEnabled="{Binding CanDeleteNode}" ToolTip.Tip="{Binding DeleteNodeToolTip}" AutomationProperties.Name="{Loc Key=Workbench.MaskDeleteNode}">
+            <icons:MaterialIcon Kind="VectorPointMinus" Width="16" Height="16" />
+          </Button>
+          <Button Name="ClearMaskNodeAnimationButton" Classes="icon-button" Command="{Binding ClearNodeAnimationCommand}"
+                  IsEnabled="{Binding CanClearNodeAnimation}" ToolTip.Tip="{Loc Key=Workbench.MaskClearNodeAnimation}" AutomationProperties.Name="{Loc Key=Workbench.MaskClearNodeAnimation}">
+            <icons:MaterialIcon Kind="AnimationOutline" Width="16" Height="16" />
+          </Button>
+        </StackPanel>
+      </WrapPanel>
+      <ItemsControl Name="MaskGeometryFields" ItemsSource="{Binding GeometryFields}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="masks:MaskVectorField">
+            <StackPanel Spacing="4" Margin="0,2">
+              <TextBlock Classes="field" Text="{Binding Label}" />
+              <controls:VectorDraftInput IsEnabled="{Binding CanEdit}" X="{Binding X.Draft.Value, Mode=TwoWay}" Y="{Binding Y.Draft.Value, Mode=TwoWay}"
+                  XText="{Binding X.Draft.RawText, Mode=TwoWay}" YText="{Binding Y.Draft.RawText, Mode=TwoWay}"
+                  XFieldKey="{Binding X.Key}" YFieldKey="{Binding Y.Key}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <ContentControl Name="MaskRotationField" Content="{Binding RotationField}">
+        <ContentControl.ContentTemplate>
+          <DataTemplate x:DataType="workspace:MaskNumericField">
+            <Grid ColumnDefinitions="*,120" ColumnSpacing="6">
+              <TextBlock Classes="field" Text="{Loc Key=Workbench.MASK_ROTATION}" VerticalAlignment="Center" />
+              <controls:NumericDraftInput Name="MaskRotationInput" Grid.Column="1" IsEnabled="{Binding CanEdit}" RawText="{Binding Draft.RawText, Mode=TwoWay}"
+                  Value="{Binding Draft.Value, Mode=TwoWay}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" />
+            </Grid>
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
+      <StackPanel Name="MaskBezierData" Spacing="6" IsVisible="{Binding IsVectorMask}">
+        <TextBlock Classes="field" Text="{Loc Key=Workbench.MaskContour}" />
+        <ComboBox Name="MaskContourCombo" ItemsSource="{Binding Contours}" SelectedItem="{Binding SelectedContour, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+        <TextBlock Classes="field" Text="{Loc Key=Workbench.MaskPoints}" />
+        <ListBox Name="MaskPointList" ItemsSource="{Binding Points}" SelectedItem="{Binding SelectedPoint, Mode=TwoWay}" MinHeight="72" MaxHeight="180">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="masks:MaskPointListItem">
+              <TextBlock Text="{Binding Label}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <ItemsControl Name="MaskNodeFields" ItemsSource="{Binding NodeFields}" IsVisible="{Binding HasSelectedPoint}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="masks:MaskVectorField">
+              <StackPanel Spacing="4" Margin="0,2">
+                <TextBlock Classes="field" Text="{Binding Label}" />
+                <controls:VectorDraftInput IsEnabled="{Binding CanEdit}" X="{Binding X.Draft.Value, Mode=TwoWay}" Y="{Binding Y.Draft.Value, Mode=TwoWay}"
+                    XText="{Binding X.Draft.RawText, Mode=TwoWay}" YText="{Binding Y.Draft.RawText, Mode=TwoWay}"
+                    XFieldKey="{Binding X.Key}" YFieldKey="{Binding Y.Key}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+      <TextBlock Text="{Binding MaskTopologyReason}" TextWrapping="Wrap" IsVisible="{Binding MaskTopologyReason, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}" />
+      <TextBlock Classes="error" Text="{Binding ValidationError}" TextWrapping="Wrap" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

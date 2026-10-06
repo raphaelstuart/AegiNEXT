@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AegiNext.Core.Projects;
 
 /// <summary>与渲染器无关的字幕排版及线性颜色样式。</summary>
@@ -5,6 +7,8 @@ public sealed record SubtitleStyle
 {
     public string FontFamily { get; init; } = "sans-serif";
     public Guid? FontAssetId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SubtitleFontVariant? FontVariant { get; init; }
     public double FontSize { get; init; } = 64;
     public SceneColor Fill { get; init; } = SceneColor.White;
     public SceneColor Stroke { get; init; } = SceneColor.Black;

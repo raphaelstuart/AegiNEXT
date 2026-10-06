@@ -23,12 +23,13 @@ internal static class SubtitleContentEditing
             AppendSpan(spans, offset, map.NewBoundaries[index + 1] - offset,
                 StyleAt(line.InlineSpans, map.StyleSourceOffset(offset)));
         }
-        var karaoke = RemapKaraoke(line, map);
+        var (karaoke, inactiveKaraoke) = RemapKaraoke(line, map);
         return line with
         {
             Text = map.Text,
             InlineSpans = Reuse(line.InlineSpans, spans.ToImmutable()),
-            Karaoke = karaoke
+            Karaoke = karaoke,
+            InactiveKaraoke = inactiveKaraoke
         };
     }
 
@@ -56,25 +57,45 @@ internal static class SubtitleContentEditing
         return next == line.InlineSpans ? line : line with { InlineSpans = next };
     }
 
-    private static ImmutableArray<KaraokeSegment> RemapKaraoke(SubtitleLine line, SubtitleTextEditMap map)
+    internal static (ImmutableArray<KaraokeSegment> Karaoke, ImmutableArray<KaraokeSegment> InactiveKaraoke) RemapKaraoke(
+        SubtitleLine line, SubtitleTextEditMap map)
     {
-        if (line.Karaoke.IsEmpty || map.Text.Length == 0)
+        if (line.InactiveKaraoke.IsEmpty)
+        {
+            return (RemapKaraoke(line.Karaoke, line.Text.Length, map), line.InactiveKaraoke);
+        }
+        if (line.Karaoke.IsEmpty)
+        {
+            return (line.Karaoke, RemapKaraoke(line.InactiveKaraoke, line.Text.Length, map));
+        }
+        var inactiveIds = line.InactiveKaraoke.Select(clip => clip.Id).ToHashSet();
+        var clips = line.Karaoke.AddRange(line.InactiveKaraoke).OrderBy(clip => clip.Utf16Start).ToImmutableArray();
+        var remapped = RemapKaraoke(clips, line.Text.Length, map, inactiveIds);
+        return (
+            Reuse(line.Karaoke, remapped.Where(clip => !inactiveIds.Contains(clip.Id)).ToImmutableArray()),
+            Reuse(line.InactiveKaraoke, remapped.Where(clip => inactiveIds.Contains(clip.Id)).ToImmutableArray()));
+    }
+
+    private static ImmutableArray<KaraokeSegment> RemapKaraoke(ImmutableArray<KaraokeSegment> clips,
+        int textLength, SubtitleTextEditMap map, HashSet<Guid>? inactiveIds = null)
+    {
+        if (clips.IsEmpty || map.Text.Length == 0)
         {
             return [];
         }
         if (map.OldCount == map.NewCount)
         {
-            return Reuse(line.Karaoke, line.Karaoke.Select(segment => MapSegment(segment, map)).ToImmutableArray());
+            return Reuse(clips, clips.Select(segment => MapSegment(segment, map)).ToImmutableArray());
         }
         var first = -1;
         var last = -1;
-        for (var index = 0; index < line.Karaoke.Length; index++)
+        for (var index = 0; index < clips.Length; index++)
         {
-            var segment = line.Karaoke[index];
+            var segment = clips[index];
             var segmentEnd = segment.Utf16Start + segment.Utf16Length;
             var touches = map.OldStart == map.OldEnd
                 ? segment.Utf16Start <= map.OldStart && (map.OldStart < segmentEnd ||
-                    map.OldStart == line.Text.Length && segmentEnd == map.OldStart)
+                    map.OldStart == textLength && segmentEnd == map.OldStart)
                 : segment.Utf16Start < map.OldEnd && segmentEnd > map.OldStart;
             if (touches)
             {
@@ -84,18 +105,18 @@ internal static class SubtitleContentEditing
         }
         if (first < 0)
         {
-            return Reuse(line.Karaoke, line.Karaoke.Select(segment => MapSegment(segment, map)).ToImmutableArray());
+            return Reuse(clips, clips.Select(segment => MapSegment(segment, map)).ToImmutableArray());
         }
-        for (var index = Math.Max(first, 1); index <= Math.Min(last + 1, line.Karaoke.Length - 1); index++)
+        for (var index = Math.Max(first, 1); index <= Math.Min(last + 1, clips.Length - 1); index++)
         {
-            if (line.Karaoke[index].Start < line.Karaoke[index - 1].End)
+            if (clips[index].Start < clips[index - 1].End)
             {
                 throw new InvalidOperationException("重叠或逆序的旧字时间必须先明确调整，不能自动重分配。");
             }
         }
 
-        var left = line.Karaoke[first];
-        var right = line.Karaoke[last];
+        var left = clips[first];
+        var right = clips[last];
         var regionStart = map.MapBoundary(Math.Min(left.Utf16Start, map.OldStart));
         var regionEnd = Math.Max(right.Utf16Start + right.Utf16Length, map.OldEnd) + map.Delta;
         var firstGlyph = Array.BinarySearch(map.NewBoundaries, regionStart);
@@ -103,29 +124,34 @@ internal static class SubtitleContentEditing
         var result = ImmutableArray.CreateBuilder<KaraokeSegment>();
         for (var index = 0; index < first; index++)
         {
-            result.Add(MapSegment(line.Karaoke[index], map));
+            result.Add(MapSegment(clips[index], map));
         }
         if (glyphCount > 0)
         {
-            var groups = TimingGroups(line.Karaoke, map.OldBoundaries, first, last);
+            var groups = TimingGroups(clips, map.OldBoundaries, first, last);
             var counts = AllocateGlyphs(groups, glyphCount);
             var usedIds = new HashSet<Guid>();
             var glyph = 0;
             for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
             {
                 var group = groups[groupIndex];
-                var groupStart = line.Karaoke[group.First].Start;
-                var duration = line.Karaoke[group.Last].End - groupStart;
+                var groupStart = clips[group.First].Start;
+                var duration = clips[group.Last].End - groupStart;
                 var count = counts[groupIndex];
                 for (var index = 0; index < count; index++, glyph++)
                 {
                     var offset = map.NewBoundaries[firstGlyph + glyph];
                     var source = map.StyleSourceOffset(offset);
-                    var templateIndex = SegmentAt(line.Karaoke, source);
-                    var template = line.Karaoke[Math.Clamp(templateIndex, group.First, group.Last)];
+                    var templateIndex = SegmentAt(clips, source);
+                    var template = clips[Math.Clamp(templateIndex, group.First, group.Last)];
+                    var id = usedIds.Add(template.Id) ? template.Id : Guid.NewGuid();
+                    if (inactiveIds?.Contains(template.Id) == true)
+                    {
+                        inactiveIds.Add(id);
+                    }
                     result.Add(template with
                     {
-                        Id = usedIds.Add(template.Id) ? template.Id : Guid.NewGuid(),
+                        Id = id,
                         Utf16Start = offset,
                         Utf16Length = map.NewBoundaries[firstGlyph + glyph + 1] - offset,
                         Start = groupStart + duration / count * index,
@@ -134,16 +160,16 @@ internal static class SubtitleContentEditing
                 }
             }
         }
-        for (var index = last + 1; index < line.Karaoke.Length; index++)
+        for (var index = last + 1; index < clips.Length; index++)
         {
-            result.Add(MapSegment(line.Karaoke[index], map));
+            result.Add(MapSegment(clips[index], map));
         }
         if (glyphCount == 0 && result.Count > 0)
         {
             var released = MediaTime.Zero;
             for (var index = first; index <= last; index++)
             {
-                released += line.Karaoke[index].End - line.Karaoke[index].Start;
+                released += clips[index].End - clips[index].Start;
             }
             if (first < result.Count)
             {
@@ -154,7 +180,7 @@ internal static class SubtitleContentEditing
                 result[^1] = result[^1] with { End = result[^1].End + released };
             }
         }
-        return Reuse(line.Karaoke, result.ToImmutable());
+        return Reuse(clips, result.ToImmutable());
     }
 
     private static List<(int First, int Last, int Weight)> TimingGroups(ImmutableArray<KaraokeSegment> segments,

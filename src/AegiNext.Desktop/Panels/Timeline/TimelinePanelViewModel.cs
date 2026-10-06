@@ -32,7 +32,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private bool isStepEnabled;
     private bool isSpectrumVisible = true;
     private bool isWaveformVisible = true;
-    private AnimationProperty effectProperty = AnimationProperty.OPACITY;
+    private AnimationTrackTarget effectTarget = new(AnimationProperty.OPACITY);
     private SpectrogramData? spectrogram;
     private string analysisStatus = string.Empty;
 
@@ -281,8 +281,20 @@ internal sealed class TimelinePanelViewModel : ObservableObject
 
     public AnimationProperty EffectProperty
     {
-        get => effectProperty;
-        set => SetProperty(ref effectProperty, value);
+        get => EffectTarget.Property;
+        set => EffectTarget = new(value);
+    }
+
+    public AnimationTrackTarget EffectTarget
+    {
+        get => effectTarget;
+        set
+        {
+            if (SetProperty(ref effectTarget, value))
+            {
+                OnPropertyChanged(nameof(EffectProperty));
+            }
+        }
     }
 
     public SpectrogramData? Spectrogram

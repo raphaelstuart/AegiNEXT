@@ -40,5 +40,6 @@ public enum WorkbenchCommand
     OPEN_SUBTITLE_DETAILS,
     END_TEXT_INPUT,
     CLOSE_PROJECT,
-    OPEN_ABOUT
+    OPEN_ABOUT,
+    VIEW_MASKS
 }

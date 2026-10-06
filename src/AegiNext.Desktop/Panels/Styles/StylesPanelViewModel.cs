@@ -5,6 +5,7 @@ using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Settings;
 using AegiNext.Core.Projects;
+using AegiNext.Desktop.Controls;
 using Avalonia.Media;
 
 namespace AegiNext.Desktop.Panels.Styles;
@@ -16,6 +17,10 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private readonly WorkbenchSession session;
     private string fontFamily = "Noto Sans CJK SC";
     private string fontDraft = "Noto Sans CJK SC";
+    private SubtitleFontVariant? fontVariant;
+    private bool fontSelectionCommitted;
+    private bool synchronizingFont;
+    private bool currentSystemFont = true;
     private decimal? fontSize = 64;
     private decimal? strokeWidth = 2;
     private bool? bold = false;
@@ -52,6 +57,21 @@ internal sealed class StylesPanelViewModel : ObservableObject
         get => fontDraft;
         set => SetProperty(ref fontDraft, value);
     }
+
+    public SubtitleFontVariant? FontVariant
+    {
+        get => fontVariant;
+        set => SetProperty(ref fontVariant, value);
+    }
+
+    public bool FontSelectionCommitted
+    {
+        get => fontSelectionCommitted;
+        private set => SetProperty(ref fontSelectionCommitted, value);
+    }
+
+    internal FontSelection CurrentFont => new(FontFamily, FontVariant, currentSystemFont);
+    internal SubtitleFontSelectionService Fonts => session.Fonts;
 
     public decimal? FontSize
     {
@@ -159,9 +179,55 @@ internal sealed class StylesPanelViewModel : ObservableObject
     /// <summary>确认字体输入并通过统一事务提交。</summary>
     public void CommitFont(string family)
     {
-        FontFamily = family;
-        FontDraft = family;
+        CommitFont(new FontSelection(family));
+    }
+
+    internal void CommitFont(FontSelection selection)
+    {
+        if (session.IsUpdating)
+        {
+            return;
+        }
+        synchronizingFont = true;
+        try
+        {
+            FontFamily = selection.FamilyName;
+            FontVariant = selection.Variant;
+            currentSystemFont = selection.IsSystemFont;
+            FontDraft = selection.DisplayName;
+            if (selection.Variant is { } variant)
+            {
+                Bold = variant.Weight >= 700;
+                Italic = variant.Italic;
+            }
+            FontSelectionCommitted = true;
+            OnPropertyChanged(nameof(CurrentFont));
+        }
+        finally
+        {
+            synchronizingFont = false;
+        }
         session.TryCommitDrafts();
+    }
+
+    internal void LoadFont(SubtitleStyle style)
+    {
+        synchronizingFont = true;
+        try
+        {
+            FontFamily = style.FontFamily;
+            FontVariant = style.FontVariant;
+            currentSystemFont = !style.FontAssetId.HasValue;
+            FontDraft = CurrentFont.DisplayName;
+            Bold = style.Bold;
+            Italic = style.Italic;
+            FontSelectionCommitted = false;
+            OnPropertyChanged(nameof(CurrentFont));
+        }
+        finally
+        {
+            synchronizingFont = false;
+        }
     }
     /// <summary>提交所有面板的有效草稿。</summary>
     public void CommitDrafts() => session.TryCommitDrafts(false);
@@ -178,14 +244,68 @@ internal sealed class StylesPanelViewModel : ObservableObject
     /// <summary>提交用户切换后的粗体状态。</summary>
     public void CommitBold(bool value)
     {
-        Bold = value;
+        if (synchronizingFont || session.IsUpdating)
+        {
+            return;
+        }
+        if (TryReadFontStyle(out var style))
+        {
+            SetFormatting(Fonts.ToggleBold(style, value), style);
+        }
         session.TryCommitDrafts();
     }
     /// <summary>提交用户切换后的斜体状态。</summary>
     public void CommitItalic(bool value)
     {
-        Italic = value;
+        if (synchronizingFont || session.IsUpdating)
+        {
+            return;
+        }
+        if (TryReadFontStyle(out var style))
+        {
+            SetFormatting(Fonts.ToggleItalic(style, value), style);
+        }
         session.TryCommitDrafts();
+    }
+
+    private bool TryReadFontStyle(out SubtitleStyle style)
+    {
+        var source = session.SelectedCue?.Style ?? new();
+        if (!FontSelectionResolver.TryResolve(Fonts.Candidates, CurrentFont, FontDraft, out var selection))
+        {
+            style = source;
+            return false;
+        }
+        var parsesDraft = selection.FamilyName != FontFamily || selection.Variant != FontVariant;
+        var fontChanged = selection.FamilyName != source.FontFamily || selection.Variant != source.FontVariant || FontSelectionCommitted;
+        style = source with
+        {
+            FontFamily = selection.FamilyName, FontVariant = selection.Variant,
+            Bold = parsesDraft && selection.Variant is { } variant ? variant.Weight >= 700 : Bold == true,
+            Italic = parsesDraft && selection.Variant is { } italicVariant ? italicVariant.Italic : Italic == true,
+            FontAssetId = fontChanged ? null : source.FontAssetId
+        };
+        return true;
+    }
+
+    private void SetFormatting(SubtitleInlineStyleOverride edit, SubtitleStyle source)
+    {
+        var style = edit.ApplyTo(source);
+        synchronizingFont = true;
+        try
+        {
+            FontFamily = style.FontFamily;
+            FontVariant = style.FontVariant;
+            currentSystemFont = !style.FontAssetId.HasValue;
+            Bold = style.Bold;
+            Italic = style.Italic;
+            FontDraft = CurrentFont.DisplayName;
+            OnPropertyChanged(nameof(CurrentFont));
+        }
+        finally
+        {
+            synchronizingFont = false;
+        }
     }
     /// <summary>提交用户选择的填充颜色。</summary>
     public void CommitFill(Color value)

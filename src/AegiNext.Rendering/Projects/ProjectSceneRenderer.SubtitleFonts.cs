@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using AegiNext.Core.Projects;
+using AegiNext.Rendering.Fonts;
 using SkiaSharp;
 
 namespace AegiNext.Rendering.Projects;
@@ -39,24 +40,29 @@ public sealed partial class ProjectSceneRenderer
         TextDirection direction, ImmutableArray<SubtitleLayoutRun>.Builder runs)
     {
         var shape = shaper.Shape(text, (float)style.FontSize, direction, "und");
-        runs.Add(new(text, offset, style, shape, direction) { ResolvedFontFamily = shaper.FontFamily });
+        runs.Add(new(text, offset, style, shape, direction)
+        {
+            ResolvedFontFamily = shaper.FontFamily, ResolvedFontVariant = shaper.ResolvedFontVariant
+        });
     }
 
     private TextShaper GetPreferredTextShaper(ProjectDocument document, SubtitleStyle style)
     {
-        var key = (style.FontAssetId, style.FontFamily, style.Bold, style.Italic);
+        var key = (style.FontAssetId, style.FontFamily, style.FontVariant, style.Bold, style.Italic);
         if (textShapers.TryGetValue(key, out var existing))
         {
             return existing;
         }
-        var result = CacheTextShaper(Typeface(document, style), style);
+        var resolved = !style.FontAssetId.HasValue && style.FontVariant.HasValue
+            ? systemFonts.Value.Resolve(style) : new ResolvedSystemFont(Typeface(document, style), null, false);
+        var result = CacheTextShaper(resolved.Typeface, style, resolved.Face);
         textShapers.Add(key, result);
         return result;
     }
 
     private TextShaper GetSystemTextShaper(ProjectDocument document, SubtitleStyle style, string grapheme)
     {
-        var key = (style.FontFamily, style.Bold, style.Italic, grapheme);
+        var key = (style.FontFamily, style.FontVariant, style.Bold, style.Italic, grapheme);
         if (resolvedTextShapers.TryGetValue(key, out var existing))
         {
             return existing;
@@ -67,7 +73,7 @@ public sealed partial class ProjectSceneRenderer
             resolvedTextShapers.Add(key, preferred);
             return preferred;
         }
-        var fontStyle = FontStyle(style);
+        using var fontStyle = FontStyle(style);
         foreach (var rune in grapheme.EnumerateRunes())
         {
             if (TextShaper.IsShapingControl(rune))
@@ -79,7 +85,8 @@ public sealed partial class ProjectSceneRenderer
             {
                 continue;
             }
-            var fallback = CacheTextShaper(candidate, style);
+            var fallback = CacheTextShaper(candidate, style,
+                style.FontVariant.HasValue ? SystemFontResolver.Describe(candidate) : null);
             if (fallback.ContainsGlyphs(grapheme))
             {
                 resolvedTextShapers.Add(key, fallback);
@@ -89,9 +96,9 @@ public sealed partial class ProjectSceneRenderer
         throw new InvalidDataException($"没有覆盖字素“{grapheme}”的系统字体，请导入项目字体资源。");
     }
 
-    private TextShaper CacheTextShaper(SKTypeface typeface, SubtitleStyle style)
+    private TextShaper CacheTextShaper(SKTypeface typeface, SubtitleStyle style, SystemFontFace? face = null)
     {
-        var key = (typeface.Handle, style.Bold, style.Italic);
+        var key = (typeface.Handle, style.FontVariant, face?.NamedInstanceIndex ?? 0, face?.CollectionIndex ?? 0, style.Bold, style.Italic);
         if (actualTextShapers.TryGetValue(key, out var existing))
         {
             if (!existing.UsesTypeface(typeface))
@@ -100,14 +107,13 @@ public sealed partial class ProjectSceneRenderer
             }
             return existing;
         }
-        var result = new TextShaper(typeface, style.Bold, style.Italic);
+        var result = new TextShaper(typeface, style.Bold, style.Italic, face, style.FontVariant.HasValue && !style.FontAssetId.HasValue);
         actualTextShapers.Add(key, result);
         return result;
     }
 
     private static SKFontStyle FontStyle(SubtitleStyle style)
     {
-        return new(style.Bold ? SKFontStyleWeight.Bold : SKFontStyleWeight.Normal, SKFontStyleWidth.Normal,
-            style.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright);
+        return SystemFontResolver.FontStyle(style);
     }
 }

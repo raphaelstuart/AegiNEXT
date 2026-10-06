@@ -5,6 +5,13 @@ namespace AegiNext.Application;
 
 public sealed partial class ProjectEditor
 {
+    /// <summary>在一个可撤销事务内启用或停用高亮，保留停用片段以供恢复。</summary>
+    public void SetSubtitleKaraokeEnabled(Guid subtitleId, bool enabled)
+    {
+        Apply(enabled ? "Enable subtitle highlight" : "Disable subtitle highlight", document =>
+            ProjectEditingOperations.SetSubtitleKaraokeEnabled(document, subtitleId, enabled));
+    }
+
     /// <summary>在一个可撤销事务内替换文字范围并同步局部样式与卡拉 OK。</summary>
     public void ReplaceSubtitleTextRange(Guid subtitleId, int utf16Start, int utf16Length, string replacement)
     {

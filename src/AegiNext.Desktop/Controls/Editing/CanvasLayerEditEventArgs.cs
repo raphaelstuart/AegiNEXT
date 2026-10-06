@@ -6,16 +6,14 @@ namespace AegiNext.Desktop.Controls;
 public sealed class CanvasLayerEditEventArgs : EventArgs
 {
     /// <summary>创建层变换或路径编辑结果。</summary>
-    public CanvasLayerEditEventArgs(Guid layerId, LayerTransform transform, MotionPath? path, LayerMask? mask)
+    public CanvasLayerEditEventArgs(Guid layerId, LayerTransform transform, MotionPath? path)
     {
         LayerId = layerId;
         Transform = transform;
         Path = path;
-        Mask = mask;
     }
 
     public Guid LayerId { get; }
     public LayerTransform Transform { get; }
     public MotionPath? Path { get; }
-    public LayerMask? Mask { get; }
 }

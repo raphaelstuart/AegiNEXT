@@ -153,7 +153,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         try
         {
             timeline.Position = viewModel.Position;
-            timeline.EffectProperty = viewModel.EffectProperty;
+            timeline.EffectTarget = viewModel.EffectTarget;
+            timeline.SelectedMaskNodeId = session.SceneEditing.MaskNodeId;
             timeline.IsSnapEnabled = viewModel.IsSnapEnabled;
             timeline.IsStepEnabled = viewModel.IsStepEnabled;
             timeline.IsSpectrumVisible = viewModel.IsSpectrumVisible;

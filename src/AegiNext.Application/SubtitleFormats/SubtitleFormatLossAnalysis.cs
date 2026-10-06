@@ -18,16 +18,27 @@ public static class SubtitleFormatLossAnalysis
                 diagnostics.Add(new("Srt.Appearance", "SRT 仅保留文字和时间，局部样式、卡拉 OK 与排版将被舍弃。", SubtitleId: line.Id));
             }
         }
+        foreach (var layer in Flatten(document.Layers))
+        {
+            if (layer.Mask is not null)
+            {
+                diagnostics.Add(new("Srt.Mask", "SRT 不支持裁切蒙版，导出时蒙版几何将被舍弃。", SubtitleId: layer.SubtitleId));
+            }
+            if (!layer.Tracks.IsEmpty)
+            {
+                diagnostics.Add(new("Srt.Animation", "SRT 不支持字幕及蒙版动画，导出时动画轨道将被舍弃。", SubtitleId: layer.SubtitleId));
+            }
+        }
         AddCompositionLoss(document, diagnostics);
         return diagnostics.ToImmutable();
     }
 
-    internal static void AddCompositionLoss(ProjectDocument document, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
+    internal static void AddCompositionLoss(ProjectDocument document, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, bool supportsMasks = false)
     {
         foreach (var layer in Flatten(document.Layers))
         {
             if (layer.Kind != LayerKind.SUBTITLE && layer.Kind != LayerKind.GROUP ||
-                !layer.Tracks.IsEmpty || layer.MotionPath is not null || layer.Mask is not null ||
+                layer.Tracks.Any(track => !supportsMasks || !AnimationPropertyMetadata.IsMaskProperty(track.Property)) || layer.MotionPath is not null || !supportsMasks && layer.Mask is not null ||
                 layer.Transform != new LayerTransform() || !layer.Opacity.Equals(1d) || layer.Blend != BlendMode.NORMAL)
             {
                 diagnostics.Add(new("Subtitle.Composition", "字幕格式不能保留项目合成、动画或图形图层。", SubtitleId: layer.SubtitleId));

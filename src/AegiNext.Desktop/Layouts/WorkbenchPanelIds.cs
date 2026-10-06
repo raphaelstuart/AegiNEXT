@@ -9,8 +9,9 @@ internal static class WorkbenchPanelIds
     public const string EFFECTS = "effects";
     public const string EXPORT = "export";
     public const string LOG = "log";
+    public const string MASKS = "masks";
     public const string SUBTITLE_DETAILS = "subtitleDetails";
 
     public static IReadOnlyList<string> All { get; } =
-        [PREVIEW, TIMELINE, SUBTITLES, STYLES, EFFECTS, EXPORT, LOG, SUBTITLE_DETAILS];
+        [PREVIEW, TIMELINE, SUBTITLES, STYLES, EFFECTS, EXPORT, LOG, SUBTITLE_DETAILS, MASKS];
 }

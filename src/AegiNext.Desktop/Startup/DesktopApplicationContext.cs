@@ -1,4 +1,6 @@
 using AegiNext.Application.Presets;
+using AegiNext.Desktop.Editing;
+using AegiNext.Rendering.Fonts;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Workspace;
 using Avalonia.Media;
@@ -10,6 +12,7 @@ namespace AegiNext.Desktop.Startup;
 internal sealed class DesktopApplicationContext : IAsyncDisposable
 {
     private readonly Lock lifetime = new();
+    private readonly Lazy<SubtitleFontSelectionService> fonts = new(() => new(new SystemFontCatalog()));
     private WorkbenchPreferences preferences;
     private Task preferencesCompletion = Task.CompletedTask;
     private Task stylesCompletion = Task.CompletedTask;
@@ -45,6 +48,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     internal SubtitleStylePresetLibrary StyleLibrary { get; }
     internal EffectScriptPresetLibrary EffectScriptLibrary { get; }
     internal RecentProjectService RecentProjects { get; }
+    internal SubtitleFontSelectionService Fonts => fonts.Value;
     internal Task Initialization { get; }
     internal Exception? LastError { get; private set; }
 

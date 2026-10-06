@@ -29,7 +29,9 @@ F16 有限精度可能产生舍入和很小数值的下溢。当前测试对普�
 
 该 API 是文本 run 的塑形与绘制基础。混合双向段落排序、脚本分段、换行、字体 fallback、富文本、竖排及逐字特效布局仍须由后续模块完成。调用方应先完成 run 分段，不能把整段混合双向文字作为一个 run 并假设自动完成布局。[HarfBuzz 能力边界](https://harfbuzz.github.io/what-harfbuzz-doesnt-do.html)、[SKShaper UTF-16 buffer 入口](https://github.com/mono/SkiaSharp/blob/v3.119.4/source/SkiaSharp.HarfBuzz/SkiaSharp.HarfBuzz/SKShaper.cs)
 
-首版新增 `ProjectSceneRenderer` 在上述基础 API 上实现项目场景：换行／基本换行布局、段落级字体回退、Unicode 字素卡拉 OK、关键帧、三次 Bézier 路径、字幕／形状／图片、嵌套组与蒙版、扩展线性混合和 F16 模糊。普通文字塑形仍按单方向段落处理，未完成混合双向排序和逐 run 字体回退。预览和独立 worker 共享这一层，项目先验证并准备求值索引，静态场景与资源在渲染器生命周期内缓存；多线程入口分别拥有渲染器。
+`ProjectSceneRenderer` 在上述基础 API 上实现项目场景：换行／基本换行布局、段落级字体回退、Unicode 字素卡拉 OK、关键帧、三次 Bézier 路径、字幕／形状／图片、嵌套组与动画 Clip 蒙版、扩展线性混合和 F16 模糊。工作台提供 Clip 蒙版编辑，一般形状／图片／组工具仍在字幕编辑器范围之外。普通文字塑形仍按单方向段落处理，未完成混合双向排序和逐 run 字体回退。预览和独立 worker 共享这一层，项目先验证并准备求值索引，资源在渲染器生命周期内缓存；多线程入口分别拥有渲染器。
+
+`SceneEvaluator` 按字幕内容时钟求值矩形边界、蒙版整体变换及稳定 ID 的节点／控制柄轨道，输出 `EvaluatedLayer.Mask`。`ClipMask` 仅作用于所属字幕 Clip。渲染先在 F16 表面完整绘制文字、描边、阴影与卡拉 OK，并应用 Clip 自身模糊，再以工程画面坐标裁切，最后合成到父层。字幕及父层变换不改变蒙版，蒙版自身的固定轴心变换独立生效。自由路径保留轮廓方向并采用 nonzero winding 填充，反相保留工程画面内填充区域之外的部分。父组效果沿用既有顺序，裁切不影响兄弟图层；预览缩放将同一几何投影到渲染表面，视频压制复用同一路径。预览等价判断比较求值后的几何，同一时间编辑及仅蒙版动画都会使旧缓存失效。
 
 `ShapedTextRun.InkBounds` 根据实际 glyph bounds 与塑形位置计算有墨迹范围，不使用字形 advance 或保守的 blob 整体范围定位。`ProjectSceneRenderer.GetLayerGeometry` 返回和实际绘制一致的局部边界、Pivot、基准位置及变换矩阵；字幕位置采用画布归一化 Anchor、字形归一化 Pivot 和像素 Offset，旋转／缩放围绕实际文字轴心执行。描边、阴影和模糊不改变字形 Pivot；纯空格提供标记为 `HasInk=false` 的逻辑编辑范围。
 

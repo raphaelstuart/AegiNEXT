@@ -34,6 +34,7 @@
 
 ## 实施与验收记录
 
+- [Clip 蒙版、动画、ASS 与脚本集成](checkpoints/clip-mask-animation.md)
 - [字幕格式交换与可贴靠统一详细编辑器](checkpoints/subtitle-format-and-details.md)
 
 - [预览解码切换、缺失颜色标签与平台验收](checkpoints/video-decode-modes-and-missing-color.md)

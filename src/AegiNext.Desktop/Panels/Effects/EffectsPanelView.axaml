@@ -2,6 +2,7 @@
              xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
              xmlns:converters="using:Avalonia.Data.Converters"
+             xmlns:workspace="using:AegiNext.Desktop.Workspace"
              xmlns:vm="using:AegiNext.Desktop.Panels.Effects" x:DataType="vm:EffectsPanelViewModel"
              x:Class="AegiNext.Desktop.Panels.Effects.EffectsPanelView" Classes="business-surface">
   <ScrollViewer>
@@ -86,19 +87,51 @@
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="4">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.Interpolation}" />
-          <ComboBox Name="InterpolationCombo" HorizontalAlignment="Stretch"
+          <ComboBox Name="InterpolationCombo" IsEnabled="{Binding CanEditKeyframes}" HorizontalAlignment="Stretch"
                     SelectedIndex="{Binding Interpolation, Mode=TwoWay}" ItemsSource="{Binding Interpolations}" />
         </StackPanel>
       </Grid>
-      <controls:VectorDraftInput Name="KeyframeVectorInput" IsVisible="{Binding IsVectorProperty}"
+      <controls:NumericDraftInput Name="PowerExponentInput" PreserveDoublePrecision="True" IsEnabled="{Binding CanEditKeyframes}" IsVisible="{Binding IsPowerInterpolation}" Minimum="0" Maximum="79228162514264337593543950335"
+          RawText="{Binding PowerExponent.RawText, Mode=TwoWay}" Value="{Binding PowerExponent.Value, Mode=TwoWay}" />
+      <StackPanel Name="OrderedTransformSection" Spacing="4" IsVisible="{Binding IsOrderedTransform}">
+        <TextBlock Text="{Loc Key=Workbench.OrderedTransforms}" />
+        <ComboBox Name="TransformOperationCombo" ItemsSource="{Binding TransformOperations}" SelectedItem="{Binding SelectedOperation, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="4">
+          <StackPanel>
+            <TextBlock Text="{Loc Key=Workbench.Start}" />
+            <controls:NumericDraftInput Name="OperationStartInput" RawText="{Binding OperationStart.RawText, Mode=TwoWay}" Value="{Binding OperationStart.Value, Mode=TwoWay}" Minimum="-1000000000" Maximum="1000000000" />
+          </StackPanel>
+          <StackPanel Grid.Column="1">
+            <TextBlock Text="{Loc Key=Workbench.End}" />
+            <controls:NumericDraftInput Name="OperationEndInput" RawText="{Binding OperationEnd.RawText, Mode=TwoWay}" Value="{Binding OperationEnd.Value, Mode=TwoWay}" Minimum="-1000000000" Maximum="1000000000" />
+          </StackPanel>
+        </Grid>
+        <controls:VectorDraftInput Name="OperationVectorInput" IsVisible="{Binding IsVectorProperty}" XFieldKey="OperationValueXInput" YFieldKey="OperationValueYInput"
+            XText="{Binding OperationValueX.RawText, Mode=TwoWay}" YText="{Binding OperationValueY.RawText, Mode=TwoWay}"
+            X="{Binding OperationValueX.Value, Mode=TwoWay}" Y="{Binding OperationValueY.Value, Mode=TwoWay}" Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" />
+        <controls:NumericDraftInput Name="OperationValueInput" IsVisible="{Binding IsScalarProperty}" RawText="{Binding OperationValueX.RawText, Mode=TwoWay}"
+            Value="{Binding OperationValueX.Value, Mode=TwoWay}" Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="4">
+          <StackPanel>
+            <TextBlock Text="{Loc Key=Workbench.Power}" />
+            <controls:NumericDraftInput Name="OperationAccelerationInput" PreserveDoublePrecision="True" RawText="{Binding OperationAcceleration.RawText, Mode=TwoWay}" Value="{Binding OperationAcceleration.Value, Mode=TwoWay}" Minimum="0" Maximum="79228162514264337593543950335" />
+          </StackPanel>
+          <StackPanel Grid.Column="1">
+            <TextBlock Text="{Loc Key=Workbench.TransformOrder}" />
+            <controls:NumericDraftInput Name="OperationOrderInput" RawText="{Binding OperationOrder.RawText, Mode=TwoWay}" Value="{Binding OperationOrder.Value, Mode=TwoWay}" Minimum="1" Maximum="100000" />
+          </StackPanel>
+        </Grid>
+        <Button Content="{Loc Key=Workbench.DeleteKeyframe}" Command="{Binding DeleteOperationCommand}" />
+      </StackPanel>
+      <controls:VectorDraftInput Name="KeyframeVectorInput" IsEnabled="{Binding CanEditKeyframes}" IsVisible="{Binding IsVectorProperty}"
                                  XFieldKey="KeyframeValueXInput" YFieldKey="KeyframeValueYInput"
                                  XText="{Binding KeyframeValueText, Mode=TwoWay}"
                                  YText="{Binding KeyframeValueYText, Mode=TwoWay}"
                                  X="{Binding KeyframeValue, Mode=TwoWay}" Y="{Binding KeyframeValueY, Mode=TwoWay}"
                                  Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" />
-      <controls:ColorDraftInput Name="KeyframeColorInput" IsVisible="{Binding IsColorProperty}"
+      <controls:ColorDraftInput Name="KeyframeColorInput" IsEnabled="{Binding CanEditKeyframes}" IsVisible="{Binding IsColorProperty}"
                                 Draft="{Binding KeyframeColorDraft}" />
-      <controls:NumericDraftInput Name="KeyframeValueInput" IsVisible="{Binding IsScalarProperty}"
+      <controls:NumericDraftInput Name="KeyframeValueInput" IsEnabled="{Binding CanEditKeyframes}" IsVisible="{Binding IsScalarProperty}"
                                   RawText="{Binding KeyframeValueText, Mode=TwoWay}"
                                   Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}"
                                   Increment="0.1" Value="{Binding KeyframeValue, Mode=TwoWay}" />

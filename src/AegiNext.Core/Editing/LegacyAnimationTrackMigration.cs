@@ -58,6 +58,7 @@ public static class LegacyAnimationTrackMigration
             {
                 CurveStart = curves[0].CurveStart,
                 CurveEnd = curves[0].CurveEnd,
+                Exponent = curves[0].Exponent,
                 ComponentCurves = curves.Skip(1).All(curve => curve == curves[0]) ? [] :
                     curves.Skip(1).Select(curve => curve == curves[0] ? null : curve).ToImmutableArray()
             });
@@ -82,7 +83,8 @@ public static class LegacyAnimationTrackMigration
                 frame.Value.Scalar > AnimationPropertyMetadata.GetMaximum(track.Property) || frame.Time < MediaTime.Zero ||
                 previous.HasValue && frame.Time <= previous.Value || !Enum.IsDefined(frame.Interpolation) ||
                 !double.IsFinite(frame.CurveStart) || !double.IsFinite(frame.CurveEnd) || frame.CurveStart < 0 ||
-                frame.CurveStart >= frame.CurveEnd || frame.CurveEnd > 1 || frame.ComponentCurves.IsDefault || !frame.ComponentCurves.IsEmpty)
+                frame.CurveStart >= frame.CurveEnd || frame.CurveEnd > 1 || !double.IsFinite(frame.Exponent) || frame.Exponent <= 0 ||
+                frame.ComponentCurves.IsDefault || !frame.ComponentCurves.IsEmpty || track.IsOrdered || track.Target.NodeId.HasValue)
             {
                 throw new InvalidDataException("旧动画分量包含无效时间、数值或插值。");
             }
@@ -116,7 +118,10 @@ public static class LegacyAnimationTrackMigration
             var range = first.CurveEnd - first.CurveStart;
             return new(first.Interpolation,
                 Math.Clamp(first.CurveStart + range * Seconds(time - first.Time) / duration, first.CurveStart, first.CurveEnd),
-                Math.Clamp(first.CurveStart + range * Seconds(end - first.Time) / duration, first.CurveStart, first.CurveEnd));
+                Math.Clamp(first.CurveStart + range * Seconds(end - first.Time) / duration, first.CurveStart, first.CurveEnd))
+            {
+                Exponent = first.Exponent
+            };
         }
 
         return new(KeyframeInterpolation.HOLD);

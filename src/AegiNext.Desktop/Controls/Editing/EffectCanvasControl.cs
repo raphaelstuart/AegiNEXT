@@ -11,12 +11,14 @@ using AegiNext.Media.Preview;
 using AegiNext.Rendering.Projects;
 using SkiaSharp;
 using AegiNext.Desktop.Rendering;
+using AegiNext.Desktop.Shortcuts;
+using AegiNext.Desktop.Windowing;
 using PathGeometry = AegiNext.Core.Projects.PathGeometry;
 
 namespace AegiNext.Desktop.Controls;
 
 /// <summary>工程坐标画布；可拖拽层位置、贝塞尔锚点及控制柄，组变换参与坐标换算。</summary>
-public sealed class EffectCanvasControl : Control, IDisposable
+public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkbenchFocusCommandTarget
 {
     private ProjectDocument document = new();
     private readonly VideoFrameSurface sceneSurface = new();
@@ -29,6 +31,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
     private MediaTime? compositeTime;
     private MediaTime? videoTime;
     private ProjectLayer? scheduledDraft;
+    private ClipMask? scheduledMaskDraft;
     private bool scheduledEditingPose;
     private Guid? scheduledEditingLayerId;
     private bool scheduledInteractive;
@@ -79,15 +82,32 @@ public sealed class EffectCanvasControl : Control, IDisposable
             {
                 CancelDrag();
                 editMode = value;
+                Cursor = IsMaskMode ? new(StandardCursorType.Cross) : null;
                 InvalidateVisual();
             }
         }
     }
 
-    internal bool HasActiveDrag => dragging;
+    internal bool HasActiveDrag => dragging || maskDragging || !openContour.IsEmpty || maskDeletionHandle is not null;
     internal long PreviewSequence => previewSequence;
     internal long PresentedPreviewSequence => presentedPreviewSequence;
     internal Task PreviewCompletion => previewScheduler?.Completion ?? previewDrain;
+
+    /// <inheritdoc />
+    public bool CanExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement) =>
+        command == WorkbenchCommand.END_TEXT_INPUT && IsMaskMode;
+
+    /// <inheritdoc />
+    public bool TryExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
+    {
+        if (!CanExecuteFocusCommand(command, focusedElement))
+        {
+            return false;
+        }
+        EditMode = CanvasEditMode.POSITION;
+        MaskEditingExited?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
 
     internal void SetScene(ProjectDocument value, ProjectLayer? layer, MediaTime time, string? assetDirectory = null, bool editorPose = false)
     {
@@ -171,10 +191,27 @@ public sealed class EffectCanvasControl : Control, IDisposable
                 sceneDocument = sceneDocument with { Layers = ExtendEditorEndpoint(sceneDocument.Layers, selected.Id) };
             }
         }
+        if (maskDraft is { } clipDraft && selected is not null)
+        {
+            sceneDocument = ReplaceLayer(sceneDocument, selected with
+            {
+                Mask = clipDraft, Tracks = selected.Tracks.Where(track => !AnimationPropertyMetadata.IsMaskProperty(track.Property)).ToImmutableArray()
+            });
+        }
         PresentScene(sceneDocument);
         if (sceneSurface.Bitmap is { } bitmap)
         {
             context.DrawImage(bitmap, new Rect(bitmap.Size), board);
+        }
+
+        using var overlayClip = context.PushClip(board);
+        if (selected is not null && (IsMaskMode || selected.Mask is not null))
+        {
+            DrawClipMask(context);
+            if (IsMaskMode)
+            {
+                return;
+            }
         }
 
         if (selected is null || !RefreshGeometry(sceneDocument))
@@ -201,15 +238,13 @@ public sealed class EffectCanvasControl : Control, IDisposable
             return;
         }
 
-        var path = EditMode == CanvasEditMode.MASK ? layer.Mask?.Path : layer.MotionPath?.Path;
+        var path = layer.MotionPath?.Path;
         if (path is null)
         {
             return;
         }
 
-        var matrix = EditMode == CanvasEditMode.MASK
-            ? layerMatrix * fit
-            : PathOrigin(layer) * parentMatrix * fit;
+        var matrix = PathOrigin(layer) * parentMatrix * fit;
         var geometry = new StreamGeometry();
         using (var stream = geometry.Open())
         {
@@ -250,6 +285,12 @@ public sealed class EffectCanvasControl : Control, IDisposable
             return;
         }
 
+        if (IsMaskMode)
+        {
+            MaskPointerPressed(e);
+            return;
+        }
+
         var point = e.GetPosition(this);
         if (!RefreshGeometry(EditorDocument()))
         {
@@ -259,15 +300,13 @@ public sealed class EffectCanvasControl : Control, IDisposable
         var fit = Fit();
         if (EditMode != CanvasEditMode.POSITION)
         {
-            var path = EditMode == CanvasEditMode.MASK ? selected.Mask?.Path : selected.MotionPath?.Path;
+            var path = selected.MotionPath?.Path;
             if (path is null)
             {
                 return;
             }
 
-            var matrix = EditMode == CanvasEditMode.MASK
-                ? layerMatrix * fit
-                : PathOrigin(selected) * parentMatrix * fit;
+            var matrix = PathOrigin(selected) * parentMatrix * fit;
             var points = Points(path);
             handle = Array.FindIndex(points, value => DistanceSquared(ToPoint(value) * matrix, point) <= 100);
             if (handle < 0)
@@ -281,7 +320,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
                         var local = point * inverse;
                         var edited = AegiNext.Core.Editing.PathOperations.AppendPoint(path, new(local.X, local.Y));
                         LayerEdited?.Invoke(this, new(selected.Id, selected.Transform,
-                            selected.MotionPath! with { Path = edited }, selected.Mask));
+                            selected.MotionPath! with { Path = edited }));
                         e.Handled = true;
                     }
                 }
@@ -311,13 +350,18 @@ public sealed class EffectCanvasControl : Control, IDisposable
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+        if (IsMaskMode)
+        {
+            MaskPointerMoved(e);
+            return;
+        }
         if (!dragging || selected is null)
         {
             return;
         }
 
         var fit = Fit();
-        var matrix = EditMode == CanvasEditMode.MASK ? layerMatrix * fit : parentMatrix * fit;
+        var matrix = parentMatrix * fit;
         if (!matrix.TryInvert(out var inverse))
         {
             return;
@@ -338,11 +382,9 @@ public sealed class EffectCanvasControl : Control, IDisposable
         }
         else
         {
-            var source = EditMode == CanvasEditMode.MASK ? selected.Mask!.Path : selected.MotionPath!.Path;
+            var source = selected.MotionPath!.Path;
             var edited = MoveHandle(source, handle, delta);
-            draft = EditMode == CanvasEditMode.MASK
-                ? selected with { Mask = selected.Mask! with { Path = edited } }
-                : selected with { MotionPath = selected.MotionPath! with { Path = edited } };
+            draft = selected with { MotionPath = selected.MotionPath! with { Path = edited } };
         }
 
         sceneRevision++;
@@ -353,12 +395,17 @@ public sealed class EffectCanvasControl : Control, IDisposable
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (IsMaskMode)
+        {
+            MaskPointerReleased(e);
+            return;
+        }
         var result = draft;
         var commit = dragging;
         CancelDrag(false);
         if (commit && result is not null)
         {
-            LayerEdited?.Invoke(this, new(result.Id, result.Transform, result.MotionPath, result.Mask));
+            LayerEdited?.Invoke(this, new(result.Id, result.Transform, result.MotionPath));
         }
 
         InvalidateVisual();
@@ -368,7 +415,10 @@ public sealed class EffectCanvasControl : Control, IDisposable
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
-        CancelDrag();
+        if (!ignoreMaskCaptureLoss)
+        {
+            CancelDrag();
+        }
     }
 
     internal bool BeginDrag(Point point, int handleIndex = -1)
@@ -386,7 +436,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
 
         if (EditMode != CanvasEditMode.POSITION)
         {
-            var path = EditMode == CanvasEditMode.MASK ? selected.Mask?.Path : selected.MotionPath?.Path;
+            var path = selected.MotionPath?.Path;
             if (path is null || handleIndex < 0 || handleIndex > (long)path.Segments.Length * 3)
             {
                 return false;
@@ -410,6 +460,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
 
     private void CancelDrag(bool notifyCancellation = true)
     {
+        CancelMaskGesture();
         var cancelled = dragging;
         if (draft is not null)
         {
@@ -688,7 +739,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
 
     private void PresentScene(ProjectDocument sceneDocument)
     {
-        if (draft is null && !editingPose && !interactivePreview && !compositeInteractive && ReferenceEquals(compositeDocument, sceneDocument) && compositeTime == position && compositeFrame is { } presentedFrame)
+        if (draft is null && maskDraft is null && !editingPose && !interactivePreview && !compositeInteractive && ReferenceEquals(compositeDocument, sceneDocument) && compositeTime == position && compositeFrame is { } presentedFrame)
         {
             if (!ReferenceEquals(renderedVideo, presentedFrame))
             {
@@ -699,13 +750,13 @@ public sealed class EffectCanvasControl : Control, IDisposable
             }
             return;
         }
-        var interactive = interactivePreview || dragging;
+        var interactive = interactivePreview || dragging || maskDragging;
         var maximumWidth = interactive ? Math.Min(960, maximumPreviewSize.Width) : maximumPreviewSize.Width;
         var maximumHeight = interactive ? Math.Min(540, maximumPreviewSize.Height) : maximumPreviewSize.Height;
         var scale = Math.Min(1, Math.Min((double)maximumWidth / document.Width, (double)maximumHeight / document.Height));
         var size = new PixelSize(Math.Max(1, (int)Math.Round(document.Width * scale)), Math.Max(1, (int)Math.Round(document.Height * scale)));
         var editingLayerId = editingPose ? selected?.Id : null;
-        if (ReferenceEquals(renderedDocument, document) && ReferenceEquals(scheduledDraft, draft) && renderedPosition == position &&
+        if (ReferenceEquals(renderedDocument, document) && ReferenceEquals(scheduledDraft, draft) && ReferenceEquals(scheduledMaskDraft, maskDraft) && renderedPosition == position &&
             ReferenceEquals(renderedVideo, video) && renderedSize == size && scheduledEditingPose == editingPose &&
             scheduledEditingLayerId == editingLayerId && scheduledInteractive == interactive)
         {
@@ -713,6 +764,7 @@ public sealed class EffectCanvasControl : Control, IDisposable
         }
         renderedDocument = document;
         scheduledDraft = draft;
+        scheduledMaskDraft = maskDraft;
         renderedPosition = position;
         renderedVideo = video;
         renderedSize = size;

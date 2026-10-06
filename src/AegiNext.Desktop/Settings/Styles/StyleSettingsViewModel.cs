@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
+using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Editing;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -41,6 +42,13 @@ public sealed class StyleSettingsViewModel : ObservableObject
     private string? invalidFieldKey;
     private Func<SubtitleStylePreset, SubtitlePositionMeasurement>? measurePosition;
     private string? positionMeasurementError;
+    internal SubtitleFontSelectionService Fonts { get; private set; } = new(Array.Empty<AegiNext.Rendering.Fonts.SystemFontFace>());
+
+    internal void SetFonts(SubtitleFontSelectionService fonts)
+    {
+        Fonts = fonts;
+        OnPropertyChanged(nameof(Fonts));
+    }
 
     /// <summary>创建样式命令；工程和存储操作交由会话处理。</summary>
     public StyleSettingsViewModel()
@@ -257,7 +265,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             if (!EqualityComparer<bool>.Default.Equals(Bold, value))
             {
-                ChangeStyle(style => style with { Bold = value });
+                ChangeStyle(style => (draft?.Preset.Font is null ? Fonts.ToggleBold(style, value) :
+                    new SubtitleInlineStyleOverride { Bold = value }).ApplyTo(style));
+                NotifyFontChanged();
                 OnPropertyChanged();
             }
         }
@@ -270,7 +280,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             if (!EqualityComparer<bool>.Default.Equals(Italic, value))
             {
-                ChangeStyle(style => style with { Italic = value });
+                ChangeStyle(style => (draft?.Preset.Font is null ? Fonts.ToggleItalic(style, value) :
+                    new SubtitleInlineStyleOverride { Italic = value }).ApplyTo(style));
+                NotifyFontChanged();
                 OnPropertyChanged();
             }
         }
@@ -357,7 +369,31 @@ public sealed class StyleSettingsViewModel : ObservableObject
     /// <summary>提交局部字体控件已确认的字体名。</summary>
     public void CommitFont(string familyName)
     {
-        ChangeStyle(style => style with { FontFamily = familyName });
+        CommitFont(new FontSelection(familyName));
+    }
+
+    internal void CommitFont(FontSelection selection)
+    {
+        ChangeStyle(style => SubtitleFontSelectionService.CreateOverride(selection).ApplyTo(style), true);
+        NotifyFontChanged();
+    }
+
+    private void NotifyFontChanged()
+    {
+        var wasLoading = loading;
+        loading = true;
+        try
+        {
+            OnPropertyChanged(nameof(Bold));
+            OnPropertyChanged(nameof(Italic));
+            OnPropertyChanged(nameof(Draft));
+            draftVersion++;
+            OnPropertyChanged(nameof(DraftVersion));
+        }
+        finally
+        {
+            loading = wasLoading;
+        }
     }
 
     /// <summary>显示字体控件拒绝空白输入的结果。</summary>
@@ -419,11 +455,11 @@ public sealed class StyleSettingsViewModel : ObservableObject
         loading = false;
     }
 
-    private void ChangeStyle(Func<SubtitleStyle, SubtitleStyle> change)
+    private void ChangeStyle(Func<SubtitleStyle, SubtitleStyle> change, bool clearFont = false)
     {
         if (!loading && draft is not null)
         {
-            draft.UpdateStyle(change(draft.Preset.Style));
+            draft.UpdateStyle(change(draft.Preset.Style), clearFont);
             RefreshPositionMeasurement(!Position.IsExplicit);
             OnPropertyChanged(nameof(FontSource));
         }

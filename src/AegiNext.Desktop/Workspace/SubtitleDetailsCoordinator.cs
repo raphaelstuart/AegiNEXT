@@ -20,6 +20,8 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
     private string? validationError;
     private string source = string.Empty;
     private bool sourceDirty;
+    private AssTextEditResult? sourceEdit;
+    private ProjectLayer? SourceLayer => WorkbenchSession.Flatten(session.Editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == original?.Id);
     private ImmutableArray<AssSourceMapEntry> sourceMap = [];
     private int styleSelectionStart;
     private int styleSelectionLength;
@@ -42,6 +44,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
     internal SubtitleDetailsCoordinator(WorkbenchSession session)
     {
         this.session = session;
+        StyleDraft = new(session.Fonts);
         session.SelectionChanged += OnSelectionChanged;
         StyleDraft.Changed += OnStyleDraftChanged;
         HighlightDraft.Changed += OnStyleDraftChanged;
@@ -49,7 +52,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
 
     internal event EventHandler? Changed;
     internal SubtitleLine? Line => draft is null ? null : PreviewDocument.Subtitles.FirstOrDefault(line => line.Id == draft.Id);
-    internal SubtitleDetailsStyleDraft StyleDraft { get; } = new();
+    internal SubtitleDetailsStyleDraft StyleDraft { get; }
     internal SubtitleKaraokeStyleDraft HighlightDraft { get; } = new();
     internal string Source => source;
     internal ImmutableArray<AssSourceMapEntry> SourceMap => sourceMap;
@@ -89,7 +92,15 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             return preview!;
         }
-        var candidate = OverlayContent(document);
+        ProjectDocument candidate;
+        try
+        {
+            candidate = OverlayContent(document);
+        }
+        catch (Exception error) when (error is InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            candidate = ReferenceEquals(document, previewSource) ? preview ?? document : document;
+        }
         if (StyleDraft.IsDirty && styleSelectionLength > 0)
         {
             try
@@ -120,11 +131,15 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
 
     private ProjectDocument OverlayContent(ProjectDocument document)
     {
-        if (draft is null || draft == original)
+        if (draft is null)
         {
             return document;
         }
-        return document with { Subtitles = document.Subtitles.Select(line => line.Id == draft.Id ? draft : line).ToImmutableArray() };
+        if (sourceDirty && sourceEdit is { } edited)
+        {
+            return ProjectEditingOperations.ApplyAssTextEdit(document, draft.Id, edited with { Line = draft });
+        }
+        return draft == original ? document : document with { Subtitles = document.Subtitles.Select(line => line.Id == draft.Id ? draft : line).ToImmutableArray() };
     }
     internal MediaTime ContentOrigin => draft is null ? MediaTime.Zero : draft.Start -
         (WorkbenchSession.Flatten(session.Editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == draft.Id)?.AnimationOffset ?? MediaTime.Zero);
@@ -173,6 +188,45 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             return;
         }
         session.Editor.ApplySubtitleInlineStyle(draft!.Id, start, length, style);
+    }
+
+    internal void ApplySelectionFormatting(int start, int length, Func<SubtitleStyle, SubtitleInlineStyleOverride> createEdit)
+    {
+        if (length == 0 || draft is null || committing)
+        {
+            return;
+        }
+        var id = draft.Id;
+        var document = session.Editor.Snapshot;
+        if (!TryPrepare(document, out var prepared))
+        {
+            return;
+        }
+        var line = prepared.Subtitles.Single(line => line.Id == id);
+        var inline = line.InlineSpans.FirstOrDefault(span => span.Utf16Start <= start && span.Utf16Start + span.Utf16Length > start);
+        var style = inline?.Style.ApplyTo(line.Style) ?? line.Style;
+        prepared = ProjectEditingOperations.ApplySubtitleInlineStyle(prepared, id, start, length, createEdit(style));
+        ProjectValidator.Validate(prepared);
+        committing = true;
+        try
+        {
+            if (prepared != document)
+            {
+                session.Editor.Apply("Format subtitle selection", _ => prepared);
+            }
+            original = draft = session.Editor.Snapshot.Subtitles.Single(line => line.Id == id);
+            sourceDirty = durationDirty = leadingDelayDirty = false;
+            sourceEdit = null;
+            LoadSelectionStyle();
+            LoadHighlightStyle();
+            RefreshSource();
+            RefreshDuration();
+        }
+        finally
+        {
+            committing = false;
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     internal void ClearSelectionStyle(int start, int length)
@@ -313,13 +367,14 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             if (field == "Code" && sourceDirty)
             {
                 var parsed = AssTextProjection.Apply(original, source, ContentOrigin,
-                    session.Editor.Snapshot.Width, session.Editor.Snapshot.Height);
+                    session.Editor.Snapshot.Width, session.Editor.Snapshot.Height, layer: SourceLayer);
                 if (!parsed.Diagnostics.IsEmpty)
                 {
                     throw new InvalidDataException(string.Join(Environment.NewLine,
                         parsed.Diagnostics.Select(item => item.Code + ": " + item.Message)));
                 }
                 candidate = parsed.Line;
+                sourceEdit = parsed;
             }
             else if (field == "Duration" && durationDirty && durationClipId is not null)
             {
@@ -338,6 +393,13 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
                 Subtitles = session.Editor.Snapshot.Subtitles.Select(line => line.Id == candidate.Id ? candidate : line).ToImmutableArray()
             });
         }
+        catch (InvalidOperationException error)
+        {
+            InvalidFieldKey = field;
+            Error = error.Message;
+            Changed?.Invoke(this, EventArgs.Empty);
+            return false;
+        }
         catch (Exception error) when (error is InvalidDataException or ArgumentException or FormatException or OverflowException)
         {
             if (field == "Duration")
@@ -349,6 +411,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             {
                 draft = original;
                 sourceDirty = false;
+            sourceEdit = null;
                 RefreshSource();
             }
             Error = null;
@@ -362,10 +425,12 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             {
                 throw new InvalidOperationException(Localization.Get("Workbench.SubtitleDraftConflict"));
             }
-            var prepared = field == "Duration" || candidate == original ? document : document with
-            {
-                Subtitles = document.Subtitles.Select(line => line.Id == candidate.Id ? candidate : line).ToImmutableArray()
-            };
+            var prepared = field == "Code" && sourceEdit is { } assEdit
+                ? ProjectEditingOperations.ApplyAssTextEdit(document, candidate.Id, assEdit with { Line = candidate })
+                : field == "Duration" || candidate == original ? document : document with
+                {
+                    Subtitles = document.Subtitles.Select(line => line.Id == candidate.Id ? candidate : line).ToImmutableArray()
+                };
             if (duration is { } length && durationClipId is { } id)
             {
                 prepared = ProjectEditingOperations.SetKaraokeClipDuration(prepared, candidate.Id, id, length);
@@ -395,6 +460,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
                 else
                 {
                     sourceDirty = false;
+                    sourceEdit = null;
                 }
                 Error = null;
                 RefreshSource();
@@ -426,7 +492,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         }
         try
         {
-            var result = AssTextProjection.Apply(original!, value, ContentOrigin, session.Editor.Snapshot.Width, session.Editor.Snapshot.Height);
+            var result = AssTextProjection.Apply(original!, value, ContentOrigin, session.Editor.Snapshot.Width, session.Editor.Snapshot.Height, layer: SourceLayer);
             if (!result.Diagnostics.IsEmpty)
             {
                 InvalidFieldKey = "Code";
@@ -435,6 +501,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             else
             {
                 draft = result.Line;
+                sourceEdit = result;
                 sourceMap = result.SourceMap;
                 Error = null;
             }
@@ -527,39 +594,13 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         });
     }
 
-    private void CreateCharacterClips()
-    {
-        if (!TryCommit() || draft is null || draft.Text.Length == 0 || !draft.Karaoke.IsEmpty)
-        {
-            return;
-        }
-        var boundaries = StringInfo.ParseCombiningCharacters(draft.Text).Append(draft.Text.Length).ToArray();
-        var count = boundaries.Length - 1;
-        var clips = ImmutableArray.CreateBuilder<KaraokeSegment>(count);
-        var duration = draft.End - draft.Start;
-        for (var index = 0; index < count; index++)
-        {
-            clips.Add(new(boundaries[index], boundaries[index + 1] - boundaries[index],
-                draft.Start - ContentOrigin + duration * index / count,
-                draft.Start - ContentOrigin + duration * (index + 1) / count, new(1, 0.6, 0)));
-        }
-        session.Editor.UpdateSubtitle(draft.Id, line => line with { Karaoke = clips.MoveToImmutable() });
-    }
-
     internal void SetKaraokeEnabled(bool enabled)
     {
         if (!TryCommit() || draft is null || enabled == IsKaraokeEnabled)
         {
             return;
         }
-        if (enabled)
-        {
-            CreateCharacterClips();
-        }
-        else
-        {
-            session.Editor.UpdateSubtitle(draft.Id, line => line with { Karaoke = [] });
-        }
+        session.Editor.SetSubtitleKaraokeEnabled(draft.Id, enabled);
     }
 
     internal void ApplyHighlightStyle(KaraokeHighlightStyle? style)
@@ -659,12 +700,13 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             if (sourceDirty)
             {
                 validatingField = "Code";
-                var parsed = AssTextProjection.Apply(original, source, ContentOrigin, document.Width, document.Height);
+                var parsed = AssTextProjection.Apply(original, source, ContentOrigin, document.Width, document.Height, layer: SourceLayer);
                 if (!parsed.Diagnostics.IsEmpty)
                 {
                     throw new InvalidDataException(string.Join(Environment.NewLine, parsed.Diagnostics.Select(item => item.Code + ": " + item.Message)));
                 }
                 draft = parsed.Line;
+                sourceEdit = parsed;
             }
             if (Error is not null)
             {
@@ -750,6 +792,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             }
             original = draft = session.Editor.Snapshot.Subtitles.Single(line => line.Id == draft.Id);
             sourceDirty = durationDirty = leadingDelayDirty = false;
+            sourceEdit = null;
             LoadSelectionStyle();
             LoadHighlightStyle();
             RefreshSource();
@@ -787,6 +830,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             draft = original;
             sourceDirty = false;
+            sourceEdit = null;
             LoadSelectionStyle();
             LoadHighlightStyle();
             if (field == "All")
@@ -841,6 +885,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             draft = edit();
             sourceDirty = false;
+            sourceEdit = null;
             Error = null;
             RefreshSource();
         }
@@ -858,7 +903,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             try
             {
-                var projection = draft is null ? null : AssTextProjection.Create(draft, ContentOrigin, session.Editor.Snapshot.Width, session.Editor.Snapshot.Height);
+                var projection = draft is null ? null : AssTextProjection.Create(draft, ContentOrigin, session.Editor.Snapshot.Width, session.Editor.Snapshot.Height, layer: SourceLayer);
                 source = projection?.Source ?? string.Empty;
                 sourceMap = projection?.SourceMap ?? [];
                 SourceDiagnostic = null;

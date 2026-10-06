@@ -23,5 +23,13 @@ public enum AnimationProperty
     SCALE_X = 17,
     SCALE_Y = 18,
     FILL = 19,
-    STROKE = 20
+    STROKE = 20,
+    MASK_RECTANGLE_TOP_LEFT = 21,
+    MASK_RECTANGLE_BOTTOM_RIGHT = 22,
+    MASK_POSITION = 23,
+    MASK_SCALE = 24,
+    MASK_ROTATION = 25,
+    MASK_NODE_POSITION = 26,
+    MASK_NODE_IN_HANDLE = 27,
+    MASK_NODE_OUT_HANDLE = 28
 }

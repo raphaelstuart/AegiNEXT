@@ -245,7 +245,8 @@ public sealed partial class ProjectSceneRenderer
                 }
                 geometries.Add(new(run.Utf16Offset, run.Text.Length, index, run.Style, position, bounds)
                 {
-                    ResolvedFontFamily = run.ResolvedFontFamily
+                    ResolvedFontFamily = run.ResolvedFontFamily,
+                    ResolvedFontVariant = run.ResolvedFontVariant
                 });
                 graphemes.AddRange(runGraphemes);
                 if (!bounds.IsEmpty)

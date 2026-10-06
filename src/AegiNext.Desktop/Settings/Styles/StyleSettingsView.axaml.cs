@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Editing;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -18,7 +19,7 @@ public sealed partial class StyleSettingsView : UserControl
         AvaloniaXamlLoader.Load(this);
         DataContextChanged += (_, _) => ChangeModel();
         this.FindControl<FontFamilyPicker>("FontInput")!.FamilyCommitted +=
-            (_, value) => model?.CommitFont(value.FamilyName);
+            (_, value) => model?.CommitFont(value.Selection);
     }
 
     private void ChangeModel()
@@ -39,7 +40,7 @@ public sealed partial class StyleSettingsView : UserControl
 
     private void ModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(StyleSettingsViewModel.Styles))
+        if (e.PropertyName is nameof(StyleSettingsViewModel.Styles) or nameof(StyleSettingsViewModel.Fonts))
         {
             RefreshFontFamilies();
         }
@@ -56,14 +57,16 @@ public sealed partial class StyleSettingsView : UserControl
 
     private void RefreshFontFamilies()
     {
-        this.FindControl<FontFamilyPicker>("FontInput")!.RefreshFontFamilies(
-            model!.Styles.Select(value => value.Style.FontFamily));
+        this.FindControl<FontFamilyPicker>("FontInput")!.RefreshFontCandidates(
+            model!.Fonts.Candidates, model.Styles.Select(value => value.Style.FontFamily));
     }
 
     private void LoadFont()
     {
-        this.FindControl<FontFamilyPicker>("FontInput")!.SetCurrentFamily(
-            model!.Draft?.Style.FontFamily ?? "sans-serif");
+        var preset = model!.Draft;
+        var style = preset?.Style ?? new();
+        this.FindControl<FontFamilyPicker>("FontInput")!.SetCurrentFont(
+            new(style.FontFamily, style.FontVariant, preset?.Font is null && !style.FontAssetId.HasValue));
     }
 
     private void FocusName(object? sender, RoutedEventArgs e)

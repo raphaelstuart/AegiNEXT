@@ -108,7 +108,9 @@ public static class SubtitleStylePresetStore
             {
                 foreach (var property in info.Properties)
                 {
-                    property.IsRequired = true;
+                    property.IsRequired = !(info.Type == typeof(SubtitleStyle) && property.Name == "fontVariant") &&
+                        !(info.Type == typeof(SubtitleFontVariant) && property.Name == "postScriptName") &&
+                        !(info.Type == typeof(SubtitleInlineStyleOverride) && property.Name is "fontVariant" or "clearFontVariant");
                 }
             }
         });

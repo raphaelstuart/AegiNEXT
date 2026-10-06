@@ -6,6 +6,7 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class WorkbenchSession
 {
+    internal SubtitleFontSelectionService Fonts => applicationContext.Fonts;
     private readonly Rendering.LayerPlacementResolver layerPlacement = new();
     private Exception? placementDiagnostic;
 
@@ -13,7 +14,7 @@ internal sealed partial class WorkbenchSession
     {
         var document = Editor.Snapshot;
         var text = SelectedCue?.Text ?? Localization.Get("Workbench.SubtitlePreviewText");
-        return Rendering.SubtitleStylePositionMeasurer.Measure(preset, document.Width, document.Height, text);
+        return Rendering.SubtitleStylePositionMeasurer.Measure(preset, document.Width, document.Height, text, Fonts.Catalog);
     }
     internal void NotifyStyleLibraryChanged() => StyleLibraryChanged?.Invoke(this, EventArgs.Empty);
     internal Task ApplySelectedStyleAsync()

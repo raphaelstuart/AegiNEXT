@@ -15,26 +15,28 @@ namespace AegiNext.Desktop.Controls;
 /// <summary>共享的可搜索字体下拉框；搜索草稿与已确认字体分离。</summary>
 public sealed class FontFamilyPicker : AutoCompleteBox
 {
-    private readonly string[] systemFamilies;
-    private string committedFamily = string.Empty;
+    private FontPickerCandidate[] systemCandidates = [];
+    private string[] additionalFamilies = [];
+    private FontSelection committedFont = new(string.Empty);
     private bool showAllFamilies;
     private bool synchronizing;
     private ISelectionAdapter? hookedAdapter;
     private TextBox? input;
 
-    /// <summary>读取当前平台实际字体；沿用 Avalonia 输入、下拉导航及无障碍模板。</summary>
+    /// <summary>沿用 Avalonia 输入、下拉导航及无障碍模板；目录由宿主提供。</summary>
     public FontFamilyPicker()
     {
-        systemFamilies = FontManager.Current.SystemFonts.Select(value => value.Name)
-            .Append(FontManager.Current.DefaultFontFamily.Name)
-            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.CurrentCultureIgnoreCase).ToArray();
         MinimumPrefixLength = 0;
         MinimumPopulateDelay = TimeSpan.Zero;
         IsTextCompletionEnabled = false;
         MaxDropDownHeight = 280;
         MaxLength = 512;
-        ItemFilter = (query, item) => item is string family &&
-            (showAllFamilies || family.Contains(query ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+        ItemFilter = (query, item) => showAllFamilies || (item switch
+        {
+            FontPickerCandidate candidate => FontSelectionResolver.MatchesQuery(candidate, query ?? string.Empty),
+            string family => family.Contains(query ?? string.Empty, StringComparison.OrdinalIgnoreCase),
+            _ => false
+        });
         var toggle = new Button
         {
             Name = "FontDropDownButton", Classes = { "icon-button" },
@@ -61,6 +63,8 @@ public sealed class FontFamilyPicker : AutoCompleteBox
 
     public event EventHandler<FontFamilyCommittedEventArgs>? FamilyCommitted;
     public IReadOnlyList<string> FontFamilies { get; private set; } = [];
+    public IReadOnlyList<FontPickerCandidate> FontCandidates { get; private set; } = [];
+    public FontSelection CurrentFont => committedFont;
     public bool CommitOnLostFocus { get; set; } = true;
 
     /// <summary>宿主接管输入完成命令时，可关闭未展开列表的本地 Esc 恢复。</summary>
@@ -72,15 +76,49 @@ public sealed class FontFamilyPicker : AutoCompleteBox
     /// <summary>追加工程或预设字体，保留尚未提交的输入文本。</summary>
     public void RefreshFontFamilies(IEnumerable<string>? additionalFamilies = null)
     {
+        this.additionalFamilies = (additionalFamilies ?? []).ToArray();
+        RefreshCandidates();
+    }
+
+    /// <summary>替换宿主提供的系统字体目录，并保留搜索草稿。</summary>
+    public void RefreshFontCandidates(IEnumerable<FontPickerCandidate> candidates, IEnumerable<string>? additionalFamilies = null)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        systemCandidates = FontSelectionResolver.NormalizeCandidates(candidates).ToArray();
+        if (additionalFamilies is not null)
+        {
+            this.additionalFamilies = additionalFamilies.ToArray();
+        }
+        RefreshCandidates();
+    }
+
+    private void RefreshCandidates()
+    {
         var text = input?.Text ?? Text ?? string.Empty;
-        var families = systemFamilies.Concat(additionalFamilies ?? []).Append(committedFamily)
+        var systemFamilies = systemCandidates.Select(value => value.Selection.FamilyName)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var families = systemFamilies.Concat(additionalFamilies).Append(committedFont.FamilyName)
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.CurrentCultureIgnoreCase).ToArray();
+        var familyCandidates = families.Select(family => new FontPickerCandidate(
+            new(family, isSystemFont: systemFamilies.Contains(family, StringComparer.OrdinalIgnoreCase))));
+        var candidates = systemCandidates.Concat(familyCandidates);
+        if (!string.IsNullOrWhiteSpace(committedFont.FamilyName))
+        {
+            candidates = candidates.Append(new(committedFont));
+        }
+        var values = candidates.DistinctBy(value => (value.Selection.FamilyName.ToUpperInvariant(), value.Selection.Variant))
+            .OrderBy(value => value.Selection.FamilyName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(value => value.Selection.Variant?.Weight ?? 0)
+            .ThenBy(value => value.Selection.Variant?.Width ?? 0)
+            .ThenBy(value => value.Selection.Variant?.Italic ?? false)
+            .ThenBy(value => value.DisplayName, StringComparer.CurrentCultureIgnoreCase).ToArray();
         synchronizing = true;
         try
         {
             FontFamilies = Array.AsReadOnly(families);
-            ItemsSource = families;
+            FontCandidates = Array.AsReadOnly(values);
+            ItemsSource = values;
             SetCurrentValue(TextProperty, text);
         }
         finally
@@ -92,23 +130,32 @@ public sealed class FontFamilyPicker : AutoCompleteBox
     /// <summary>回填模型当前字体，不产生用户提交事件。</summary>
     public void SetCurrentFamily(string familyName)
     {
-        ArgumentNullException.ThrowIfNull(familyName);
+        SetCurrentFont(new(familyName));
+    }
+
+    /// <summary>回填完整字体身份，不产生提交或重新解释不可用的已存变体。</summary>
+    public void SetCurrentFont(FontSelection selection)
+    {
         synchronizing = true;
         try
         {
-            committedFamily = familyName;
-            SetCurrentValue(TextProperty, familyName);
+            committedFont = selection;
+            SetCurrentValue(TextProperty, selection.DisplayName);
         }
         finally
         {
             synchronizing = false;
         }
 
-        if (!FontFamilies.Contains(familyName, StringComparer.OrdinalIgnoreCase))
+        if (!FontCandidates.Any(value => value.Selection.FamilyName == selection.FamilyName && value.Selection.Variant == selection.Variant))
         {
-            RefreshFontFamilies(FontFamilies.Append(familyName));
+            RefreshCandidates();
         }
     }
+
+    /// <summary>供宿主解析草稿，查询与提交共用候选规则。</summary>
+    public bool TryResolveSelection(string text, out FontSelection selection) =>
+        FontSelectionResolver.TryResolve(FontCandidates, committedFont, text, out selection);
 
     /// <summary>展开全部候选字体，当前输入与已提交字体均保持不变。</summary>
     public void OpenFontList()
@@ -133,19 +180,11 @@ public sealed class FontFamilyPicker : AutoCompleteBox
             return true;
         }
 
-        var family = (input?.Text ?? Text ?? string.Empty).Trim();
-        if (family.Length == 0 || family.Length > 512 || family.Any(char.IsControl))
+        if (!TryResolveSelection(input?.Text ?? Text ?? string.Empty, out var selection))
         {
             return false;
         }
-
-        SetCurrentValue(TextProperty, family);
-        if (!string.Equals(committedFamily, family, StringComparison.Ordinal))
-        {
-            committedFamily = family;
-            FamilyCommitted?.Invoke(this, new(family));
-        }
-
+        CommitSelection(selection);
         return true;
     }
 
@@ -159,6 +198,10 @@ public sealed class FontFamilyPicker : AutoCompleteBox
 
         base.OnApplyTemplate(e);
         input = e.NameScope.Find<TextBox>("PART_TextBox");
+        if (e.NameScope.Find<Popup>("PART_Popup") is { } popup)
+        {
+            popup.OverlayDismissEventPassThrough = true;
+        }
         hookedAdapter = SelectionAdapter;
         if (hookedAdapter is not null)
         {
@@ -191,7 +234,7 @@ public sealed class FontFamilyPicker : AutoCompleteBox
                 return;
             }
             base.OnKeyDown(e);
-            SetCurrentFamily(committedFamily);
+            SetCurrentFont(committedFont);
             SetCurrentValue(IsDropDownOpenProperty, false);
             e.Handled = true;
             return;
@@ -218,6 +261,23 @@ public sealed class FontFamilyPicker : AutoCompleteBox
 
     private void OnSelectionCommitted(object? sender, RoutedEventArgs e)
     {
-        CommitText();
+        if (SelectedItem is FontPickerCandidate candidate)
+        {
+            CommitSelection(candidate.Selection);
+        }
+        else
+        {
+            CommitText();
+        }
+    }
+
+    private void CommitSelection(FontSelection selection)
+    {
+        SetCurrentValue(TextProperty, selection.DisplayName);
+        if (committedFont != selection)
+        {
+            committedFont = selection;
+            FamilyCommitted?.Invoke(this, new(selection));
+        }
     }
 }

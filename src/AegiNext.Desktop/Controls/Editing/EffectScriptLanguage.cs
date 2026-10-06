@@ -1,15 +1,18 @@
 using System.Text.RegularExpressions;
+using AegiNext.Core.Effects;
+using AegiNext.Core.Projects;
 using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Controls;
 
 internal static class EffectScriptLanguage
 {
-    private static readonly Regex tokens = new("#[^\\r\\n]*|\"[^\"\\r\\n]*\"?|[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:ms|s)?|[a-z][a-z-]*|\\s+|.",
+    private static readonly Regex tokens = new("#[^\\r\\n]*|\"[^\"\\r\\n]*\"?|mask-node\\(\\s*\\d+\\s*,\\s*\\d+\\s*\\)\\.(?:position|in-handle|out-handle)|[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:ms|s)?|[a-z][a-z-]*|\\s+|.",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+    private static readonly Regex keyPrefix = new(@"^\s*at\s+\S+\s+", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+    private static readonly Regex selectorWhitespace = new(@"mask-node\(\s*(\d+)\s*,\s*(\d+)\s*\)", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
     private static readonly HashSet<string> keywords = ["effect", "version", "short-clip", "compress", "reject", "segment", "fixed", "flex", "at", "end"];
-    private static readonly string[] properties = ["position", "scale", "rotation", "opacity", "blur", "stroke-width", "path-progress", "fill", "stroke"];
-    private static readonly string[] interpolation = ["linear", "hold", "ease-in", "ease-out", "ease-in-out"];
+    private static readonly string[] interpolation = ["linear", "hold", "ease-in", "ease-out", "ease-in-out", "power(2)"];
 
     internal static IReadOnlyList<SyntaxToken> Tokenize(string source)
     {
@@ -22,9 +25,9 @@ internal static class EffectScriptLanguage
                 '#' => SyntaxTokenKind.COMMENT,
                 '"' => SyntaxTokenKind.STRING,
                 _ when keywords.Contains(value) => SyntaxTokenKind.KEYWORD,
-                _ when properties.Contains(value, StringComparer.Ordinal) => SyntaxTokenKind.PROPERTY,
+                _ when EffectScriptPropertyMetadata.TryGetProperty(value, out _) || value == "mask-node" => SyntaxTokenKind.PROPERTY,
                 _ when value is "base" or "offset" or "factor" or "rgba" => SyntaxTokenKind.FUNCTION,
-                _ when interpolation.Contains(value, StringComparer.Ordinal) => SyntaxTokenKind.INTERPOLATION,
+                _ when interpolation.Contains(value, StringComparer.Ordinal) || value == "power" => SyntaxTokenKind.INTERPOLATION,
                 _ when char.IsDigit(value[0]) || value[0] is '+' or '-' or '.' && value.Length > 1 => SyntaxTokenKind.NUMBER,
                 _ => SyntaxTokenKind.TEXT
             };
@@ -45,6 +48,46 @@ internal static class EffectScriptLanguage
             return [];
         }
 
+        var keyStart = keyPrefix.Match(prefix);
+        if (keyStart.Success)
+        {
+            var propertyStart = keyStart.Length;
+            var depth = 0;
+            var end = propertyStart;
+            for (; end < prefix.Length; end++)
+            {
+                var character = prefix[end];
+                if (character == '(')
+                {
+                    depth++;
+                }
+                else if (character == ')')
+                {
+                    depth--;
+                }
+                else if (char.IsWhiteSpace(character) && depth == 0)
+                {
+                    break;
+                }
+            }
+
+            if (end == prefix.Length)
+            {
+                var partialProperty = prefix[propertyStart..];
+                var propertyCandidates = EffectScriptPropertyMetadata.PropertyNames.AsEnumerable();
+                var closing = partialProperty.IndexOf(')', StringComparison.Ordinal);
+                if (partialProperty.StartsWith("mask-node(", StringComparison.Ordinal) && closing >= 0)
+                {
+                    var stem = partialProperty[..(closing + 1)] + ".";
+                    propertyCandidates = [stem + "position", stem + "in-handle", stem + "out-handle"];
+                }
+
+                return propertyCandidates.Where(name => name.StartsWith(partialProperty, StringComparison.Ordinal))
+                    .Select(name => new EffectScriptCompletion(lineStart + propertyStart, partialProperty.Length, name, name,
+                        ValueHint(name))).ToArray();
+            }
+        }
+
         var replacementStart = caret;
         while (replacementStart > lineStart && (char.IsLetter(source[replacementStart - 1]) || source[replacementStart - 1] == '-'))
         {
@@ -53,7 +96,8 @@ internal static class EffectScriptLanguage
 
         var partial = source[replacementStart..caret];
         var before = source[lineStart..replacementStart].Trim();
-        var words = before.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var words = selectorWhitespace.Replace(before, "mask-node($1,$2)")
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var candidates = new List<(string Text, string Hint)>();
         if (words.Length == 0)
         {
@@ -95,16 +139,12 @@ internal static class EffectScriptLanguage
         }
         else if (words[0] == "at" && words.Length == 2)
         {
-            candidates.AddRange(properties.Select(value => (value, Localization.Get("Settings." + (value switch
-            {
-                "position" or "scale" => "ScriptHintVector",
-                "fill" or "stroke" => "ScriptHintColor",
-                _ => "ScriptHintScalar"
-            })))));
+            candidates.AddRange(EffectScriptPropertyMetadata.PropertyNames.Select(value => (value, ValueHint(value))));
         }
         else if (words[0] == "at" && words.Length == 3)
         {
-            var vector = words[2] is "position" or "scale";
+            var vector = EffectScriptPropertyMetadata.TryGetProperty(words[2], out var property) &&
+                AnimationPropertyMetadata.GetValueKind(EffectScriptPropertyMetadata.GetAnimationProperty(property)) == AnimationValueKind.VECTOR;
             if (words[2] is "fill" or "stroke")
             {
                 candidates.Add(("base", Localization.Get("Settings.ScriptHintBase")));
@@ -130,5 +170,17 @@ internal static class EffectScriptLanguage
 
         return candidates.Where(item => item.Text.StartsWith(partial, StringComparison.Ordinal))
             .Select(item => new EffectScriptCompletion(replacementStart, caret - replacementStart, item.Text, item.Text, item.Hint)).ToArray();
+    }
+
+    private static string ValueHint(string propertyName)
+    {
+        var kind = EffectScriptPropertyMetadata.TryGetProperty(propertyName, out var property)
+            ? AnimationPropertyMetadata.GetValueKind(EffectScriptPropertyMetadata.GetAnimationProperty(property)) : AnimationValueKind.SCALAR;
+        return Localization.Get("Settings." + (kind switch
+        {
+            AnimationValueKind.VECTOR => "ScriptHintVector",
+            AnimationValueKind.COLOR => "ScriptHintColor",
+            _ => "ScriptHintScalar"
+        }));
     }
 }

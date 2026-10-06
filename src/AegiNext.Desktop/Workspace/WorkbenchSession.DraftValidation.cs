@@ -23,6 +23,11 @@ internal sealed partial class WorkbenchSession
             ViewModel.Effects.InvalidFieldKey = ViewModel.InvalidFieldKey;
             ViewModel.Effects.ValidationError = error.Message;
         }
+        if (ViewModel.InvalidPanelId == "masks")
+        {
+            ViewModel.Masks.InvalidFieldKey = ViewModel.InvalidFieldKey;
+            ViewModel.Masks.ValidationError = error.Message;
+        }
         var focus = (draftRevision, ViewModel.InvalidPanelId, ViewModel.InvalidFieldKey);
         if (focusInvalid && lastDraftFocus != focus)
         {
@@ -60,10 +65,14 @@ internal sealed partial class WorkbenchSession
                 case "Rotation": vm.Rotation = (decimal)InspectorValue(layer, AnimationProperty.ROTATION, layer.Transform.Rotation); break;
                 case "Opacity": vm.Opacity = (decimal)InspectorValue(layer, AnimationProperty.OPACITY, layer.Opacity); break;
                 case "Blur": vm.Blur = (decimal)InspectorValue(layer, AnimationProperty.BLUR, layer.Blur); break;
+                case "PowerExponent":
+                    var exponentFrame = layer.Tracks.FirstOrDefault(track => track.Target == (target.Target ?? SceneEditing.Target))?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime);
+                    vm.LoadPowerExponent(exponentFrame?.Exponent ?? 1);
+                    break;
                 case "KeyframeValueX":
                 case "KeyframeValueY":
                 case "KeyframeValue":
-                    var frame = layer.Tracks.FirstOrDefault(track => track.Property == (target.Property ?? ActiveProperty))?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime);
+                    var frame = layer.Tracks.FirstOrDefault(track => track.Target == (target.Target ?? SceneEditing.Target))?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime);
                     if (propertyName == "KeyframeValueY")
                     {
                         vm.KeyframeValueY = frame?.Value.IsVector == true ? (decimal)frame.Value.Vector.Y : vm.KeyframeValueY ?? 0;

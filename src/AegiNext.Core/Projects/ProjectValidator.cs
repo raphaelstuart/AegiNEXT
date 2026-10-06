@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Buffers;
@@ -74,23 +75,12 @@ public static class ProjectValidator
             Require(line.Id != Guid.Empty && subtitles.TryAdd(line.Id, line), "字幕标识为空或重复。");
             Require(trackIds.Contains(line.TrackId), "字幕引用不存在的轨道。");
             Require(line.Start < line.End && line.Text is { Length: <= 1000000 } && !line.Karaoke.IsDefault &&
+                !line.InactiveKaraoke.IsDefault &&
                 !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
             ValidateText(line.Text);
             totalText += line.Text.Length;
             Require(totalText <= 8 * 1024 * 1024, "项目文本总量超过预算。");
             Style(line.Style, assets);
-            if (line.KaraokeStyle is { } karaokeStyle)
-            {
-                Require(karaokeStyle.PresetId != Guid.Empty && karaokeStyle.PresetName is { Length: > 0 and <= 1024 },
-                    "逐字高亮样式预设来源无效。");
-                ValidateText(karaokeStyle.PresetName);
-                Number(karaokeStyle.StrokeWidth, 0, 4096, "高亮描边");
-                Number(karaokeStyle.ShadowBlur, 0, 512, "高亮阴影模糊");
-                Point(karaokeStyle.ShadowOffset);
-                Color(karaokeStyle.Fill);
-                Color(karaokeStyle.Stroke);
-                Color(karaokeStyle.ShadowColor);
-            }
             var boundaries = StringInfo.ParseCombiningCharacters(line.Text).ToHashSet();
             boundaries.Add(line.Text.Length);
             var previousEnd = 0;
@@ -103,35 +93,13 @@ public static class ProjectValidator
                 Require(boundaries.Contains(span.Utf16Start) && boundaries.Contains(end), "局部样式不能拆开字素。");
                 var inlineStyle = span.Style;
                 NotNull(inlineStyle, "局部样式不能为 null。");
-                Require(inlineStyle.HasOverrides && !(inlineStyle.ClearFontAsset && inlineStyle.FontAssetId.HasValue),
+                Require(inlineStyle.HasOverrides && !(inlineStyle.ClearFontAsset && inlineStyle.FontAssetId.HasValue) &&
+                    !(inlineStyle.ClearFontVariant && inlineStyle.FontVariant is not null),
                     "局部样式为空或字体覆盖冲突。");
                 Style(inlineStyle.ApplyTo(line.Style), assets);
                 previousEnd = end;
             }
-            previousEnd = 0;
-            var segmentIds = new HashSet<Guid>();
-            foreach (var segment in line.Karaoke)
-            {
-                NotNull(segment, "数据项不能为 null。");
-                Require(segment.Id != Guid.Empty && segmentIds.Add(segment.Id) && Enum.IsDefined(segment.HighlightKind),
-                    "卡拉 OK 标识为空、重复或高亮类型无效。");
-                Require(segment.Utf16Start >= previousEnd && segment.Utf16Length > 0 &&
-                    (long)segment.Utf16Start + segment.Utf16Length <= line.Text.Length, "卡拉 OK 文本区间重叠或越界。");
-                var end = checked(segment.Utf16Start + segment.Utf16Length);
-                Require(boundaries.Contains(segment.Utf16Start) && boundaries.Contains(end), "卡拉 OK 不能拆开字素。");
-                Require(segment.Start >= Timing.MediaTime.Zero && segment.Start < segment.End,
-                    "卡拉 OK 时间越界。");
-                Color(segment.HighlightColor);
-                if (segment.InactiveStyle is { } inactive)
-                {
-                    ValidateSubtitleStyle(inactive.ApplyTo(line.Style));
-                }
-                if (segment.ActiveStyle is { } active)
-                {
-                    ValidateSubtitleStyle(active.ApplyTo(line.Style));
-                }
-                previousEnd = end;
-            }
+            ValidateSubtitleKaraoke(line, boundaries);
         }
 
         foreach (var track in document.Subtitles.GroupBy(line => line.TrackId))
@@ -162,10 +130,83 @@ public static class ProjectValidator
             ValidateText(preset.Name);
             Tracks(preset.Tracks, allowLegacyColors: true);
             Motion(preset.MotionPath);
-            if (preset.Mask is { } mask)
+        }
+    }
+
+    /// <summary>验证启用及禁用高亮的完整字素范围、共享标识、视觉覆盖和精确时钟，不裁剪旧时间。</summary>
+    public static void ValidateSubtitleKaraoke(SubtitleLine line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        Require(line.Text is { Length: <= 1000000 }, "字幕文字超过有效范围。");
+        ValidateText(line.Text);
+        var boundaries = StringInfo.ParseCombiningCharacters(line.Text).ToHashSet();
+        boundaries.Add(line.Text.Length);
+        ValidateSubtitleKaraoke(line, boundaries);
+    }
+
+    private static void ValidateSubtitleKaraoke(SubtitleLine line, HashSet<int> boundaries)
+    {
+        Require(!line.Karaoke.IsDefault && !line.InactiveKaraoke.IsDefault, "卡拉 OK 数组无效。");
+        if (line.KaraokeStyle is { } karaokeStyle)
+        {
+            Require(karaokeStyle.PresetId != Guid.Empty && karaokeStyle.PresetName is { Length: > 0 and <= 1024 },
+                "逐字高亮样式预设来源无效。");
+            ValidateText(karaokeStyle.PresetName);
+            Number(karaokeStyle.StrokeWidth, 0, 4096, "高亮描边");
+            Number(karaokeStyle.ShadowBlur, 0, 512, "高亮阴影模糊");
+            Point(karaokeStyle.ShadowOffset);
+            Color(karaokeStyle.Fill);
+            Color(karaokeStyle.Stroke);
+            Color(karaokeStyle.ShadowColor);
+        }
+        var segmentIds = new HashSet<Guid>();
+        ValidateKaraokeSegments(line.Karaoke, line, boundaries, segmentIds);
+        ValidateKaraokeSegments(line.InactiveKaraoke, line, boundaries, segmentIds);
+        var activeIndex = 0;
+        var inactiveIndex = 0;
+        while (activeIndex < line.Karaoke.Length && inactiveIndex < line.InactiveKaraoke.Length)
+        {
+            var active = line.Karaoke[activeIndex];
+            var inactive = line.InactiveKaraoke[inactiveIndex];
+            if (active.Utf16Start + active.Utf16Length <= inactive.Utf16Start)
             {
-                Path(mask.Path);
+                activeIndex++;
             }
+            else if (inactive.Utf16Start + inactive.Utf16Length <= active.Utf16Start)
+            {
+                inactiveIndex++;
+            }
+            else
+            {
+                throw new InvalidDataException("启用和禁用高亮的文字区间不能重叠。");
+            }
+        }
+    }
+
+    private static void ValidateKaraokeSegments(ImmutableArray<KaraokeSegment> segments, SubtitleLine line,
+        HashSet<int> boundaries, HashSet<Guid> segmentIds)
+    {
+        var previousEnd = 0;
+        foreach (var segment in segments)
+        {
+            NotNull(segment, "数据项不能为 null。");
+            Require(segment.Id != Guid.Empty && segmentIds.Add(segment.Id) && Enum.IsDefined(segment.HighlightKind),
+                "卡拉 OK 标识为空、重复或高亮类型无效。");
+            Require(segment.Utf16Start >= previousEnd && segment.Utf16Length > 0 &&
+                (long)segment.Utf16Start + segment.Utf16Length <= line.Text.Length, "卡拉 OK 文本区间重叠或越界。");
+            var end = checked(segment.Utf16Start + segment.Utf16Length);
+            Require(boundaries.Contains(segment.Utf16Start) && boundaries.Contains(end), "卡拉 OK 不能拆开字素。");
+            Require(segment.Start >= Timing.MediaTime.Zero && segment.Start < segment.End, "卡拉 OK 时间越界。");
+            Color(segment.HighlightColor);
+            if (segment.InactiveStyle is { } inactive)
+            {
+                ValidateSubtitleStyle(inactive.ApplyTo(line.Style));
+            }
+            if (segment.ActiveStyle is { } active)
+            {
+                ValidateSubtitleStyle(active.ApplyTo(line.Style));
+            }
+            previousEnd = end;
         }
     }
 
@@ -213,7 +254,14 @@ public static class ProjectValidator
         Number(layer.Blur, 0, 512, "Blur");
         Color(layer.Fill);
         Color(layer.Stroke);
-        Tracks(layer.Tracks);
+        if (layer.Mask is { } mask)
+        {
+            Require(layer.Kind == LayerKind.SUBTITLE && layer.SubtitleId is { } maskSubtitleId &&
+                subtitles.ContainsKey(maskSubtitleId), "只有引用有效字幕的字幕片段可以持有蒙版。");
+            Mask(mask);
+        }
+
+        Tracks(layer.Tracks, mask: layer.Mask);
         if (enforceAnimationRange)
         {
             var (minimumKeyTime, maximumKeyTime) = Editing.LayerAnimationTiming.GetRange(layer);
@@ -221,11 +269,6 @@ public static class ProjectValidator
                 "关键帧必须位于图层片段时间内。");
         }
         Motion(layer.MotionPath);
-        if (layer.Mask is { } mask)
-        {
-            Path(mask.Path);
-        }
-
         Require(layer.Kind == LayerKind.GROUP || layer.Children.IsEmpty, "只有组可以包含子图层。");
         Require((layer.Kind == LayerKind.SUBTITLE) == layer.SubtitleId.HasValue &&
             (layer.Kind == LayerKind.SHAPE) == (layer.Shape is not null) &&
@@ -267,6 +310,19 @@ public static class ProjectValidator
     {
         Require(style is not null && style.FontFamily is { Length: > 0 and <= 512 } && Enum.IsDefined(style.Alignment), "字幕样式无效。");
         ValidateText(style.FontFamily);
+        if (style.FontVariant is { } variant)
+        {
+            Require(!string.IsNullOrWhiteSpace(variant.Name) && variant.Name.Length <= 512 &&
+                !variant.Name.Any(char.IsControl), "字体变体名称无效。");
+            ValidateText(variant.Name);
+            if (variant.PostScriptName is { } postScriptName)
+            {
+                Require(!string.IsNullOrWhiteSpace(postScriptName) && postScriptName.Length <= 512 &&
+                    !postScriptName.Any(char.IsControl), "字体变体 PostScript 名称无效。");
+                ValidateText(postScriptName);
+            }
+            Require(variant.Weight is >= 1 and <= 1000 && variant.Width is >= 1 and <= 9, "字体变体样式特征无效。");
+        }
         Number(style.FontSize, 0.01, 4096, "字号");
         Number(style.StrokeWidth, 0, 4096, "描边");
         Number(style.Margin, 0, 32768, "字幕边距");
@@ -295,36 +351,63 @@ public static class ProjectValidator
         }
     }
 
-    private static void Tracks(System.Collections.Immutable.ImmutableArray<AnimationTrack> tracks, bool allowLegacyColors = false)
+    private static void Tracks(ImmutableArray<AnimationTrack> tracks, bool allowLegacyColors = false, ClipMask? mask = null)
     {
-        Require(!tracks.IsDefault && tracks.Length <= 64, "关键帧轨道无效。");
-        var properties = new HashSet<AnimationProperty>();
+        Require(!tracks.IsDefault && tracks.Length <= 30064 &&
+            tracks.Count(track => track is not null && !AnimationPropertyMetadata.IsNodeProperty(track.Property)) <= 64,
+            "普通轨道超过 64 条或蒙版节点轨道超过预算。");
+        var targets = new HashSet<AnimationTrackTarget>();
+        var maskNodes = mask is VectorClipMask vector ? vector.Contours.SelectMany(contour => contour.Nodes).Select(node => node.Id).ToHashSet() : null;
         foreach (var track in tracks)
         {
             NotNull(track, "数据项不能为 null。");
             var legacyColor = track.Property is >= AnimationProperty.FILL_RED and <= AnimationProperty.STROKE_ALPHA;
             Require(Enum.IsDefined(track.Property) &&
                 (!AnimationPropertyMetadata.IsLegacyComponent(track.Property) || allowLegacyColors && legacyColor) &&
-                properties.Add(track.Property), "动画属性未知、重复或尚未完成分量迁移。");
+                AnimationPropertyMetadata.IsNodeProperty(track.Property) == track.Target.NodeId.HasValue &&
+                track.Target.NodeId != Guid.Empty && targets.Add(track.Target),
+                "动画目标未知、重复、携带无效节点或尚未完成分量迁移。");
+            if (AnimationPropertyMetadata.IsMaskProperty(track.Property) && !allowLegacyColors)
+            {
+                Require(mask is not null, "蒙版动画缺少蒙版几何。");
+                Require(!AnimationPropertyMetadata.IsNodeProperty(track.Property) || maskNodes?.Contains(track.Target.NodeId!.Value) == true,
+                    "蒙版动画目标节点不存在。");
+                Require(track.Property is not (AnimationProperty.MASK_RECTANGLE_TOP_LEFT or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT) || mask is RectangleClipMask,
+                    "矩形边界动画与蒙版形状不匹配。");
+            }
+
             var dimension = AnimationPropertyMetadata.GetComponentCount(track.Property);
-            Require(!track.Keyframes.IsDefaultOrEmpty && track.Keyframes.Length <= 10000 * dimension,
-                "属性轨道为空或超出分量时间并集预算。");
+            Require(!track.Keyframes.IsDefault && !track.Transforms.IsDefault &&
+                track.Keyframes.Length <= 10000 * dimension && track.Transforms.Length <= 10000 * dimension,
+                "属性轨道超出分量时间并集预算。");
+            if (track.IsOrdered)
+            {
+                Require(track.Keyframes.IsEmpty && track.InitialValue.HasValue, "有序变换与关键帧互斥且必须提供初始值。");
+                AnimationValue(track.Property, track.InitialValue.Value);
+                var operationIds = new HashSet<Guid>();
+                foreach (var operation in track.Transforms)
+                {
+                    NotNull(operation, "有序变换操作不能为 null。");
+                    Require(operation.Id != Guid.Empty && operationIds.Add(operation.Id) && operation.End >= operation.Start,
+                        "有序变换标识或时间无效。");
+                    Require(double.IsFinite(operation.Acceleration) && operation.Acceleration >= 0, "有序变换指数必须为有限非负数。");
+                    AnimationValue(track.Property, operation.Value);
+                }
+
+                continue;
+            }
+
+            Require(!track.Keyframes.IsEmpty && track.InitialValue is null, "关键帧轨道不能为空或包含有序变换初始值。");
             Timing.MediaTime? previous = null;
             foreach (var frame in track.Keyframes)
             {
                 NotNull(frame, "数据项不能为 null。");
                 Require(frame.Time >= Timing.MediaTime.Zero && (!previous.HasValue || frame.Time > previous.Value),
                     "关键帧时间必须非负且严格递增。");
-                Curve(new(frame.Interpolation, frame.CurveStart, frame.CurveEnd));
-                Require(frame.Value.Kind == AnimationPropertyMetadata.GetValueKind(track.Property), "关键帧值维度与属性不一致。");
+                Curve(new(frame.Interpolation, frame.CurveStart, frame.CurveEnd) { Exponent = frame.Exponent });
+                AnimationValue(track.Property, frame.Value);
                 Require(!frame.ComponentCurves.IsDefault && (frame.ComponentCurves.IsEmpty || frame.ComponentCurves.Length == dimension - 1),
                     "分量曲线数量与动画属性不一致。");
-                for (var component = 0; component < dimension; component++)
-                {
-                    Number(frame.Value.GetComponent(component), AnimationPropertyMetadata.GetMinimum(track.Property, component),
-                        AnimationPropertyMetadata.GetMaximum(track.Property, component), "关键帧分量");
-                }
-
                 foreach (var curve in frame.ComponentCurves)
                 {
                     if (curve is not null)
@@ -339,15 +422,71 @@ public static class ProjectValidator
 
         foreach (var property in new[] { AnimationProperty.FILL, AnimationProperty.STROKE })
         {
-            Require(!properties.Contains(property) || !AnimationPropertyMetadata.GetLegacyComponents(property).Any(properties.Contains),
+            Require(!targets.Contains(new(property)) ||
+                !AnimationPropertyMetadata.GetLegacyComponents(property).Any(component => targets.Contains(new(component))),
                 "完整颜色轨道不能与同组旧分量同时存在。");
+        }
+    }
+
+    private static void AnimationValue(AnimationProperty property, AnimationValue value)
+    {
+        Require(value.Kind == AnimationPropertyMetadata.GetValueKind(property), "动画值维度与属性不一致。");
+        for (var component = 0; component < value.ComponentCount; component++)
+        {
+            Number(value.GetComponent(component), AnimationPropertyMetadata.GetMinimum(property, component),
+                AnimationPropertyMetadata.GetMaximum(property, component), "动画值分量");
+        }
+    }
+
+    private static void Mask(ClipMask mask)
+    {
+        Require(mask.Transform is not null, "缺少蒙版变换。");
+        Point(mask.Transform.Position);
+        Point(mask.Transform.Pivot);
+        Number(mask.Transform.Scale.X, -10000, 10000, "蒙版 Scale X");
+        Number(mask.Transform.Scale.Y, -10000, 10000, "蒙版 Scale Y");
+        Number(mask.Transform.Rotation, -1e9, 1e9, "蒙版 Rotation");
+
+        switch (mask)
+        {
+            case RectangleClipMask rectangle:
+                Point(rectangle.TopLeft);
+                Point(rectangle.BottomRight);
+                Require(rectangle.TopLeft.X <= rectangle.BottomRight.X && rectangle.TopLeft.Y <= rectangle.BottomRight.Y,
+                    "矩形蒙版边界必须按左上角到右下角排列。");
+                break;
+            case VectorClipMask vector:
+                Require(!vector.Contours.IsDefaultOrEmpty && vector.Contours.Length <= 10000, "蒙版轮廓为空或过大。");
+                var identities = new HashSet<Guid>();
+                var nodeCount = 0;
+                foreach (var contour in vector.Contours)
+                {
+                    NotNull(contour, "蒙版轮廓不能为 null。");
+                    Require(contour.Id != Guid.Empty && identities.Add(contour.Id), "蒙版轮廓标识为空或重复。");
+                    Require(!contour.Nodes.IsDefaultOrEmpty, "闭合蒙版轮廓必须包含节点。");
+                    Require(contour.Nodes.Length <= 10000 - nodeCount, "蒙版节点总量超过预算。");
+                    nodeCount += contour.Nodes.Length;
+                    foreach (var node in contour.Nodes)
+                    {
+                        NotNull(node, "蒙版节点不能为 null。");
+                        Require(node.Id != Guid.Empty && identities.Add(node.Id), "蒙版节点标识为空或重复。");
+                        Point(node.Position);
+                        Point(node.InHandle);
+                        Point(node.OutHandle);
+                    }
+                }
+
+                break;
+            default:
+                throw new InvalidDataException("未知蒙版类型。");
         }
     }
 
     private static void Curve(AnimationCurve curve)
     {
         Require(Enum.IsDefined(curve.Interpolation) && double.IsFinite(curve.CurveStart) && double.IsFinite(curve.CurveEnd) &&
-            curve.CurveStart >= 0 && curve.CurveStart < curve.CurveEnd && curve.CurveEnd <= 1,
+            curve.CurveStart >= 0 && curve.CurveStart < curve.CurveEnd && curve.CurveEnd <= 1 &&
+            double.IsFinite(curve.Exponent) && curve.Exponent > 0,
             "关键帧插值及裁剪相位必须有效且位于零到一之间。");
     }
 

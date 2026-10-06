@@ -22,7 +22,7 @@ public sealed record ProjectLayer
     public Guid? SubtitleId { get; init; }
     public LayerShape? Shape { get; init; }
     public LayerImage? Image { get; init; }
-    public LayerMask? Mask { get; init; }
+    public ClipMask? Mask { get; init; }
     public MotionPath? MotionPath { get; init; }
     public ImmutableArray<AnimationTrack> Tracks { get; init; } = [];
     public ImmutableArray<ProjectLayer> Children { get; init; } = [];

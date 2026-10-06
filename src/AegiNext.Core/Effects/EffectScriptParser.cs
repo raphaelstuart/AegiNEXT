@@ -13,9 +13,11 @@ public static class EffectScriptParser
     private const string NUMBER = @"[+-]?(?:\d+(?:\.\d+)?|\.\d+)";
     private static readonly Regex headerPattern = Pattern(@"^effect\s+""(?<id>[a-z][a-z0-9.-]{0,63})""\s+version\s+1$");
     private static readonly Regex segmentPattern = Pattern(@"^segment\s+(?<name>[a-z][a-z0-9.-]{0,63})\s+(?<kind>fixed|flex)\s+(?<amount>\S+)$");
-    private static readonly Regex keyframePattern = Pattern(@"^at\s+(?<progress>\S+)\s+(?<property>\S+)\s+(?<value>base|(?:offset|factor)?\(\s*" +
+    private static readonly Regex nodePattern = Pattern(@"^mask-node\(\s*(?<contour>\d+)\s*,\s*(?<node>\d+)\s*\)\.(?<part>position|in-handle|out-handle)$");
+    private static readonly Regex powerPattern = Pattern(@"^power\(\s*(?<exponent>" + NUMBER + @")\s*\)$");
+    private static readonly Regex keyframePattern = Pattern(@"^at\s+(?<progress>\S+)\s+(?<property>mask-node\(\s*\d+\s*,\s*\d+\s*\)\.[a-z-]+|[a-z][a-z-]*)\s+(?<value>base|(?:offset|factor)?\(\s*" +
         NUMBER + @"\s*(?:,\s*" + NUMBER + @"\s*)?\)|rgba\(\s*" + NUMBER + @"\s*,\s*" + NUMBER + @"\s*,\s*" +
-        NUMBER + @"\s*,\s*" + NUMBER + @"\s*\)|" + NUMBER + @")(?:\s+(?<interpolation>[a-z-]+))?$");
+        NUMBER + @"\s*,\s*" + NUMBER + @"\s*\)|" + NUMBER + @")(?:\s+(?<interpolation>[a-z-]+(?:\(\s*" + NUMBER + @"\s*\))?))?$");
     private static readonly Regex durationPattern = Pattern(@"^(?<number>\d+(?:\.\d{1,6})?)(?<unit>ms|s)$");
 
     /// <summary>从 UTF-8 文本内容读取脚本；不读取文件、程序集或运行环境。</summary>
@@ -113,10 +115,15 @@ public static class EffectScriptParser
                 throw new EffectScriptException("关键帧数量超过预算。", line, column);
             }
 
+            var property = ParseProperty(key.Groups["property"].Value, line, column + key.Groups["property"].Index);
+            var curve = ParseInterpolation(key.Groups["interpolation"].Value, line, column + key.Groups["interpolation"].Index);
             keys.Add(new(ParseDecimal(key.Groups["progress"].Value, line, column + key.Groups["progress"].Index),
-                ParseProperty(key.Groups["property"].Value, line, column + key.Groups["property"].Index),
+                property.Property,
                 ParseValue(key.Groups["value"].Value, line, column + key.Groups["value"].Index),
-                ParseInterpolation(key.Groups["interpolation"].Value, line, column + key.Groups["interpolation"].Index), line, column));
+                curve.Interpolation, line, column)
+            {
+                NodeSelector = property.Selector, Exponent = curve.Exponent
+            });
         }
 
         if (id is null || policy is null)
@@ -168,9 +175,28 @@ public static class EffectScriptParser
         return value;
     }
 
-    private static EffectScriptProperty ParseProperty(string text, int line, int column)
+    private static (EffectScriptProperty Property, EffectScriptNodeSelector? Selector) ParseProperty(string text, int line, int column)
     {
-        return text switch
+        var node = nodePattern.Match(text);
+        if (node.Success)
+        {
+            if (!int.TryParse(node.Groups["contour"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var contourNumber) ||
+                !int.TryParse(node.Groups["node"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var nodeNumber) ||
+                contourNumber is < 1 or > 10000 || nodeNumber is < 1 or > 10000)
+            {
+                throw new EffectScriptException("mask-node 使用 1 到 10000 的轮廓及节点序号。", line, column);
+            }
+
+            var part = node.Groups["part"].Value switch
+            {
+                "position" => EffectScriptProperty.MASK_NODE_POSITION,
+                "in-handle" => EffectScriptProperty.MASK_NODE_IN_HANDLE,
+                _ => EffectScriptProperty.MASK_NODE_OUT_HANDLE
+            };
+            return (part, new(contourNumber, nodeNumber));
+        }
+
+        var property = text switch
         {
             "position" => EffectScriptProperty.POSITION,
             "scale" => EffectScriptProperty.SCALE,
@@ -181,13 +207,31 @@ public static class EffectScriptParser
             "path-progress" => EffectScriptProperty.PATH_PROGRESS,
             "fill" => EffectScriptProperty.FILL,
             "stroke" => EffectScriptProperty.STROKE,
+            "mask-rectangle-top-left" => EffectScriptProperty.MASK_RECTANGLE_TOP_LEFT,
+            "mask-rectangle-bottom-right" => EffectScriptProperty.MASK_RECTANGLE_BOTTOM_RIGHT,
+            "mask-position" => EffectScriptProperty.MASK_POSITION,
+            "mask-scale" => EffectScriptProperty.MASK_SCALE,
+            "mask-rotation" => EffectScriptProperty.MASK_ROTATION,
             _ => throw new EffectScriptException($"未知动画属性：{text}。", line, column)
         };
+        return (property, null);
     }
 
-    private static KeyframeInterpolation ParseInterpolation(string text, int line, int column)
+    private static AnimationCurve ParseInterpolation(string text, int line, int column)
     {
-        return text switch
+        var power = powerPattern.Match(text);
+        if (power.Success)
+        {
+            var exponent = ParseNumber(power.Groups["exponent"].Value, line, column);
+            if (exponent <= 0)
+            {
+                throw new EffectScriptException("power 指数必须为有限正数。", line, column);
+            }
+
+            return new(KeyframeInterpolation.POWER) { Exponent = exponent };
+        }
+
+        return new(text switch
         {
             "" or "linear" => KeyframeInterpolation.LINEAR,
             "hold" => KeyframeInterpolation.HOLD,
@@ -195,7 +239,7 @@ public static class EffectScriptParser
             "ease-out" => KeyframeInterpolation.EASE_OUT,
             "ease-in-out" => KeyframeInterpolation.EASE_IN_OUT,
             _ => throw new EffectScriptException($"未知插值方式：{text}。", line, column)
-        };
+        });
     }
 
     private static EffectScriptValue ParseValue(string text, int line, int column)

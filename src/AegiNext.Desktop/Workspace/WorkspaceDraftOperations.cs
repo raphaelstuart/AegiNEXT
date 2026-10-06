@@ -31,18 +31,25 @@ internal static class WorkspaceDraftOperations
         return document with { Layers = MapLayers(document.Layers, layer => layer.Id == id ? LayerAnimationTiming.Clip(edit(layer)) : layer) };
     }
 
-    internal static ProjectDocument SetKeyframe(ProjectDocument document, Guid id, AnimationProperty property, Keyframe keyframe)
+    internal static ProjectDocument SetKeyframe(ProjectDocument document, Guid id, AnimationProperty property, Keyframe keyframe) =>
+        SetKeyframe(document, id, new AnimationTrackTarget(property), keyframe);
+
+    internal static ProjectDocument SetKeyframe(ProjectDocument document, Guid id, AnimationTrackTarget target, Keyframe keyframe)
     {
         return UpdateLayer(document, id, layer =>
         {
-            var track = layer.Tracks.FirstOrDefault(value => value.Property == property);
+            var track = layer.Tracks.FirstOrDefault(value => value.Target == target);
+            if (track is not null && !track.Transforms.IsEmpty)
+            {
+                throw new InvalidOperationException("Ordered transforms must be edited by their operation identity.");
+            }
             if (track?.Keyframes.FirstOrDefault(value => value.Time == keyframe.Time) == keyframe)
             {
                 return layer;
             }
             var frames = (track?.Keyframes ?? []).Where(value => value.Time != keyframe.Time).Append(keyframe)
                 .OrderBy(value => value.Time).ToImmutableArray();
-            var updated = new AnimationTrack(property, frames);
+            var updated = new AnimationTrack(target, frames);
             return layer with
             {
                 Tracks = track is null ? layer.Tracks.Add(updated) : layer.Tracks.SetItem(layer.Tracks.IndexOf(track), updated)

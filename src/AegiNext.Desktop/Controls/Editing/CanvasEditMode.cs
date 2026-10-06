@@ -4,5 +4,7 @@ internal enum CanvasEditMode
 {
     POSITION,
     PATH,
-    MASK
+    MASK_RECTANGLE,
+    MASK_VECTOR,
+    MASK_DRAW_VECTOR
 }

@@ -16,14 +16,12 @@ internal sealed partial class WorkbenchSession
             var vm = ViewModel.Styles;
             ViewModel.InvalidPanelId = "styles";
             ViewModel.InvalidFieldKey = "FontCombo";
-            var family = (preview ? vm.FontFamily : vm.FontDraft)?.Trim() ?? string.Empty;
-            if (family.Length is 0 or > 512 || family.Any(char.IsControl))
-            {
-                throw new InvalidDataException(Localization.Get("Workbench.Font"));
-            }
             if (selected.SubtitleId is { } id)
             {
                 var line = prepared.Subtitles.Single(value => value.Id == id);
+                var selection = preview ? vm.CurrentFont : Fonts.Resolve(vm.FontDraft, line.Style);
+                var family = selection.FamilyName;
+                var parsesFontDraft = !preview && (family != vm.FontFamily || selection.Variant != vm.FontVariant);
                 var fontSize = ReadNumber(vm.FontSizeText, line.Style.FontSize, "Size", "FontSizeInput");
                 var strokeWidth = PrepareStrokeWidth(ref prepared, selected, line.Style.StrokeWidth, vm.StrokeWidthText);
                 var fill = PrepareColor(ref prepared, selected, ReadColorDraft(vm.FillDraft, "FillPicker"), line.Style.Fill, false);
@@ -33,7 +31,7 @@ internal sealed partial class WorkbenchSession
                     throw new InvalidDataException(Localization.Get("Workbench.Font") + ": " + Localization.Get("Workbench.Size"));
                 }
 
-                var familyChanged = family != line.Style.FontFamily;
+                var fontChanged = family != line.Style.FontFamily || selection.Variant != line.Style.FontVariant || vm.FontSelectionCommitted;
                 if (vm.Position.Validate() is { } positionKey)
                 {
                     ViewModel.InvalidFieldKey = positionKey;
@@ -42,13 +40,14 @@ internal sealed partial class WorkbenchSession
                 var style = line.Style with
                 {
                     FontFamily = family,
-                    FontAssetId = familyChanged ? null : line.Style.FontAssetId,
+                    FontVariant = selection.Variant,
+                    FontAssetId = fontChanged ? null : line.Style.FontAssetId,
                     FontSize = fontSize,
                     StrokeWidth = strokeWidth,
                     Fill = fill,
                     Stroke = stroke,
-                    Bold = vm.Bold == true,
-                    Italic = vm.Italic == true,
+                    Bold = parsesFontDraft && selection.Variant is { } selectedVariant ? selectedVariant.Weight >= 700 : vm.Bold == true,
+                    Italic = parsesFontDraft && selection.Variant is { } selectedItalicVariant ? selectedItalicVariant.Italic : vm.Italic == true,
                     Alignment = alignments[Math.Clamp(vm.Alignment, 0, alignments.Length - 1)],
                     Position = vm.Position.CreatePosition()
                 };
@@ -122,8 +121,7 @@ internal sealed partial class WorkbenchSession
                     Width = ReadNumber(vm.LayerWidthText, image.Width, "Size", "LayerWidthInput"), Height = ReadNumber(vm.LayerHeightText, image.Height, "Size", "LayerHeightInput")
                 } : null,
                 Blend = (BlendMode)vm.Blend,
-                MotionPath = layer.MotionPath is { } path ? path with { OrientToPath = vm.OrientPath == true } : null,
-                Mask = layer.Mask is { } mask ? mask with { Inverted = vm.InvertMask == true } : null
+                MotionPath = layer.MotionPath is { } path ? path with { OrientToPath = vm.OrientPath == true } : null
             });
             foreach (var (property, text, fallback, label, field) in new[]
             {
@@ -155,19 +153,20 @@ internal sealed partial class WorkbenchSession
             }
             if (keyframeChanged)
             {
-                prepared = AnimationEditOperations.SetValue(prepared, target, target.Property ?? ActiveProperty, keyframeValue);
+                prepared = AnimationEditOperations.SetValue(prepared, target, target.Target ?? SceneEditing.Target, keyframeValue);
             }
-            if (target.IsKeyframe && (keyframeChanged || changedEffectFields.Contains("Interpolation")))
+            if (target.IsKeyframe && (keyframeChanged || changedEffectFields.Overlaps(["Interpolation", "PowerExponent"])))
             {
-                var property = target.Property ?? ActiveProperty;
-                var frame = selected.Tracks.FirstOrDefault(track => track.Property == property)?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime) ?? new Keyframe(target.LocalTime, keyframeValue);
+                var property = target.Target ?? SceneEditing.Target;
+                var frame = selected.Tracks.FirstOrDefault(track => track.Target == property)?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime) ?? new Keyframe(target.LocalTime, keyframeValue);
                 prepared = WorkspaceDraftOperations.SetKeyframe(prepared, selected.Id, property, frame with
                 {
                     Value = keyframeChanged ? keyframeValue : frame.Value,
                     Interpolation = (KeyframeInterpolation)vm.Interpolation,
-                    CurveStart = vm.Interpolation == (int)frame.Interpolation ? frame.CurveStart : 0,
-                    CurveEnd = vm.Interpolation == (int)frame.Interpolation ? frame.CurveEnd : 1,
-                    ComponentCurves = vm.Interpolation == (int)frame.Interpolation ? frame.ComponentCurves : []
+                    Exponent = vm.ReadPowerExponent(),
+                    CurveStart = vm.Interpolation == (int)frame.Interpolation && vm.ReadPowerExponent() == frame.Exponent ? frame.CurveStart : 0,
+                    CurveEnd = vm.Interpolation == (int)frame.Interpolation && vm.ReadPowerExponent() == frame.Exponent ? frame.CurveEnd : 1,
+                    ComponentCurves = vm.Interpolation == (int)frame.Interpolation && vm.ReadPowerExponent() == frame.Exponent ? frame.ComponentCurves : []
                 });
             }
         }

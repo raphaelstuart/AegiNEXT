@@ -13,10 +13,15 @@ public sealed partial class ProjectEditor
         {
             var style = layer.SubtitleId is { } id ? snapshot.Subtitles.First(line => line.Id == id).Style : null;
             var tracks = EffectScriptCompiler.Compile(script, layer, style);
+            if (layer.Tracks.Any(track => track.IsOrdered && tracks.Any(added => added.Target == track.Target)))
+            {
+                throw new EffectScriptException("目标轨道采用有序变换；请显式清除该轨道后再应用关键帧脚本。");
+            }
+
             return layer with
             {
-                Tracks = layer.Tracks.Where(track => !tracks.Any(added => added.Property == track.Property)).Concat(tracks)
-                    .OrderBy(track => track.Property).ToImmutableArray()
+                Tracks = layer.Tracks.Where(track => !tracks.Any(added => added.Target == track.Target)).Concat(tracks)
+                    .OrderBy(track => track.Target.Property).ThenBy(track => track.Target.NodeId).ToImmutableArray()
             };
         });
     }

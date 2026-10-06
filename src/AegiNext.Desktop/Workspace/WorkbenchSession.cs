@@ -20,7 +20,7 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed partial class WorkbenchSession : IAsyncDisposable
 {
     private static readonly string[] blendKeys = ["Normal", "Multiply", "Screen", "AddBlend", "Overlay", "Darken", "Lighten", "Difference"];
-    private static readonly string[] interpolationKeys = ["Hold", "Linear", "EaseIn", "EaseOut", "Smooth"];
+    private static readonly string[] interpolationKeys = ["Hold", "Linear", "EaseIn", "EaseOut", "Smooth", "Power"];
     private static readonly string[] speedKeys = ["Fast", "Medium", "Slow"];
     private readonly ProjectEditor editor;
     private readonly VideoPreviewController controller;
@@ -39,6 +39,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly ExportCoordinator export;
     private readonly StyleLibraryCoordinator styles;
     private readonly LayerEditingCoordinator layerEditing;
+    internal ClipMaskEditingCoordinator MaskEditing { get; }
     private readonly PlaybackSeekingCoordinator playback;
     private readonly PreviewFrameCatalog previewFrames = new();
     private ProjectPreviewState previewState = new(new(), Path.GetTempPath());
@@ -79,7 +80,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ViewModel = new(this);
         controller = controllerFactory?.Invoke(ApplyUpdate) ?? new(this.dispatch, ApplyUpdate,
             () => new ProjectPreviewConverter(GetPreviewState,
-                error => Volatile.Write(ref previewRenderError, error), previewFrames));
+                error => Volatile.Write(ref previewRenderError, error), previewFrames, () => Fonts.Catalog));
         controller.ConfigureDecodeMode(preferences.PreviewDecodeMode);
         workflow = new(this, dialogs);
         Details = new(this);
@@ -89,6 +90,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         styles = new(this, dialogs);
         effectScripts = new(this, dialogs);
         layerEditing = new(this, dialogs);
+        MaskEditing = new(this);
         playback = new(this, controller);
         this.applicationContext.PreferencesChanged += OnApplicationPreferencesChanged;
         this.applicationContext.StylesChanged += OnApplicationStylesChanged;
@@ -452,8 +454,9 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
                 row.RefreshLanguage();
             }
             ViewModel.Effects.RefreshChoices(blendKeys.Select(key => Localization.Get("Workbench." + key)).ToArray(),
-                AnimationPropertyMetadata.CurrentProperties.Select(value => new AnimationPropertyChoice(value, AnimationPropertyLocalization.Get(value))).ToArray(),
+                MaskPropertyChoices(),
                 interpolationKeys.Select(key => Localization.Get("Workbench." + key)).ToArray());
+            ViewModel.Masks.Refresh();
             ViewModel.Export.RefreshChoices([Localization.Get("Workbench.Automatic"), "H.264", "HEVC / H.265"],
                 speedKeys.Select(key => Localization.Get("Workbench." + key)).ToArray(),
                 [Localization.Get("Workbench.Copy"), "AAC", Localization.Get("Workbench.NoAudio")]);
@@ -522,6 +525,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         timeline.MediaDuration = snapshot.Duration is { } mediaDuration ? ToSeconds(mediaDuration) : 0;
         timeline.Position = relative;
         ViewModel.Effects.Position = EditingPosition;
+        MaskEditing.Refresh();
         RefreshAnimatedInspectorAtTime();
         RefreshEditingTargetLabel();
         RefreshEditingPreview();

@@ -8,6 +8,10 @@ public sealed record SubtitleInlineStyleOverride
     public string? FontFamily { get; init; }
     public Guid? FontAssetId { get; init; }
     public bool ClearFontAsset { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SubtitleFontVariant? FontVariant { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ClearFontVariant { get; init; }
     public double? FontSize { get; init; }
     public bool? Bold { get; init; }
     public bool? Italic { get; init; }
@@ -21,21 +25,25 @@ public sealed record SubtitleInlineStyleOverride
     public SceneColor? ShadowColor { get; init; }
 
     [JsonIgnore]
-    public bool HasOverrides => FontFamily is not null || FontAssetId.HasValue || ClearFontAsset || FontSize.HasValue ||
+    public bool HasOverrides => FontFamily is not null || FontAssetId.HasValue || ClearFontAsset ||
+        FontVariant is not null || ClearFontVariant || FontSize.HasValue ||
         Bold.HasValue || Italic.HasValue || Underline.HasValue || Strikethrough.HasValue || Fill.HasValue ||
         Stroke.HasValue || StrokeWidth.HasValue || ShadowOffset.HasValue || ShadowBlur.HasValue || ShadowColor.HasValue;
 
-    /// <summary>解析局部覆盖；显式字体族切换会清除继承的嵌入字体，除非同时指定字体资源。</summary>
+    /// <summary>解析局部覆盖；字体切换清除继承身份，命名变体同步其格式状态。</summary>
     public SubtitleStyle ApplyTo(SubtitleStyle style)
     {
         ArgumentNullException.ThrowIfNull(style);
+        var changesFont = FontFamily is not null || FontAssetId.HasValue;
+        var changesFormatting = Bold.HasValue && Bold != style.Bold || Italic.HasValue && Italic != style.Italic;
         return style with
         {
             FontFamily = FontFamily ?? style.FontFamily,
-            FontAssetId = FontAssetId ?? (ClearFontAsset || FontFamily is not null ? null : style.FontAssetId),
+            FontAssetId = FontAssetId ?? (ClearFontAsset || FontFamily is not null || FontVariant is not null ? null : style.FontAssetId),
+            FontVariant = FontVariant ?? (ClearFontVariant || changesFont || changesFormatting ? null : style.FontVariant),
             FontSize = FontSize ?? style.FontSize,
-            Bold = Bold ?? style.Bold,
-            Italic = Italic ?? style.Italic,
+            Bold = Bold ?? (FontVariant is { } variant ? variant.Weight >= 700 : style.Bold),
+            Italic = Italic ?? FontVariant?.Italic ?? style.Italic,
             Underline = Underline ?? style.Underline,
             Strikethrough = Strikethrough ?? style.Strikethrough,
             Fill = Fill ?? style.Fill,
@@ -51,15 +59,22 @@ public sealed record SubtitleInlineStyleOverride
     public SubtitleInlineStyleOverride Merge(SubtitleInlineStyleOverride overlay)
     {
         ArgumentNullException.ThrowIfNull(overlay);
-        var changesFont = overlay.FontFamily is not null || overlay.FontAssetId.HasValue || overlay.ClearFontAsset;
+        var changesFont = overlay.FontFamily is not null || overlay.FontAssetId.HasValue || overlay.ClearFontAsset ||
+            overlay.FontVariant is not null;
+        var changesVariant = changesFont || overlay.FontVariant is not null || overlay.ClearFontVariant;
+        var changesFormatting = FontVariant is { } variant &&
+            (overlay.Bold.HasValue && overlay.Bold != (variant.Weight >= 700) ||
+             overlay.Italic.HasValue && overlay.Italic != variant.Italic);
         return this with
         {
             FontFamily = overlay.FontFamily ?? FontFamily,
             FontAssetId = changesFont ? overlay.FontAssetId : FontAssetId,
             ClearFontAsset = changesFont ? overlay.ClearFontAsset : ClearFontAsset,
+            FontVariant = changesVariant || changesFormatting ? overlay.FontVariant : FontVariant,
+            ClearFontVariant = changesVariant ? overlay.ClearFontVariant : changesFormatting || ClearFontVariant,
             FontSize = overlay.FontSize ?? FontSize,
-            Bold = overlay.Bold ?? Bold,
-            Italic = overlay.Italic ?? Italic,
+            Bold = overlay.Bold ?? (overlay.FontVariant is { } selected ? selected.Weight >= 700 : Bold),
+            Italic = overlay.Italic ?? overlay.FontVariant?.Italic ?? Italic,
             Underline = overlay.Underline ?? Underline,
             Strikethrough = overlay.Strikethrough ?? Strikethrough,
             Fill = overlay.Fill ?? Fill,
@@ -78,6 +93,7 @@ public sealed record SubtitleInlineStyleOverride
         return new()
         {
             FontFamily = style.FontFamily, FontAssetId = style.FontAssetId, ClearFontAsset = !style.FontAssetId.HasValue,
+            FontVariant = style.FontVariant, ClearFontVariant = style.FontVariant is null,
             FontSize = style.FontSize, Bold = style.Bold, Italic = style.Italic, Underline = style.Underline,
             Strikethrough = style.Strikethrough, Fill = style.Fill, Stroke = style.Stroke, StrokeWidth = style.StrokeWidth,
             ShadowOffset = style.ShadowOffset, ShadowBlur = style.ShadowBlur, ShadowColor = style.ShadowColor

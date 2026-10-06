@@ -30,42 +30,20 @@ public static partial class ProjectEditingOperations
 
         var layer = SubtitleLayer(document.Layers, subtitleId);
         var contentTime = playhead - original.Start + layer.AnimationOffset;
-        var leftKaraoke = ImmutableArray.CreateBuilder<KaraokeSegment>();
-        var rightKaraoke = ImmutableArray.CreateBuilder<KaraokeSegment>();
-        foreach (var segment in original.Karaoke)
-        {
-            var end = segment.Utf16Start + segment.Utf16Length;
-            if (end <= utf16Offset)
-            {
-                leftKaraoke.Add(segment);
-            }
-            else if (segment.Utf16Start >= utf16Offset)
-            {
-                rightKaraoke.Add(segment with { Utf16Start = segment.Utf16Start - utf16Offset });
-            }
-            else
-            {
-                if (contentTime <= segment.Start || contentTime >= segment.End)
-                {
-                    throw new InvalidOperationException("跨字词卡拉 OK 的拆分时刻必须在该片段的高亮区间内部。");
-                }
-
-                leftKaraoke.Add(segment with { Utf16Length = utf16Offset - segment.Utf16Start, End = contentTime });
-                rightKaraoke.Add(segment with { Id = Guid.NewGuid(), Utf16Start = 0, Utf16Length = end - utf16Offset, Start = contentTime });
-            }
-        }
+        var (leftKaraoke, rightKaraoke) = SplitKaraoke(original.Karaoke, utf16Offset, contentTime);
+        var (leftInactiveKaraoke, rightInactiveKaraoke) = SplitKaraoke(original.InactiveKaraoke, utf16Offset, contentTime);
 
         var left = original with
         {
-            End = playhead, Text = leftText, Karaoke = leftKaraoke.ToImmutable(),
+            End = playhead, Text = leftText, Karaoke = leftKaraoke, InactiveKaraoke = leftInactiveKaraoke,
             InlineSpans = SubtitleContentSplitMerge.SplitSpans(original.InlineSpans, utf16Offset, false),
-            KaraokeStyle = leftKaraoke.Count > 0 ? original.KaraokeStyle : null
+            KaraokeStyle = !leftKaraoke.IsEmpty || !leftInactiveKaraoke.IsEmpty ? original.KaraokeStyle : null
         };
         var right = original with
         {
-            Id = Guid.NewGuid(), Start = playhead, Text = rightText, Karaoke = rightKaraoke.ToImmutable(),
+            Id = Guid.NewGuid(), Start = playhead, Text = rightText, Karaoke = rightKaraoke, InactiveKaraoke = rightInactiveKaraoke,
             InlineSpans = SubtitleContentSplitMerge.SplitSpans(original.InlineSpans, utf16Offset, true),
-            KaraokeStyle = rightKaraoke.Count > 0 ? original.KaraokeStyle : null
+            KaraokeStyle = !rightKaraoke.IsEmpty || !rightInactiveKaraoke.IsEmpty ? original.KaraokeStyle : null
         };
         var found = false;
         var layers = RewriteSiblings(document.Layers, layer.Id, (siblings, layerIndex) => siblings
@@ -115,33 +93,28 @@ public static partial class ProjectEditingOperations
         var secondOrigin = second.Start - secondLayer.AnimationOffset;
         var mergedOrigin = firstOrigin < secondOrigin ? firstOrigin : secondOrigin;
         var mergedOffset = first.Start - mergedOrigin;
-        var firstKaraoke = RebaseKaraoke(first, firstLayer, mergedOrigin, 0);
-        var secondKaraoke = RebaseKaraoke(second, secondLayer, mergedOrigin,
-            checked(first.Text.Length + separator.Length));
+        var firstHasKaraoke = !first.Karaoke.IsEmpty || !first.InactiveKaraoke.IsEmpty;
+        var secondHasKaraoke = !second.Karaoke.IsEmpty || !second.InactiveKaraoke.IsEmpty;
         var compatibleKaraokeStyles = first.KaraokeStyle is null
             ? second.KaraokeStyle is null
             : first.KaraokeStyle.VisuallyEquals(second.KaraokeStyle);
-        var mergedKaraokeStyle = firstKaraoke.IsEmpty ? second.KaraokeStyle : first.KaraokeStyle;
-        if (!firstKaraoke.IsEmpty && !secondKaraoke.IsEmpty && !compatibleKaraokeStyles)
-        {
-            mergedKaraokeStyle = null;
-            firstKaraoke = firstKaraoke.Select((clip, index) => clip with
-            {
-                ActiveStyle = SubtitleContentSplitMerge.PreserveHighlight(first, first.Karaoke[index])
-            }).ToImmutableArray();
-            secondKaraoke = secondKaraoke.Select((clip, index) => clip with
-            {
-                ActiveStyle = SubtitleContentSplitMerge.PreserveHighlight(second, second.Karaoke[index])
-            }).ToImmutableArray();
-        }
-        var clipIds = firstKaraoke.Select(clip => clip.Id).ToHashSet();
-        secondKaraoke = secondKaraoke.Select(clip => clipIds.Add(clip.Id) ? clip : clip with { Id = Guid.NewGuid() }).ToImmutableArray();
+        var preserveHighlight = firstHasKaraoke && secondHasKaraoke && !compatibleKaraokeStyles;
+        var mergedKaraokeStyle = preserveHighlight ? null : firstHasKaraoke ? first.KaraokeStyle : second.KaraokeStyle;
+        var secondTextOffset = checked(first.Text.Length + separator.Length);
+        var firstKaraoke = RebaseKaraoke(first, first.Karaoke, firstLayer, mergedOrigin, 0, preserveHighlight);
+        var firstInactiveKaraoke = RebaseKaraoke(first, first.InactiveKaraoke, firstLayer, mergedOrigin, 0, preserveHighlight);
+        var secondKaraoke = RebaseKaraoke(second, second.Karaoke, secondLayer, mergedOrigin, secondTextOffset, preserveHighlight);
+        var secondInactiveKaraoke = RebaseKaraoke(second, second.InactiveKaraoke, secondLayer, mergedOrigin, secondTextOffset, preserveHighlight);
+        var clipIds = firstKaraoke.Concat(firstInactiveKaraoke).Select(clip => clip.Id).ToHashSet();
+        secondKaraoke = DeduplicateKaraokeIds(secondKaraoke, clipIds);
+        secondInactiveKaraoke = DeduplicateKaraokeIds(secondInactiveKaraoke, clipIds);
         var merged = first with
         {
             End = second.End,
             Text = first.Text + separator + second.Text,
             InlineSpans = SubtitleContentSplitMerge.MergeSpans(first, second, checked(first.Text.Length + separator.Length)),
             Karaoke = firstKaraoke.AddRange(secondKaraoke),
+            InactiveKaraoke = firstInactiveKaraoke.AddRange(secondInactiveKaraoke),
             KaraokeStyle = mergedKaraokeStyle
         };
         var found = false;
@@ -260,17 +233,71 @@ public static partial class ProjectEditingOperations
         return Verified(document with { Layers = layers });
     }
 
-    private static ImmutableArray<KaraokeSegment> RebaseKaraoke(SubtitleLine line, ProjectLayer layer,
-        MediaTime mergedOrigin, int textOffset)
+    private static (ImmutableArray<KaraokeSegment> Left, ImmutableArray<KaraokeSegment> Right) SplitKaraoke(
+        ImmutableArray<KaraokeSegment> segments, int utf16Offset, MediaTime contentTime)
+    {
+        var left = ImmutableArray.CreateBuilder<KaraokeSegment>();
+        var right = ImmutableArray.CreateBuilder<KaraokeSegment>();
+        foreach (var segment in segments)
+        {
+            var end = checked(segment.Utf16Start + segment.Utf16Length);
+            if (end <= utf16Offset)
+            {
+                left.Add(segment);
+            }
+            else if (segment.Utf16Start >= utf16Offset)
+            {
+                right.Add(segment with { Utf16Start = segment.Utf16Start - utf16Offset });
+            }
+            else
+            {
+                if (contentTime <= segment.Start || contentTime >= segment.End)
+                {
+                    throw new InvalidOperationException("跨字词卡拉 OK 的拆分时刻必须在该片段的高亮区间内部。");
+                }
+
+                left.Add(segment with { Utf16Length = utf16Offset - segment.Utf16Start, End = contentTime });
+                right.Add(segment with { Id = Guid.NewGuid(), Utf16Start = 0, Utf16Length = end - utf16Offset, Start = contentTime });
+            }
+        }
+
+        return (left.ToImmutable(), right.ToImmutable());
+    }
+
+    private static ImmutableArray<KaraokeSegment> RebaseKaraoke(SubtitleLine line, ImmutableArray<KaraokeSegment> segments,
+        ProjectLayer layer, MediaTime mergedOrigin, int textOffset, bool preserveHighlight)
     {
         var result = ImmutableArray.CreateBuilder<KaraokeSegment>();
         var offset = line.Start - layer.AnimationOffset - mergedOrigin;
-        foreach (var segment in line.Karaoke)
+        foreach (var segment in segments)
         {
-            result.Add(segment with { Utf16Start = checked(segment.Utf16Start + textOffset), Start = segment.Start + offset, End = segment.End + offset });
+            result.Add(segment with
+            {
+                Utf16Start = checked(segment.Utf16Start + textOffset), Start = segment.Start + offset, End = segment.End + offset,
+                ActiveStyle = preserveHighlight ? SubtitleContentSplitMerge.PreserveHighlight(line, segment) : segment.ActiveStyle
+            });
         }
 
         return result.ToImmutable();
+    }
+
+    private static ImmutableArray<KaraokeSegment> DeduplicateKaraokeIds(ImmutableArray<KaraokeSegment> segments, HashSet<Guid> ids)
+    {
+        return segments.Select(segment =>
+        {
+            if (ids.Add(segment.Id))
+            {
+                return segment;
+            }
+
+            Guid id;
+            do
+            {
+                id = Guid.NewGuid();
+            }
+            while (!ids.Add(id));
+            return segment with { Id = id };
+        }).ToImmutableArray();
     }
 
     private static bool HasNeutralVisuals(ProjectLayer layer)

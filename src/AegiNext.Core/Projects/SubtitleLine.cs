@@ -15,6 +15,7 @@ public sealed record SubtitleLine
     public SubtitleStyle Style { get; init; } = new();
     public ImmutableArray<SubtitleInlineSpan> InlineSpans { get; init; } = [];
     public ImmutableArray<KaraokeSegment> Karaoke { get; init; } = [];
+    public ImmutableArray<KaraokeSegment> InactiveKaraoke { get; init; } = [];
     public KaraokeHighlightStyle? KaraokeStyle { get; init; }
 
     [JsonIgnore]

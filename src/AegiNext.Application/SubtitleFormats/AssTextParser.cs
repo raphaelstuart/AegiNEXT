@@ -7,8 +7,9 @@ using AegiNext.Core.Timing;
 namespace AegiNext.Application.SubtitleFormats;
 
 internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<string, AssStyleDefinition> styles,
-    SceneColor secondary, double scaleX = 1, double scaleY = 1, bool projectSource = false)
+    SceneColor secondary, double scaleX = 1, double scaleY = 1, bool projectSource = false, int canvasWidth = 1920, int canvasHeight = 1080)
 {
+    private readonly AssMaskParser maskParser = new(original.End - original.Start, scaleX, scaleY, canvasWidth, canvasHeight);
     private readonly StringBuilder text = new();
     private readonly ImmutableArray<SubtitleInlineSpan>.Builder spans = ImmutableArray.CreateBuilder<SubtitleInlineSpan>();
     private readonly ImmutableArray<KaraokeSegment>.Builder karaoke = ImmutableArray.CreateBuilder<KaraokeSegment>();
@@ -106,9 +107,27 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             index += count;
         }
         FlushKaraoke();
-        var line = original with { Text = text.ToString(), Style = lineStyle, InlineSpans = spans.ToImmutable(), Karaoke = karaoke.ToImmutable() };
+        var line = original with
+        {
+            Text = text.ToString(), Style = lineStyle, InlineSpans = spans.ToImmutable(),
+            Karaoke = karaoke.ToImmutable(), InactiveKaraoke = []
+        };
+        var contentOffset = !projectSource && !line.Karaoke.IsEmpty && line.Karaoke[0].Start < MediaTime.Zero ? -line.Karaoke[0].Start : MediaTime.Zero;
+        if (contentOffset > MediaTime.Zero)
+        {
+            line = line with { Karaoke = line.Karaoke.Select(clip => clip with { Start = clip.Start + contentOffset, End = clip.End + contentOffset }).ToImmutableArray() };
+        }
         ValidateLine(line);
-        return new(line, diagnostics.ToImmutable(), map.ToImmutable()) { KaraokeSourceMap = karaokeMap.ToImmutable() };
+        diagnostics.AddRange(maskParser.Diagnostics);
+        return new(line, diagnostics.ToImmutable(), map.ToImmutable())
+        {
+            KaraokeSourceMap = karaokeMap.ToImmutable(), Mask = maskParser.Mask, ContentOffset = contentOffset,
+            MaskTracks = maskParser.Tracks().Select(track => contentOffset == MediaTime.Zero ? track : track with
+            {
+                Keyframes = track.Keyframes.Select(key => key with { Time = key.Time + contentOffset }).ToImmutableArray(),
+                Transforms = track.Transforms.Select(operation => operation with { Start = operation.Start + contentOffset, End = operation.End + contentOffset }).ToImmutableArray()
+            }).ToImmutableArray()
+        };
     }
 
     private void ParseTags(ReadOnlySpan<char> block, int sourceOffset)
@@ -158,7 +177,14 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         var baseline = original.Style;
         switch (name)
         {
-            case "fn": current = current with { FontFamily = value.Length == 0 ? baseline.FontFamily : value, FontAssetId = null }; break;
+            case "fn":
+                var family = value.Length == 0 ? baseline.FontFamily : value;
+                current = current with
+                {
+                    FontFamily = family, FontAssetId = null,
+                    FontVariant = family == current.FontFamily ? current.FontVariant : null
+                };
+                break;
             case "fs":
                 var fontSize = value.Length == 0 ? baseline.FontSize : value[0] is '+' or '-'
                     ? current.FontSize * (1 + AssFormatValues.Number(value) / 10) : AssFormatValues.Number(value) * scaleY;
@@ -166,13 +192,17 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 break;
             case "b":
                 var weight = value.Length == 0 ? (baseline.Bold ? 1 : 0) : AssFormatValues.Integer(value);
-                current = current with { Bold = weight is -1 or 1 || weight >= 600 };
+                var bold = weight is -1 or 1 || weight >= 600;
+                current = current with { Bold = bold, FontVariant = bold == current.Bold ? current.FontVariant : null };
                 if (weight is not (-1 or 0 or 1))
                 {
                     Report("Ass.FontWeight", "ASS 显式字体粗细被转换为普通或粗体。", sourceStart, sourceLength);
                 }
                 break;
-            case "i": current = current with { Italic = value.Length == 0 ? baseline.Italic : AssFormatValues.Integer(value) != 0 }; break;
+            case "i":
+                var italic = value.Length == 0 ? baseline.Italic : AssFormatValues.Integer(value) != 0;
+                current = current with { Italic = italic, FontVariant = italic == current.Italic ? current.FontVariant : null };
+                break;
             case "u": current = current with { Underline = value.Length == 0 ? baseline.Underline : AssFormatValues.Integer(value) != 0 }; break;
             case "s": current = current with { Strikethrough = value.Length == 0 ? baseline.Strikethrough : AssFormatValues.Integer(value) != 0 }; break;
             case "c":
@@ -248,6 +278,14 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 lineStyle = lineStyle with { Position = new() { Anchor = new(0, 0), Pivot = Pivot(lineStyle.Alignment), Offset = offset } };
                 explicitPosition = true;
                 break;
+            case "kt":
+                FlushKaraoke();
+                karaokeTime = new(AssFormatValues.Integer(value), 100);
+                if (projectSource && karaokeTime < MediaTime.Zero)
+                {
+                    throw new InvalidDataException("工程高级代码的卡拉 OK 时间不能为负。");
+                }
+                break;
             case "k":
             case "K":
             case "kf":
@@ -264,8 +302,15 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 segmentSourceLength = sourceLength;
                 kind = name == "k" ? KaraokeHighlightKind.STEP : name == "ko" ? KaraokeHighlightKind.OUTLINE_STEP : KaraokeHighlightKind.SWEEP;
                 break;
+            case "clip":
+            case "iclip":
+                maskParser.Apply(name, value, original.Id, sourceStart, sourceLength);
+                break;
             case "t":
-                ParseInstantTransform(value, sourceStart, sourceLength);
+                if (!maskParser.TryTransform(value, original.Id, sourceStart, sourceLength))
+                {
+                    ParseInstantTransform(value, sourceStart, sourceLength);
+                }
                 break;
             case "p":
                 drawing = AssFormatValues.Integer(value) != 0;
@@ -292,7 +337,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 ActiveStyle = (segmentActiveVisual ?? new()) with { Fill = segmentActive ?? current.Fill }
             });
         }
-        else if (text.Length > segmentStart)
+        else if (text.Length > segmentStart && !projectSource)
         {
             Report("Ass.ZeroKaraoke", "零时长演唱文字已作为普通文字导入。", 0, 0);
         }

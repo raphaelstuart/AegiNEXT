@@ -17,6 +17,7 @@ internal static class AnimationPropertyLocalization
             AnimationProperty.FILL_BLUE => "FillBlue", AnimationProperty.FILL_ALPHA => "FillAlpha", AnimationProperty.STROKE_RED => "StrokeRed",
             AnimationProperty.STROKE_GREEN => "StrokeGreen", AnimationProperty.STROKE_BLUE => "StrokeBlue", AnimationProperty.STROKE_ALPHA => "StrokeAlpha",
             AnimationProperty.STROKE_WIDTH => "StrokeWidth", AnimationProperty.BLUR => "Blur", AnimationProperty.PATH_PROGRESS => "PathProgress",
+            _ when AnimationPropertyMetadata.IsMaskProperty(value) => value.ToString(),
             _ => throw new ArgumentOutOfRangeException(nameof(value))
         };
         return Localization.Get("Workbench." + key);

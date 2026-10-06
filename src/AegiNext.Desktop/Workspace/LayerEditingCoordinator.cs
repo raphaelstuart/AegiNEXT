@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Globalization;
 using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Editing;
@@ -14,11 +13,12 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
 {
     private Guid? valueLayerId;
-    private AnimationProperty? valueProperty;
+    private AnimationTrackTarget? valueProperty;
 
-    internal AnimationProperty ActiveProperty => session.ViewModel.Effects.Property;
+    internal AnimationProperty ActiveProperty => ActiveTarget.Property;
+    internal AnimationTrackTarget ActiveTarget => session.SceneEditing.Target;
     internal Keyframe? SelectedKeyframe => session.SelectedKeyTime is { } time
-        ? session.SelectedLayer?.Tracks.FirstOrDefault(track => track.Property == ActiveProperty)?.Keyframes.FirstOrDefault(frame => frame.Time == time)
+        ? session.SelectedLayer?.Tracks.FirstOrDefault(track => track.Target == ActiveTarget)?.Keyframes.FirstOrDefault(frame => frame.Time == time)
         : null;
 
     internal void UpdateStyle(Func<SubtitleStyle, SubtitleStyle> change)
@@ -172,38 +172,23 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             : presetId is { } existingId && cue.KaraokeStyle?.PresetId == existingId
                 ? cue.KaraokeStyle
                 : null;
-        if (!cue.Karaoke.IsEmpty)
+        if (presetId is null)
         {
-            session.Editor.UpdateSubtitle(cue.Id, value => value with { KaraokeStyle = highlightStyle });
+            session.Editor.SetSubtitleKaraokeEnabled(cue.Id, true);
             return;
         }
-
-        var boundaries = StringInfo.ParseCombiningCharacters(cue.Text);
-        if (boundaries.Length == 0)
+        session.Editor.Apply("Apply subtitle highlight preset", document =>
         {
-            return;
-        }
-
-        var duration = cue.End - cue.Start;
-        var offset = session.SelectedLayer?.AnimationOffset ?? MediaTime.Zero;
-        var segments = ImmutableArray.CreateBuilder<KaraokeSegment>();
-        for (var index = 0; index < boundaries.Length; index++)
-        {
-            var start = new MediaTime(checked(duration.Numerator * index),
-                checked(duration.Denominator * boundaries.Length)) + offset;
-            var end = new MediaTime(checked(duration.Numerator * (index + 1)),
-                checked(duration.Denominator * boundaries.Length)) + offset;
-            if (end <= MediaTime.Zero)
+            var enabled = ProjectEditingOperations.SetSubtitleKaraokeEnabled(document, cue.Id, true);
+            if (enabled.Subtitles.Single(line => line.Id == cue.Id).KaraokeStyle == highlightStyle)
             {
-                continue;
+                return enabled;
             }
-
-            segments.Add(new(boundaries[index],
-                (index + 1 < boundaries.Length ? boundaries[index + 1] : cue.Text.Length) - boundaries[index],
-                start < MediaTime.Zero ? MediaTime.Zero : start, end, new(1, 0.6, 0)));
-        }
-
-        session.Editor.UpdateSubtitle(cue.Id, value => value with { Karaoke = segments.ToImmutable(), KaraokeStyle = highlightStyle });
+            return enabled with
+            {
+                Subtitles = enabled.Subtitles.Select(line => line.Id == cue.Id ? line with { KaraokeStyle = highlightStyle } : line).ToImmutableArray()
+            };
+        });
     }
 
     internal void ClearKeyframeSelection()
@@ -220,9 +205,9 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             return false;
         }
         var layer = WorkbenchSession.Flatten(session.Editor.Snapshot.Layers).FirstOrDefault(value => value.Id == e.LayerId);
-        if (layer is null || layer.Tracks
-                .FirstOrDefault(track => track.Property == e.Property)?.Keyframes
-                .FirstOrDefault(frame => frame.Time == e.OldTime) is null)
+        var selectedTrack = layer?.Tracks.FirstOrDefault(track => track.Target == e.Target);
+        if (layer is null || (e.OperationId is { } operationId ? selectedTrack?.Transforms.Any(operation => operation.Id == operationId) != true :
+                selectedTrack?.Keyframes.FirstOrDefault(frame => frame.Time == e.OldTime) is null))
         {
             return false;
         }
@@ -235,15 +220,17 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             session.SelectedLayerId = layer.Id;
             session.SelectedCueId = layer.SubtitleId;
             session.ViewModel.Effects.SelectedIds = [layer.Id];
-            session.SelectedKeyTime = e.OldTime;
-            session.ViewModel.Effects.Property = e.Property;
-            session.ViewModel.Timeline.EffectProperty = e.Property;
+            session.SelectedKeyTime = e.OperationId is null ? e.OldTime : null;
+            session.SceneEditing.TransformOperationId = e.OperationId;
+            session.ViewModel.Effects.Target = e.Target;
+            session.SceneEditing.MaskNodeId = e.Target.NodeId ?? session.SceneEditing.MaskNodeId;
+            session.ViewModel.Timeline.EffectTarget = e.Target;
             session.RefreshDocument();
             RefreshKeyframeInspector();
             _ = session.RunCommandAsync(async () =>
             {
                 await session.PauseForSceneEditAsync();
-                if (!session.IsClosing && session.SelectedLayerId == e.LayerId && session.SelectedKeyTime == e.OldTime)
+                if (!session.IsClosing && session.SelectedLayerId == e.LayerId && (e.OperationId is not null || session.SelectedKeyTime == e.OldTime))
                 {
                     await session.SeekForEditingAsync(layer.Start + e.OldTime - layer.AnimationOffset);
                 }
@@ -270,11 +257,11 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             var input = session.ViewModel.Effects;
             input.KeyframeMaximum = maximum;
             input.KeyframeMinimum = minimum;
-            var fallback = session.SelectedLayer is { } layer ? BaseValue(layer, ActiveProperty) : AnimationValue.FromScalar(0);
-            var track = session.SelectedLayer?.Tracks.FirstOrDefault(value => value.Property == ActiveProperty);
+            var fallback = session.SelectedLayer is { } layer ? BaseValue(layer, ActiveTarget) : AnimationValue.FromScalar(0);
+            var track = session.SelectedLayer?.Tracks.FirstOrDefault(value => value.Target == ActiveTarget);
             var current = frame?.Value ?? (track is not null && session.AnimationTarget is { } target
                 ? SceneEvaluator.EvaluateTrack(track, target.LocalTime) : fallback);
-            if (frame is not null || track is not null || valueLayerId != session.SelectedLayerId || valueProperty != ActiveProperty)
+            if (frame is not null || track is not null || valueLayerId != session.SelectedLayerId || valueProperty != ActiveTarget)
             {
                 if (current.IsColor)
                 {
@@ -286,11 +273,14 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
                     input.KeyframeValueY = current.IsVector ? Math.Clamp((decimal)current.Vector.Y, minimum, maximum) : 0;
                 }
             }
+            session.ViewModel.Effects.IsOrderedTransform = track is not null && !track.Transforms.IsEmpty;
+            session.ViewModel.Effects.RefreshTransformOperations(track);
             valueLayerId = session.SelectedLayerId;
-            valueProperty = ActiveProperty;
+            valueProperty = ActiveTarget;
             if (frame is not null)
             {
                 session.ViewModel.Effects.Interpolation = (int)frame.Interpolation;
+                session.ViewModel.Effects.LoadPowerExponent(frame.Exponent);
             }
 
             RefreshKeyframeAvailability();
@@ -302,8 +292,13 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         }
     }
 
-    private AnimationValue BaseValue(ProjectLayer layer, AnimationProperty property)
+    private AnimationValue BaseValue(ProjectLayer layer, AnimationTrackTarget target)
     {
+        var property = target.Property;
+        if (AnimationPropertyMetadata.IsMaskProperty(property) && layer.Mask is { } mask)
+        {
+            return ClipMaskAnimation.GetBaseValue(mask, target);
+        }
         var style = layer.SubtitleId is { } id
             ? session.DocumentSnapshot.Subtitles.Single(value => value.Id == id).Style : null;
         return property switch
@@ -324,7 +319,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
     {
         if (session.SelectedLayer is { } layer && SelectedKeyframe is { } frame)
         {
-            session.Editor.SetKeyframe(layer.Id, ActiveProperty, change(frame));
+            session.Editor.SetKeyframe(layer.Id, ActiveTarget, change(frame));
         }
     }
 
@@ -340,14 +335,17 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
         var value = ActiveProperty is AnimationProperty.FILL or AnimationProperty.STROKE
             ? AnimationValue.FromColor(session.ViewModel.Effects.KeyframeColorDraft.Value)
-            : ActiveProperty is AnimationProperty.POSITION or AnimationProperty.SCALE
+            : AnimationPropertyMetadata.GetValueKind(ActiveProperty) == AnimationValueKind.VECTOR
             ? AnimationValue.FromVector(new((double)(session.ViewModel.Effects.KeyframeValue ?? 0), (double)(session.ViewModel.Effects.KeyframeValueY ?? 0)))
             : AnimationValue.FromScalar((double)(session.ViewModel.Effects.KeyframeValue ?? 0));
-        session.Editor.SetKeyframe(layer.Id, ActiveProperty, new(time,
+        session.Editor.SetKeyframe(layer.Id, ActiveTarget, new(time,
             value,
-            (KeyframeInterpolation)Math.Max(0, session.ViewModel.Effects.Interpolation)));
-        session.ViewModel.Timeline.EffectProperty = ActiveProperty;
-        SelectKeyframe(new(layer.Id, ActiveProperty, time, time));
+            (KeyframeInterpolation)Math.Max(0, session.ViewModel.Effects.Interpolation))
+        {
+            Exponent = session.ViewModel.Effects.ReadPowerExponent()
+        });
+        session.ViewModel.Timeline.EffectTarget = ActiveTarget;
+        SelectKeyframe(new(layer.Id, ActiveTarget, time, time));
     }
 
     internal void DeleteKeyframe()
@@ -356,26 +354,39 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         var time = session.SelectedKeyTime ?? session.ProjectPosition - layer.Start + layer.AnimationOffset;
         session.Editor.UpdateLayer(layer.Id, value => value with
         {
-            Tracks = value.Tracks.Select(track => track.Property == ActiveProperty
+            Tracks = value.Tracks.Select(track => track.Target == ActiveTarget
                     ? track with
                     {
                         Keyframes = track.Keyframes.Where(frame => frame.Time != time).ToImmutableArray()
                     }
                     : track)
-                .Where(track => !track.Keyframes.IsEmpty).ToImmutableArray()
+                .Where(track => !track.Keyframes.IsEmpty || !track.Transforms.IsEmpty).ToImmutableArray()
         });
         ClearKeyframeSelection();
     }
 
     internal void MoveKeyframe(TimelineKeyframeEventArgs e)
     {
+        if (e.OperationId is { } operationId)
+        {
+            session.Editor.UpdateLayer(e.LayerId, layer => layer with
+            {
+                Tracks = layer.Tracks.Select(track => track.Target != e.Target ? track : track with
+                {
+                    Transforms = track.Transforms.Select(operation => operation.Id != operationId ? operation :
+                        e.IsOperationStart ? operation with { Start = e.NewTime <= operation.End ? e.NewTime : operation.End } :
+                        operation with { End = e.NewTime >= operation.Start ? e.NewTime : operation.Start }).ToImmutableArray()
+                }).ToImmutableArray()
+            });
+            return;
+        }
         var movedTime = e.NewTime;
         session.Editor.UpdateLayer(e.LayerId, layer =>
         {
             movedTime = LayerAnimationTiming.ClampTime(layer, e.NewTime);
             return layer with
             {
-                Tracks = layer.Tracks.Select(track => track.Property == e.Property
+                Tracks = layer.Tracks.Select(track => track.Target == e.Target
                 ? track with
                 {
                     Keyframes = track.Keyframes
@@ -388,12 +399,13 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
                 : track).ToImmutableArray()
             };
         });
-        SelectKeyframe(new(e.LayerId, e.Property, movedTime, movedTime));
+        SelectKeyframe(new(e.LayerId, e.Target, movedTime, movedTime));
     }
 
     internal void RefreshKeyframeAvailability()
     {
         session.ViewModel.Effects.CanAddKeyframe = session.SelectedLayer is { } layer &&
+            layer.Tracks.FirstOrDefault(track => track.Target == ActiveTarget)?.Transforms.IsEmpty != false &&
             session.ProjectPosition >= layer.Start && session.ProjectPosition <= layer.End &&
             session.ProjectPosition - layer.Start + layer.AnimationOffset >= MediaTime.Zero;
     }
@@ -405,7 +417,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
     {
         if (session.SelectedCue is { } cue)
         {
-            session.Editor.UpdateSubtitle(cue.Id, line => line with { Karaoke = [], KaraokeStyle = null });
+            session.Editor.SetSubtitleKaraokeEnabled(cue.Id, false);
         }
     }
 }

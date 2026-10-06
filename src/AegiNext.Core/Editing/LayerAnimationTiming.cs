@@ -5,7 +5,7 @@ using AegiNext.Core.Timing;
 
 namespace AegiNext.Core.Editing;
 
-/// <summary>将内容关键帧约束到片段的可见时间窗，裁剪保留原插值曲线相位。</summary>
+/// <summary>裁剪保留内容时钟及曲线相位，有序变换保留操作时间；拉伸同步缩放所有动画时间。</summary>
 public static class LayerAnimationTiming
 {
     /// <summary>获取片段允许的非负内容时间，右端可保存结束关键帧。</summary>
@@ -51,7 +51,12 @@ public static class LayerAnimationTiming
                 Scale(layer.AnimationOffset, newDuration, oldDuration),
             Tracks = mode == TimelineEditMode.CROP ? layer.Tracks : layer.Tracks.Select(track => track with
             {
-                Keyframes = track.Keyframes.Select(frame => frame with { Time = Scale(frame.Time, newDuration, oldDuration) }).ToImmutableArray()
+                Keyframes = track.Keyframes.Select(frame => frame with { Time = Scale(frame.Time, newDuration, oldDuration) }).ToImmutableArray(),
+                Transforms = track.Transforms.Select(operation => operation with
+                {
+                    Start = Scale(operation.Start, newDuration, oldDuration),
+                    End = Scale(operation.End, newDuration, oldDuration)
+                }).ToImmutableArray()
             }).ToImmutableArray(),
             MotionPath = mode == TimelineEditMode.STRETCH && layer.MotionPath is { } path
                 ? path with { Duration = Scale(path.Duration, newDuration, oldDuration) }
@@ -68,7 +73,7 @@ public static class LayerAnimationTiming
             return layer;
         }
 
-        var tracks = maximum < minimum ? ImmutableArray<AnimationTrack>.Empty :
+        var tracks = maximum < minimum ? layer.Tracks.Where(track => track.IsOrdered).ToImmutableArray() :
             layer.Tracks.Select(track => ClipTrack(track, minimum, maximum)).ToImmutableArray();
         return tracks.SequenceEqual(layer.Tracks) ? layer : layer with { Tracks = tracks };
     }
@@ -100,6 +105,11 @@ public static class LayerAnimationTiming
 
     private static AnimationTrack ClipTrack(AnimationTrack track, MediaTime minimum, MediaTime maximum)
     {
+        if (track.IsOrdered)
+        {
+            return track;
+        }
+
         var frames = track.Keyframes;
         if (frames[0].Time >= minimum && frames[^1].Time <= maximum)
         {
@@ -145,6 +155,7 @@ public static class LayerAnimationTiming
                     key = key with
                     {
                         Interpolation = first.Interpolation,
+                        Exponent = first.Exponent,
                         CurveStart = Math.Clamp(first.CurveStart + range * Seconds(time - first.Time) / duration, first.CurveStart, first.CurveEnd),
                         CurveEnd = Math.Clamp(first.CurveStart + range * Seconds(end - first.Time) / duration, first.CurveStart, first.CurveEnd),
                         ComponentCurves = first.ComponentCurves.Select(curve => curve is null ? null : curve with
@@ -158,7 +169,7 @@ public static class LayerAnimationTiming
                 }
                 else
                 {
-                    key = key with { Interpolation = KeyframeInterpolation.HOLD, CurveStart = 0, CurveEnd = 1, ComponentCurves = [] };
+                    key = key with { Interpolation = KeyframeInterpolation.HOLD, CurveStart = 0, CurveEnd = 1, Exponent = 1, ComponentCurves = [] };
                 }
             }
 

@@ -21,10 +21,28 @@ public static class SceneEvaluator
         return EvaluateLayers(scene.Document.Layers, scene.Subtitles, time);
     }
 
-    /// <summary>求严格递增轨道的保持、线性或缓动值；时间在首尾之外时保持端点。</summary>
+    /// <summary>求关键帧插值或按源顺序叠加原生变换，所有面板、脚本、预览及压制共用此结果。</summary>
     public static AnimationValue EvaluateTrack(AnimationTrack track, MediaTime time)
     {
         ArgumentNullException.ThrowIfNull(track);
+        if (track.IsOrdered)
+        {
+            if (!track.Keyframes.IsDefaultOrEmpty || track.InitialValue is not { } initial)
+            {
+                throw new InvalidDataException("有序变换轨道不能同时包含关键帧且必须具有初始值。");
+            }
+
+            var result = initial;
+            foreach (var operation in track.Transforms)
+            {
+                var transformFraction = time < operation.Start ? 0 : time >= operation.End ? 1 :
+                    Math.Pow(Fraction(time - operation.Start, operation.End - operation.Start), operation.Acceleration);
+                result = AnimationValue.Lerp(result, operation.Value, transformFraction);
+            }
+
+            return result;
+        }
+
         if (track.Keyframes.IsDefaultOrEmpty)
         {
             throw new ArgumentException("轨道没有关键帧。", nameof(track));
@@ -59,13 +77,13 @@ public static class SceneEvaluator
         var first = frames[lower - 1];
         var second = frames[lower];
         var fraction = Fraction(time - first.Time, second.Time - first.Time);
-        var firstFraction = CurveFraction(first.Interpolation, first.CurveStart, first.CurveEnd, fraction);
+        var firstFraction = CurveFraction(first.Interpolation, first.CurveStart, first.CurveEnd, fraction, first.Exponent);
         var value = AnimationValue.Lerp(first.Value, second.Value, firstFraction);
         for (var component = 1; component < first.Value.ComponentCount; component++)
         {
             if (!first.ComponentCurves.IsDefaultOrEmpty && first.ComponentCurves[component - 1] is { } curve)
             {
-                var componentFraction = CurveFraction(curve.Interpolation, curve.CurveStart, curve.CurveEnd, fraction);
+                var componentFraction = CurveFraction(curve.Interpolation, curve.CurveStart, curve.CurveEnd, fraction, curve.Exponent);
                 var start = first.Value.GetComponent(component);
                 value = value.WithComponent(component, start + (second.Value.GetComponent(component) - start) * componentFraction);
             }
@@ -83,7 +101,7 @@ public static class SceneEvaluator
     /// <summary>读取完整线性 RGBA 轨道值，拒绝其他维度。</summary>
     public static SceneColor EvaluateColorTrack(AnimationTrack track, MediaTime time) => EvaluateTrack(track, time).Color;
 
-    private static double CurveFraction(KeyframeInterpolation interpolation, double start, double end, double fraction)
+    private static double CurveFraction(KeyframeInterpolation interpolation, double start, double end, double fraction, double exponent)
     {
         var range = end - start;
         var offset = range * fraction;
@@ -91,6 +109,7 @@ public static class SceneEvaluator
         {
             KeyframeInterpolation.HOLD => 0,
             KeyframeInterpolation.LINEAR => fraction,
+            KeyframeInterpolation.POWER => PowerFraction(start, end, fraction, exponent),
             KeyframeInterpolation.EASE_IN => fraction * (2 * start + offset) / (2 * start + range),
             KeyframeInterpolation.EASE_OUT => fraction * (2 * (1 - end) + range * (2 - fraction)) /
                 (2 * (1 - end) + range),
@@ -99,6 +118,117 @@ public static class SceneEvaluator
                 (6 * start * (1 - start) + 3 * range * (1 - 2 * start) - 2 * range * range),
             _ => throw new InvalidDataException("未知关键帧插值。")
         };
+    }
+
+    private static double PowerFraction(double start, double end, double fraction, double exponent)
+    {
+        if (fraction <= 0)
+        {
+            return 0;
+        }
+
+        if (fraction >= 1)
+        {
+            return 1;
+        }
+
+        if (start == 0)
+        {
+            return Math.Pow(fraction, exponent);
+        }
+
+        var relativeRange = (end - start) / start;
+        var numerator = ExponentialMinusOne(exponent * LogarithmOnePlus(relativeRange * fraction));
+        var denominator = ExponentialMinusOne(exponent * LogarithmOnePlus(relativeRange));
+        if (double.IsPositiveInfinity(denominator))
+        {
+            return Math.Pow((start + (end - start) * fraction) / end, exponent);
+        }
+
+        return denominator == 0 ? fraction : Math.Clamp(numerator / denominator, 0, 1);
+    }
+
+    private static double LogarithmOnePlus(double value)
+    {
+        if (Math.Abs(value) >= 1e-5)
+        {
+            return Math.Log(1 + value);
+        }
+
+        return value * (1 + value * (-0.5 + value * (1d / 3 - value / 4)));
+    }
+
+    private static double ExponentialMinusOne(double value)
+    {
+        if (Math.Abs(value) >= 1e-5)
+        {
+            return Math.Exp(value) - 1;
+        }
+
+        return value * (1 + value * (0.5 + value * (1d / 6 + value / 24)));
+    }
+
+    /// <summary>按片段内容时间求值独立工程坐标蒙版，固定轴心及拓扑身份保持不变。</summary>
+    public static ClipMask? EvaluateMask(ProjectLayer layer, MediaTime contentTime)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        return EvaluateMask(layer.Mask, layer.Tracks.Where(track => AnimationPropertyMetadata.IsMaskProperty(track.Property))
+            .ToDictionary(track => track.Target, track => EvaluateTrack(track, contentTime)));
+    }
+
+    private static ClipMask? EvaluateMask(ClipMask? mask, Dictionary<AnimationTrackTarget, AnimationValue> values)
+    {
+        if (mask is null)
+        {
+            return null;
+        }
+
+        var transform = mask.Transform with
+        {
+            Position = GetVector(values, AnimationProperty.MASK_POSITION, mask.Transform.Position),
+            Scale = GetVector(values, AnimationProperty.MASK_SCALE, mask.Transform.Scale),
+            Rotation = Get(values, AnimationProperty.MASK_ROTATION, mask.Transform.Rotation)
+        };
+        if (transform != mask.Transform)
+        {
+            mask = mask with { Transform = transform };
+        }
+
+        if (mask is RectangleClipMask rectangle)
+        {
+            var topLeft = GetVector(values, AnimationProperty.MASK_RECTANGLE_TOP_LEFT, rectangle.TopLeft);
+            var bottomRight = GetVector(values, AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT, rectangle.BottomRight);
+            return topLeft == rectangle.TopLeft && bottomRight == rectangle.BottomRight ? rectangle :
+                rectangle with { TopLeft = topLeft, BottomRight = bottomRight };
+        }
+
+        var vector = (VectorClipMask)mask;
+        ImmutableArray<MaskContour>.Builder? contours = null;
+        for (var contourIndex = 0; contourIndex < vector.Contours.Length; contourIndex++)
+        {
+            var contour = vector.Contours[contourIndex];
+            ImmutableArray<MaskNode>.Builder? nodes = null;
+            for (var nodeIndex = 0; nodeIndex < contour.Nodes.Length; nodeIndex++)
+            {
+                var node = contour.Nodes[nodeIndex];
+                var position = values.TryGetValue(new(AnimationProperty.MASK_NODE_POSITION, node.Id), out var point) ? point.Vector : node.Position;
+                var inHandle = values.TryGetValue(new(AnimationProperty.MASK_NODE_IN_HANDLE, node.Id), out var input) ? input.Vector : node.InHandle;
+                var outHandle = values.TryGetValue(new(AnimationProperty.MASK_NODE_OUT_HANDLE, node.Id), out var output) ? output.Vector : node.OutHandle;
+                if (position != node.Position || inHandle != node.InHandle || outHandle != node.OutHandle)
+                {
+                    nodes ??= contour.Nodes.ToBuilder();
+                    nodes[nodeIndex] = node with { Position = position, InHandle = inHandle, OutHandle = outHandle };
+                }
+            }
+
+            if (nodes is not null)
+            {
+                contours ??= vector.Contours.ToBuilder();
+                contours[contourIndex] = contour with { Nodes = nodes.ToImmutable() };
+            }
+        }
+
+        return contours is null ? vector : vector with { Contours = contours.ToImmutable() };
     }
 
     /// <summary>以 [0,1] 段参数求路径位置，超界参数夹在首尾。</summary>
@@ -135,7 +265,7 @@ public static class SceneEvaluator
 
             var subtitle = layer.SubtitleId is { } id ? subtitles[id] : null;
             var local = time - layer.Start + layer.AnimationOffset;
-            var values = layer.Tracks.ToDictionary(track => track.Property, track => EvaluateTrack(track, local));
+            var values = layer.Tracks.ToDictionary(track => track.Target, track => EvaluateTrack(track, local));
             var transform = layer.Transform with
             {
                 Position = GetVector(values, AnimationProperty.POSITION, layer.Transform.Position),
@@ -164,28 +294,29 @@ public static class SceneEvaluator
                 Get(values, AnimationProperty.STROKE_WIDTH, subtitle?.Style.StrokeWidth ?? layer.StrokeWidth),
                 Get(values, AnimationProperty.BLUR, layer.Blur), subtitle, EvaluateLayers(layer.Children, subtitles, time))
             {
-                HasFillAnimation = values.ContainsKey(AnimationProperty.FILL),
-                HasStrokeAnimation = values.ContainsKey(AnimationProperty.STROKE),
-                HasStrokeWidthAnimation = values.ContainsKey(AnimationProperty.STROKE_WIDTH)
+                Mask = EvaluateMask(layer.Mask, values),
+                HasFillAnimation = values.ContainsKey(new(AnimationProperty.FILL)),
+                HasStrokeAnimation = values.ContainsKey(new(AnimationProperty.STROKE)),
+                HasStrokeWidthAnimation = values.ContainsKey(new(AnimationProperty.STROKE_WIDTH))
             });
         }
 
         return result.ToImmutable();
     }
 
-    private static double Get(Dictionary<AnimationProperty, AnimationValue> values, AnimationProperty property, double fallback)
+    private static double Get(Dictionary<AnimationTrackTarget, AnimationValue> values, AnimationProperty property, double fallback)
     {
-        return values.TryGetValue(property, out var value) ? value.Scalar : fallback;
+        return values.TryGetValue(new(property), out var value) ? value.Scalar : fallback;
     }
 
-    private static ScenePoint GetVector(Dictionary<AnimationProperty, AnimationValue> values, AnimationProperty property, ScenePoint fallback)
+    private static ScenePoint GetVector(Dictionary<AnimationTrackTarget, AnimationValue> values, AnimationProperty property, ScenePoint fallback)
     {
-        return values.TryGetValue(property, out var value) ? value.Vector : fallback;
+        return values.TryGetValue(new(property), out var value) ? value.Vector : fallback;
     }
 
-    private static SceneColor GetColor(Dictionary<AnimationProperty, AnimationValue> values, AnimationProperty property, SceneColor fallback)
+    private static SceneColor GetColor(Dictionary<AnimationTrackTarget, AnimationValue> values, AnimationProperty property, SceneColor fallback)
     {
-        return values.TryGetValue(property, out var value) ? value.Color : fallback;
+        return values.TryGetValue(new(property), out var value) ? value.Color : fallback;
     }
 
     private static double Fraction(MediaTime elapsed, MediaTime duration)

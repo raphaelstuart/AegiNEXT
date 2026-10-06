@@ -3,6 +3,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Media.Decoding;
 using AegiNext.Media.Preview;
 using AegiNext.Rendering.Projects;
+using AegiNext.Rendering.Fonts;
 using AegiNext.Desktop.Settings;
 
 namespace AegiNext.Desktop.Rendering;
@@ -13,17 +14,19 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
     private readonly Func<ProjectPreviewState> getState;
     private readonly Action<Exception?> reportError;
     private readonly PreviewFrameCatalog? previewFrames;
+    private readonly Func<SystemFontCatalog?>? fontCatalog;
     private ProjectSceneRenderer? renderer;
     private string? directory;
     private AegiNext.Core.Projects.ProjectDocument? failedDocument;
     private bool disposed;
 
     internal ProjectPreviewConverter(Func<ProjectPreviewState> getState, Action<Exception?>? reportError = null,
-        PreviewFrameCatalog? previewFrames = null)
+        PreviewFrameCatalog? previewFrames = null, Func<SystemFontCatalog?>? fontCatalog = null)
     {
         this.getState = getState;
         this.reportError = reportError ?? (static _ => { });
         this.previewFrames = previewFrames;
+        this.fontCatalog = fontCatalog;
     }
 
     public SdrVideoFrame Convert(IVideoFrame frame, CancellationToken cancellationToken = default)
@@ -51,7 +54,7 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
         {
             renderer?.Dispose();
             directory = state.Directory;
-            renderer = new(new DirectoryProjectAssetResolver(directory));
+            renderer = new(new DirectoryProjectAssetResolver(directory), fontCatalog?.Invoke());
         }
 
         try

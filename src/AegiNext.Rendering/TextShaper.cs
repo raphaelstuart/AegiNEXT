@@ -2,6 +2,8 @@ using System.Buffers;
 using System.Numerics;
 using System.Globalization;
 using System.Text;
+using AegiNext.Core.Projects;
+using AegiNext.Rendering.Fonts;
 using HarfBuzzSharp;
 using SkiaSharp;
 using SkiaSharp.HarfBuzz;
@@ -15,19 +17,30 @@ namespace AegiNext.Rendering;
 public sealed class TextShaper : IDisposable
 {
     private readonly SKTypeface typeface;
-    private readonly SKShaper shaper;
+    private readonly SKShaper? shaper;
+    private readonly NamedInstanceTextShaper? namedInstanceShaper;
     private readonly bool synthesizeBold;
     private readonly bool synthesizeItalic;
     private bool isDisposed;
 
-    internal TextShaper(SKTypeface ownedTypeface, bool bold = false, bool italic = false)
+    internal TextShaper(SKTypeface ownedTypeface, bool bold = false, bool italic = false,
+        SystemFontFace? face = null, bool explicitVariant = false)
     {
         typeface = ownedTypeface;
-        synthesizeBold = bold && typeface.FontStyle.Weight < (int)SKFontStyleWeight.Bold;
-        synthesizeItalic = italic && typeface.FontStyle.Slant == SKFontStyleSlant.Upright;
+        FontFamily = face?.FamilyName ?? typeface.FamilyName;
+        ResolvedFontVariant = face?.Variant;
+        synthesizeBold = !explicitVariant && bold && typeface.FontWeight < (int)SKFontStyleWeight.Bold;
+        synthesizeItalic = italic && typeface.FontSlant == SKFontStyleSlant.Upright;
         try
         {
-            shaper = new(typeface);
+            if (face is { IsVariable: true })
+            {
+                namedInstanceShaper = new(typeface, face.NamedInstanceIndex, face.CollectionIndex);
+            }
+            else
+            {
+                shaper = new(typeface);
+            }
         }
         catch
         {
@@ -39,7 +52,11 @@ public sealed class TextShaper : IDisposable
     /// <summary>
     /// 复制字体数据并打开指定字体 face；损坏字体会抛出异常，不静默回退到系统字体。
     /// </summary>
-    public TextShaper(ReadOnlySpan<byte> fontData, int faceIndex = 0)
+    public TextShaper(ReadOnlySpan<byte> fontData, int faceIndex = 0) : this(CreateTypeface(fontData, faceIndex))
+    {
+    }
+
+    private static SKTypeface CreateTypeface(ReadOnlySpan<byte> fontData, int faceIndex)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(faceIndex);
         if (fontData.IsEmpty)
@@ -48,17 +65,8 @@ public sealed class TextShaper : IDisposable
         }
 
         using var data = SKData.CreateCopy(fontData);
-        typeface = SKTypeface.FromData(data, faceIndex)
+        return SKTypeface.FromData(data, faceIndex)
             ?? throw new ArgumentException("无法解析指定字体。", nameof(fontData));
-        try
-        {
-            shaper = new(typeface);
-        }
-        catch
-        {
-            typeface.Dispose();
-            throw;
-        }
     }
 
     /// <summary>
@@ -99,7 +107,7 @@ public sealed class TextShaper : IDisposable
         RenderValidation.Finite(metrics.Descent, nameof(fontSize));
         RenderValidation.Finite(metrics.Leading, nameof(fontSize));
         RenderValidation.Finite(metrics.MaxCharacterWidth, nameof(fontSize));
-        var result = shaper.Shape(buffer, font);
+        var result = namedInstanceShaper?.Shape(buffer, font) ?? shaper!.Shape(buffer, font);
         var ids = new ushort[result.Codepoints.Length];
         var glyphs = new ShapedGlyph[ids.Length];
         RenderValidation.Finite(result.Width, nameof(fontSize));
@@ -153,7 +161,10 @@ public sealed class TextShaper : IDisposable
         }
     }
 
-    internal string FontFamily => typeface.FamilyName;
+    internal string FontFamily { get; }
+    internal SubtitleFontVariant? ResolvedFontVariant { get; }
+    internal bool SynthesizesBold => synthesizeBold;
+    internal bool SynthesizesItalic => synthesizeItalic;
 
     internal bool UsesTypeface(SKTypeface candidate)
     {
@@ -187,7 +198,8 @@ public sealed class TextShaper : IDisposable
             return;
         }
 
-        shaper.Dispose();
+        shaper?.Dispose();
+        namedInstanceShaper?.Dispose();
         typeface.Dispose();
         isDisposed = true;
     }

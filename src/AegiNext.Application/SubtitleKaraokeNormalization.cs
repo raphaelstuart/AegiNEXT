@@ -5,46 +5,34 @@ using AegiNext.Core.Timing;
 
 namespace AegiNext.Application;
 
-/// <summary>将兼容的多字卡拉 OK 片段规范为逐完整 Unicode 字素片段，不裁剪内容时间或修改源快照。</summary>
+/// <summary>将启用与禁用的多字高亮片段规范为逐完整 Unicode 字素片段，不裁剪内容时间或修改源快照。</summary>
 public static class SubtitleKaraokeNormalization
 {
-    /// <summary>逐字素等分原片段的精确时间；首字保留原标识，其余新建标识，已规范内容返回原行。</summary>
+    /// <summary>逐字素等分启用与禁用片段的精确时间；首字保留原标识，未改变的数组及已规范行保留原身份。</summary>
     public static SubtitleLine Normalize(SubtitleLine line)
     {
         ArgumentNullException.ThrowIfNull(line);
-        ProjectValidator.ValidateText(line.Text);
-        if (line.Text.Length > 1000000 || line.Karaoke.IsDefault)
-        {
-            throw new InvalidDataException("字幕文字或卡拉 OK 数组超过有效范围。");
-        }
-        if (line.Karaoke.IsEmpty)
+        ProjectValidator.ValidateSubtitleKaraoke(line);
+        if (line.Karaoke.IsEmpty && line.InactiveKaraoke.IsEmpty)
         {
             return line;
         }
 
         var boundaries = SubtitleTextEditMap.Boundaries(line.Text);
-        var ids = new HashSet<Guid>();
-        var previousEnd = 0;
-        foreach (var clip in line.Karaoke.Cast<KaraokeSegment?>())
-        {
-            if (clip is null || clip.Id == Guid.Empty || !ids.Add(clip.Id) ||
-                clip.Utf16Start < previousEnd || clip.Utf16Length <= 0 ||
-                (long)clip.Utf16Start + clip.Utf16Length > line.Text.Length ||
-                clip.Start < MediaTime.Zero || clip.Start >= clip.End || !Enum.IsDefined(clip.HighlightKind))
-            {
-                throw new InvalidDataException("卡拉 OK 片段的标识、文字范围或时间无效。");
-            }
-            previousEnd = checked(clip.Utf16Start + clip.Utf16Length);
-            if (Array.BinarySearch(boundaries, clip.Utf16Start) < 0 || Array.BinarySearch(boundaries, previousEnd) < 0)
-            {
-                throw new InvalidDataException("卡拉 OK 不能拆开完整 Unicode 字素。");
-            }
-        }
+        var ids = line.Karaoke.Concat(line.InactiveKaraoke).Select(clip => clip.Id).ToHashSet();
+        var karaoke = NormalizeSegments(line.Karaoke, boundaries, ids);
+        var inactiveKaraoke = NormalizeSegments(line.InactiveKaraoke, boundaries, ids);
+        return karaoke == line.Karaoke && inactiveKaraoke == line.InactiveKaraoke
+            ? line : line with { Karaoke = karaoke, InactiveKaraoke = inactiveKaraoke };
+    }
 
+    private static ImmutableArray<KaraokeSegment> NormalizeSegments(ImmutableArray<KaraokeSegment> segments,
+        int[] boundaries, HashSet<Guid> ids)
+    {
         ImmutableArray<KaraokeSegment>.Builder? changed = null;
-        for (var index = 0; index < line.Karaoke.Length; index++)
+        for (var index = 0; index < segments.Length; index++)
         {
-            var clip = line.Karaoke[index];
+            var clip = segments[index];
             var first = Array.BinarySearch(boundaries, clip.Utf16Start);
             var count = Array.BinarySearch(boundaries, clip.Utf16Start + clip.Utf16Length) - first;
             if (count == 1)
@@ -56,7 +44,7 @@ public static class SubtitleKaraokeNormalization
             if (changed is null)
             {
                 changed = ImmutableArray.CreateBuilder<KaraokeSegment>();
-                changed.AddRange(line.Karaoke.AsSpan(0, index));
+                changed.AddRange(segments.AsSpan(0, index));
             }
             var start = clip.Start;
             for (var glyph = 0; glyph < count; glyph++)
@@ -74,7 +62,7 @@ public static class SubtitleKaraokeNormalization
             }
         }
 
-        return changed is null ? line : line with { Karaoke = changed.ToImmutable() };
+        return changed is null ? segments : changed.ToImmutable();
     }
 
     /// <summary>验证工程并只替换包含旧多字片段的字幕行；图层、裁剪范围及已规范行保留原身份。</summary>

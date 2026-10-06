@@ -10,13 +10,19 @@ public static class AnimationPropertyMetadata
     [
         AnimationProperty.POSITION, AnimationProperty.SCALE, AnimationProperty.ROTATION, AnimationProperty.OPACITY,
         AnimationProperty.FILL, AnimationProperty.STROKE, AnimationProperty.STROKE_WIDTH, AnimationProperty.BLUR,
-        AnimationProperty.PATH_PROGRESS
+        AnimationProperty.PATH_PROGRESS, AnimationProperty.MASK_RECTANGLE_TOP_LEFT,
+        AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT, AnimationProperty.MASK_POSITION, AnimationProperty.MASK_SCALE,
+        AnimationProperty.MASK_ROTATION, AnimationProperty.MASK_NODE_POSITION, AnimationProperty.MASK_NODE_IN_HANDLE,
+        AnimationProperty.MASK_NODE_OUT_HANDLE
     ];
 
     /// <summary>获取一个稳定属性的值类型，旧分量属性仍返回标量供显式迁移使用。</summary>
     public static AnimationValueKind GetValueKind(AnimationProperty property) => property switch
     {
-        AnimationProperty.POSITION or AnimationProperty.SCALE => AnimationValueKind.VECTOR,
+        AnimationProperty.POSITION or AnimationProperty.SCALE or AnimationProperty.MASK_RECTANGLE_TOP_LEFT or
+            AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT or AnimationProperty.MASK_POSITION or AnimationProperty.MASK_SCALE or
+            AnimationProperty.MASK_NODE_POSITION or AnimationProperty.MASK_NODE_IN_HANDLE or
+            AnimationProperty.MASK_NODE_OUT_HANDLE => AnimationValueKind.VECTOR,
         AnimationProperty.FILL or AnimationProperty.STROKE => AnimationValueKind.COLOR,
         _ when Enum.IsDefined(property) => AnimationValueKind.SCALAR,
         _ => throw new ArgumentOutOfRangeException(nameof(property))
@@ -51,7 +57,7 @@ public static class AnimationPropertyMetadata
             AnimationProperty.FILL or AnimationProperty.STROKE => component == 3 ? 0 : -65504,
             AnimationProperty.OPACITY or AnimationProperty.FILL_ALPHA or AnimationProperty.STROKE_ALPHA or
                 AnimationProperty.PATH_PROGRESS or AnimationProperty.BLUR or AnimationProperty.STROKE_WIDTH => 0,
-            AnimationProperty.SCALE or AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y => -10000,
+            AnimationProperty.SCALE or AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y or AnimationProperty.MASK_SCALE => -10000,
             AnimationProperty.FILL_RED or AnimationProperty.FILL_GREEN or AnimationProperty.FILL_BLUE or
                 AnimationProperty.STROKE_RED or AnimationProperty.STROKE_GREEN or AnimationProperty.STROKE_BLUE => -65504,
             _ => -1e9
@@ -68,7 +74,7 @@ public static class AnimationPropertyMetadata
             AnimationProperty.OPACITY or AnimationProperty.FILL_ALPHA or AnimationProperty.STROKE_ALPHA or AnimationProperty.PATH_PROGRESS => 1,
             AnimationProperty.BLUR => 512,
             AnimationProperty.STROKE_WIDTH => 4096,
-            AnimationProperty.SCALE or AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y => 10000,
+            AnimationProperty.SCALE or AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y or AnimationProperty.MASK_SCALE => 10000,
             AnimationProperty.FILL_RED or AnimationProperty.FILL_GREEN or AnimationProperty.FILL_BLUE or
                 AnimationProperty.STROKE_RED or AnimationProperty.STROKE_GREEN or AnimationProperty.STROKE_BLUE => 65504,
             _ => 1e9
@@ -80,6 +86,13 @@ public static class AnimationPropertyMetadata
         AnimationProperty.POSITION_X or AnimationProperty.POSITION_Y or AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y or
         AnimationProperty.FILL_RED or AnimationProperty.FILL_GREEN or AnimationProperty.FILL_BLUE or AnimationProperty.FILL_ALPHA or
         AnimationProperty.STROKE_RED or AnimationProperty.STROKE_GREEN or AnimationProperty.STROKE_BLUE or AnimationProperty.STROKE_ALPHA;
+
+    /// <summary>判断是否裁切蒙版的几何或独立变换属性。</summary>
+    public static bool IsMaskProperty(AnimationProperty property) => property is >= AnimationProperty.MASK_RECTANGLE_TOP_LEFT and <= AnimationProperty.MASK_NODE_OUT_HANDLE;
+
+    /// <summary>判断是否必须携带稳定节点标识的形变属性。</summary>
+    public static bool IsNodeProperty(AnimationProperty property) => property is
+        AnimationProperty.MASK_NODE_POSITION or AnimationProperty.MASK_NODE_IN_HANDLE or AnimationProperty.MASK_NODE_OUT_HANDLE;
 
     /// <summary>获取完整属性对应的旧分量属性，顺序与值分量一致。</summary>
     public static ImmutableArray<AnimationProperty> GetLegacyComponents(AnimationProperty property) => property switch

@@ -34,6 +34,7 @@ Invoke `$aeginext-effect-dsl` when authoring a script, or `$aeginext-controls` w
 
 ## Implementation evidence
 
+- [Clip masks, animation, ASS and script integration](checkpoints/clip-mask-animation.md)
 - [Subtitle formats and the dockable shared editor](checkpoints/subtitle-format-and-details.md)
 
 - [Preview decoder modes, missing color tags and platform verification](checkpoints/video-decode-modes-and-missing-color.md)

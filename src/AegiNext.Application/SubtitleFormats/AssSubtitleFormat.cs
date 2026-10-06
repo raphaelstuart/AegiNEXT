@@ -118,6 +118,7 @@ public static class AssSubtitleFormat
         }
         var fallback = new AssStyleDefinition("Default", new() { FontSize = 20 * scaleY }, SceneColor.White);
         var lines = ImmutableArray.CreateBuilder<SubtitleLine>();
+        var clips = ImmutableArray.CreateBuilder<SubtitleClipImport>();
         var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
         if (!hasWidth || !hasHeight)
         {
@@ -148,8 +149,10 @@ public static class AssSubtitleFormat
                     marginR == 0 ? Math.Abs(line.Style.Position?.Offset.X ?? line.Style.Margin) : marginR * scaleX,
                     marginV == 0 ? line.Style.Margin : marginV * scaleY) } };
             }
-            var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY).Parse(Required(fields, "Text"));
-            lines.Add(SubtitleKaraokeNormalization.Normalize(parsed.Line));
+            var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth, canvasHeight: targetHeight).Parse(Required(fields, "Text"));
+            var normalized = SubtitleKaraokeNormalization.Normalize(parsed.Line);
+            lines.Add(normalized);
+            clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks, parsed.ContentOffset));
             diagnostics.AddRange(parsed.Diagnostics);
             if (!styles.ContainsKey(name))
             {
@@ -164,7 +167,7 @@ public static class AssSubtitleFormat
                 diagnostics.Add(new("Ass.StyleGeometry", "ASS 样式的缩放、字距、旋转或背景框未导入，请使用项目特效。", SubtitleId: line.Id));
             }
         }
-        return new(lines.ToImmutable(), diagnostics.ToImmutable());
+        return new(lines.ToImmutable(), diagnostics.ToImmutable()) { Clips = clips.ToImmutable() };
     }
 
     /// <summary>按工程合成层顺序导出全部字幕，静态样式去重，时间显式量化到厘秒。</summary>
@@ -181,6 +184,7 @@ public static class AssSubtitleFormat
         result.AppendLine("[V4+ Styles]").AppendLine("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding");
         var styles = new Dictionary<SubtitleStyle, string>();
         var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
+        var expandedDiagnostics = new HashSet<(Guid? SubtitleId, string Code)>();
         foreach (var line in document.Subtitles)
         {
             var style = line.Style with { FontAssetId = null, Position = null };
@@ -200,6 +204,7 @@ public static class AssSubtitleFormat
         result.AppendLine().AppendLine("[Events]").AppendLine("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text");
         var byId = document.Subtitles.ToDictionary(line => line.Id);
         var order = 0;
+        var exportedCount = 0;
         foreach (var layer in SubtitleFormatLossAnalysis.Flatten(document.Layers).Where(layer => layer.SubtitleId.HasValue))
         {
             var line = byId[layer.SubtitleId!.Value];
@@ -207,8 +212,6 @@ public static class AssSubtitleFormat
             {
                 throw new InvalidDataException("ASS 不支持负对白时间。");
             }
-            var body = AssTextWriter.Write(line, layer.AnimationOffset);
-            diagnostics.AddRange(body.Diagnostics);
             if (line.Style.FontAssetId.HasValue)
             {
                 diagnostics.Add(new("Ass.FontResource", "ASS 文件不包含项目嵌入字体，请在播放环境安装对应字体。", SubtitleId: line.Id));
@@ -231,10 +234,39 @@ public static class AssSubtitleFormat
                 placement += "\\pos(" + AssFormatValues.Number(px) + "," + AssFormatValues.Number(py) + ")";
             }
             placement += "}";
-            result.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                $"Dialogue: {order++},{AssFormatValues.Time(line.Start, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(line.End, MediaTimeRounding.CEILING)},{styles[line.Style with { FontAssetId = null, Position = null }]},,0,0,0,,{placement}{body.Text}"));
+            foreach (var sample in AssMaskSampling.Samples(document, layer, line, diagnostics))
+            {
+                if (exportedCount++ >= 100000)
+                {
+                    throw new InvalidDataException("ASS 蒙版展开后的总对白数量超过 100,000 条预算。");
+                }
+                var sampleLine = line with { Start = sample.Start, End = sample.End };
+                var body = AssTextWriter.Write(sampleLine, sample.ContentTime, preserveContentClock: sample.Expanded);
+                if (sample.Expanded)
+                {
+                    foreach (var diagnostic in body.Diagnostics)
+                    {
+                        if (expandedDiagnostics.Add((diagnostic.SubtitleId, diagnostic.Code)))
+                        {
+                            diagnostics.Add(diagnostic);
+                        }
+                    }
+                }
+                else
+                {
+                    diagnostics.AddRange(body.Diagnostics);
+                }
+                var maskTags = sample.Tags.Length == 0 ? string.Empty : "{" + sample.Tags + "}";
+                result.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                    $"Dialogue: {order},{AssFormatValues.Time(sample.Start, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End, MediaTimeRounding.CEILING)},{styles[line.Style with { FontAssetId = null, Position = null }]},,0,0,0,,{placement}{maskTags}{body.Text}"));
+                if (result.Length > 16 * 1024 * 1024)
+                {
+                    throw new InvalidDataException("ASS 导出文本超过 16 Mi 字符预算。");
+                }
+            }
+            order++;
         }
-        SubtitleFormatLossAnalysis.AddCompositionLoss(document, diagnostics);
+        SubtitleFormatLossAnalysis.AddCompositionLoss(document, diagnostics, supportsMasks: true);
         AssFormatValues.CheckText(result.ToString());
         return new(result.ToString(), diagnostics.Distinct().ToImmutableArray());
     }

@@ -18,7 +18,9 @@ internal sealed partial class WorkbenchSession
         {
             var document = inspectorPreview is { } preview && ReferenceEquals(inspectorPreviewSource, DocumentSnapshot) &&
                 inspectorPreviewLayerId == SelectedLayerId ? preview : DocumentSnapshot;
-            return Details?.OverlayPreview(document) ?? document;
+            document = Details?.OverlayPreview(document) ?? document;
+            document = MaskEditing?.Overlay(document) ?? document;
+            return ViewModel.Effects.OverlayOperationDraft(document);
         }
     }
 

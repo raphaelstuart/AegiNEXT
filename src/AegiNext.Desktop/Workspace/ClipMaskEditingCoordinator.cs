@@ -1,0 +1,515 @@
+using System.Collections.Immutable;
+using System.ComponentModel;
+using AegiNext.Core.Editing;
+using AegiNext.Core.Projects;
+using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.I18n;
+
+namespace AegiNext.Desktop.Workspace;
+
+internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
+{
+    private ProjectDocument? draftSource;
+    private AnimationEditTarget? draftTarget;
+    private ProjectDocument? gestureSource;
+    private ProjectLayer? gestureLayer;
+    private ClipMask? gestureMask;
+    private AnimationEditTarget? gestureTarget;
+    private ProjectDocument? lastValidPreview;
+    private ProjectDocument? lastValidSource;
+    private bool loading;
+    private Guid? fieldLayerId;
+    private Guid? fieldNodeId;
+    internal MaskNumericField[] Fields { get; private set; } = [];
+    internal bool CanEdit => session.SelectedLayer is { Kind: LayerKind.SUBTITLE, SubtitleId: not null };
+    internal bool IsTopologyLocked => session.SelectedLayer is { } layer && ClipMaskAnimation.IsTopologyLocked(layer);
+    internal bool CanDeleteSelectedNode => !IsTopologyLocked && session.SelectedLayer?.Mask is VectorClipMask vector &&
+        vector.Contours.SelectMany(contour => contour.Nodes).Any(node => node.Id == session.SceneEditing.MaskNodeId);
+    internal bool CanDeleteSelectedContour => !IsTopologyLocked && session.SelectedLayer?.Mask is VectorClipMask vector &&
+        vector.Contours.Any(contour => contour.Id == session.SceneEditing.MaskContourId);
+
+    internal void Refresh(bool force = false)
+    {
+        var layer = session.SelectedLayer;
+        if (gestureLayer is not null && (!ReferenceEquals(gestureSource, session.DocumentSnapshot) || layer?.Id != gestureLayer.Id))
+        {
+            CancelGesture();
+        }
+        if (session.SceneEditing.MaskNodeId is { } selectedNode && (layer?.Mask is not VectorClipMask nodeMask ||
+            !nodeMask.Contours.SelectMany(contour => contour.Nodes).Any(node => node.Id == selectedNode)))
+        {
+            session.SceneEditing.MaskNodeId = null;
+        }
+        if (AnimationPropertyMetadata.IsMaskProperty(session.SceneEditing.Target.Property))
+        {
+            var identity = session.SceneEditing.Target;
+            if (layer?.Mask is null)
+            {
+                session.SceneEditing.Target = new(AnimationProperty.OPACITY);
+            }
+            else if (AnimationPropertyMetadata.IsNodeProperty(identity.Property))
+            {
+                session.SceneEditing.Target = session.SceneEditing.MaskNodeId is { } node
+                    ? new(identity.Property, node) : new(AnimationProperty.MASK_POSITION);
+            }
+            else if (layer.Mask is not RectangleClipMask && identity.Property is (AnimationProperty.MASK_RECTANGLE_TOP_LEFT or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT))
+            {
+                session.SceneEditing.Target = new(AnimationProperty.MASK_POSITION);
+            }
+        }
+        if (layer?.Mask is VectorClipMask selectedVector)
+        {
+            var contour = selectedVector.Contours.FirstOrDefault(item => item.Nodes.Any(node => node.Id == session.SceneEditing.MaskNodeId));
+            session.SceneEditing.MaskContourId = contour?.Id ?? selectedVector.Contours[0].Id;
+        }
+        else
+        {
+            session.SceneEditing.MaskContourId = null;
+        }
+        var nodeId = session.SceneEditing.MaskNodeId;
+        if (!force && Fields.Any(field => field.IsDirty) && fieldLayerId == layer?.Id && fieldNodeId == nodeId)
+        {
+            return;
+        }
+        loading = true;
+        try
+        {
+            if (force || fieldLayerId != layer?.Id || fieldNodeId != nodeId)
+            {
+                foreach (var field in Fields)
+                {
+                    field.Draft.PropertyChanged -= OnFieldChanged;
+                }
+                Fields = CreateFields(layer).ToArray();
+                foreach (var field in Fields)
+                {
+                    field.Draft.PropertyChanged += OnFieldChanged;
+                }
+            }
+            fieldLayerId = layer?.Id;
+            fieldNodeId = nodeId;
+            var mask = layer is null ? null : SceneEvaluator.EvaluateMask(layer, session.AnimationTarget?.LocalTime ?? new(0));
+            if (mask is not null)
+            {
+                foreach (var field in Fields)
+                {
+                    var value = field.Target is { } target ? ClipMaskAnimation.GetBaseValue(mask, target).GetComponent(field.Component) :
+                        field.Component == 0 ? mask.Transform.Pivot.X : mask.Transform.Pivot.Y;
+                    field.Original = value;
+                    field.Draft.Load(value);
+                }
+            }
+            draftSource = null;
+            draftTarget = null;
+            session.ViewModel.Effects.RefreshMaskState();
+            session.ViewModel.Masks.Refresh();
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private IEnumerable<MaskNumericField> CreateFields(ProjectLayer? layer)
+    {
+        if (layer?.Mask is null)
+        {
+            yield break;
+        }
+        var properties = new List<AnimationTrackTarget>();
+        if (layer.Mask is RectangleClipMask)
+        {
+            properties.Add(new(AnimationProperty.MASK_RECTANGLE_TOP_LEFT));
+            properties.Add(new(AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT));
+        }
+        properties.AddRange(new[] { AnimationProperty.MASK_POSITION, AnimationProperty.MASK_SCALE, AnimationProperty.MASK_ROTATION }
+            .Select(property => new AnimationTrackTarget(property)));
+        if (layer.Mask is VectorClipMask vector && vector.Contours.SelectMany(contour => contour.Nodes).Any(node => node.Id == session.SceneEditing.MaskNodeId))
+        {
+            properties.AddRange(new[] { AnimationProperty.MASK_NODE_POSITION, AnimationProperty.MASK_NODE_IN_HANDLE, AnimationProperty.MASK_NODE_OUT_HANDLE }
+                .Select(property => new AnimationTrackTarget(property, session.SceneEditing.MaskNodeId)));
+        }
+        foreach (var target in properties)
+        {
+            for (var component = 0; component < AnimationPropertyMetadata.GetComponentCount(target.Property); component++)
+            {
+                yield return new($"{target.Property}.{component}", "Workbench." + target.Property, target, component,
+                    AnimationPropertyMetadata.GetMinimum(target.Property, component), AnimationPropertyMetadata.GetMaximum(target.Property, component))
+                {
+                    CanEdit = layer.Tracks.FirstOrDefault(track => track.Target == target)?.IsOrdered != true
+                };
+            }
+        }
+        yield return new("MaskPivotX", "Workbench.MaskPivotX", null, 0, -1e9, 1e9);
+        yield return new("MaskPivotY", "Workbench.MaskPivotY", null, 1, -1e9, 1e9);
+    }
+
+    private void OnFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (loading || session.IsUpdating || e.PropertyName != nameof(AegiNext.Desktop.Editing.NumericValueDraft.RawText))
+        {
+            return;
+        }
+        draftSource ??= session.DocumentSnapshot;
+        draftTarget ??= session.AnimationTarget;
+        session.SceneEditing.DraftTarget ??= draftTarget;
+        _ = session.RunCommandAsync(session.PauseForSceneEditAsync);
+        session.RefreshMaskPreview();
+    }
+
+    internal ProjectDocument Prepare(ProjectDocument document)
+    {
+        if (!Fields.Any(field => field.IsDirty) || draftTarget is not { } frozen)
+        {
+            return document;
+        }
+        if (!ReferenceEquals(draftSource, session.DocumentSnapshot) || frozen.LayerId != session.SelectedLayerId)
+        {
+            throw new InvalidOperationException(Localization.Get("Workbench.SubtitleDraftConflict"));
+        }
+        var layer = WorkbenchSession.Flatten(document.Layers).Single(value => value.Id == frozen.LayerId);
+        var mask = layer.Mask ?? throw new InvalidOperationException(Localization.Get("Workbench.ClipMask"));
+        var changed = document;
+        foreach (var group in Fields.Where(field => field.Target is not null).GroupBy(field => field.Target!.Value))
+        {
+            if (!group.Any(field => field.IsDirty))
+            {
+                continue;
+            }
+            var values = group.Select(Parse).ToArray();
+            AnimationValue value = values.Length == 2 ? new ScenePoint(values[0], values[1]) : values[0];
+            changed = AnimationEditOperations.SetValue(changed, frozen, group.Key, value);
+        }
+        var pivotFields = Fields.Where(field => field.Target is null).ToArray();
+        if (pivotFields.Any(field => field.IsDirty))
+        {
+            var pivot = new ScenePoint(Parse(pivotFields[0]), Parse(pivotFields[1]));
+            changed = WorkspaceDraftOperations.UpdateLayer(changed, layer.Id, value => value with
+            {
+                Mask = value.Mask! with { Transform = value.Mask!.Transform with { Pivot = pivot } }
+            });
+        }
+        return changed;
+    }
+
+    private double Parse(MaskNumericField field)
+    {
+        var number = field.Draft.Parse();
+        if (number is null || number < field.Minimum || number > field.Maximum)
+        {
+            session.ViewModel.InvalidPanelId = "masks";
+            session.ViewModel.InvalidFieldKey = field.Key;
+            throw new InvalidDataException(field.Label);
+        }
+        return (double)number;
+    }
+
+    internal ProjectDocument Overlay(ProjectDocument document)
+    {
+        try
+        {
+            var result = Prepare(document);
+            ProjectValidator.Validate(result);
+            lastValidPreview = result;
+            lastValidSource = session.DocumentSnapshot;
+            return result;
+        }
+        catch (Exception error) when (error is InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            return ReferenceEquals(lastValidSource, session.DocumentSnapshot) && fieldLayerId == session.SelectedLayerId ? lastValidPreview ?? document : document;
+        }
+    }
+
+    internal void AcceptDrafts()
+    {
+        lastValidPreview = null;
+        lastValidSource = null;
+        draftSource = null;
+        draftTarget = null;
+        foreach (var field in Fields)
+        {
+            field.Draft.PropertyChanged -= OnFieldChanged;
+        }
+        Fields = [];
+        fieldLayerId = null;
+    }
+
+    internal void Restore(MaskNumericField field)
+    {
+        loading = true;
+        try
+        {
+            field.Draft.Load(field.Original);
+        }
+        finally
+        {
+            loading = false;
+        }
+        session.RefreshMaskPreview();
+    }
+
+    internal void EditRectangle()
+    {
+        if (!CanEdit || !session.TryCommitDrafts())
+        {
+            return;
+        }
+        session.ViewModel.CancelGestures();
+        session.ViewModel.Effects.EditMode = CanvasEditMode.MASK_RECTANGLE;
+        session.ViewModel.Masks.Refresh();
+        session.RefreshMaskPreview();
+    }
+
+    internal void AddContour()
+    {
+        if (CanEdit && !IsTopologyLocked && session.TryCommitDrafts())
+        {
+            session.ViewModel.CancelGestures();
+            session.ViewModel.Effects.EditMode = CanvasEditMode.MASK_DRAW_VECTOR;
+            session.ViewModel.Masks.Refresh();
+            session.RefreshMaskPreview();
+        }
+    }
+
+    internal void EditVector()
+    {
+        if (!CanEdit || !session.TryCommitDrafts() || IsTopologyLocked && session.SelectedLayer?.Mask is not VectorClipMask)
+        {
+            return;
+        }
+        session.ViewModel.CancelGestures();
+        session.ViewModel.Effects.EditMode = CanvasEditMode.MASK_VECTOR;
+        session.ViewModel.Masks.Refresh();
+        session.RefreshMaskPreview();
+    }
+
+    internal void ExitEditing()
+    {
+        session.ViewModel.CancelGestures();
+        session.ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
+        session.ViewModel.Masks.Refresh();
+        session.RefreshMaskPreview();
+    }
+
+    internal void Clear()
+    {
+        if (session.SelectedLayer is { } layer)
+        {
+            session.ViewModel.CancelGestures();
+            session.Editor.ClearClipMask(layer.Id);
+            session.SceneEditing.MaskNodeId = null;
+            Refresh(true);
+        }
+    }
+
+    internal void ClearNodeAnimation()
+    {
+        if (session.SelectedLayer is { } layer)
+        {
+            session.ViewModel.CancelGestures();
+            session.Editor.ClearMaskNodeAnimation(layer.Id);
+            Refresh(true);
+        }
+    }
+
+    internal void Invert()
+    {
+        if (session.SelectedLayer is { Mask: { } mask } layer)
+        {
+            session.Editor.SetClipMask(layer.Id, mask with { Inverted = !mask.Inverted });
+        }
+    }
+
+    internal void DeleteSelectedNode()
+    {
+        if (CanDeleteSelectedNode && session.SceneEditing.MaskNodeId is { } nodeId && session.SelectedLayer is { } layer)
+        {
+            session.ViewModel.CancelGestures();
+            DeleteNode(layer, nodeId);
+        }
+    }
+
+    internal void DeleteSelectedContour()
+    {
+        if (CanDeleteSelectedContour && session.SceneEditing.MaskContourId is { } contourId && session.SelectedLayer is { Mask: VectorClipMask vector } layer)
+        {
+            session.ViewModel.CancelGestures();
+            var survivor = vector.Contours.Where(contour => contour.Id != contourId).SelectMany(contour => contour.Nodes).FirstOrDefault();
+            session.Editor.RemoveClipMaskContour(layer.Id, contourId);
+            session.SceneEditing.MaskNodeId = survivor?.Id;
+            Refresh(true);
+            session.RefreshMaskPreview();
+        }
+    }
+
+    internal void CommitNodeDeletion(CanvasMaskNodeEventArgs e)
+    {
+        var source = gestureLayer;
+        CancelGesture();
+        if (source is null || e.LayerId != source.Id || session.SelectedLayerId != source.Id ||
+            !ReferenceEquals(gestureSource, session.DocumentSnapshot) || ClipMaskAnimation.IsTopologyLocked(source))
+        {
+            return;
+        }
+        DeleteNode(source, e.NodeId);
+    }
+
+    private void DeleteNode(ProjectLayer layer, Guid nodeId)
+    {
+        if (layer.Mask is not VectorClipMask vector)
+        {
+            return;
+        }
+        var contour = vector.Contours.FirstOrDefault(item => item.Nodes.Any(node => node.Id == nodeId));
+        if (contour is null)
+        {
+            return;
+        }
+        var index = contour.Nodes.IndexOf(contour.Nodes.Single(node => node.Id == nodeId));
+        var survivor = contour.Nodes.Length > 1 ? contour.Nodes[(index + 1) % contour.Nodes.Length] :
+            vector.Contours.Where(item => item.Id != contour.Id).SelectMany(item => item.Nodes).FirstOrDefault();
+        session.Editor.RemoveClipMaskNode(layer.Id, nodeId);
+        session.SceneEditing.MaskNodeId = survivor?.Id;
+        Refresh(true);
+        session.RefreshMaskPreview();
+    }
+
+    internal bool BeginGesture()
+    {
+        if (!CanEdit || !session.TryCommitDrafts() || session.AnimationTarget is not { } target || session.SelectedLayer is not { } layer)
+        {
+            return false;
+        }
+        gestureSource = session.DocumentSnapshot;
+        gestureLayer = layer;
+        gestureTarget = target;
+        gestureMask = SceneEvaluator.EvaluateMask(layer, target.LocalTime);
+        session.SceneEditing.GestureTarget = target;
+        _ = session.RunCommandAsync(session.PauseForSceneEditAsync);
+        return true;
+    }
+
+    internal void CancelGesture()
+    {
+        gestureLayer = null;
+        gestureMask = null;
+        gestureTarget = null;
+        session.SceneEditing.GestureTarget = null;
+    }
+
+    internal void CommitGesture(CanvasMaskEditEventArgs e)
+    {
+        var source = gestureLayer;
+        var target = gestureTarget;
+        var originalMask = gestureMask;
+        CancelGesture();
+        if (source is null || target is null || e.LayerId != source.Id || session.SelectedLayerId != source.Id || !ReferenceEquals(gestureSource, session.DocumentSnapshot))
+        {
+            return;
+        }
+        var document = session.DocumentSnapshot;
+        var prepared = document;
+        if (originalMask is null || !ClipMaskAnimation.HasSameTopology(originalMask, e.Mask))
+        {
+            if (ClipMaskAnimation.IsTopologyLocked(source))
+            {
+                throw new InvalidOperationException(Localization.Get("Workbench.MaskTopologyLocked"));
+            }
+            prepared = WorkspaceDraftOperations.UpdateLayer(document, source.Id, layer => layer with
+            {
+                Mask = e.Mask,
+                Tracks = layer.Tracks.Where(track => !AnimationPropertyMetadata.IsMaskProperty(track.Property) ||
+                    !AnimationPropertyMetadata.IsNodeProperty(track.Property) && track.Property is not (AnimationProperty.MASK_RECTANGLE_TOP_LEFT or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT)).ToImmutableArray()
+            });
+        }
+        else
+        {
+            foreach (var property in AnimationPropertyMetadata.CurrentProperties.Where(AnimationPropertyMetadata.IsMaskProperty))
+            {
+                var ids = AnimationPropertyMetadata.IsNodeProperty(property)
+                    ? e.Mask is VectorClipMask vector ? vector.Contours.SelectMany(contour => contour.Nodes).Select(node => (Guid?)node.Id) : []
+                    : new Guid?[] { null };
+                foreach (var id in ids)
+                {
+                    if (e.Mask is not RectangleClipMask && property is (AnimationProperty.MASK_RECTANGLE_TOP_LEFT or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT))
+                    {
+                        continue;
+                    }
+                    var identity = new AnimationTrackTarget(property, id);
+                    var before = ClipMaskAnimation.GetBaseValue(originalMask, identity);
+                    var after = ClipMaskAnimation.GetBaseValue(e.Mask, identity);
+                    if (before != after)
+                    {
+                        prepared = AnimationEditOperations.SetValue(prepared, target, identity, after);
+                    }
+                }
+            }
+            if (originalMask.Transform.Pivot != e.Mask.Transform.Pivot)
+            {
+                prepared = WorkspaceDraftOperations.UpdateLayer(prepared, source.Id, layer => layer with
+                {
+                    Mask = layer.Mask! with { Transform = layer.Mask.Transform with { Pivot = e.Mask.Transform.Pivot } }
+                });
+            }
+        }
+        if (prepared != document)
+        {
+            session.Editor.Apply("Edit subtitle clip mask", _ => prepared);
+        }
+        session.SceneEditing.MaskNodeId = e.NodeId ?? session.SceneEditing.MaskNodeId;
+        if (e.Mask is VectorClipMask && session.SceneEditing.Mode == CanvasEditMode.MASK_DRAW_VECTOR)
+        {
+            session.ViewModel.Effects.EditMode = CanvasEditMode.MASK_VECTOR;
+        }
+        Refresh(true);
+    }
+
+    internal void SelectGestureNode(Guid? id)
+    {
+        session.SceneEditing.MaskNodeId = id;
+        session.RefreshMaskPreview();
+    }
+
+    internal void SelectNode(Guid? id)
+    {
+        if (!session.TryCommitDrafts())
+        {
+            return;
+        }
+        session.SceneEditing.MaskNodeId = id;
+        Refresh(true);
+        session.RefreshMaskPreview();
+    }
+
+    internal void Subdivide()
+    {
+        if (IsTopologyLocked || session.SelectedLayer is not { Mask: VectorClipMask vector } layer)
+        {
+            return;
+        }
+        var contour = vector.Contours.FirstOrDefault(item => item.Nodes.Any(node => node.Id == session.SceneEditing.MaskNodeId));
+        if (contour is null || contour.Nodes.Length == 0)
+        {
+            return;
+        }
+        var index = contour.Nodes.IndexOf(contour.Nodes.Single(node => node.Id == session.SceneEditing.MaskNodeId));
+        var nextIndex = (index + 1) % contour.Nodes.Length;
+        var first = contour.Nodes[index];
+        var next = contour.Nodes[nextIndex];
+        static ScenePoint Add(ScenePoint a, ScenePoint b) => new(a.X + b.X, a.Y + b.Y);
+        static ScenePoint Sub(ScenePoint a, ScenePoint b) => new(a.X - b.X, a.Y - b.Y);
+        static ScenePoint Mid(ScenePoint a, ScenePoint b) => new((a.X + b.X) / 2, (a.Y + b.Y) / 2);
+        var a = Mid(first.Position, Add(first.Position, first.OutHandle));
+        var b = Mid(Add(first.Position, first.OutHandle), Add(next.Position, next.InHandle));
+        var c = Mid(Add(next.Position, next.InHandle), next.Position);
+        var d = Mid(a, b);
+        var e = Mid(b, c);
+        var center = Mid(d, e);
+        var inserted = new MaskNode { Position = center, InHandle = Sub(d, center), OutHandle = Sub(e, center) };
+        var nodes = contour.Nodes.SetItem(index, first with { OutHandle = Sub(a, first.Position) });
+        nodes = nodes.SetItem(nextIndex, nodes[nextIndex] with { InHandle = Sub(c, next.Position) }).Insert(index + 1, inserted);
+        session.Editor.SetClipMask(layer.Id, vector with { Contours = vector.Contours.SetItem(vector.Contours.IndexOf(contour), contour with { Nodes = nodes }) });
+        session.SceneEditing.MaskNodeId = inserted.Id;
+        Refresh(true);
+    }
+}

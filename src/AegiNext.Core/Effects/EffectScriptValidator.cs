@@ -57,7 +57,7 @@ public static class EffectScriptValidator
                 throw new EffectScriptException("关键帧数量超过预算。", segment.Line, segment.Column);
             }
 
-            var previous = new Dictionary<EffectScriptProperty, decimal>();
+            var previous = new Dictionary<(EffectScriptProperty Property, EffectScriptNodeSelector? Selector), decimal>();
             foreach (var frame in segment.Keyframes)
             {
                 if (frame is null || frame.Value is null)
@@ -66,24 +66,28 @@ public static class EffectScriptValidator
                 }
 
                 if (!Enum.IsDefined(frame.Property) || !Enum.IsDefined(frame.Interpolation) || frame.Progress is < 0 or > 1 ||
-                    decimal.Round(frame.Progress, 6) != frame.Progress)
+                    decimal.Round(frame.Progress, 6) != frame.Progress || !double.IsFinite(frame.Exponent) || frame.Exponent <= 0)
                 {
                     throw new EffectScriptException("关键帧属性或插值无效，段内位置应为 0 到 1，最多六位小数。", frame.Line, frame.Column);
                 }
 
-                if (previous.TryGetValue(frame.Property, out var last) ? frame.Progress <= last : frame.Progress != 0)
+                var animationProperty = EffectScriptPropertyMetadata.GetAnimationProperty(frame.Property);
+                if (AnimationPropertyMetadata.IsNodeProperty(animationProperty) != frame.NodeSelector.HasValue ||
+                    frame.NodeSelector is { } selector &&
+                    (selector.ContourNumber is < 1 or > 10000 || selector.NodeNumber is < 1 or > 10000))
+                {
+                    throw new EffectScriptException("只有蒙版节点属性携带一基轮廓及节点序号。", frame.Line, frame.Column);
+                }
+
+                var target = (frame.Property, frame.NodeSelector);
+                if (previous.TryGetValue(target, out var last) ? frame.Progress <= last : frame.Progress != 0)
                 {
                     throw new EffectScriptException("段内同一属性必须从 at 0 开始且位置严格递增。", frame.Line, frame.Column);
                 }
 
-                previous[frame.Property] = frame.Progress;
+                previous[target] = frame.Progress;
                 var value = frame.Value;
-                var expectedKind = frame.Property switch
-                {
-                    EffectScriptProperty.POSITION or EffectScriptProperty.SCALE => AnimationValueKind.VECTOR,
-                    EffectScriptProperty.FILL or EffectScriptProperty.STROKE => AnimationValueKind.COLOR,
-                    _ => AnimationValueKind.SCALAR
-                };
+                var expectedKind = AnimationPropertyMetadata.GetValueKind(animationProperty);
                 if (!Enum.IsDefined(value.Kind) || (value.Kind == EffectScriptValueKind.BASE ? value.Literal.HasValue :
                     value.Literal is not { } literal || literal.Kind != expectedKind ||
                     Enumerable.Range(0, literal.ComponentCount).Any(component => !double.IsFinite(literal.GetComponent(component)))))

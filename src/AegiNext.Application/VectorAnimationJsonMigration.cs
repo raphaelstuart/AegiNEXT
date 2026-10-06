@@ -68,7 +68,7 @@ internal static class VectorAnimationJsonMigration
 
             var value = layer["transform"]!.Deserialize<LayerTransform>(options) ?? throw new JsonException("图层变换不能为空。");
             var hasLegacyColor = layer["tracks"] is JsonArray tracks && tracks.OfType<JsonObject>().Any(track =>
-                track["property"] is JsonValue property && property.TryGetValue<string>(out var name) &&
+                track["target"]?["property"] is JsonValue property && property.TryGetValue<string>(out var name) &&
                 Enum.TryParse<AnimationProperty>(name, ignoreCase: true, out var animationProperty) &&
                 animationProperty is >= AnimationProperty.FILL_RED and <= AnimationProperty.STROKE_ALPHA);
             SceneColor? fill = null;

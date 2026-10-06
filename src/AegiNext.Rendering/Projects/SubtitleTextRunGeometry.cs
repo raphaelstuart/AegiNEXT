@@ -8,4 +8,5 @@ public sealed record SubtitleTextRunGeometry(int Utf16Start, int Utf16Length, in
     SubtitleStyle Style, SKPoint Baseline, SKRect Bounds)
 {
     public string ResolvedFontFamily { get; init; } = string.Empty;
+    public SubtitleFontVariant? ResolvedFontVariant { get; init; }
 }

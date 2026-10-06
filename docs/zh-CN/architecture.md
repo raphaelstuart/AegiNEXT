@@ -6,7 +6,7 @@
 
 AegiNext 使用 .NET 10、C# 与 Avalonia，根命名空间为 `AegiNext`，首版面向 macOS 和 Windows；Linux 留待后续。当前已落位时间与项目模型、字幕编辑及撤销重做、TXT/SRT/自有项目存储、共享 F16 场景渲染、视频解码与 SDR 预览、SDL3 音频播放、波形／时频分析，以及独立压制 worker。首版仍在集成与界面验收阶段；模块测试通过不等于全部界面操作、Windows 实机或最低系统版本已经验收。
 
-产品围绕当前字幕项目：逐行编辑时间、内容和样式，在视频与音频时间轴上打轴，编辑字幕的关键帧、运动路径及脚本特效，然后压制成片。视频作为背景，不扩展为多轨视频剪辑器或批量转码工具。普通边缘拖动执行裁剪，Ctrl 拖动片段边缘执行显式时间拉伸；ASS/Aegisub 导出留作后续适配，自有 JSON 项目不是 ASS 或 Lua 的中间表示。
+产品围绕当前字幕项目：逐行编辑时间、内容和样式，在视频与音频时间轴上打轴，编辑字幕的关键帧、运动路径、Clip 蒙版及脚本特效，然后压制成片或导出字幕。普通边缘拖动执行裁剪，Ctrl 拖动片段边缘执行显式时间拉伸；ASS 导入／导出将已支持标签适配到工程模型，自有 JSON 项目保存更完整的场景及动画状态。
 
 用户已调整首版优先级：普通 SDR 映射预览先行，HDR 成片必须保持高精度；原生 HDR 显示不再阻塞主编辑器。已有 macOS HDR probe 保留为可选诊断，Windows 原生 HDR 预览延期。主编辑器和导出都不依赖该 probe 的显示窗口。
 
@@ -36,13 +36,19 @@ AegiNext 使用 .NET 10、C# 与 Avalonia，根命名空间为 `AegiNext`，首�
 
 图层时间位于项目绝对时间轴；关键帧、路径和卡拉 OK 位于图层内容时间，`LocalTime = time - Start + AnimationOffset`。裁剪改变可见边界并补偿 offset，保留原动画速度；显式拉伸按有理比例修改局部时间。子层变换相对父组，普通字幕与同 ID 的字幕层一一对应。
 
-`LayerAnimationTiming` 限制关键帧到片段可见内容时间，裁剪时插入边界值并保留原插值曲线子区间。项目当前版本为 **3**，字幕样式模板仍使用既有版本，v1／v2 项目明确不支持。v3 保存稳定字幕轨道、唯一 TrackId、自然字形位置与完整 Vector 动画；同轨 Clip 不允许重叠，轨道只组织字幕，不改变合成顺序。
+`LayerAnimationTiming` 限制关键帧到片段可见内容时间，裁剪时插入边界值并保留原插值曲线子区间。项目当前写入版本为 **v5**，继续保存稳定字幕轨道、唯一 TrackId、自然字形位置与完整 Vector／颜色动画。读取 v3／v4 时迁移旧普通轨道，并兼容图层与预设中缺失或为 null 的旧蒙版，删除预设的空蒙版字段。任一对象包含非空旧局部蒙版时，报告对象位置及标识并拒绝升级，原文件保持不变。字幕样式模板仍使用既有版本，v1／v2 项目明确不支持。同轨 Clip 不允许重叠，轨道只组织字幕，不改变合成顺序。
 
 `SubtitleTrack` 可保存 `DefaultStyle` 与来源预设 ID／名称。个人样式库用于选择，项目内快照用于后续创建，不持有个人库对象引用。`SubtitleStylePresetService.PrepareAsync` 先准备或复用字体资源，即使项目没有字幕也能执行；修改非空轨道预设时先通过 Workspace 询问是否更新现有 Clip：是更新，否仅保存后续默认值，取消不改变。Application 将所需资源、默认值及可选的现有字幕修改合为一次 Undo。轨道保存 AutoApplyStyle（缺省 true）；关闭时仍保留快照，后续创建使用样式面板当前选中的预设。Timeline 面板按稳定 Track ID 和 Preset ID 请求 Workspace 协调，不读取样式面板控件。手动新增、打轴和指定轨道导入继承默认值；拆分与跨轨移动保留原 Clip 样式。
 
 `SubtitleLine.KaraokeStyle` 是单份 `KaraokeHighlightStyle` 视觉快照，保存填充、描边及阴影，不复制到各字素，也不改变字体、字号和排版几何。缺失快照时保留 `KaraokeSegment.HighlightColor` 行为。已有逐字片段换预设时保留内容时间；拆分继承有片段侧的快照，合并两侧已有片段时验证视觉兼容，比较不包含来源 ID／名称。新增轨道与高亮快照字段在 v3 读取边界允许缺失，未知字段和重复键继续拒绝。
 
-`LayerTransform` 只持久化 Position / Scale / Pivot 三个 double 精度 `ScenePoint` 和 Rotation。`AnimationTrack` 按 POSITION／SCALE 保存单个完整 `AnimationValue`；标量值使用 number，二维值使用 `{x,y}`。`AnimationValue` 类型声明共享 JSON converter，项目存储与媒体 worker 通道使用同一编码，不通过反射读取错误维度。旧 v3 的 X/Y 分量及旧变换在读取边界合并，按两轴关键帧时间并集保留每轴插值及裁剪相位；新数据拒绝继续写入分量轨道。所有编辑使用同一不可变快照与 Undo 栈。
+`LayerTransform` 只持久化 Position / Scale / Pivot 三个 double 精度 `ScenePoint` 和 Rotation。`AnimationTrack.Target` 使用 `AnimationTrackTarget(Property, NodeId?)` 作为求值、编辑、脚本和时间线选择的完整身份；v3／v4 轨道的旧 `property` 字段迁移为 NodeId 为 null 的 `target`，v5 只接受目标表示。只有节点位置与控制柄目标携带 NodeId。共享 metadata 定义维度、分量和范围。`AnimationValue` 标量使用 number，二维值使用 `{x,y}`，颜色使用 `{red,green,blue,alpha}`；项目存储与媒体 worker 使用同一 Core JSON converter。旧 v3 分量按时间并集迁移，并保留每轴插值与裁剪相位；新数据拒绝继续写入分量轨道。所有编辑使用同一不可变快照与 Undo 栈。
+
+轨道在普通关键帧和有序变换程序之间互斥。后者保存 InitialValue、稳定操作 ID、内容时间起止、目标值、非负 accel 和源顺序；求值依次将当前值插向各操作目标，保留重叠 ASS 变换。编辑禁止隐式转换两种表示。POWER 关键帧使用正指数，裁剪保留原曲线子区间；有序程序裁剪／拆分保留内容时钟，拉伸同步缩放操作时间。普通属性沿用原轨道预算，节点目标支持蒙版的 10,000 节点预算。
+
+`ProjectLayer.Mask` 统一为 `ClipMask`，仅允许引用有效字幕的 SUBTITLE 图层持有。矩形保存工程坐标两角，自由路径保存具有稳定轮廓／节点 ID 的有序闭合贝塞尔轮廓；节点位置使用工程坐标，控制柄保存相对节点的偏移。蒙版拥有独立平移、缩放、旋转与固定工程坐标轴心，不继承字幕或父层变换。效果预设仅携带动画轨道，不复制蒙版几何。节点形变轨道锁定轮廓归属、顺序、数量和闭合状态；清除节点动画后解锁，整体变换仍保留。清除蒙版会在一次事务中删除全部蒙版轨道。
+
+Desktop 的 ClipMaskEditingCoordinator 协调选择、草稿和提交。画布控件只持有局部指针手势与未闭合轮廓，闭合后一次提交；手势冻结 Clip 与内容时间，捕获取消、切换选择、Undo 或关闭时取消。数值字段有效输入立即预览，Enter／失焦提交一次，非法原文保留，Esc 只恢复当前字段。时间线节点行限定当前 Clip 与已选节点，拖动只改变时间。ASS 导入与高级文本编辑原子携带文字、蒙版、轨道与内容偏移；`.aegifx` 从 1 开始的轮廓／节点选择器在编译时解析为稳定节点 ID。
 
 字幕特效 DSL 的纯文本语法、预算和精确时间编译位于 `Core/Effects/`，事务应用在 Application，个人模板库在 `Application/Presets/`，会话协调在 Desktop/Workspace，编辑器在 Controls/Editing，管理页面在 Settings/Effects。脚本固定段优先，自由段分配剩余时间，短 Clip 策略由源显式声明。七个内置脚本与用户模板同路径编译，不复制另一 Clip 的绝对关键帧长度。
 

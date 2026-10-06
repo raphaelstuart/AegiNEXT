@@ -107,6 +107,12 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         if (e.Key == Key.Escape && e.Source is Control source &&
             !source.GetSelfAndVisualAncestors().OfType<ColorDraftInput>().Any())
         {
+            var maskInput = source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault();
+            if (viewModel.RestoreOperationField(maskInput?.Name))
+            {
+                e.Handled = true;
+                return;
+            }
             var field = source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault() as Control ??
                 source.GetSelfAndVisualAncestors().OfType<TextBox>().FirstOrDefault(control => control.Name is not null && !control.Name.StartsWith("PART_", StringComparison.Ordinal));
             if (field?.Name is { } name)

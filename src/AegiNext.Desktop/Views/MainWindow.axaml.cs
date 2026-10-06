@@ -13,6 +13,7 @@ using AegiNext.Desktop.Panels.Subtitles;
 using AegiNext.Desktop.Panels.SubtitleDetails;
 using AegiNext.Desktop.Panels.Styles;
 using AegiNext.Desktop.Panels.Effects;
+using AegiNext.Desktop.Panels.Masks;
 using AegiNext.Desktop.Panels.Export;
 using AegiNext.Desktop.Panels.Log;
 using AegiNext.Desktop.Settings;
@@ -83,6 +84,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             ["subtitles"] = new SubtitlesPanelView(ViewModel.Subtitles, Session),
             ["styles"] = new StylesPanelView(ViewModel.Styles, Session),
             ["effects"] = new EffectsPanelView(ViewModel.Effects, Session),
+            [WorkbenchPanelIds.MASKS] = new MaskPanelView(ViewModel.Masks, Session),
             ["export"] = new ExportPanelView(ViewModel.Export, Session),
             [WorkbenchPanelIds.SUBTITLE_DETAILS] = new SubtitleDetailsPanelView(Session),
             [WorkbenchPanelIds.LOG] = new LogPanelView(ViewModel.Log, Session.Journal, () => Session.IsClosing)
@@ -295,6 +297,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             {
                 WorkbenchCommand.VIEW_PREVIEW => "preview", WorkbenchCommand.VIEW_TIMELINE => "timeline",
                 WorkbenchCommand.VIEW_SUBTITLES => "subtitles", WorkbenchCommand.VIEW_STYLES => "styles",
+                WorkbenchCommand.VIEW_MASKS => WorkbenchPanelIds.MASKS,
                 WorkbenchCommand.VIEW_EFFECTS => "effects", WorkbenchCommand.VIEW_EXPORT => "export",
                 WorkbenchCommand.VIEW_LOG => WorkbenchPanelIds.LOG, _ => null
             };

@@ -1,11 +1,33 @@
 using System.Collections.Immutable;
 using AegiNext.Core.Projects;
+using AegiNext.Application.SubtitleFormats;
 using AegiNext.Core.Timing;
 
 namespace AegiNext.Application;
 
 public static partial class ProjectEditingOperations
 {
+    /// <summary>将 ASS 字幕、蒙版和动画原子导入同一批字幕片段。</summary>
+    public static ProjectDocument ImportSubtitleLines(ProjectDocument document, AssImportResult imported, string name)
+    {
+        ArgumentNullException.ThrowIfNull(imported);
+        var result = ImportSubtitleLines(document, imported.Lines, name);
+        if (imported.Clips.IsEmpty)
+        {
+            return result;
+        }
+        if (imported.Clips.Length != imported.Lines.Length || !imported.Clips.Select(clip => clip.Line).SequenceEqual(imported.Lines))
+        {
+            throw new InvalidDataException("ASS 导入片段与字幕身份不一致。");
+        }
+        var clips = imported.Clips.ToDictionary(clip => clip.Line.Id);
+        return Verified(result with
+        {
+            Layers = result.Layers.Select(layer => layer.SubtitleId is { } id && clips.TryGetValue(id, out var clip)
+                ? layer with { Mask = clip.Mask, Tracks = clip.Tracks, AnimationOffset = clip.ContentOffset } : layer).ToImmutableArray()
+        });
+    }
+
     /// <summary>一次准备整批字幕的新独立轨道；保留样式与来源顺序，将重叠区间分到必要轨道。</summary>
     public static ProjectDocument ImportSubtitleLines(ProjectDocument document, IEnumerable<SubtitleLine> lines, string name)
     {

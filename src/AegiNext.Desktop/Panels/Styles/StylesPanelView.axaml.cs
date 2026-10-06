@@ -16,6 +16,8 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     private readonly FontFamilyPicker fonts;
     private readonly ComboBox alignment;
     private bool suppressFocusCommit;
+    private bool formattingPointerActive;
+    private bool formattingFocusPending;
     private int focusCommitRevision;
     private bool disposed;
     internal StylesPanelView(StylesPanelViewModel viewModel, WorkbenchSession session)
@@ -26,15 +28,28 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         DataContext = viewModel;
         fonts = this.FindControl<FontFamilyPicker>("FontCombo")!;
         fonts.CommitOnLostFocus = false;
-        fonts.SetCurrentFamily(viewModel.FontFamily);
+        fonts.RefreshFontCandidates(viewModel.Fonts.Candidates);
+        fonts.SetCurrentFont(viewModel.CurrentFont);
         fonts.FamilyCommitted += (_, e) =>
         {
-            viewModel.CommitFont(e.FamilyName);
+            viewModel.CommitFont(e.Selection);
         };
         var bold = this.FindControl<CheckBox>("BoldCheck")!;
-        bold.IsCheckedChanged += (_, _) => viewModel.CommitBold(bold.IsChecked == true);
+        bold.IsCheckedChanged += (_, _) =>
+        {
+            if (!session.IsUpdating)
+            {
+                viewModel.CommitBold(bold.IsChecked == true);
+            }
+        };
         var italic = this.FindControl<CheckBox>("ItalicCheck")!;
-        italic.IsCheckedChanged += (_, _) => viewModel.CommitItalic(italic.IsChecked == true);
+        italic.IsCheckedChanged += (_, _) =>
+        {
+            if (!session.IsUpdating)
+            {
+                viewModel.CommitItalic(italic.IsChecked == true);
+            }
+        };
         viewModel.FillDraft.Committed += (_, _) => viewModel.CommitDrafts();
         viewModel.StrokeDraft.Committed += (_, _) => viewModel.CommitDrafts();
         alignment = this.FindControl<ComboBox>("AlignmentCombo")!;
@@ -53,12 +68,24 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         position.PresetPositionChanged += (_, _) => viewModel.CommitDrafts();
         viewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(viewModel.FontFamily))
+            if (e.PropertyName == nameof(viewModel.CurrentFont))
             {
-                fonts.SetCurrentFamily(viewModel.FontFamily);
+                fonts.SetCurrentFont(viewModel.CurrentFont);
             }
         };
-        AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            suppressFocusCommit = false;
+            if (e.Source is Control source && source.GetSelfAndVisualAncestors().Any(value => ReferenceEquals(value, bold) || ReferenceEquals(value, italic)))
+            {
+                formattingPointerActive = true;
+                formattingFocusPending = false;
+                ++focusCommitRevision;
+            }
+        }, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, (_, _) => EndFormattingPointer(), RoutingStrategies.Tunnel, true);
+        bold.PointerCaptureLost += (_, _) => EndFormattingPointer();
+        italic.PointerCaptureLost += (_, _) => EndFormattingPointer();
         AddHandler(KeyDownEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -73,28 +100,51 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         {
             if (e.Source is TextBox or NumericUpDown or FontFamilyPicker)
             {
-                var root = TopLevel.GetTopLevel(this);
-                var suppressed = suppressFocusCommit;
-                var revision = focusCommitRevision;
-                var document = session.DocumentSnapshot;
-                var layerId = session.SelectedLayerId;
-                Dispatcher.UIThread.Post(() =>
+                if (formattingPointerActive)
                 {
-                    if (!disposed && revision == focusCommitRevision && layerId == session.SelectedLayerId &&
-                        ReferenceEquals(document, session.DocumentSnapshot) && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
-                        this.IsAttachedToVisualTree())
-                    {
-                        viewModel.CommitDrafts();
-                    }
-                }, DispatcherPriority.Background);
+                    formattingFocusPending = true;
+                    return;
+                }
+                QueueFocusCommit();
             }
         }, RoutingStrategies.Bubble);
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
     }
 
     public string PanelId => "styles";
+    private void EndFormattingPointer()
+    {
+        if (!formattingPointerActive)
+        {
+            return;
+        }
+        formattingPointerActive = false;
+        if (formattingFocusPending)
+        {
+            formattingFocusPending = false;
+            QueueFocusCommit();
+        }
+    }
+    private void QueueFocusCommit()
+    {
+        var root = TopLevel.GetTopLevel(this);
+        var suppressed = suppressFocusCommit;
+        var revision = focusCommitRevision;
+        var document = session.DocumentSnapshot;
+        var layerId = session.SelectedLayerId;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!disposed && revision == focusCommitRevision && layerId == session.SelectedLayerId &&
+                ReferenceEquals(document, session.DocumentSnapshot) && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
+                this.IsAttachedToVisualTree())
+            {
+                viewModel.CommitDrafts();
+            }
+        }, DispatcherPriority.Background);
+    }
     public void CancelGestures()
     {
+        formattingPointerActive = formattingFocusPending = false;
         suppressFocusCommit = true;
         var revision = ++focusCommitRevision;
         Dispatcher.UIThread.Post(() =>

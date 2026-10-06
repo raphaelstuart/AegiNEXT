@@ -8,7 +8,7 @@ namespace AegiNext.Application.SubtitleFormats;
 
 internal static class AssTextWriter
 {
-    internal static AssBodyWriteResult Write(SubtitleLine line, MediaTime origin, bool projection = false)
+    internal static AssBodyWriteResult Write(SubtitleLine line, MediaTime origin, bool projection = false, bool preserveContentClock = false)
     {
         AssTextParser.ValidateLine(line);
         var result = new StringBuilder();
@@ -44,7 +44,7 @@ internal static class AssTextWriter
         var clipIndex = 0;
         var visible = line.End - line.Start;
         var visibleCount = visible.ToTimestamp(new(1, 100), MediaTimeRounding.CEILING).Value;
-        if (!projection && line.Karaoke.Any(clip => clip.Start < origin || clip.End > origin + visible))
+        if (!projection && !preserveContentClock && line.Karaoke.Any(clip => clip.Start < origin || clip.End > origin + visible))
         {
             diagnostics.Add(new("Ass.KaraokeCrop", "部分卡拉 OK 片段超出字幕可见范围，导出时裁剪片段并保留整句起止时间。", SubtitleId: line.Id));
         }
@@ -63,11 +63,11 @@ internal static class AssTextWriter
                 clipIndex++;
             }
             var clip = clipIndex < line.Karaoke.Length && line.Karaoke[clipIndex].Utf16Start <= offset ? line.Karaoke[clipIndex] : null;
-            if (clip is not null && !projection && (clip.End <= origin || clip.Start >= origin + line.End - line.Start))
+            if (clip is not null && !projection && !preserveContentClock && (clip.End <= origin || clip.Start >= origin + line.End - line.Start))
             {
                 clip = null;
             }
-            if (clip is not null && clip != previousClip && !projection && time >= visibleCount)
+            if (clip is not null && clip != previousClip && !projection && !preserveContentClock && time >= visibleCount)
             {
                 throw new InvalidDataException("字幕范围内的厘秒不足以保留全部卡拉 OK 正时长，无法导出。");
             }
@@ -76,12 +76,12 @@ internal static class AssTextWriter
             {
                 if (clip is not null)
                 {
-                    var start = clip.Start < origin ? MediaTime.Zero : clip.Start - origin;
+                    var start = preserveContentClock ? clip.Start - origin : clip.Start < origin ? MediaTime.Zero : clip.Start - origin;
                     var end = clip.End - origin;
-                    end = !projection && end > visible ? visible : end;
-                    clipStartCount = Math.Max(time, start.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value);
+                    end = !projection && !preserveContentClock && end > visible ? visible : end;
+                    clipStartCount = preserveContentClock ? start.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value : Math.Max(time, start.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value);
                     endCount = Math.Max(clipStartCount + 1, end.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value);
-                    if (!projection && endCount > visibleCount)
+                    if (!projection && !preserveContentClock && endCount > visibleCount)
                     {
                         throw new InvalidDataException("卡拉 OK 的正时长厘秒量化超出字幕范围，无法导出。");
                     }
@@ -100,8 +100,8 @@ internal static class AssTextWriter
                 {
                     var inactive = KaraokeVisualStyleResolver.ResolveInactive(style, clip);
                     var active = KaraokeVisualStyleResolver.ResolveActive(style, line.KaraokeStyle, clip);
-                    AddStyleDiagnostics(inactive, line.Id, diagnostics);
-                    AddStyleDiagnostics(active, line.Id, diagnostics);
+                    AddStyleDiagnostics(inactive, line.Id, diagnostics, projection);
+                    AddStyleDiagnostics(active, line.Id, diagnostics, projection);
                     result.Append("{\\2c").Append(AssFormatValues.Color(inactive.Fill, false)).Append("\\2a").Append(AssFormatValues.Alpha(inactive.Fill));
                     result.Append("\\1c").Append(AssFormatValues.Color(active.Fill, false)).Append("\\1a").Append(AssFormatValues.Alpha(active.Fill));
                     if (clip.HighlightKind == KaraokeHighlightKind.SWEEP)
@@ -112,7 +112,7 @@ internal static class AssTextWriter
                             diagnostics.Add(new("Ass.KaraokeVisual", "ASS 的逐字扫过不能完整保留前后的独立描边和阴影，已采用未激活外观。", SubtitleId: line.Id));
                         }
                     }
-                    else if (clipStartCount == 0)
+                    else if (clipStartCount <= 0)
                     {
                         result.Append(VisualTags(active));
                     }
@@ -131,14 +131,18 @@ internal static class AssTextWriter
                 else
                 {
                     result.Append("{\\2c").Append(AssFormatValues.Color(style.Fill, false)).Append("\\2a").Append(AssFormatValues.Alpha(style.Fill)).Append('}');
-                    AddStyleDiagnostics(style, line.Id, diagnostics);
+                    AddStyleDiagnostics(style, line.Id, diagnostics, projection);
                 }
             }
             if (clip != previousClip)
             {
                 if (clip is not null)
                 {
-                    if (clipStartCount > time)
+                    if (preserveContentClock)
+                    {
+                        result.Append("{\\kt").Append(clipStartCount.ToString(CultureInfo.InvariantCulture)).Append('}');
+                    }
+                    else if (clipStartCount > time)
                     {
                         result.Append("{\\k").Append((clipStartCount - time).ToString(CultureInfo.InvariantCulture)).Append('}');
                     }
@@ -217,8 +221,13 @@ internal static class AssTextWriter
             shadowVisible && (inactive.ShadowColor != active.ShadowColor || inactive.ShadowOffset != active.ShadowOffset || !inactive.ShadowBlur.Equals(active.ShadowBlur));
     }
 
-    private static void AddStyleDiagnostics(SubtitleStyle style, Guid id, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
+    private static void AddStyleDiagnostics(SubtitleStyle style, Guid id,
+        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, bool projection)
     {
+        if (!projection && style.FontVariant is not null)
+        {
+            diagnostics.Add(new("Ass.FontVariant", "ASS 的字体家族与粗体、斜体标记无法完整保留系统字体命名变体。", SubtitleId: id));
+        }
         if (OutOfGamut(style.Fill) || OutOfGamut(style.Stroke) || OutOfGamut(style.ShadowColor))
         {
             diagnostics.Add(new("Ass.ColorRange", "ASS 8 位 sRGB 颜色会限制线性 HDR 或负颜色。", SubtitleId: id));

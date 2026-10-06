@@ -1,5 +1,6 @@
 using System.Globalization;
 using AegiNext.Core.Projects;
+using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.I18n;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -17,9 +18,12 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
     private string shadowYText = string.Empty;
     private string shadowBlurText = string.Empty;
     private SubtitleStyle source = new();
+    private readonly SubtitleFontSelectionService fonts;
+    private FontSelection? selectedFont;
 
-    internal SubtitleDetailsStyleDraft()
+    internal SubtitleDetailsStyleDraft(SubtitleFontSelectionService? fonts = null)
     {
+        this.fonts = fonts ?? new(Array.Empty<AegiNext.Rendering.Fonts.SystemFontFace>());
         Fill.Changed += (_, _) => Mark(nameof(Fill));
         Stroke.Changed += (_, _) => Mark(nameof(Stroke));
         Shadow.Changed += (_, _) => Mark(nameof(Shadow));
@@ -40,6 +44,7 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
         {
             if (SetProperty(ref fontFamily, value))
             {
+                selectedFont = null;
                 Mark(nameof(FontFamily));
             }
         }
@@ -116,7 +121,8 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
         loading = true;
         try
         {
-            FontFamily = style.FontFamily;
+            FontFamily = SubtitleFontSelectionService.FromStyle(style).DisplayName;
+            selectedFont = null;
             FontSizeText = style.FontSize.ToString(CultureInfo.InvariantCulture);
             StrokeWidthText = style.StrokeWidth.ToString(CultureInfo.InvariantCulture);
             ShadowXText = style.ShadowOffset.X.ToString(CultureInfo.InvariantCulture);
@@ -143,7 +149,8 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
             switch (field)
             {
                 case nameof(FontFamily):
-                    FontFamily = source.FontFamily;
+                    FontFamily = SubtitleFontSelectionService.FromStyle(source).DisplayName;
+                    selectedFont = null;
                     break;
                 case nameof(FontSizeText):
                     FontSizeText = source.FontSize.ToString(CultureInfo.InvariantCulture);
@@ -185,6 +192,21 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
     {
         source = committed;
         RestoreField(field);
+    }
+
+    internal void SelectFont(FontSelection selection)
+    {
+        loading = true;
+        try
+        {
+            FontFamily = selection.DisplayName;
+            selectedFont = selection;
+        }
+        finally
+        {
+            loading = false;
+        }
+        Mark(nameof(FontFamily));
     }
 
     internal SubtitleInlineStyleOverride? ReadPreviewField(SubtitleStyle current, string field)
@@ -274,9 +296,11 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
         }
         var x = Number(nameof(ShadowXText), ShadowXText, -4096, 4096);
         var y = Number(nameof(ShadowYText), ShadowYText, -4096, 4096);
-        return new()
+        var font = Includes(nameof(FontFamily))
+            ? SubtitleFontSelectionService.CreateOverride(selectedFont ?? fonts.Resolve(FontFamily, current))
+            : new SubtitleInlineStyleOverride();
+        return font with
         {
-            FontFamily = Includes(nameof(FontFamily)) ? FontFamily : null,
             FontSize = Number(nameof(FontSizeText), FontSizeText, 0.01, 4096),
             StrokeWidth = Number(nameof(StrokeWidthText), StrokeWidthText, 0, 4096),
             Fill = Color(nameof(Fill), Fill), Stroke = Color(nameof(Stroke), Stroke),

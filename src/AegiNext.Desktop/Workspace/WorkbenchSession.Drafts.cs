@@ -13,12 +13,12 @@ internal sealed partial class WorkbenchSession
 {
     private static readonly HashSet<string> styleDraftProperties =
     [
-        "FontFamily", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "Position"
+        "FontFamily", "FontVariant", "FontSelectionCommitted", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "Position"
     ];
     private static readonly HashSet<string> effectDraftProperties =
     [
         "LayerStart", "LayerEnd", "LayerWidth", "LayerWidthText", "LayerHeight", "LayerHeightText", "PositionX", "PositionXText", "PositionY", "PositionYText", "ScaleX", "ScaleXText", "ScaleY", "ScaleYText",
-        "Rotation", "RotationText", "Opacity", "OpacityText", "Blur", "BlurText", "Blend", "InvertMask", "OrientPath", "KeyframeValue", "KeyframeValueText", "KeyframeValueY", "KeyframeValueYText", "KeyframeColorDraft", "Interpolation"
+        "Rotation", "RotationText", "Opacity", "OpacityText", "Blur", "BlurText", "Blend", "OrientPath", "KeyframeValue", "KeyframeValueText", "KeyframeValueY", "KeyframeValueYText", "KeyframeColorDraft", "Interpolation", "PowerExponent"
     ];
 
     private readonly HashSet<string> changedEffectFields = [];
@@ -65,6 +65,8 @@ internal sealed partial class WorkbenchSession
             }
 
             prepared = PrepareInspectorDrafts(prepared, false);
+            prepared = MaskEditing.Prepare(prepared);
+            prepared = ViewModel.Effects.PrepareOperationDraft(prepared);
 
             ProjectValidator.Validate(prepared);
             ViewModel.InvalidPanelId = "export";
@@ -104,6 +106,8 @@ internal sealed partial class WorkbenchSession
             SceneEditing.DraftTarget = null;
             changedEffectFields.Clear();
             ClearInspectorPreview();
+            MaskEditing.AcceptDrafts();
+            ViewModel.Effects.AcceptOperationDraft();
             try
             {
                 if (prepared != document)
@@ -131,6 +135,8 @@ internal sealed partial class WorkbenchSession
             ViewModel.Subtitles.InvalidRowId = null;
             ViewModel.Effects.ValidationError = null;
             ViewModel.Effects.InvalidFieldKey = null;
+            ViewModel.Masks.ValidationError = null;
+            ViewModel.Masks.InvalidFieldKey = null;
             lastDraftDiagnostic = null;
             return true;
         }
@@ -145,13 +151,14 @@ internal sealed partial class WorkbenchSession
 
     private AnimationValue ReadKeyframeDraft(Panels.Effects.EffectsPanelViewModel vm, bool changed)
     {
-        var property = SceneEditing.DraftTarget?.Property ?? ActiveProperty;
-        var vector = property is AnimationProperty.POSITION or AnimationProperty.SCALE;
+        var target = SceneEditing.DraftTarget?.Target ?? SceneEditing.Target;
+        var property = target.Property;
+        var vector = AnimationPropertyMetadata.GetValueKind(property) == AnimationValueKind.VECTOR;
         if (property is AnimationProperty.FILL or AnimationProperty.STROKE)
         {
             return ReadColorDraft(vm.KeyframeColorDraft, "KeyframeColorInput");
         }
-        var previous = SelectedLayer?.Tracks.FirstOrDefault(track => track.Property == property)?.Keyframes
+        var previous = SelectedLayer?.Tracks.FirstOrDefault(track => track.Target == target)?.Keyframes
             .FirstOrDefault(frame => frame.Time == AnimationTarget?.LocalTime)?.Value;
         double Read(string text, string field)
         {
@@ -312,7 +319,7 @@ internal sealed partial class WorkbenchSession
             updatingWorkbench = true;
             try
             {
-                ViewModel.Timeline.EffectProperty = ActiveProperty;
+                ViewModel.Timeline.EffectTarget = SceneEditing.Target;
                 RefreshKeyframeInspector();
                 RefreshInspector();
             }
@@ -389,6 +396,7 @@ internal sealed partial class WorkbenchSession
             ViewModel.Effects.SelectedLayer = SelectedLayer;
             SyncCurrentTrackForSelection();
             RefreshSubtitleSelection();
+            MaskEditing.Refresh(true);
             RefreshInspector();
             ViewModel.Styles.CanApplyPreset = SelectedCue is not null && !projectBusy && !closing && ViewModel.Styles.SelectedPreset is not null;
             Tick();
@@ -410,8 +418,7 @@ internal sealed partial class WorkbenchSession
         vm.HasCue = cue is not null;
         if (!stylesDirty)
         {
-            vm.FontFamily = style.FontFamily;
-            vm.FontDraft = style.FontFamily;
+            vm.LoadFont(style);
             vm.FontSize = (decimal)style.FontSize;
             vm.StrokeWidth = (decimal)(layer is null ? 0 : InspectorValue(layer, AnimationProperty.STROKE_WIDTH, cue is null ? layer.StrokeWidth : style.StrokeWidth));
             vm.FillDraft.Load(layer is null ? SceneColor.White : InspectorColor(layer, cue is null ? layer.Fill : style.Fill, false));
@@ -461,7 +468,6 @@ internal sealed partial class WorkbenchSession
             effects.LayerStart = layer is null ? string.Empty : TimelineTimeText.Format(layer.Start);
             effects.LayerEnd = layer is null ? string.Empty : TimelineTimeText.Format(layer.End);
             effects.Blend = (int)(layer?.Blend ?? BlendMode.NORMAL);
-            effects.InvertMask = layer?.Mask?.Inverted ?? false;
             effects.OrientPath = layer?.MotionPath?.OrientToPath ?? false;
             RefreshKeyframeInspector();
         }

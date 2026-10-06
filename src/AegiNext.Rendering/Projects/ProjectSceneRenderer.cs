@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
+using AegiNext.Rendering.Fonts;
 using SkiaSharp;
 
 namespace AegiNext.Rendering.Projects;
@@ -13,9 +14,10 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private readonly IProjectAssetResolver assets;
     private readonly Dictionary<ProjectAsset, SKImage> images = [];
     private readonly Dictionary<(SubtitleLine Subtitle, int Width, int Height), SubtitleLayout> layouts = [];
-    private readonly Dictionary<(Guid? Asset, string Family, bool Bold, bool Italic), TextShaper> textShapers = [];
-    private readonly Dictionary<(nint Handle, bool Bold, bool Italic), TextShaper> actualTextShapers = [];
-    private readonly Dictionary<(string Family, bool Bold, bool Italic, string Grapheme), TextShaper> resolvedTextShapers = [];
+    private readonly Dictionary<(Guid? Asset, string Family, SubtitleFontVariant? Variant, bool Bold, bool Italic), TextShaper> textShapers = [];
+    private readonly Dictionary<(nint Handle, SubtitleFontVariant? Variant, int Instance, int Collection, bool Bold, bool Italic), TextShaper> actualTextShapers = [];
+    private readonly Dictionary<(string Family, SubtitleFontVariant? Variant, bool Bold, bool Italic, string Grapheme), TextShaper> resolvedTextShapers = [];
+    private readonly Lazy<SystemFontResolver> systemFonts;
     private readonly SKColorSpace linear = SKColorSpace.CreateSrgbLinear();
     private PreparedProjectScene? prepared;
     private bool isDisposed;
@@ -26,11 +28,12 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private SKBlender? additiveBlend;
     private SKColorFilter? previewWhiteFilter;
 
-    /// <summary>绑定字体、图片资源解析器，渲染器不接管解析器生命周期。</summary>
-    public ProjectSceneRenderer(IProjectAssetResolver assets)
+    /// <summary>绑定资源解析器和可选的共享系统字体目录，渲染器不接管解析器生命周期。</summary>
+    public ProjectSceneRenderer(IProjectAssetResolver assets, SystemFontCatalog? fontCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(assets);
         this.assets = assets;
+        systemFonts = new(() => new(fontCatalog ?? new SystemFontCatalog()));
     }
 
     /// <summary>在工程精确时间渲染透明的预乘 F16 字幕与图形层，调用方负责释放结果。</summary>
@@ -264,7 +267,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
             var a = previous[i];
             var b = current[i];
             if (!ReferenceEquals(a.Source, b.Source) || a.Transform != b.Transform || !a.Opacity.Equals(b.Opacity) ||
-                a.Fill != b.Fill || a.Stroke != b.Stroke || !a.StrokeWidth.Equals(b.StrokeWidth) || !a.Blur.Equals(b.Blur) ||
+                a.Fill != b.Fill || a.Stroke != b.Stroke || !a.StrokeWidth.Equals(b.StrokeWidth) || !a.Blur.Equals(b.Blur) || !EquivalentMask(a.Mask, b.Mask) ||
                 (a.Subtitle is { Karaoke.IsEmpty: false } && a.LocalTime != b.LocalTime) || !Equivalent(a.Children, b.Children))
             {
                 return false;
@@ -285,12 +288,6 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         {
             var geometry = Geometry(document, layer, parent.TotalMatrix);
             canvas.SetMatrix(geometry.LocalToWorld);
-            if (layer.Source.Mask is { } mask)
-            {
-                using var path = Path(mask.Path);
-                canvas.ClipPath(path, mask.Inverted ? SKClipOperation.Difference : SKClipOperation.Intersect, true);
-            }
-
             using var blend = Paint(new(1, 1, 1, layer.Opacity));
             blend.BlendMode = layer.Source.Blend switch
             {
@@ -339,6 +336,13 @@ public sealed partial class ProjectSceneRenderer : IDisposable
             try
             {
                 parent.ResetMatrix();
+                if (layer.Mask is { } mask)
+                {
+                    using var path = ClipMaskPath(mask, (float)surface.Info.Width / document.Width,
+                        (float)surface.Info.Height / document.Height);
+                    parent.ClipPath(path, mask.Inverted ? SKClipOperation.Difference : SKClipOperation.Intersect, true);
+                }
+
                 parent.DrawImage(snapshot, 0, 0, blend);
             }
             finally

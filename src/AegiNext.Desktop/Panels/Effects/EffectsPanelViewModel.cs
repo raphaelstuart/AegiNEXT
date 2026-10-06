@@ -11,7 +11,7 @@ using Avalonia.Media;
 
 namespace AegiNext.Desktop.Panels.Effects;
 
-internal sealed class EffectsPanelViewModel : ObservableObject
+internal sealed partial class EffectsPanelViewModel : ObservableObject
 {
     private string layerWidthText = "300";
     private string layerHeightText = "180";
@@ -46,7 +46,6 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     private decimal? blur = 0;
     private int blend;
     private string[] blends = [];
-    private bool? invertMask = false;
     private bool? orientPath = false;
     private AnimationPropertyChoice[] properties = [];
     private decimal? keyframeValue = 1;
@@ -67,6 +66,8 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     internal EffectsPanelViewModel(WorkbenchSession session)
     {
         this.session = session;
+        PowerExponent.Load(1);
+        InitializeOperationDrafts();
         KeyframeColorDraft.Changed += (_, _) => OnPropertyChanged(nameof(KeyframeColorDraft));
         ResetPositionCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ResetPositionEffects)));
         AddPathPointCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddPathPoint)));
@@ -76,6 +77,13 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         ClearPathCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ClearPath)));
         KeyframeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddKeyframe)));
         DeleteKeyframeCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.DeleteKeyframe)));
+        PowerExponent.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(NumericValueDraft.RawText))
+            {
+                OnPropertyChanged(nameof(PowerExponent));
+            }
+        };
         ApplyPresetCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ApplySelectedPreset)));
     }
 
@@ -252,12 +260,6 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         set => SetProperty(ref blends, value);
     }
 
-    public bool? InvertMask
-    {
-        get => invertMask;
-        set => SetProperty(ref invertMask, value);
-    }
-
     public bool? OrientPath
     {
         get => orientPath;
@@ -274,24 +276,37 @@ internal sealed class EffectsPanelViewModel : ObservableObject
 
     public AnimationProperty Property
     {
-        get => session.SceneEditing.Property;
+        get => Target.Property;
+        set => Target = new(value, AnimationPropertyMetadata.IsNodeProperty(value) ? session.SceneEditing.MaskNodeId : null);
+    }
+
+    public AnimationTrackTarget Target
+    {
+        get => session.SceneEditing.Target;
         set
         {
-            if (refreshingChoices || Property == value)
+            if (refreshingChoices || Target == value)
             {
                 return;
             }
             if (!session.IsUpdating && !session.TryCommitDrafts())
             {
-                OnPropertyChanged();
+                OnPropertyChanged(nameof(SelectedProperty));
                 return;
             }
-            session.SceneEditing.Property = value;
+            session.SceneEditing.Target = value;
+            if (!session.IsUpdating)
+            {
+                session.ClearKeyframeSelection();
+            }
+            session.ViewModel.Timeline.EffectTarget = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(Property));
             OnPropertyChanged(nameof(SelectedProperty));
             OnPropertyChanged(nameof(IsVectorProperty));
             OnPropertyChanged(nameof(IsColorProperty));
             OnPropertyChanged(nameof(IsScalarProperty));
+            session.RefreshKeyframeInspector();
         }
     }
 
@@ -309,12 +324,12 @@ internal sealed class EffectsPanelViewModel : ObservableObject
 
     public AnimationPropertyChoice? SelectedProperty
     {
-        get => Properties.FirstOrDefault(choice => choice.Property == Property);
+        get => Properties.FirstOrDefault(choice => choice.Target == Target);
         set
         {
             if (value is not null)
             {
-                Property = value.Property;
+                Target = value.Target;
             }
         }
     }
@@ -325,8 +340,8 @@ internal sealed class EffectsPanelViewModel : ObservableObject
     private string keyframeValueYText = "1";
     public decimal? KeyframeValueY { get => keyframeValueY; set => SetProperty(ref keyframeValueY, value); }
     public string KeyframeValueYText { get => keyframeValueYText; set => SetProperty(ref keyframeValueYText, value); }
-    public bool IsVectorProperty => session.SceneEditing.Property is AnimationProperty.POSITION or AnimationProperty.SCALE;
-    public bool IsColorProperty => session.SceneEditing.Property is AnimationProperty.FILL or AnimationProperty.STROKE;
+    public bool IsVectorProperty => AnimationPropertyMetadata.GetValueKind(Property) == AnimationValueKind.VECTOR;
+    public bool IsColorProperty => AnimationPropertyMetadata.GetValueKind(Property) == AnimationValueKind.COLOR;
     public bool IsScalarProperty => !IsVectorProperty && !IsColorProperty;
 
     public decimal? KeyframeValue
@@ -354,7 +369,10 @@ internal sealed class EffectsPanelViewModel : ObservableObject
         {
             if (!refreshingChoices)
             {
-                SetProperty(ref interpolation, value);
+                if (SetProperty(ref interpolation, value))
+                {
+                    OnPropertyChanged(nameof(IsPowerInterpolation));
+                }
             }
         }
     }
@@ -532,12 +550,6 @@ internal sealed class EffectsPanelViewModel : ObservableObject
                 refreshingChoices = false;
             }
         }
-    }
-    /// <summary>提交用户选择的反转蒙版状态。</summary>
-    public void CommitInvertMask(bool value)
-    {
-        InvertMask = value;
-        session.TryCommitDrafts();
     }
     /// <summary>提交用户选择的路径朝向状态。</summary>
     public void CommitOrientPath(bool value)

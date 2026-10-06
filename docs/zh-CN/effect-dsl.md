@@ -21,6 +21,8 @@
 - [淡入淡出](../../src/AegiNext.Core/Effects/Scripts/fade-in-out.aegifx)：固定入口、自由保持、固定出口，适合作为第一份样板。
 - [填充与描边变色](../examples/effects/color-cycle.aegifx)：完整线性 RGBA、固定变色与自由保持。
 - [滑入＋弹入＋淡出](../examples/effects/slide-pop.aegifx)：完整向量和同段多个属性、多个关键帧的自定义样板。
+- [蒙版平移](../examples/effects/mask-slide.aegifx)：独立移动现有矩形或矢量蒙版。
+- [蒙版形变](../examples/effects/mask-morph.aegifx)：动画现有节点及相对出柄，支持短 Clip 压缩。
 - 单独的 [淡入](../../src/AegiNext.Core/Effects/Scripts/fade-in.aegifx)、[淡出](../../src/AegiNext.Core/Effects/Scripts/fade-out.aegifx)、[弹入](../../src/AegiNext.Core/Effects/Scripts/pop-in.aegifx)、[弹出](../../src/AegiNext.Core/Effects/Scripts/pop-out.aegifx)、[滑入](../../src/AegiNext.Core/Effects/Scripts/slide-in.aegifx)、[滑出](../../src/AegiNext.Core/Effects/Scripts/slide-out.aegifx)。
 
 所有文件均为 UTF-8 `.aegifx` 文本，可以直接编辑，`#` 后为注释。
@@ -83,6 +85,12 @@ end
 | `blur` | 0 到 512 | `0`、`base` |
 | `stroke-width` | 0 到 4096 | `factor(2)`、`base` |
 | `path-progress` | 0 到 1，显式字面值 | `0`、`1` |
+| `mask-rectangle-top-left`／`mask-rectangle-bottom-right` | 工程坐标矩形两角 | `base`、`offset(80, 0)` |
+| `mask-position` | 独立的工程坐标平移 | `offset(120, 0)` |
+| `mask-scale` | 围绕蒙版固定轴心的二维缩放 | `factor(1.2, 0.8)` |
+| `mask-rotation` | 独立旋转，角度 | `offset(30)` |
+| `mask-node(c,n).position` | 现有节点的工程坐标位置 | `base`、`offset(40, 0)` |
+| `mask-node(c,n).in-handle`／`out-handle` | 相对节点的控制柄偏移 | `offset(10, -20)` |
 
 `base` 表示应用脚本前的基础值；不读取播放头的动画求值，也不累计前一段的修改。`offset(...)` 为基础值加偏移，`factor(...)` 为基础值乘倍率。二维值分别作用于两个分量，因此非等比缩放可保留。字幕描边的基础值读取该字幕的样式。
 
@@ -90,7 +98,7 @@ end
 
 颜色在项目中保存为完整 `{ "red": ..., "green": ..., "blue": ..., "alpha": ... }`。旧 v3 的分通道轨道按时间并集合并，缺少通道使用字幕样式基础色，各通道独立缓动与裁剪相位继续保留。主程序和独立压制 worker 共用 Core 序列化与求值。
 
-`position` 不包含父组、路径或自然文字布局，只表示局部平移。它不改变自然文字边界、Anchor、Pivot 或字号。位置和缩放在项目 v3 中各保存一条向量轨道，关键帧 `value` 为 `{ "x": ..., "y": ... }`。属性面板和时间线使用同一完整向量。加载旧 v3 分量轨道时按两轴时间并集合并，并保留每轴独立缓动；新写入不保存分量轨道。
+`position` 不包含父组、路径或自然文字布局，只表示局部平移。它不改变自然文字边界、Anchor、Pivot 或字号。位置和缩放在项目 v5 中各保存一条向量轨道，关键帧 `value` 为 `{ "x": ..., "y": ... }`。属性面板和时间线使用同一完整向量。加载旧 v3 分量轨道时按两轴时间并集合并，并保留每轴独立缓动；新写入不保存分量轨道。
 
 ```text
 segment enter fixed 300ms
@@ -102,7 +110,17 @@ segment enter fixed 300ms
 end
 ```
 
-插值可选 `hold`、`linear`、`ease-in`、`ease-out`、`ease-in-out`，缺省为 `linear`。当前点的插值控制到该属性下一个点的区间。
+插值可选 `hold`、`linear`、`ease-in`、`ease-out`、`ease-in-out`、`power(指数)`，缺省为 `linear`。指数必须为有限正数；`power(2)` 加速，`power(0.5)` 减速。当前点的插值控制到同一完整目标下一个点的区间。POWER 与面板关键帧、原生 ASS 矩形变换使用同一求值器及裁剪相位。
+
+## Clip 蒙版与节点选择器
+
+脚本只动画现有 Clip 蒙版几何。应用前先在工作台创建矩形或闭合自由路径；矩形边界属性要求矩形，节点选择器要求矢量蒙版。目标几何不存在时，报错定位到声明行列，项目和 Undo 不变。
+
+选择器从 1 开始：`mask-node(1,1)` 表示第 1 个轮廓的第 1 个节点，括号内允许空格。编译时将可移植序号解析为该 Clip 的稳定节点 ID；两个节点的同名属性在编辑、保存、重读和改变时间后保持独立。节点移动时，相对控制柄随之移动；`base` 读取应用前节点或控制柄的基础值。
+
+存在节点位置或控制柄轨道时，锁定节点数量、轮廓归属、顺序和闭合状态。清除节点形变轨道后恢复拓扑编辑，蒙版整体平移、缩放和旋转继续保留。固定轴心是几何设置，不随节点形变重新计算。字幕移动、旋转或缩放时，蒙版仍固定在工程画面坐标中。
+
+应用脚本只替换完整目标相同的轨道，保留其他节点与普通字幕属性。关键帧和有序变换表示互斥；脚本不会隐式覆盖有序 ASS 变换程序，需先明确清除该目标轨道。脚本不创建或复制蒙版几何。
 
 ## 校验与项目边界
 

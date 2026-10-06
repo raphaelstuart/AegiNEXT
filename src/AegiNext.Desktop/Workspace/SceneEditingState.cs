@@ -10,7 +10,15 @@ internal sealed class SceneEditingState
     internal Guid? LayerId { get; set; }
     internal Guid? CueId { get; set; }
     internal Guid[] SelectedLayerIds { get; set; } = [];
-    internal AnimationProperty Property { get; set; }
+    internal AnimationTrackTarget Target { get; set; }
+    internal AnimationProperty Property
+    {
+        get => Target.Property;
+        set => Target = new(value);
+    }
+    internal Guid? MaskNodeId { get; set; }
+    internal Guid? MaskContourId { get; set; }
+    internal Guid? TransformOperationId { get; set; }
     internal CanvasEditMode Mode { get; set; }
     internal MediaTime? KeyframeTime { get; set; }
     internal AnimationEditTarget? DraftTarget { get; set; }

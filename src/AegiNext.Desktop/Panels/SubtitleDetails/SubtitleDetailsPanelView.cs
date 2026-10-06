@@ -44,12 +44,14 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private readonly NumericDraftInput duration = new() { Name = "KaraokeDurationInput", Width = 200, Minimum = 0, Maximum = 86400, Increment = 0.01m, ShowButtonSpinner = false };
     private readonly ComboBox kind = new() { Name = "KaraokeHighlightKindInput", Width = 200 };
     private readonly ComboBox presets = new() { Name = "SelectionStylePresetCombo", Width = 200 };
+    private readonly FontFamilyPicker selectionFont = new() { Name = "SelectionFontInput", Width = 200, RestoreOnEscape = false, CommitOnLostFocus = false };
     private readonly ToolbarToggleButton highlightTarget = new() { Name = "HighlightStyleToggle" };
     private readonly DraftPopup clipPopup = new() { OverlayDismissEventPassThrough = true,
         Placement = PlacementMode.BottomEdgeAlignedLeft, VerticalOffset = 4 };
     private readonly ToolbarToggleButton enableKaraoke = new() { Name = "EnableKaraokeToggle" };
     private readonly ToolbarToggleButton loop = new() { Name = "SubtitleLoopToggle", IsChecked = false };
     private readonly ToolbarToggleButton snap = new() { Name = "KaraokeSnapToggle", IsChecked = true };
+    private readonly ToolbarToggleButton keepTimeLabels = new() { Name = "KaraokeTimeLabelsToggle", IsChecked = false };
     private readonly Button play;
     private readonly StackPanel styleToolbar = new() { Name = "SelectionStyleToolbar", Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
     private readonly WrapPanel styleFields = new() { Name = "SelectionStyleFields" };
@@ -60,6 +62,8 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private bool synchronizing;
     private bool disposed;
     private bool completingInput;
+    private bool formattingPointerActive;
+    private bool formattingFocusPending;
     private Window? hostWindow;
     private int focusRevision;
     private int activeTab;
@@ -186,6 +190,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             }
         };
         ConfigureToggle(snap, "Workbench.KaraokeSnap", WorkbenchIcon.Create("Magnet"), "Workbench.KaraokeSnapHint");
+        ConfigureToggle(keepTimeLabels, "Workbench.KaraokeKeepTimeLabels", WorkbenchIcon.Create("Clock"), "Workbench.KaraokeKeepTimeLabelsHint");
         ConfigureToggle(enableKaraoke, "Workbench.EnableKaraoke", IconLabel("Workbench.EnableKaraoke", "EnableHighlight"));
         enableKaraoke.Width = double.NaN;
         enableKaraoke.Padding = new(8, 0);
@@ -207,6 +212,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         styleToolbar.Children.Add(play);
         styleToolbar.Children.Add(loop);
         styleToolbar.Children.Add(snap);
+        styleToolbar.Children.Add(keepTimeLabels);
         styleToolbar.Children.Add(highlightTarget);
         var restore = Button("Workbench.RestoreDraft", "Reset", () =>
         {
@@ -249,6 +255,13 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             if (e.Property == ToggleButton.IsCheckedProperty)
             {
                 axis.IsSnapEnabled = snap.IsChecked == true;
+            }
+        };
+        keepTimeLabels.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == ToggleButton.IsCheckedProperty)
+            {
+                axis.KeepDurationLabelsVisible = keepTimeLabels.IsChecked == true;
             }
         };
         var popupFrame = new Border { Padding = new(12), BorderThickness = new(1), CornerRadius = new(6), Child = timingFields };
@@ -328,6 +341,16 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         AddHandler(GotFocusEvent, OnPanelGotFocus, RoutingStrategies.Bubble);
         AddHandler(LostFocusEvent, OnPanelLostFocus, RoutingStrategies.Bubble);
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel, true);
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (e.Source is Control source && source.GetSelfAndVisualAncestors().Any(value => value is ToolbarToggleButton button && toggles.ContainsValue(button)))
+            {
+                formattingPointerActive = true;
+                formattingFocusPending = false;
+                ++styleFocusRevision;
+            }
+        }, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, (_, _) => EndFormattingPointer(), RoutingStrategies.Tunnel, true);
         coordinator.Synchronize();
         Refresh();
     }
@@ -339,6 +362,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             var button = new ToolbarToggleButton { Name = name + "SelectionButton" };
             ConfigureToggle(button, "Workbench." + name, text);
             button.Click += (_, _) => Toggle(name);
+            button.PointerCaptureLost += (_, _) => EndFormattingPointer();
             toggles.Add(name, button);
             styleToolbar.Children.Add(button);
             bodyOnlyFields.Add(button);
@@ -362,9 +386,16 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             }
             return Task.CompletedTask;
         }));
-        var font = new FontFamilyPicker { Name = "SelectionFontInput", Width = 200, RestoreOnEscape = false, CommitOnLostFocus = false };
+        var font = selectionFont;
+        font.RefreshFontCandidates(session.Fonts.Candidates);
+        font.SetCurrentFont(SubtitleFontSelectionService.FromStyle(coordinator.SelectionStyle()));
         bindings.Add(font.Bind(AutoCompleteBox.TextProperty, new Binding(nameof(SubtitleDetailsStyleDraft.FontFamily))
             { Source = coordinator.StyleDraft, Mode = BindingMode.TwoWay }));
+        font.FamilyCommitted += (_, value) =>
+        {
+            coordinator.StyleDraft.SelectFont(value.Selection);
+            coordinator.CompleteInput(nameof(SubtitleDetailsStyleDraft.FontFamily), false);
+        };
         var fontField = Field("Workbench.Font", font);
         var fontSizeField = Field("Workbench.FontSize", Number(coordinator.StyleDraft, nameof(SubtitleDetailsStyleDraft.FontSizeText), "SelectionFontSizeInput", 0.01m, 4096));
         bodyOnlyFields.Add(fontField);
@@ -509,15 +540,14 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
 
     private void Toggle(string name)
     {
-        var style = coordinator.SelectionStyle();
-        var value = name switch
+        var requested = toggles[name].IsChecked == true;
+        coordinator.ApplySelectionFormatting(Math.Min(selectionStart, selectionEnd), Math.Abs(selectionEnd - selectionStart), style => name switch
         {
-            "Bold" => new SubtitleInlineStyleOverride { Bold = !style.Bold },
-            "Italic" => new SubtitleInlineStyleOverride { Italic = !style.Italic },
-            "Underline" => new SubtitleInlineStyleOverride { Underline = !style.Underline },
-            _ => new SubtitleInlineStyleOverride { Strikethrough = !style.Strikethrough }
-        };
-        coordinator.ApplySelectionStyle(Math.Min(selectionStart, selectionEnd), Math.Abs(selectionEnd - selectionStart), value);
+            "Bold" => session.Fonts.ToggleBold(style, requested),
+            "Italic" => session.Fonts.ToggleItalic(style, requested),
+            "Underline" => new SubtitleInlineStyleOverride { Underline = requested },
+            _ => new SubtitleInlineStyleOverride { Strikethrough = requested }
+        });
     }
 
     private async Task ApplyPresetAsync()
@@ -619,11 +649,37 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         {
             return;
         }
+        if (formattingPointerActive)
+        {
+            formattingFocusPending = true;
+            return;
+        }
+        QueueStyleFocusCommit();
+    }
+
+    private void EndFormattingPointer()
+    {
+        if (!formattingPointerActive)
+        {
+            return;
+        }
+        formattingPointerActive = false;
+        if (formattingFocusPending)
+        {
+            formattingFocusPending = false;
+            QueueStyleFocusCommit();
+        }
+    }
+
+    private void QueueStyleFocusCommit()
+    {
         var revision = ++styleFocusRevision;
         var draft = styleFields.DataContext;
+        var document = session.DocumentSnapshot;
         Dispatcher.UIThread.Post(() =>
         {
             if (!disposed && revision == styleFocusRevision && ReferenceEquals(draft, styleFields.DataContext) &&
+                ReferenceEquals(document, session.DocumentSnapshot) &&
                 !styleFields.GetVisualDescendants().OfType<Button>().Any(button => button.Flyout?.IsOpen == true))
             {
                 coordinator.TryCommit();
@@ -809,6 +865,10 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
                 presets.SelectedItem = session.ViewModel.Styles.Presets.FirstOrDefault(value => value.Id == bodyPresetId) ?? session.ViewModel.Styles.SelectedPreset;
             }
             var style = coordinator.SelectionStyle();
+            if (!coordinator.StyleDraft.IsFieldDirty(nameof(SubtitleDetailsStyleDraft.FontFamily)))
+            {
+                selectionFont.SetCurrentFont(SubtitleFontSelectionService.FromStyle(style));
+            }
             foreach (var pair in toggles)
             {
                 pair.Value.IsChecked = pair.Key switch
@@ -849,7 +909,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private void OnCoordinatorChanged(object? sender, EventArgs e) => Refresh();
     private void OnStyleLibraryChanged(object? sender, EventArgs e) => Refresh();
     private void OnLanguageChanged(object? sender, EventArgs e) => Refresh();
-    private void OnGesturesCancelled(object? sender, EventArgs e) => axis.CancelGesture();
+    private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     private void OnPreviewUpdated(object? sender, VideoPreviewUpdate e)
     {
         if (coordinator.IsPlaying != lastPlaybackState && HasFocusWithin())
@@ -915,7 +975,12 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     }
 
     /// <summary>取消面板内未提交的指针手势。</summary>
-    public void CancelGestures() => axis.CancelGesture();
+    public void CancelGestures()
+    {
+        formattingPointerActive = formattingFocusPending = false;
+        ++styleFocusRevision;
+        axis.CancelGesture();
+    }
 
     /// <summary>将验证失败的详情输入重新聚焦。</summary>
     public void FocusInvalidField(string? fieldKey)

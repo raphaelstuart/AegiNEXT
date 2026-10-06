@@ -30,6 +30,12 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         ApplyTransportIcons();
         canvas.GestureStarting += (_, e) => e.Cancel = !viewModel.BeginCanvasGesture();
         canvas.GestureCancelled += (_, _) => viewModel.CancelCanvasGesture();
+        canvas.MaskGestureStarting += (_, e) => e.Cancel = !session.MaskEditing.BeginGesture();
+        canvas.MaskGestureCancelled += (_, _) => session.MaskEditing.CancelGesture();
+        canvas.MaskEdited += (_, e) => session.MaskEditing.CommitGesture(e);
+        canvas.MaskNodeSelected += (_, e) => session.MaskEditing.SelectGestureNode(e.NodeId);
+        canvas.MaskNodeDeleteRequested += (_, e) => session.MaskEditing.CommitNodeDeletion(e);
+        canvas.MaskEditingExited += (_, _) => session.MaskEditing.ExitEditing();
         canvas.LayerEdited += async (_, e) => await viewModel.CommitCanvasAsync(e);
         canvas.RenderingFailed += (_, e) => viewModel.ReportRenderingError(e.Error);
         canvas.RenderingRecovered += (_, _) => viewModel.ReportRenderingRecovery();
@@ -105,6 +111,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         canvas.MaximumPreviewSize = new PixelSize(quality.MaximumWidth, quality.MaximumHeight);
         canvas.InteractivePreview = scene.IsInteractive;
         canvas.EditMode = scene.Mode;
+        canvas.MaskSelectedNodeId = session.SceneEditing.MaskNodeId;
         canvas.SetScene(scene.Document, scene.SelectedLayer, scene.Position, scene.AssetDirectory, scene.IsEditingPose);
     }
     private void OnSceneGestureCancelled(object? sender, EventArgs e)
