@@ -6,7 +6,7 @@
 
 ## 使用手册
 
-- [Quick Start：用户快速开始](quick-start.md)：从启动到完成第一条字幕、保存工程和压制成片。
+- [Quick Start：用户快速开始](quick-start.md)：从启动到完成第一条字幕、保存项目和压制成片。
 - [工作台操作说明](workbench.md)：轨道、时间线、样式、关键帧、布局、设置和日志。
 - [字幕详细编辑与格式交换](subtitle-editing.md)：可贴靠的富文本、卡拉 OK、高级代码、范围试听与 ASS／SRT。
 - [压制与 HDR 边界](export.md)：编码选项、音频处理、输出限制和色彩契约。
@@ -41,7 +41,7 @@
 - [预览画质、轨道样式策略、双语文档与 Skill](checkpoints/preview-quality-and-track-style-policy.md)
 
 - [轨道样式、自动位置、向量输入与逐字高亮](checkpoints/track-styles-and-karaoke.md)
-- [GPU 编码选项、工程标题与恢复默认配色](checkpoints/export-title-colors.md)
+- [GPU 编码选项、项目标题与恢复默认配色](checkpoints/export-title-colors.md)
 - [无框标签、时间线显示与主题、DSL 自动补全](checkpoints/timeline-completion-polish.md)
 
 技术文档中引用的测试结果和平台能力有各自的验证范围。查看当前完成度时，以对应阶段记录为准；计划中的功能不代表当前界面已经提供入口。

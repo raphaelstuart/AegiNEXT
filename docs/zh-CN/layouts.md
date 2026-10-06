@@ -2,11 +2,11 @@
 
 [English](../layouts.md) | [简体中文](layouts.md)
 
-`WorkbenchLayoutController` 只拥有工作区空间。它不拥有工程、媒体控制器、Undo 栈、业务 ViewModel 或导出任务。
+`WorkbenchLayoutController` 只拥有工作区空间。它不拥有项目、媒体控制器、Undo 栈、业务 ViewModel 或导出任务。
 
 - 七个稳定 Panel ID 定义于 `WorkbenchPanelIds`。组合根提供七个固定 View 实例，`WorkbenchDockPanel` 仅连接稳定 ID、标题与 View。Log 的会话缓冲不属于布局数据。
 - `WorkbenchDockFactory` 和 `WorkbenchDockSnapshotCodec` 是 Dock 的薄适配层；业务层不传递 Dock 类型。
-- `WorkbenchDockPanelTemplate` 总是返回已提供的 View。切换预设或重新停靠不重新创建 View、ViewModel 或工程会话。
+- `WorkbenchDockPanelTemplate` 总是返回已提供的 View。切换预设或重新停靠不重新创建 View、ViewModel 或项目会话。
 - 工作区根、分割、标签组和面板适配实现 Dock 的 `IDeferredContentPresentation`，声明不延迟呈现：七个 View 已由组合根创建，挂接时立即 materialize，不依赖分帧创建或计时器才能收到真实输入。
 - Tool 标签的中间呈现控件 `WorkbenchToolControl` 也声明不延迟呈现。空间模板保留 Dock 的跟踪、标题、菜单、标签与拖拽行为，避免冷启动时 ToolChrome 将现成的 ToolControl 排入后台队列导致正文短暂为空。
 - `WorkbenchDockTemplateCatalog` 在宿主设置布局前安装全部空间模板。首次创建窗口时，根、分割和标签模板已可用，避免模板应用过程中添加目录造成初始布局退化为文本占位。
@@ -16,7 +16,7 @@
 
 构造函数接受主 `Window`、稳定 ID 到 `Control` 的映射、个人设置目录、`Func<bool>` 草稿事务、取消手势的 `Action`、以及注册新窗口的 `Action<Window>`。将 `Host` 放入主窗口正文。注册回调负责统一标题栏、菜单与输入路由；布局目录不创建第二份命令目录。
 
-`FloatingWindowTitleChanged` 提供当前活动面板标题，宿主协调器可以结合工程标题更新系统 `Window.Title`。浮动宿主继承 Dock 的 `HostWindow` 保留停靠输入能力，同时使用 Avalonia `Window` 样式键，避免 Dock 的窗口主题替代系统按钮。
+`FloatingWindowTitleChanged` 提供当前活动面板标题，宿主协调器可以结合项目标题更新系统 `Window.Title`。浮动宿主继承 Dock 的 `HostWindow` 保留停靠输入能力，同时使用 Avalonia `Window` 样式键，避免 Dock 的窗口主题替代系统按钮。
 
 批准主窗口关闭后先 `await FlushAsync()`，再 `Dispose()`。`Dispose()` 关闭浮窗及布局管理窗口、解绑观察和计时器。浮窗单独关闭将其中面板移入隐藏集合，不释放业务会话。隐藏后重新打开优先恢复当前会话中仍存在的原标签组，原组不可用时重新打开到主工作区。
 

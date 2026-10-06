@@ -16,7 +16,7 @@ Preview has no duplicate inner title. File information stays in the picture hint
 
 The quality selector and SDR/HDR badge share one 32-DIP overlay row. Dragging either the timeline playhead or preview progress bar requests video frames while the pointer is held, including a return to the starting position. Release performs an exact seek and restores the selected preview quality. Scrubbing uses a paused preview; it does not start normal playback.
 
-Select preview quality: Low **540p (960×540)** is the default, Standard is **720p**, and High is **1080p**. Small videos are not enlarged. The choice is a personal preference, independent of project data, and is restored after restart. During interaction the cap is 540p and never exceeds the selected quality; release restores that choice. Quality does not change export resolution or HDR processing.
+Select preview quality: Low is **320p (568×320)**, Smooth **540p (960×540)** is the default, Standard is **720p**, and High is **1080p**. Small videos are not enlarged. The choice is a personal preference, independent of project data, and is restored after restart. During interaction the cap is 540p and never exceeds the selected quality, so 320p stays at 320p; release restores that choice. Quality does not change export resolution or HDR processing.
 
 Dock titles/content/floating panels use shared rounded corners and theme borders. Layout owns the outer frame; panels do not draw duplicate outlines. Tabs have no filler dividers or item borders: selection uses accent text and a translucent background.
 

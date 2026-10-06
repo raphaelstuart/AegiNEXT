@@ -1,24 +1,24 @@
-# GPU 编码选项、工程标题与恢复默认配色
+# GPU 编码选项、项目标题与恢复默认配色
 
 [English](../../checkpoints/export-title-colors.md) | [简体中文](export-title-colors.md)
 
-日期：2026-10-05。基于已有未提交内容继续开发；保留用户暂存和无关修改，不暂存或提交。产品版本保持 `0.1.0`，工程格式保持 v3。
+日期：2026-10-05。基于已有未提交内容继续开发；保留用户暂存和无关修改，不暂存或提交。产品版本保持 `0.1.0`，项目格式保持 v3。
 
 ## Phase 1：配色恢复
 
-Checkpoint：恢复默认配色立即应用、持久化，保持其他设置与工程。
+Checkpoint：恢复默认配色立即应用、持久化，保持其他设置与项目。
 
 - 配色页增加“恢复默认配色”。从 `WorkbenchPreferences` 默认值恢复高亮色和完整音频图方案；一次发出颜色修改事件，由现有 Workspace 偏好协调保存。
 - 清除这几个颜色字段的非法或未完成草稿；回填不会触发第二次颜色写回。主题、语言、菜单模式、快捷键、音量保持原值。
-- 控件只负责按钮与绑定，ViewModel 持有颜色输入草稿，工程与布局不参与此操作。
+- 控件只负责按钮与绑定，ViewModel 持有颜色输入草稿，项目与布局不参与此操作。
 
 ## Phase 2：标题投影
 
 Checkpoint：名称同源，另存为成功后同步刷新，取消和失败保留原名。
 
-- `WorkbenchProjectTitle` 按工程文件 basename、显式工程名称、绑定视频 basename、本地化未命名依次选择显示名。
-- 主窗标题为 `AegiNEXT - 工程名`，未保存时追加 ` •`；浮窗追加活动面板名。原生 `Window.Title` 与自建标题栏通过现有注册表同步。
-- 保存和压制的建议文件名使用同一 `session.ProjectDisplayName`。名称只作显示投影，不改 `ProjectDocument.Name`、工程格式或 Undo。
+- `WorkbenchProjectTitle` 按项目文件 basename、显式项目名称、绑定视频 basename、本地化未命名依次选择显示名。
+- 主窗标题为 `AegiNEXT - 项目名`，未保存时追加 ` •`；浮窗追加活动面板名。原生 `Window.Title` 与自建标题栏通过现有注册表同步。
+- 保存和压制的建议文件名使用同一 `session.ProjectDisplayName`。名称只作显示投影，不改 `ProjectDocument.Name`、项目格式或 Undo。
 - 验证打开／新建、中文文件名、取消、保存失败、另存为成功、Undo／Redo、语言及浮窗同步。
 
 ## Phase 3：真正的 GPU 视频编码
@@ -59,7 +59,7 @@ GPU 成片测试除后端、H.264 8-bit／HEVC 10-bit、BT.709 与 AAC 外，还
 
 Rider 受影响文件错误级分析未发现新增错误。`VideoExporter.ExportAsync` 的既有“实例成员可改为 static”诊断仍出现；基线已有 CA1822 抑制，保留应用服务实例边界，托管编译零警告／错误。`git diff --check` 通过。
 
-Windows 包从本机 C: 发布目录搬到共享 X: 工程目录后执行上述回归与独立探针，进程架构为 X64，不依赖系统 dotnet 或开发工具 PATH。首轮发布使用相对输出路径而落在 Windows 进程的 C: 工作目录，已搬移到下列最终目录，验证脚本改为绝对输出路径。
+Windows 包从本机 C: 发布目录搬到共享 X: 项目目录后执行上述回归与独立探针，进程架构为 X64，不依赖系统 dotnet 或开发工具 PATH。首轮发布使用相对输出路径而落在 Windows 进程的 C: 工作目录，已搬移到下列最终目录，验证脚本改为绝对输出路径。
 
 ## 开发包与验收边界
 

@@ -13,19 +13,27 @@ Extract a complete development package for your platform and open:
 
 Keep the entire directory: it contains .NET, FFmpeg/FFprobe, audio, export, and native runtime dependencies. To run from source, see [building](building.md).
 
+Normal startup opens the welcome window. Search recent projects by name or path, click an available project to open it, or use New Project, Open Project, and Settings in the top toolbar. Each project has a name abbreviation and a stable color. Right-click an entry to remove it from recent history; the project file remains on disk. Missing files appear dimmed and cannot be opened, but can still be removed from history.
+
+New Project asks for an `.aeginext` save path. The file must be saved successfully before the workspace opens; cancelling keeps the welcome window visible. A new project can have no video. The full Settings window is also available before opening a project.
+
 The workspace has Preview, Timeline, Subtitles, Styles, Effects, Export, and Log. Use Layout → Standard to restore the initial arrangement, and View to reopen hidden panels.
 
 ## 2. Open media and save a project
 
-1. Choose File → New Project.
-2. Choose File → Open Video and wait for Preview. Audio analysis runs in the background.
-3. Choose File → Save As and save an `.aeginext` project; use Save for later changes.
+1. Choose New Project in the welcome window, select a path, and save the `.aeginext` project. Open Project can load an existing file.
+2. Choose File → Open Video when you need to associate a video, and wait for Preview. Audio analysis runs in the background.
+3. Use File → Save for later changes, or Save As for another path. File → New Project also requires saving the new file before replacing the current project.
+
+File → Close Project or closing the workspace window returns to the welcome window after handling unsaved changes. File → Quit ends the application.
 
 Projects store subtitles, tracks, styles, and animation. Video stays an external file reference and must remain accessible. Saving a project and exporting a finished video are separate actions. Project v3 is supported; v1/v2 are explicitly rejected.
 
-The title is `AegiNEXT - Project name`, with `•` for unsaved changes. Saved projects use the project filename; an unnamed unsaved project uses the video filename. Successful Save As updates the title; cancellation or failure leaves it unchanged.
+The title is `AegiNEXT - Project name`, with `•` for unsaved changes. Projects opened through the welcome window use the project filename. Successful Save As updates the title; cancellation or failure leaves it unchanged.
 
 Preview does not repeat the dock title. An SDR/HDR badge stays at the picture's upper right; the current composed editing preview is SDR. A square button controls play/pause, the time is centered, and a mute button and volume slider sit on the right.
+
+Preview quality offers Low **320p (568×320)**, Smooth **540p (960×540)**, Standard **720p**, and High **1080p**. Smooth is the default. The choice is saved in personal preferences; small videos are not enlarged. Interaction is capped at 540p and never exceeds the selected quality, so 320p stays at 320p. Export resolution and HDR processing are independent of this choice.
 
 ## 3. Select a track and create subtitles
 

@@ -8,9 +8,9 @@
 
 | 目录 | 职责 | 依赖边界 |
 | --- | --- | --- |
-| `Controls/Common/WindowTitleBar` | 显示标题、承载菜单、排除交互区域、应用系统按钮安全区域 | 不访问工程、Dock、菜单命令目录或平台原生 API |
-| `Windowing/` | 选择平台策略、调整客户区尺寸、原生按钮区域、Windows 非客户区消息与释放 | 接收 Window 和标题栏；不持有工程或面板状态 |
-| `Diagnostics/WindowChromeProbe*` | 独立组合三种窗口宿主，运行平台探针并写报告 | 不读取用户工程或偏好；不替代正式工作台会话 |
+| `Controls/Common/WindowTitleBar` | 显示标题、承载菜单、排除交互区域、应用系统按钮安全区域 | 不访问项目、Dock、菜单命令目录或平台原生 API |
+| `Windowing/` | 选择平台策略、调整客户区尺寸、原生按钮区域、Windows 非客户区消息与释放 | 接收 Window 和标题栏；不持有项目或面板状态 |
+| `Diagnostics/WindowChromeProbe*` | 独立组合三种窗口宿主，运行平台探针并写报告 | 不读取用户项目或偏好；不替代正式工作台会话 |
 
 后续代码继续遵守已确认边界：`Workspace/` 持有唯一工作台会话和协调服务；`Layouts/` 管理空间与薄 Dock 适配；`Panels/` 组合七个固定面板（含 Log）；`Controls/{Common,Media,Editing}/` 承载通用或专用子控件；`Settings/` 拆分页面与 ViewModel；`Menus/` 和 `Windowing/` 提供共享菜单、输入与平台窗口策略。业务 ViewModel 不继承 Dock 类型，不持有控件或原生窗口事件。
 

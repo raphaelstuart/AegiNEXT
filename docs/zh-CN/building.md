@@ -70,7 +70,7 @@ pwsh -NoProfile -File ./build.ps1 -Target Workbench -RuntimeIdentifier win-x64 -
 # 安装已识别的缺失包，重新检查，再构建。
 pwsh -NoProfile -File ./build.ps1 -InstallDependencies
 
-# 同时安装缺失的媒体工具，复查后构建托管工程。
+# 同时安装缺失的媒体工具，复查后构建托管项目。
 pwsh -NoProfile -File ./build.ps1 -WithMediaTools -InstallDependencies
 
 # 仅运行所需测试；不传 -RunTests 就不运行测试。
@@ -79,7 +79,7 @@ pwsh -NoProfile -File ./build.ps1 -RunTests -TestProjects Desktop
 pwsh -NoProfile -File ./build.ps1 -RunTests -TestProjects 'Desktop.Ui'
 pwsh -NoProfile -File ./build.ps1 -RunTests -TestProjects Application
 
-# macOS：同时构建可选的 native 诊断库和托管工程。
+# macOS：同时构建可选的 native 诊断库和托管项目。
 pwsh -NoProfile -File ./build.ps1 -Target All -Configuration Release -RunTests -TestProjects Media
 
 # macOS：只编译原生库并运行 CTest。
@@ -176,7 +176,7 @@ artifacts/native/win-x64/Release/aeginext_export.dll
 
 Decoder、Audio、Export 缓存分别放在 `artifacts/native/build-<component>-<rid>-<configuration>`，以 `AEGINEXT_FFMPEG_ROOT` 固定开发包、`AEGINEXT_NATIVE_OUTPUT_DIR` 固定产物路径；Audio 另传 `AEGINEXT_SDL_ROOT`。Windows 构建前只复制所选开发包 `bin` 内的 DLL 到同一 RID／Configuration 目录，供测试和托管程序加载，不复制 CLI 可执行文件。该目录用于开发运行；完整媒体工具、递归依赖、许可证及文件清单由独立 `publish.ps1` 收集。
 
-缓存和产物同时隔离，避免 Debug 编译出的新文件让 Release 增量构建误认为目标已更新。Media 工程优先按显式 `RuntimeIdentifier`、否则按 SDK RID，并结合 `Configuration` 选择复制文件。普通 Managed 构建没有原生文件时仍可完成；可选 HDR 入口会明确报加载失败。
+缓存和产物同时隔离，避免 Debug 编译出的新文件让 Release 增量构建误认为目标已更新。Media 项目优先按显式 `RuntimeIdentifier`、否则按 SDK RID，并结合 `Configuration` 选择复制文件。普通 Managed 构建没有原生文件时仍可完成；可选 HDR 入口会明确报加载失败。
 
 Decoder、Audio、Export 配置前会核对现有 `CMakeCache.txt` 的源目录、构建目录、生成器与 C/C++ 编译器路径。编译器路径改变时，仅对确认归属本次组件／RID／配置的缓存使用 CMake `--fresh`，同时重新传入完整 SDK 参数，避免 CMake 自动重配时丢失显式 FFmpeg／SDL 路径。编译器不变时保留增量缓存；目录归属不明或不匹配时明确失败，不自动清理。独立 RID／配置产物目录保持不变。
 

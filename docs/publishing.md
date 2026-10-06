@@ -2,7 +2,29 @@
 
 [English](publishing.md) | [简体中文](zh-CN/publishing.md)
 
-Development product version stays **0.1.0**; build identity/time/hashes belong in package-manifest.json. Packages contain self-contained .NET 10, main app, independent worker, FFmpeg/FFprobe, project native modules, and third-party runtime closure.
+The default development product version is **0.1.0**, from `Directory.Build.props`. Pass `publish.ps1 -Version 1.2.3` to publish a different version without editing the source. Versions have three numeric components, each between 0 and 65535. The publisher writes the same version into the main app and export worker assembly metadata, `package-manifest.json`, macOS bundle/DMG and Windows installer. **Help → About** reads the assembly product name and informational version and shows the application icon, current-year copyright and GPLv3 notice. Build identity/time/hashes belong in package-manifest.json. Packages contain self-contained .NET 10, main app, independent worker, FFmpeg/FFprobe, project native modules, and third-party runtime closure.
+
+## Automatic release packages
+
+Run the same entry point on either supported platform:
+
+```powershell
+pwsh -NoProfile -File ./release.ps1
+```
+
+`release.ps1` builds in `Release` configuration and calls the publisher with the native packaging option automatically: Windows creates an NSIS installer for `win-x64`, and macOS creates a DMG for the host's `osx-arm64` or `osx-x64` architecture. Windows ARM64 hosts also target `win-x64`. Each invocation uses a new directory under the repository's `artifacts/releases/<RID>/<Configuration>/<UTC timestamp>-<unique ID>/`, independent of the current working directory. The directory includes the installer or DMG, application payload, and `package-manifest.json` with package hashes. The publisher prints the complete output path on success.
+
+The entry point accepts the publisher's `-Version`, `-Configuration`, SDK/dependency/license paths, `-SigningIdentity`, `-SkipBuild`, `-NsisPath`, and `-Jobs` options. An explicit `-OutputDirectory` overrides the automatic directory and must be a fresh destination. `-SkipBuild` reuses matching native binaries and still republishes both managed applications and creates the package. Windows requires NSIS 3.11 or newer; dependency/tool checks remain part of the publisher. Installer and DMG builds run on their corresponding operating systems; an incompatible `-RuntimeIdentifier` fails before publishing.
+
+```powershell
+pwsh -NoProfile -File ./release.ps1 -Version 1.2.3 -SkipBuild
+# Windows with explicit SDK/compiler paths:
+pwsh -NoProfile -File ./release.ps1 -FfmpegRoot C:/SDK/ffmpeg-shared -SdlRoot C:/SDK/SDL3 -NsisPath 'C:/Program Files (x86)/NSIS/makensis.exe'
+```
+
+## Publishing options
+
+Publishing prints `[publish]` stages after the Workbench build, including each managed publish, native dependency collection, installer/DMG creation, and package hashing. Managed publish, NSIS, signing and DMG commands stream their output while running and retain diagnostics for failures. `Tests were not requested` only describes the preceding build; it does not stop release packaging. Installer compression can take time after compilation has completed.
 
 Build on the corresponding Mac architecture:
 
@@ -37,6 +59,32 @@ media-runtime.json selects package tools only, without development fallback. Unm
 The external package-manifest.json records version/RID/Git SHA/dirty/time, actual packaged tool version first lines, both includedFrameworks, native/license origins, policies, and post-signing file hashes, excluding its own recursive hash. Unreadable Git means unavailable/null SHA/dirty, never a false clean claim. Tool identities are read after closure/signing.
 
 Windows RequiredRuntimePolicy follows [.NET 10 supported OS policy](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md), including lifecycle and Windows 11 ARM64 x64 emulation, checked 2026-10-04. Build-host version is not runtime acceptance or a native minimum. Release acceptance removes developer PATH and installed .NET/FFmpeg assumptions, then tests open/play/audio/subtitles/actual export/cancel separately per OS.
+
+## Windows NSIS installer
+
+The finish page offers an unchecked **Create an AegiNEXT desktop shortcut** option. It creates `AegiNEXT.lnk` targeting `aegi-next.exe`, with the installation directory as its working directory, on the current user's desktop or the shared desktop according to the installation scope. The installer records ownership and the uninstaller removes this link only when the installation created it. Silent installation creates no desktop link by default; add `/DesktopShortcut` to opt in, for example `/S /CurrentUser /DesktopShortcut /D=C:\Apps\AegiNext`.
+
+Add `-CreateInstaller` on Windows to package the complete published `AegiNext/` payload with NSIS 3.11 or newer. The publisher checks the compiler before building, looks for `makensis` on PATH and then in the standard NSIS installation directories, and accepts an explicit `-NsisPath`. Publishing does not install NSIS. `-NsisPath` requires `-CreateInstaller`; macOS rejects `-CreateInstaller`.
+
+```powershell
+pwsh -NoProfile -File ./publish.ps1 -RuntimeIdentifier win-x64 -Configuration Release -CreateInstaller -NsisPath 'C:/Program Files (x86)/NSIS/makensis.exe' -FfmpegRoot C:/SDK/ffmpeg-shared -SdlRoot C:/SDK/SDL3 -OutputDirectory ./artifacts/releases/windows-installer
+```
+
+The output contains `AegiNext-0.1.0-win-x64-setup.exe`, `AegiNext/`, and the external `package-manifest.json`. The installer is generated after dependency/license collection and language validation, then included in the final SHA-256 inventory. Only the application payload is embedded; the external manifest is not embedded. `-SkipBuild` still republishes both managed applications and creates the requested installer. Compilation treats NSIS warnings as errors and removes temporary scripts/output on success or failure.
+
+The English/Simplified Chinese wizard lets administrators choose current-user or all-users installation. A fresh installation defaults to the current user under `%LOCALAPPDATA%\Programs\AegiNext`; all-users installation defaults to 64-bit Program Files. Each scope has its own Start Menu shortcuts and uninstall entry, with the selected path remembered for reinstalling. The official [MultiUser](https://nsis.sourceforge.io/Docs/MultiUser/Readme.html) component requests the highest available privileges at startup, so administrator accounts may see UAC even for a current-user installation. Standard accounts without administrator privileges can install for the current user; all-users installation requires running with administrator privileges.
+
+Silent installation accepts `/S /CurrentUser` or `/S /AllUsers`. An optional `/D=` sets the destination and must be last, without quotes around the path; the following PowerShell example passes it as one argument:
+
+```powershell
+$installer = (Resolve-Path ./artifacts/releases/windows-installer/AegiNext-0.1.0-win-x64-setup.exe).ProviderPath
+$process = Start-Process -FilePath $installer -ArgumentList '/S /CurrentUser /D=C:\Apps\AegiNext' -Wait -PassThru
+if ($process.ExitCode -ne 0) { throw "Installation failed: $($process.ExitCode)" }
+```
+
+Reinstallation, including the development version `0.1.0`, first runs the previous uninstaller in the selected scope to remove obsolete packaged files. Different scopes cannot share one destination. File access checks reject files in use before removing the payload; close both AegiNext and its export worker before updating or uninstalling. Uninstallation deletes the owned file list and empty directories and preserves additional files and `%APPDATA%\AegiNext`. The installed `Uninstall.exe` remembers its actual scope even when both scopes are installed. Automated uninstall callers must use `/S /CurrentUser _?=C:\Apps\AegiNext` (or `/AllUsers`), with the unquoted `_?=` path last, to wait for the actual result and receive a nonzero failure code; normal launch starts a temporary child process. The reinstall flow already uses this synchronous form.
+
+NSIS compilation and package hashing do not establish Windows installation acceptance or Authenticode signing. Validate both scopes, same-version reinstall, obsolete DLL removal, blocked files, paths with spaces/Chinese characters, Start Menu/Settings uninstall entries, installed application/export worker behavior, and preservation of user data on Windows. Native wizard/UAC/icon appearance requires visual acceptance.
 
 ## Application icon and DMG
 
