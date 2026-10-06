@@ -7,32 +7,27 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Settings.Shortcuts;
 
-/// <summary>快捷键编辑草稿与配置级验证；按键录入由页面局部适配。</summary>
+/// <summary>快捷键编辑草稿与配置级验证；有效配置自动提交，按键录入由页面局部适配。</summary>
 public sealed class ShortcutSettingsViewModel : ObservableObject
 {
     private ShortcutSettingRow[] rows = [];
     private ShortcutSettingsListItem[] items = [];
+    private ImmutableArray<ShortcutBinding> committedBindings = [];
     private ShortcutSettingRow? selectedRow;
     private bool recording;
     private bool waitingForKeyRelease;
     private string? error;
 
-    /// <summary>创建完整命令草稿和保存命令。</summary>
+    /// <summary>创建完整命令草稿和有效配置的自动提交命令。</summary>
     public ShortcutSettingsViewModel(IEnumerable<ShortcutBinding> bindings)
     {
-        SaveCommand = new(Save, () => Error is null);
-        ResetCommand = new(() =>
-        {
-            UpdateBindings(ShortcutDefaults.CreateBindings());
-            Save();
-        });
+        ResetCommand = new(Reset);
         ClearCommand = new(() => Gesture = string.Empty, () => HasSelection);
         ToggleRecordingCommand = new(() => IsRecording = !IsRecording, () => HasSelection);
         UpdateBindings(bindings);
     }
 
     public event EventHandler<SettingsShortcutsChangedEventArgs>? Changed;
-    public RelayCommand SaveCommand { get; }
     public RelayCommand ResetCommand { get; }
     public RelayCommand ClearCommand { get; }
     public RelayCommand ToggleRecordingCommand { get; }
@@ -68,13 +63,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
     public string? Error
     {
         get => error;
-        private set
-        {
-            if (SetProperty(ref error, value))
-            {
-                SaveCommand.NotifyCanExecuteChanged();
-            }
-        }
+        private set => SetProperty(ref error, value);
     }
 
     public string RecordLabel => Localization.Get("Settings." + (IsRecording ? "Recording" : "Record"));
@@ -135,6 +124,7 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
             throw new InvalidDataException("快捷键设置必须包含所有命令。");
         }
 
+        committedBindings = values;
         ReplaceRows(values);
     }
 
@@ -197,6 +187,8 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(Gesture));
             }
+
+            PublishValidBindings();
         }
     }
 
@@ -223,7 +215,13 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
         }
     }
 
-    private void Save()
+    private void Reset()
+    {
+        ReplaceRows(ShortcutDefaults.CreateBindings());
+        PublishValidBindings();
+    }
+
+    private void PublishValidBindings()
     {
         Validate();
         if (Error is not null)
@@ -232,7 +230,12 @@ public sealed class ShortcutSettingsViewModel : ObservableObject
         }
 
         var values = rows.Select(value => value.ToBinding()).ToImmutableArray();
-        ReplaceRows(values);
+        if (committedBindings.SequenceEqual(values))
+        {
+            return;
+        }
+
+        committedBindings = values;
         Changed?.Invoke(this, new(values));
     }
 }

@@ -4,7 +4,7 @@
              x:Class="AegiNext.Desktop.Settings.Shortcuts.ShortcutSettingsView" Classes="business-surface"
              x:DataType="vm:ShortcutSettingsViewModel">
 
-  <Grid Name="ShortcutsPage" IsVisible="{Binding $parent[UserControl].IsVisible}" RowDefinitions="Auto,*,Auto,Auto"
+  <Grid Name="ShortcutsPage" IsVisible="{Binding $parent[UserControl].IsVisible}" RowDefinitions="Auto,*,Auto"
         RowSpacing="12">
     <Grid ColumnDefinitions="*,180" ColumnSpacing="12" Margin="12,0">
       <TextBlock Text="{Loc Key=Settings.Action}" Classes="field" /><TextBlock Grid.Column="1" Text="{Loc Key=Settings.Gesture}" Classes="field" />
@@ -36,7 +36,7 @@
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
-    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+    <Grid Name="ShortcutActions" Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
       <TextBox Name="GestureInput" Text="{Binding Gesture, Mode=OneWay}" IsReadOnly="True" IsEnabled="{Binding HasSelection}"
                PlaceholderText="CmdOrCtrl+K" />
       <Button Grid.Column="1" Name="RecordShortcutButton" Command="{Binding ToggleRecordingCommand}"
@@ -46,13 +46,8 @@
       <Button Grid.Column="2" Name="ClearShortcutButton" Command="{Binding ClearCommand}">
         <controlsCommon:IconText Text="{Loc Key=Settings.Clear}" IconKey="Close" />
       </Button>
-    </Grid>
-    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto">
-      <Button Name="ResetShortcutsButton" Command="{Binding ResetCommand}">
+      <Button Name="ResetShortcutsButton" Command="{Binding ResetCommand}" Grid.Column="3">
         <controlsCommon:IconText Text="{Loc Key=Settings.Reset}" IconKey="Undo" />
-      </Button>
-      <Button Name="SaveShortcutsButton" Command="{Binding SaveCommand}" Grid.Column="2" Classes="accent">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
       </Button>
     </Grid>
   </Grid>

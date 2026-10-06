@@ -5,25 +5,35 @@
              xmlns:vm="using:AegiNext.Desktop.Settings.Styles"
              x:Class="AegiNext.Desktop.Settings.Styles.StyleSettingsView" Classes="business-surface" x:DataType="vm:StyleSettingsViewModel">
   <Grid Name="StylesPage" IsVisible="{Binding $parent[UserControl].IsVisible}" IsEnabled="{Binding IsAvailable}"
-        RowDefinitions="Auto,*,Auto" RowSpacing="12">
-    <WrapPanel>
-      <Button Name="AddStyleButton" Command="{Binding AddCommand}" Click="FocusName" Margin="0,0,8,8">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Add}" IconKey="Add" />
-      </Button>
-      <Button Name="DuplicateStyleButton" Command="{Binding DuplicateCommand}" Click="FocusName"
-              Margin="0,0,8,8">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Duplicate}" IconKey="File" />
-      </Button>
-      <Button Name="DeleteStyleButton" Command="{Binding DeleteCommand}" Margin="0,0,8,8">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Delete}" IconKey="Delete" />
-      </Button>
-      <Button Name="ImportStylesButton" Command="{Binding ImportCommand}" Margin="0,0,8,8">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Import}" IconKey="Import" />
-      </Button>
-      <Button Name="ExportStylesButton" Command="{Binding ExportCommand}" Margin="0,0,0,8">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Export}" IconKey="Export" />
-      </Button>
-    </WrapPanel>
+        RowDefinitions="Auto,*" RowSpacing="12">
+    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+      <StackPanel Name="StyleLibraryToolbar" Orientation="Horizontal" Spacing="8">
+        <Button Name="AddStyleButton" Command="{Binding AddCommand}" Click="FocusName">
+          <controlsCommon:IconText Text="{Loc Key=Settings.Add}" IconKey="Add" />
+        </Button>
+        <Button Name="DuplicateStyleButton" Command="{Binding DuplicateCommand}" Click="FocusName">
+          <controlsCommon:IconText Text="{Loc Key=Settings.Duplicate}" IconKey="File" />
+        </Button>
+        <Button Name="DeleteStyleButton" Command="{Binding DeleteCommand}">
+          <controlsCommon:IconText Text="{Loc Key=Settings.Delete}" IconKey="Delete" />
+        </Button>
+        <Button Name="ImportStylesButton" Command="{Binding ImportCommand}">
+          <controlsCommon:IconText Text="{Loc Key=Settings.Import}" IconKey="Import" />
+        </Button>
+        <Button Name="ExportStylesButton" Command="{Binding ExportCommand}">
+          <controlsCommon:IconText Text="{Loc Key=Settings.Export}" IconKey="Export" />
+        </Button>
+        <Button Name="CaptureStyleButton" Command="{Binding CaptureCommand}">
+          <controlsCommon:IconText Text="{Loc Key=Settings.Capture}" IconKey="Subtitles" />
+        </Button>
+        <Button Name="ApplyStyleButton" Click="ApplyStyle" IsEnabled="{Binding CanApply}">
+          <controlsCommon:IconText Text="{Loc Key=Settings.Apply}" IconKey="Style" />
+        </Button>
+        <Button Name="SaveStyleButton" Click="SaveStyle" IsEnabled="{Binding CanEdit}" Classes="accent">
+          <controlsCommon:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
+        </Button>
+      </StackPanel>
+    </ScrollViewer>
     <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="16">
       <Grid>
         <ListBox Name="StyleList" ItemsSource="{Binding Styles}" SelectedItem="{Binding SelectedStyle, Mode=TwoWay}"
@@ -137,17 +147,5 @@
         </StackPanel>
       </ScrollViewer>
     </Grid>
-    <WrapPanel Grid.Row="2">
-      <Button Name="CaptureStyleButton" Command="{Binding CaptureCommand}" Margin="0,0,8,8">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Capture}" IconKey="Subtitles" />
-      </Button>
-      <Button Name="ApplyStyleButton" Click="ApplyStyle" IsEnabled="{Binding CanApply}" Margin="0,0,8,8">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Apply}" IconKey="Style" />
-      </Button>
-      <Button Name="SaveStyleButton" Click="SaveStyle" IsEnabled="{Binding CanEdit}" Classes="accent"
-              Margin="0,0,0,8">
-        <controlsCommon:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
-      </Button>
-    </WrapPanel>
   </Grid>
 </UserControl>
