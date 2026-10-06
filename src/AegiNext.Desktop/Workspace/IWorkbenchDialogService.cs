@@ -13,4 +13,6 @@ internal interface IWorkbenchDialogService
     Task<bool> ConfirmUnavailableMediaAsync(string mediaPath, string reason, CancellationToken cancellationToken);
     Task<bool> ConfirmSubtitleConversionAsync(IReadOnlyList<string> diagnostics) => Task.FromResult(false);
     Task<TrackStyleUpdateDecision> ConfirmTrackStyleChangeAsync(string trackName, string presetName, int subtitleCount);
+    Task<bool> ConfirmTrackDeletionAsync(string trackName, int subtitleCount, CancellationToken cancellationToken)
+        => Task.FromResult(false);
 }

@@ -49,7 +49,7 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
     public ImmutableArray<SubtitleTrack> Tracks => tracks;
     public SubtitleTrack? SelectedTrack => selectedTrack;
 
-    internal void UpdateTracks(ImmutableArray<SubtitleTrack> values, Guid currentId)
+    internal void UpdateTracks(ImmutableArray<SubtitleTrack> values, Guid? currentId)
     {
         if (!tracks.SequenceEqual(values))
         {
@@ -57,7 +57,7 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
             OnPropertyChanged(nameof(Tracks));
         }
 
-        var track = values.Single(value => value.Id == currentId);
+        var track = currentId is { } id ? values.Single(value => value.Id == id) : null;
         if (selectedTrack != track)
         {
             selectedTrack = track;

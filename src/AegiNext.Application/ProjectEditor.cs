@@ -198,10 +198,12 @@ public sealed partial class ProjectEditor
         NotifyChanged(ProjectEditorChangeKind.SAVE_POINT);
     }
 
-    /// <summary>新增字幕行及同标识字幕层，作为一个事务。</summary>
+    /// <summary>在现有轨道新增字幕行及同标识字幕层，作为一个事务；没有轨道时拒绝创建。</summary>
     public Guid AddSubtitle(MediaTime start, MediaTime end, string text, Guid? trackId = null, SubtitleStyle? fallbackStyle = null)
     {
-        var line = new SubtitleLine { Start = start, End = end, Text = text, TrackId = trackId ?? Snapshot.SubtitleTracks[0].Id };
+        var targetTrackId = trackId ?? Snapshot.SubtitleTracks.FirstOrDefault()?.Id
+            ?? throw new InvalidOperationException("请先新增字幕轨道。");
+        var line = new SubtitleLine { Start = start, End = end, Text = text, TrackId = targetTrackId };
         AddSubtitles([line], line.TrackId, fallbackStyle);
         return line.Id;
     }

@@ -24,7 +24,7 @@ public static class ProjectValidator
             (double)document.FrameRate.Numerator / document.FrameRate.Denominator <= 1000, "项目帧率无效。");
         Number(document.ReferenceWhiteNits, 0.001, 10000, "参考白");
         Require(!document.Assets.IsDefault && document.Assets.Length <= 10000 &&
-            !document.SubtitleTracks.IsDefaultOrEmpty && document.SubtitleTracks.Length <= 10000 &&
+            !document.SubtitleTracks.IsDefault && document.SubtitleTracks.Length <= 10000 &&
             !document.Subtitles.IsDefault && document.Subtitles.Length <= 100000 &&
             !document.Layers.IsDefault && !document.Presets.IsDefault, "项目集合无效或过大。");
         var assets = new Dictionary<Guid, ProjectAsset>();

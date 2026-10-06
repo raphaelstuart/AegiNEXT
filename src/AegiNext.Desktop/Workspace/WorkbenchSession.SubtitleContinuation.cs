@@ -21,7 +21,10 @@ internal sealed partial class WorkbenchSession
                 return;
             }
 
-            var trackId = CurrentTrackId;
+            if (CurrentTrackId is not { } trackId)
+            {
+                return;
+            }
             var lines = editor.Snapshot.Subtitles.Where(line => line.TrackId == trackId).OrderBy(line => line.Start).ToArray();
             var index = Array.FindIndex(lines, line => line.Id == sourceId);
             if (index < 0)

@@ -118,4 +118,15 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
         registerWindow?.Invoke(dialog);
         return dialog.ShowDialog<TrackStyleUpdateDecision>(ownerProvider());
     }
+
+    /// <summary>确认删除字幕轨道及全部内容；取消请求会关闭窗口，默认选择取消。</summary>
+    public async Task<bool> ConfirmTrackDeletionAsync(string trackName, int subtitleCount, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var dialog = new TrackDeletionDialog(trackName, subtitleCount);
+        registerWindow?.Invoke(dialog);
+        var answer = dialog.ShowDialog<bool>(ownerProvider());
+        using var registration = cancellationToken.Register(() => Dispatcher.UIThread.Post(() => dialog.Close(false)));
+        return await answer;
+    }
 }

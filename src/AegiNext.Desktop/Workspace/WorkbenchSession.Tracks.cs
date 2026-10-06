@@ -7,10 +7,10 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class WorkbenchSession
 {
-    private Guid currentTrackId = SubtitleTrack.DEFAULT_TRACK_ID;
+    private Guid? currentTrackId = SubtitleTrack.DEFAULT_TRACK_ID;
 
-    internal Guid CurrentTrackId => editor.Snapshot.SubtitleTracks.Any(track => track.Id == currentTrackId)
-        ? currentTrackId : editor.Snapshot.SubtitleTracks[0].Id;
+    internal Guid? CurrentTrackId => editor.Snapshot.SubtitleTracks.Any(track => track.Id == currentTrackId)
+        ? currentTrackId : editor.Snapshot.SubtitleTracks.FirstOrDefault()?.Id;
 
     internal Task ApplySubtitleTrackStyleAsync(Guid trackId, Guid presetId)
     {
@@ -91,10 +91,43 @@ internal sealed partial class WorkbenchSession
         RefreshSubtitleTracks();
     }
 
-    internal void RemoveSubtitleTrack()
+    internal Task RemoveSubtitleTrackAsync()
     {
-        editor.RemoveSubtitleTrack(CurrentTrackId);
-        RefreshSubtitleTracks();
+        return RunCommandAsync(async () =>
+        {
+            if (updatingWorkbench || projectBusy || CurrentTrackId is not { } trackId)
+            {
+                return;
+            }
+
+            var source = editor.Snapshot;
+            var generation = projectGeneration;
+            var track = source.SubtitleTracks.Single(value => value.Id == trackId);
+            var count = source.Subtitles.Count(line => line.TrackId == trackId);
+            if (count > 0)
+            {
+                var accepted = false;
+                SetProjectBusy(true);
+                try
+                {
+                    accepted = await dialogs.ConfirmTrackDeletionAsync(track.Name, count, ProjectOperationsToken);
+                }
+                finally
+                {
+                    SetProjectBusy(false);
+                }
+                if (!accepted)
+                {
+                    return;
+                }
+            }
+
+            if (generation != projectGeneration || !ReferenceEquals(source, editor.Snapshot))
+            {
+                return;
+            }
+            await EditAsync(() => editor.RemoveSubtitleTrack(trackId));
+        });
     }
 
     internal Task MoveCurrentSubtitleTrackAsync(int direction)
@@ -106,12 +139,16 @@ internal sealed partial class WorkbenchSession
 
         return RunCommandAsync(() => EditAsync(() =>
         {
+            if (CurrentTrackId is not { } trackId)
+            {
+                return;
+            }
             var tracks = editor.Snapshot.SubtitleTracks;
-            var index = tracks.IndexOf(tracks.Single(track => track.Id == CurrentTrackId));
+            var index = tracks.IndexOf(tracks.Single(track => track.Id == trackId));
             var target = index + direction;
             if (target >= 0 && target < tracks.Length)
             {
-                editor.MoveSubtitleTrack(CurrentTrackId, target);
+                editor.MoveSubtitleTrack(trackId, target);
             }
         }));
     }

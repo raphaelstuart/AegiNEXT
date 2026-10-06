@@ -34,7 +34,7 @@ public sealed partial class ProjectEditor
             ProjectEditingOperations.SetSubtitleTrackAutoApplyStyle(document, trackId, enabled));
     }
 
-    /// <summary>删除空字幕轨道；最后一条轨道及含片段轨道明确拒绝。</summary>
+    /// <summary>在一个可撤销事务中删除字幕轨道及其全部内容；允许工程暂时没有字幕轨道。</summary>
     public void RemoveSubtitleTrack(Guid trackId)
     {
         Apply("Remove subtitle track", document => ProjectEditingOperations.RemoveSubtitleTrack(document, trackId));

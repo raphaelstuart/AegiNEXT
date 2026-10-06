@@ -14,8 +14,11 @@ internal sealed partial class WorkbenchSession
 
     internal async Task AddCueAsync()
     {
+        if (CurrentTrackId is not { } trackId)
+        {
+            return;
+        }
         var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
-        var trackId = CurrentTrackId;
         var presetId = ViewModel.Styles.SelectedPreset?.Id;
         var cue = new SubtitleLine { Start = start, End = start + new MediaTime(2), Text = string.Empty, TrackId = trackId };
         SetProjectBusy(true);
@@ -33,6 +36,10 @@ internal sealed partial class WorkbenchSession
 
     internal async Task SetCueStartAsync()
     {
+        if (CurrentTrackId is not { } trackId)
+        {
+            return;
+        }
         var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
         var entered = timingSession.Enter(start);
         if (entered.IsRepeated)
@@ -40,7 +47,6 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
-        var trackId = CurrentTrackId;
         var presetId = ViewModel.Styles.SelectedPreset?.Id;
         pendingTimingEntry = entered;
         pendingTimingEnd = null;

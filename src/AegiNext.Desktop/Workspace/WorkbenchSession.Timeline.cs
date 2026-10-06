@@ -13,7 +13,7 @@ internal sealed partial class WorkbenchSession
 
     internal bool CanCopyTimelineClips => !closing && !projectBusy && TimelineClipIds().Length > 0;
     internal bool CanPasteTimelineClips => !closing && !projectBusy && timelineClipboard is { } content &&
-        content.SourceProjectId == editor.Snapshot.Id;
+        content.SourceProjectId == editor.Snapshot.Id && (content.Subtitles.IsEmpty || CurrentTrackId.HasValue);
 
     internal ImmutableArray<Guid> TimelineClipIds()
     {

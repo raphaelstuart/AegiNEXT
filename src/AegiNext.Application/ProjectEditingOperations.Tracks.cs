@@ -92,17 +92,17 @@ public static partial class ProjectEditingOperations
         });
     }
 
-    /// <summary>仅删除空的非最后字幕轨道，避免隐式删除或转移片段。</summary>
+    /// <summary>删除字幕轨道及其全部片段和图层；允许删除最后一条轨道，保留其他轨道和共享资源。</summary>
     public static ProjectDocument RemoveSubtitleTrack(ProjectDocument document, Guid trackId)
     {
         ProjectValidator.Validate(document);
         var index = TrackIndex(document, trackId);
-        if (document.SubtitleTracks.Length == 1 || document.Subtitles.Any(line => line.TrackId == trackId))
-        {
-            throw new InvalidOperationException("只能删除空轨道，且项目必须保留至少一条字幕轨道。");
-        }
-
-        return Verified(document with { SubtitleTracks = document.SubtitleTracks.RemoveAt(index) });
+        var subtitles = document.Subtitles.Where(line => line.TrackId == trackId).Select(line => line.Id).ToHashSet();
+        var layerIds = document.Layers.SelectMany(Descendants)
+            .Where(layer => layer.SubtitleId is { } id && subtitles.Contains(id))
+            .Select(layer => layer.Id).ToImmutableArray();
+        var result = RemoveClips(document, layerIds);
+        return Verified(result with { SubtitleTracks = result.SubtitleTracks.RemoveAt(index) });
     }
 
     /// <summary>只改变字幕轨道显示顺序，合成图层的稳定身份和顺序保持原样。</summary>

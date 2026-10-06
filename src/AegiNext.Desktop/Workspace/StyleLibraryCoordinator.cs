@@ -164,12 +164,12 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         }
     }
 
-    internal Task<PreparedSubtitleStyle> PrepareCreationAsync(Guid trackId, Guid? fallbackPresetId)
+    internal Task<PreparedSubtitleStyle> PrepareCreationAsync(Guid? trackId, Guid? fallbackPresetId)
     {
         var project = session.Editor.Snapshot;
-        var track = project.SubtitleTracks.FirstOrDefault(value => value.Id == trackId) ??
-            throw new KeyNotFoundException("字幕轨道不存在。");
-        if (track.AutoApplyStyle && track.DefaultStyle is { } defaultStyle)
+        var track = trackId is { } id ? project.SubtitleTracks.FirstOrDefault(value => value.Id == id) ??
+            throw new KeyNotFoundException("字幕轨道不存在。") : null;
+        if (track is { AutoApplyStyle: true, DefaultStyle: { } defaultStyle })
         {
             return Task.FromResult(new PreparedSubtitleStyle(project, defaultStyle));
         }

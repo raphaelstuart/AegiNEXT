@@ -47,7 +47,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         this.session = session;
         AddTrackCommand = new(() => session.RunCommandAsync(() => session.EditAsync(session.AddSubtitleTrack)));
         RenameTrackCommand = new(BeginRenameTrack, () => SelectedTrackId.HasValue);
-        DeleteTrackCommand = new(() => session.RunCommandAsync(() => session.EditAsync(session.RemoveSubtitleTrack)), () => CanDeleteTrack);
+        DeleteTrackCommand = new(session.RemoveSubtitleTrackAsync, () => CanDeleteTrack);
         MoveTrackUpCommand = new(() => session.MoveCurrentSubtitleTrackAsync(-1), () => CanMoveTrackUp);
         MoveTrackDownCommand = new(() => session.MoveCurrentSubtitleTrackAsync(1), () => CanMoveTrackDown);
         ConfirmTrackRenameCommand = new(ConfirmTrackRenameAsync, () => CanConfirmTrackRename);
@@ -121,8 +121,8 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         !session.IsClosing && !session.ViewModel.IsBusy;
     public StylePresetListItem[] StylePresets => session.StyleLibrary.Snapshot.Presets
         .Select(preset => new StylePresetListItem(preset.Id, preset.Name)).ToArray();
-    public bool CanDeleteTrack => Document.SubtitleTracks.Length > 1 && SelectedTrackId is { } id &&
-        !Document.Subtitles.Any(cue => cue.TrackId == id);
+    public bool CanDeleteTrack => !session.IsClosing && !session.IsProjectBusy && SelectedTrackId is { } id &&
+        Document.SubtitleTracks.Any(track => track.Id == id);
     public bool CanMoveTrackUp => SelectedTrackIndex > 0;
     public bool CanMoveTrackDown => SelectedTrackIndex >= 0 && SelectedTrackIndex < Document.SubtitleTracks.Length - 1;
     public bool IsRenamingTrack => renamingTrackId.HasValue;

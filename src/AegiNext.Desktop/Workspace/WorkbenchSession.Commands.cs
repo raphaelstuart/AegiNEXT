@@ -25,10 +25,11 @@ internal sealed partial class WorkbenchSession
             WorkbenchCommand.ADVANCE_SUBTITLE_ROW or WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK => false,
             WorkbenchCommand.PLAY_PAUSE or WorkbenchCommand.SEEK_BACKWARD or WorkbenchCommand.SEEK_FORWARD =>
                 controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
-            WorkbenchCommand.TIMING_ENTER => playback.PendingPosition is null && controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
+            WorkbenchCommand.TIMING_ENTER => CurrentTrackId.HasValue && playback.PendingPosition is null && controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
             WorkbenchCommand.TIMING_EXIT => timingSession.ActiveCueId is not null || pendingTimingEntry is not null,
             WorkbenchCommand.DELETE_SUBTITLE or WorkbenchCommand.SPLIT_SUBTITLE or WorkbenchCommand.OPEN_SUBTITLE_DETAILS => SelectedCue is not null,
             WorkbenchCommand.MERGE_SUBTITLE => CanMergeSubtitleSelection(),
+            WorkbenchCommand.ADD_SUBTITLE => CurrentTrackId.HasValue,
             WorkbenchCommand.EXPORT_VIDEO => editor.Snapshot.Media is not null && export.CanStart,
             _ => true
         };
