@@ -1,6 +1,7 @@
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Media.Playback;
+using AegiNext.Media.Audio;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -8,7 +9,7 @@ internal sealed partial class WorkbenchSession
 {
     internal bool CanExecuteCommand(WorkbenchCommand command)
     {
-        if (closing || workflow.IsNewProjectDialogOpen || projectBusy && command != WorkbenchCommand.VIEW_LOG &&
+        if (closing || IsSwitchingAudioDevice || workflow.IsNewProjectDialogOpen || projectBusy && command != WorkbenchCommand.VIEW_LOG &&
             !(command == WorkbenchCommand.TIMING_EXIT && pendingTimingEntry is not null && pendingTimingEnd is null))
         {
             return false;
@@ -25,14 +26,32 @@ internal sealed partial class WorkbenchSession
             WorkbenchCommand.ADVANCE_SUBTITLE_ROW or WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK => false,
             WorkbenchCommand.PLAY_PAUSE or WorkbenchCommand.SEEK_BACKWARD or WorkbenchCommand.SEEK_FORWARD =>
                 controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
-            WorkbenchCommand.TIMING_ENTER => CurrentTrackId.HasValue && playback.PendingPosition is null && controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
-            WorkbenchCommand.TIMING_EXIT => timingSession.ActiveCueId is not null || pendingTimingEntry is not null,
+            WorkbenchCommand.TIMING_ENTER => IsTimingClockAvailable && CurrentTrackId.HasValue && playback.PendingPosition is null && controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
+            WorkbenchCommand.TIMING_EXIT => IsTimingClockAvailable && (timingSession.ActiveCueId is not null || pendingTimingEntry is not null),
             WorkbenchCommand.DELETE_SUBTITLE or WorkbenchCommand.SPLIT_SUBTITLE or WorkbenchCommand.OPEN_SUBTITLE_DETAILS => SelectedCue is not null,
             WorkbenchCommand.MERGE_SUBTITLE => CanMergeSubtitleSelection(),
             WorkbenchCommand.ADD_SUBTITLE => CurrentTrackId.HasValue,
             WorkbenchCommand.EXPORT_VIDEO => editor.Snapshot.Media is not null && export.CanStart,
             _ => true
         };
+    }
+
+    private bool IsTimingClockAvailable
+    {
+        get
+        {
+            var snapshot = controller.Snapshot;
+            if (snapshot.AudioError is not null)
+            {
+                return false;
+            }
+            if (controller.MediaInfo?.AudioStreamIndex is null)
+            {
+                return true;
+            }
+            return snapshot.AudioAvailable && controller.AudioClock is
+                { Quality: AudioClockQuality.ESTIMATED or AudioClockQuality.SYSTEM };
+        }
     }
 
     internal async Task ExecuteCommandAsync(WorkbenchCommand command)
@@ -42,11 +61,25 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
+        MediaTime? timingPosition = null;
+        if (command is WorkbenchCommand.TIMING_ENTER or WorkbenchCommand.TIMING_EXIT)
+        {
+            if (!IsTimingClockAvailable)
+            {
+                return;
+            }
+            var timingSnapshot = controller.Snapshot;
+            if (timingSnapshot.AudioError is not null)
+            {
+                return;
+            }
+            timingPosition = (playback.PendingPosition ?? timingSnapshot.Position) - (timingSnapshot.Start ?? MediaTime.Zero);
+        }
         if (command == WorkbenchCommand.TIMING_EXIT && pendingTimingEntry is not null)
         {
             if (ViewModel.Timeline.TimingPreview is { } preview && timingPreviewTrackId is { } trackId)
             {
-                pendingTimingEnd = ResolveTimingEnd(preview.CueId, trackId, preview.Start, ProjectPosition);
+                pendingTimingEnd = ResolveTimingEnd(preview.CueId, trackId, preview.Start, timingPosition!.Value);
                 ClearTimingPreview();
             }
             ViewModel.RefreshCommands();
@@ -133,13 +166,13 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.TIMING_ENTER:
                     if (TryCommitDrafts())
                     {
-                        await SetCueStartAsync();
+                        await SetCueStartAsync(timingPosition!.Value);
                     }
                     break;
                 case WorkbenchCommand.TIMING_EXIT:
                     if (TryCommitDrafts())
                     {
-                        SetCueEnd();
+                        SetCueEndAt(timingPosition!.Value);
                     }
                     break;
                 case WorkbenchCommand.ADD_SUBTITLE:

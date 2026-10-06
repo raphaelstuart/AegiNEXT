@@ -86,6 +86,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             () => new ProjectPreviewConverter(GetPreviewState,
                 error => Volatile.Write(ref previewRenderError, error), previewFrames, () => Fonts.Catalog));
         controller.ConfigureDecodeMode(preferences.PreviewDecodeMode);
+        InitializeAudioCalibration();
         workflow = new(this, dialogs);
         Details = new(this);
         Details.Changed += OnSubtitleDetailsChanged;
@@ -205,6 +206,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
 
         var value = applicationContext.Preferences;
+        var previousPreferences = preferences;
         var qualityChanged = preferences.PreviewQuality != value.PreviewQuality;
         preferences = value;
         persistence.UpdatePreferences(value.Projects);
@@ -214,6 +216,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             controller.InvalidatePreview();
         }
         ApplyPreferences();
+        QueueAudioCalibrationPreferences(previousPreferences, value);
         if (qualityChanged)
         {
             _ = RunCommandAsync(controller.RefreshPausedPreviewAsync);
@@ -394,6 +397,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         closing = true;
         projectOperationsCancellation.Cancel();
         await timingProcessingCompletion.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+        await audioCalibrationCompletion.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
         await persistence.DisposeAsync();
         applicationContext.PreferencesChanged -= OnApplicationPreferencesChanged;
         applicationContext.StylesChanged -= OnApplicationStylesChanged;
@@ -530,14 +534,16 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal void Tick()
     {
         var snapshot = controller.Snapshot;
+        RefreshAudioClockStatus();
         RefreshPreviewDecodeSessionInfo(snapshot.DecodeSessionInfo);
         var preview = ViewModel.Preview;
         var relative = ProjectPosition;
         UpdateTimingPreview(snapshot.State, relative);
         preview.FileTitle = snapshot.FilePath is { } path ? Path.GetFileName(path) : Localization.Get("Preview.Preview");
-        preview.IsOpening = snapshot.IsOpening || switchingPreviewDecodeMode;
-        preview.CanPlay = !closing && !switchingPreviewDecodeMode && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
+        preview.IsOpening = snapshot.IsOpening || switchingPreviewDecodeMode || switchingAudioDevice;
+        preview.CanPlay = !closing && !switchingPreviewDecodeMode && !switchingAudioDevice && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
         preview.IsPlaying = snapshot.State == VideoPlaybackState.PLAYING || snapshot.AudioAuditionActive;
+        preview.IsCatchingUp = snapshot.State == VideoPlaybackState.PLAYING && preview.HasFrame && !snapshot.IsPresentedFrameCurrent;
         preview.PlayLabel = Localization.Get("Preview." + (preview.IsPlaying ? "Pause" : "Play"));
         preview.MuteLabel = Localization.Get("Preview." + (preview.IsMuted ? "Unmute" : "Mute"));
         preview.VolumeLabel = Localization.Get("Preview.Volume");

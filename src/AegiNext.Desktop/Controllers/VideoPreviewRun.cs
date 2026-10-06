@@ -18,6 +18,7 @@ internal sealed class VideoPreviewRun : IDisposable
         Epoch = epoch;
         Path = path;
         Token = cancellation.Token;
+        PreparationCancellation = CancellationTokenSource.CreateLinkedTokenSource(Token);
     }
 
     internal long Epoch { get; }
@@ -31,6 +32,17 @@ internal sealed class VideoPreviewRun : IDisposable
     internal MediaTime? PresentedAtPosition { get; set; }
     internal long? PresentedGeneration { get; set; }
     internal CancellationTokenSource? ConversionCancellation { get; set; }
+    internal CancellationTokenSource PreparationCancellation { get; set; }
+    internal SemaphoreSlim PreparedSlots { get; } = new(2, 2);
+    internal Queue<PreparedVideoPreview> PreparedFrames { get; } = new();
+    internal TaskCompletionSource PreparedChanged { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal Queue<MediaTime> ConversionCosts { get; } = new();
+    internal Queue<MediaTime> DispatchCosts { get; } = new();
+    internal MediaTime ConversionLead { get; set; }
+    internal MediaTime DispatchLead { get; set; }
+    internal int PreparedFrameCount { get; set; }
+    internal long PreparedBytes { get; set; }
+    internal MediaTime? PresentedFrameEnd { get; set; }
     internal Task Pump { get; set; } = Task.CompletedTask;
     internal TaskCompletionSource<bool> Resume { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -98,7 +110,9 @@ internal sealed class VideoPreviewRun : IDisposable
             if (!disposed)
             {
                 disposed = true;
+                PreparationCancellation.Dispose();
                 cancellation.Dispose();
+                PreparedSlots.Dispose();
             }
         }
     }

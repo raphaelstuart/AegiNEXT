@@ -34,6 +34,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private readonly ToolbarToggleButton spectrumButton;
     private readonly ToolbarToggleButton waveformButton;
     private AegiNext.Media.Analysis.SpectrogramData? spectrum;
+    private SpectrogramData? spectrumOverview;
     private WaveformData? waveform;
     private WaveformData? waveformOverview;
     private MediaTime? audioDuration;
@@ -274,10 +275,11 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
                 viewModel.SelectedTrackId);
             timeline.TimelineViewState = viewModel.TimelineViewState;
             timeline.SetViewport(viewModel.Viewport, viewModel.FullDuration);
-            if (!ReferenceEquals(spectrum, viewModel.Spectrogram))
+            if (!ReferenceEquals(spectrum, viewModel.Spectrogram) || !ReferenceEquals(spectrumOverview, viewModel.SpectrogramOverview))
             {
                 spectrum = viewModel.Spectrogram;
-                timeline.SetSpectrogram(spectrum);
+                spectrumOverview = viewModel.SpectrogramOverview;
+                timeline.SetSpectrogram(spectrum, spectrumOverview);
             }
 
             if (!ReferenceEquals(waveform, viewModel.Waveform) ||

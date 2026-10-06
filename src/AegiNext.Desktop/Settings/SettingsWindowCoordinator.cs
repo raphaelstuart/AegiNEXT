@@ -131,6 +131,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ColorsChanged += OnColorsChanged;
         window.ShortcutsChanged += OnShortcutsChanged;
         window.PreviewDecodeModeChanged += OnPreviewDecodeModeChanged;
+        window.ViewModel.Media.AudioCalibrationChanged += OnAudioCalibrationChanged;
         window.ProjectsChanged += OnProjectsChanged;
         window.PreviewChanged += OnPreviewChanged;
         window.TimingPreferencesChanged += OnTimingPreferencesChanged;
@@ -151,6 +152,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         if (session is { } active)
         {
             active.PreviewDecodeModeChanged += OnSessionPreviewDecodeModeChanged;
+            active.AudioClockChanged += OnSessionPreviewDecodeModeChanged;
             active.SelectionChanged += OnSelectionChanged;
             active.StyleLibraryChanged += OnBusyChanged;
             active.EffectLibraryChanged += OnBusyChanged;
@@ -173,6 +175,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ColorsChanged -= OnColorsChanged;
         window.ShortcutsChanged -= OnShortcutsChanged;
         window.PreviewDecodeModeChanged -= OnPreviewDecodeModeChanged;
+        window.ViewModel.Media.AudioCalibrationChanged -= OnAudioCalibrationChanged;
         window.ProjectsChanged -= OnProjectsChanged;
         window.PreviewChanged -= OnPreviewChanged;
         window.TimingPreferencesChanged -= OnTimingPreferencesChanged;
@@ -193,6 +196,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         if (session is { } active)
         {
             active.PreviewDecodeModeChanged -= OnSessionPreviewDecodeModeChanged;
+            active.AudioClockChanged -= OnSessionPreviewDecodeModeChanged;
             active.SelectionChanged -= OnSelectionChanged;
             active.StyleLibraryChanged -= OnBusyChanged;
             active.EffectLibraryChanged -= OnBusyChanged;
@@ -285,11 +289,12 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
             return;
         }
 
-        window.ViewModel.Media.IsBusy = session?.IsPreviewDecodeModeSwitching == true;
+        window.ViewModel.Media.IsBusy = session?.IsPreviewDecodeModeSwitching == true || session?.IsSwitchingAudioDevice == true;
         window.ViewModel.Media.UpdatePreferences(applicationContext.Preferences);
         var info = session?.PreviewDecodeSessionInfo;
         window.ViewModel.Media.UpdateDecodeStatus(info?.ActiveBackend.ToString(), info?.HardwareConfirmed == true,
             info?.FallbackReason);
+        window.ViewModel.Media.UpdateAudioStatus(session?.AudioClock);
     }
 
     private void OnAppearanceChanged(object? sender, SettingsAppearanceChangedEventArgs e)
@@ -411,6 +416,20 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
                 }
             }
 
+            RefreshMediaSettings();
+        });
+    }
+
+    private void OnAudioCalibrationChanged(object? sender, SettingsAudioCalibrationChangedEventArgs e)
+    {
+        var active = session;
+        _ = RunAsync(async () =>
+        {
+            if (active is null)
+            {
+                throw new InvalidOperationException("音频校准需要已打开媒体的工作台。");
+            }
+            await active.SetAudioCalibrationAsync(e.Calibration);
             RefreshMediaSettings();
         });
     }

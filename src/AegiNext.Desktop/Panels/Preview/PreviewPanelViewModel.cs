@@ -29,6 +29,7 @@ internal sealed class PreviewPanelViewModel : ObservableObject
     private double volume = 1;
     private bool isMuted;
     private bool isPlaying;
+    private bool isCatchingUp;
     private string muteLabel = string.Empty;
     private string volumeLabel = string.Empty;
     private bool isScrubbing;
@@ -133,6 +134,12 @@ internal sealed class PreviewPanelViewModel : ObservableObject
     {
         get => isPlaying;
         set => SetProperty(ref isPlaying, value);
+    }
+
+    public bool IsCatchingUp
+    {
+        get => isCatchingUp;
+        set => SetProperty(ref isCatchingUp, value);
     }
 
     public string EmptyLabel

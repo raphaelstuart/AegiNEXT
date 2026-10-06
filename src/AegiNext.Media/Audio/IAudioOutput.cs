@@ -8,6 +8,12 @@ public interface IAudioOutput : IDisposable
     int QueuedFrames { get; }
     int LatencyFrames { get; }
 
+    /// <summary>读取播放位置与设备身份；旧输出只提供明确标记的队列估计。</summary>
+    AudioOutputClockSnapshot ReadClock()
+    {
+        return new(0, 0, 1, "unknown", "estimated", 0, AudioClockQuality.ESTIMATED, QueuedFrames);
+    }
+
     /// <summary>写入交错立体声样本，队列总量不得超过 12000 帧。</summary>
     void Write(ReadOnlySpan<float> samples);
     /// <summary>暂停或恢复设备消费。</summary>

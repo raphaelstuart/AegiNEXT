@@ -28,6 +28,12 @@ public static class WaveformAnalyzer
     public static WaveformData Analyze(IAudioSampleSource source, MediaTime origin, WaveformAnalysisRequest request,
         CancellationToken cancellationToken = default)
     {
+        return Analyze(source, origin, request, static () => { }, cancellationToken);
+    }
+
+    internal static WaveformData Analyze(IAudioSampleSource source, MediaTime origin, WaveformAnalysisRequest request,
+        Action checkRequest, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(request);
         if (source.Format.SampleRate != SAMPLE_RATE || source.Format.Channels != 1)
@@ -43,6 +49,7 @@ public static class WaveformAnalyzer
         MediaTime? expected = null;
         while (source.Read(cancellationToken) is { } block)
         {
+            checkRequest();
             cancellationToken.ThrowIfCancellationRequested();
             if (block.Format != source.Format)
             {
@@ -75,6 +82,7 @@ public static class WaveformAnalyzer
                 if ((index & 1023) == 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    checkRequest();
                 }
 
                 var sample = samples[index];
@@ -95,6 +103,7 @@ public static class WaveformAnalyzer
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        checkRequest();
         var result = new WaveformData(request, peaks);
         cancellationToken.ThrowIfCancellationRequested();
         return result;

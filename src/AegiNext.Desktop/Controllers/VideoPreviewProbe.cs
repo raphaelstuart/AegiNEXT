@@ -14,7 +14,12 @@ internal static class VideoPreviewProbe
     {
         var probe = new FfprobeMediaProbe(new(MediaToolchain.ResolveFfprobe()));
         var report = await probe.ProbeAsync(filePath, cancellationToken).ConfigureAwait(false);
-        var selected = report.Asset.Streams
+        return Read(report.Asset);
+    }
+
+    internal static VideoPreviewMedia Read(MediaAssetInfo asset)
+    {
+        var selected = asset.Streams
             .Where(stream => stream.CodecType == "video" && stream.Video is not null && stream.Disposition.GetValueOrDefault("attached_pic") == 0)
             .OrderByDescending(stream => stream.Disposition.GetValueOrDefault("default"))
             .ThenBy(stream => stream.Index)
@@ -33,13 +38,26 @@ internal static class VideoPreviewProbe
         }
 
         var timing = selected.Timing;
-        var start = timing.StartTimestamp?.ToMediaTime() ?? timing.ReportedStart ?? report.Asset.ReportedStart;
-        var duration = ReadDuration(timing) ?? report.Asset.ReportedDuration;
-        var audio = report.Asset.Streams.Where(stream => stream.CodecType == "audio")
+        var start = ReadStart(timing) ?? asset.ReportedStart;
+        var duration = ReadDuration(timing) ?? asset.ReportedDuration;
+        var audio = asset.Streams.Where(stream => stream.CodecType == "audio")
             .OrderByDescending(stream => stream.Disposition.GetValueOrDefault("default"))
             .ThenBy(stream => stream.Index).FirstOrDefault();
+        var playbackOrigin = asset.ReportedStart ?? asset.Streams
+            .Where(stream => (stream.CodecType is "video" or "audio") && stream.Disposition.GetValueOrDefault("attached_pic") == 0)
+            .Select(stream => ReadStart(stream.Timing))
+            .Where(timestamp => timestamp.HasValue)
+            .Min();
         return new(selected.Index, start, duration is { } value && value > MediaTime.Zero ? value : null, audio?.Index,
-            selected.Video.Width, selected.Video.Height, selected.Video.AverageFrameRate ?? selected.Video.FrameRate);
+            selected.Video.Width, selected.Video.Height, selected.Video.AverageFrameRate ?? selected.Video.FrameRate)
+        {
+            PlaybackOrigin = playbackOrigin
+        };
+    }
+
+    private static MediaTime? ReadStart(MediaStreamTiming timing)
+    {
+        return timing.StartTimestamp?.ToMediaTime() ?? timing.ReportedStart;
     }
 
     private static MediaTime? ReadDuration(MediaStreamTiming timing)

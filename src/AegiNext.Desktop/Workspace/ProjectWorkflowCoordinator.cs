@@ -300,6 +300,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                 if (deferredBinding is null)
                 {
                     ProjectMediaBindingValidator.Validate(document, session.Controller.MediaInfo!);
+                    document = WithConfirmedPlaybackOrigin(document, session.Controller.MediaInfo!);
                 }
             }
 
@@ -422,6 +423,9 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                     Assets = document.Assets.Where(value => value.Kind != ProjectAssetKind.MEDIA).Append(asset)
                         .ToImmutableArray(),
                     Media = new(asset.Id, media.VideoStreamIndex, media.AudioStreamIndex, media.Start ?? MediaTime.Zero)
+                    {
+                        PlaybackOrigin = media.PlaybackOrigin
+                    }
                 });
                 committed = true;
                 await session.Controller.SeekAsync(media.Start ?? MediaTime.Zero);
@@ -523,6 +527,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             var locationChanged = !WorkbenchSession.PathsEqual(destination, session.ProjectPath);
             var snapshot = session.Editor.Snapshot;
             var persistenceSnapshot = session.CreatePersistenceSnapshot(snapshot);
+            persistenceSnapshot = WithCurrentPlaybackOrigin(persistenceSnapshot);
             var directory = Path.GetDirectoryName(destination)!;
             var sameDirectory = WorkbenchSession.PathsEqual(directory, session.ProjectDirectory);
             var prepared = sameDirectory
@@ -566,24 +571,31 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         try
         {
             var text = await ReadSubtitleFileAsync(path);
-            var prepared = captured;
+            var prepared = WithCurrentPlaybackOrigin(captured);
+            var mapping = SubtitleTimelineExchange.GetMapping(prepared.Media);
+            var timingDiagnostics = SubtitleTimingDiagnostics(mapping);
             ImmutableArray<SubtitleLine> lines;
             AssImportResult? assResult = null;
             if (ass)
             {
                 var result = AssSubtitleFormat.Parse(text, captured.Width, captured.Height);
-                if (!await ConfirmConversionAsync(result.Diagnostics))
+                if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(timingDiagnostics)))
                 {
                     return;
                 }
-                lines = result.Lines;
-                assResult = result;
+                assResult = SubtitleTimelineExchange.ToProjectTime(result, mapping ?? default);
+                lines = assResult.Lines;
             }
             else
             {
                 lines = SubtitleTextFormat.ParseSrt(text);
+                if (!await ConfirmConversionAsync(timingDiagnostics))
+                {
+                    return;
+                }
+                lines = SubtitleTimelineExchange.ToProjectTime(lines, mapping ?? default);
                 var creation = await session.Styles.PrepareCreationAsync(trackId, presetId);
-                prepared = creation.Project;
+                prepared = WithCurrentPlaybackOrigin(creation.Project);
                 lines = lines.Select(line => line with { Style = creation.Style }).ToImmutableArray();
             }
             if (session.IsClosing || !ReferenceEquals(captured, session.Editor.Snapshot))
@@ -618,11 +630,13 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         session.SetProjectBusy(true);
         try
         {
-            var document = session.Editor.Snapshot;
-            var result = ass ? AssSubtitleFormat.Write(document) : new SubtitleFormatWriteResult(
-                SubtitleTextFormat.WriteSrt(document.Subtitles.OrderBy(line => line.Start)),
+            var document = WithCurrentPlaybackOrigin(session.Editor.Snapshot);
+            var mapping = SubtitleTimelineExchange.GetMapping(document.Media);
+            var timeOffset = mapping?.Origin ?? MediaTime.Zero;
+            var result = ass ? AssSubtitleFormat.Write(document, timeOffset) : new SubtitleFormatWriteResult(
+                SubtitleTextFormat.WriteSrt(document.Subtitles.OrderBy(line => line.Start), timeOffset),
                 SubtitleFormatLossAnalysis.ForSrt(document));
-            if (!await ConfirmConversionAsync(result.Diagnostics) || session.IsClosing)
+            if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(SubtitleTimingDiagnostics(mapping))) || session.IsClosing)
             {
                 return;
             }
@@ -648,6 +662,25 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         {
             session.SetProjectBusy(false);
         }
+    }
+
+    private static ProjectDocument WithConfirmedPlaybackOrigin(ProjectDocument document, VideoPreviewMedia media)
+    {
+        return document.Media is { PlaybackOrigin: null } binding && media.PlaybackOrigin is { } origin &&
+            binding.VideoStreamIndex == media.VideoStreamIndex && binding.AudioStreamIndex == media.AudioStreamIndex &&
+            binding.MediaOrigin == (media.Start ?? MediaTime.Zero)
+            ? document with { Media = binding with { PlaybackOrigin = origin } } : document;
+    }
+
+    private ProjectDocument WithCurrentPlaybackOrigin(ProjectDocument document)
+    {
+        return IsPreviewBindingSynchronized() && session.Controller.MediaInfo is { } media
+            ? WithConfirmedPlaybackOrigin(document, media) : document;
+    }
+
+    private static ImmutableArray<SubtitleFormatDiagnostic> SubtitleTimingDiagnostics(MediaTimelineMapping? mapping)
+    {
+        return mapping.HasValue ? [] : [new("Subtitle.PlaybackOriginUnknown", Localization.Get("Workflow.SubtitleTimelineOriginUnknown"))];
     }
 
     private Task<bool> ConfirmConversionAsync(ImmutableArray<SubtitleFormatDiagnostic> diagnostics)

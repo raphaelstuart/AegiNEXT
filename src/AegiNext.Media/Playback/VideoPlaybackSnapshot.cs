@@ -10,4 +10,6 @@ public sealed record VideoPlaybackSnapshot(
     long Generation,
     MediaTime Position,
     MediaTime? DisplayTime,
-    Exception? Error);
+    Exception? Error,
+    int PreparationPendingCount = 0,
+    long PreparationPendingBytes = 0);

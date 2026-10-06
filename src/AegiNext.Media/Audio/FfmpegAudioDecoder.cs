@@ -34,7 +34,7 @@ public sealed class FfmpegAudioDecoder : IAudioSampleSource
             throw new FileNotFoundException("音频文件不存在。", path);
         }
 
-        if (NativeAudioMethods.AbiVersion() != 1)
+        if (NativeAudioMethods.AbiVersion() != 2)
         {
             throw new InvalidOperationException("原生音频 ABI 版本不匹配。");
         }

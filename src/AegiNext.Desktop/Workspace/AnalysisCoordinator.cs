@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using AegiNext.Core.Timing;
+using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Panels.Timeline;
 using AegiNext.Media.Analysis;
@@ -9,48 +10,97 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed class AnalysisCoordinator : IDisposable
 {
     private readonly WorkbenchSession session;
-    private readonly WaveformAnalysisCoordinator waveform;
+    private readonly Lock jobsGate = new();
+    private readonly HashSet<Task> jobs = [];
+    private AudioAnalysisSession? analysis;
     private CancellationTokenSource? cancellation;
-    private Task spectrogramCompletion = Task.CompletedTask;
+    private CancellationTokenSource? windowCancellation;
+    private WaveformViewportPlan? desired;
+    private bool desiredSpectrum;
     private bool isAnalyzing;
-    public Task Completion => Task.WhenAll(spectrogramCompletion, waveform.Completion);
+    private long epoch;
+    private long revision;
+
+    public Task Completion => DrainAsync();
 
     internal AnalysisCoordinator(WorkbenchSession session)
     {
         this.session = session;
-        waveform = new(PublishWaveform, error => session.LogError("Analysis", error));
         session.ViewModel.Timeline.PropertyChanged += OnTimelineChanged;
     }
 
     internal void Cancel()
     {
+        epoch++;
+        windowCancellation?.Cancel();
         cancellation?.Cancel();
-        waveform.Cancel();
+        if (analysis is { } current)
+        {
+            analysis = null;
+            Track(current.DisposeAsync().AsTask());
+        }
     }
 
     private void OnTimelineChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName is nameof(TimelinePanelViewModel.Viewport) or nameof(TimelinePanelViewModel.RenderScaling) or
-            nameof(TimelinePanelViewModel.IsWaveformVisible))
+            nameof(TimelinePanelViewModel.IsWaveformVisible) or nameof(TimelinePanelViewModel.IsSpectrumVisible))
         {
-            RefreshWaveform();
+            RefreshWindow();
         }
     }
 
-    private void RefreshWaveform()
+    private void RefreshWindow(bool immediate = false)
     {
+        if (analysis is not { } current || cancellation is null)
+        {
+            return;
+        }
         var timeline = session.ViewModel.Timeline;
-        waveform.Request(timeline.Viewport, timeline.RenderScaling, timeline.IsWaveformVisible);
+        var plan = timeline.IsWaveformVisible || timeline.IsSpectrumVisible
+            ? WaveformViewportPlanner.Create(timeline.Viewport, timeline.RenderScaling, current.Duration) : null;
+        if (!immediate && plan == desired && desiredSpectrum == timeline.IsSpectrumVisible)
+        {
+            return;
+        }
+        desired = plan;
+        desiredSpectrum = timeline.IsSpectrumVisible;
+        revision++;
+        windowCancellation?.Cancel();
+        windowCancellation?.Dispose();
+        windowCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+        if (plan is null)
+        {
+            timeline.Waveform = null;
+            timeline.Spectrogram = null;
+            return;
+        }
+        Track(AnalyzeWindowAsync(current, plan.Analysis, desiredSpectrum, epoch, revision, immediate, windowCancellation.Token));
     }
 
-    private void PublishWaveform(WaveformData? detail, WaveformData? overview, MediaTime duration)
+    private async Task AnalyzeWindowAsync(AudioAnalysisSession current, WaveformAnalysisRequest request, bool spectrum,
+        long requestEpoch, long requestRevision, bool immediate, CancellationToken token)
     {
-        if (!session.IsClosing)
+        try
         {
-            var timeline = session.ViewModel.Timeline;
-            timeline.AudioDuration = duration;
-            timeline.WaveformOverview = overview;
-            timeline.Waveform = detail;
+            if (!immediate)
+            {
+                await Task.Delay(75, token);
+            }
+            var result = await current.GetWindowAsync(request, spectrum, token);
+            if (IsCurrent(requestEpoch, token) && requestRevision == revision)
+            {
+                var timeline = session.ViewModel.Timeline;
+                timeline.Waveform = result.Waveform;
+                timeline.Spectrogram = result.Spectrogram;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            ReportFailure(error, requestEpoch, token);
         }
     }
 
@@ -66,40 +116,51 @@ internal sealed class AnalysisCoordinator : IDisposable
     {
         Cancel();
         await Completion;
-        await waveform.ClearAsync();
-        session.ViewModel.Timeline.Spectrogram = null;
-        session.ViewModel.Timeline.AnalysisStatus = string.Empty;
+        windowCancellation?.Dispose();
+        windowCancellation = null;
+        cancellation?.Dispose();
+        cancellation = null;
+        desired = null;
+        isAnalyzing = false;
+        var timeline = session.ViewModel.Timeline;
+        timeline.Waveform = null;
+        timeline.WaveformOverview = null;
+        timeline.Spectrogram = null;
+        timeline.SpectrogramOverview = null;
+        timeline.AudioDuration = MediaTime.Zero;
+        timeline.AnalysisStatus = string.Empty;
     }
 
     internal async Task StartAsync(string path)
     {
         await ClearAsync();
-        cancellation?.Dispose();
-        cancellation = new();
         var media = session.Controller.MediaInfo;
         if (media?.AudioStreamIndex is not { } index || media.Duration is not { } duration || duration <= MediaTime.Zero)
         {
             session.LogInfo("Analysis", Localization.Get("WorkflowLog.AudioAnalysisSkipped"), path);
             return;
         }
-
+        cancellation = new();
+        var current = AudioAnalysisSession.Open(path, index, new(media.Start ?? MediaTime.Zero), duration);
+        analysis = current;
+        session.ViewModel.Timeline.AudioDuration = duration;
         isAnalyzing = true;
         RefreshLanguage();
-        var origin = media.Start ?? MediaTime.Zero;
-        await waveform.StartAsync((request, token) => WaveformAnalyzer.AnalyzeFileAsync(path, index, origin, request, token), duration);
-        RefreshWaveform();
-        spectrogramCompletion = AnalyzeAsync(path, index, origin, duration, cancellation.Token);
+        RefreshWindow(true);
+        Track(AnalyzeOverviewAsync(current, path, epoch, cancellation.Token));
     }
 
-    private async Task AnalyzeAsync(string path, int index, MediaTime start, MediaTime duration, CancellationToken token)
+    private async Task AnalyzeOverviewAsync(AudioAnalysisSession current, string path, long requestEpoch, CancellationToken token)
     {
         try
         {
-            var data = await SpectrogramAnalyzer.AnalyzeFileAsync(path, index, start, duration, token);
-            if (!token.IsCancellationRequested && !session.IsClosing)
+            var result = await current.GetOverviewAsync(WaveformViewportPlanner.CreateOverview(current.Duration), true, token);
+            if (IsCurrent(requestEpoch, token))
             {
-                session.ViewModel.Timeline.Spectrogram = data;
-                session.ViewModel.Timeline.AnalysisStatus = string.Empty;
+                var timeline = session.ViewModel.Timeline;
+                timeline.WaveformOverview = result.Waveform;
+                timeline.SpectrogramOverview = result.Spectrogram;
+                timeline.AnalysisStatus = string.Empty;
                 session.LogInfo("Analysis", Localization.Get("WorkflowLog.AudioAnalysisCompleted"), path);
             }
         }
@@ -108,15 +169,68 @@ internal sealed class AnalysisCoordinator : IDisposable
         }
         catch (Exception error)
         {
-            if (!token.IsCancellationRequested && !session.IsClosing)
-            {
-                session.ViewModel.Timeline.AnalysisStatus = error.Message;
-                session.LogError("Analysis", error);
-            }
+            ReportFailure(error, requestEpoch, token);
         }
         finally
         {
-            isAnalyzing = false;
+            if (requestEpoch == epoch)
+            {
+                isAnalyzing = false;
+            }
+        }
+    }
+
+    private bool IsCurrent(long requestEpoch, CancellationToken token) =>
+        requestEpoch == epoch && !token.IsCancellationRequested && !session.IsClosing;
+
+    private void ReportFailure(Exception error, long requestEpoch, CancellationToken token)
+    {
+        if (IsCurrent(requestEpoch, token))
+        {
+            session.ViewModel.Timeline.AnalysisStatus = error.Message;
+            session.LogError("Analysis", error);
+        }
+    }
+
+    private void Track(Task task)
+    {
+        lock (jobsGate)
+        {
+            jobs.Add(task);
+        }
+        _ = ForgetAsync(task);
+    }
+
+    private async Task ForgetAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (jobsGate)
+            {
+                jobs.Remove(task);
+            }
+        }
+    }
+
+    private async Task DrainAsync()
+    {
+        while (true)
+        {
+            Task[] pending;
+            lock (jobsGate)
+            {
+                jobs.RemoveWhere(task => task.IsCompletedSuccessfully || task.IsCanceled);
+                pending = jobs.ToArray();
+            }
+            if (pending.Length == 0)
+            {
+                return;
+            }
+            await Task.WhenAll(pending);
         }
     }
 
@@ -124,7 +238,8 @@ internal sealed class AnalysisCoordinator : IDisposable
     public void Dispose()
     {
         session.ViewModel.Timeline.PropertyChanged -= OnTimelineChanged;
-        waveform.Dispose();
+        Cancel();
+        windowCancellation?.Dispose();
         cancellation?.Dispose();
     }
 }

@@ -8,7 +8,7 @@ namespace AegiNext.Application.SubtitleFormats;
 internal static class AssMaskSampling
 {
     internal static ImmutableArray<AssMaskSample> Samples(ProjectDocument document, ProjectLayer layer, SubtitleLine line,
-        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
+        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, MediaTime timeOffset = default)
     {
         var tags = AssMaskWriter.WriteTags(layer, layer.AnimationOffset, diagnostics);
         if (tags is not null)
@@ -34,8 +34,8 @@ internal static class AssMaskSampling
             start = start < line.Start ? line.Start : start;
             var end = frameDuration * (frame + 1);
             end = end > line.End ? line.End : end;
-            var bucket = start.ToTimestamp(new(1, 100), MediaTimeRounding.FLOOR).Value;
-            var sceneStart = new MediaTime(bucket, 100);
+            var bucket = (start + timeOffset).ToTimestamp(new(1, 100), MediaTimeRounding.FLOOR).Value;
+            var sceneStart = new MediaTime(bucket, 100) - timeOffset;
             quantized |= sceneStart != start || buckets.ContainsKey(bucket);
             var content = start - line.Start + layer.AnimationOffset;
             var evaluated = SceneEvaluator.EvaluateMask(layer, content)!;
@@ -55,7 +55,7 @@ internal static class AssMaskSampling
         }
         var values = buckets.Values.ToArray();
         var result = ImmutableArray.CreateBuilder<AssMaskSample>();
-        var finalEnd = new MediaTime(line.End.ToTimestamp(new(1, 100), MediaTimeRounding.CEILING).Value, 100);
+        var finalEnd = new MediaTime((line.End + timeOffset).ToTimestamp(new(1, 100), MediaTimeRounding.CEILING).Value, 100) - timeOffset;
         quantized |= finalEnd != line.End;
         for (var index = 0; index < values.Length; index++)
         {

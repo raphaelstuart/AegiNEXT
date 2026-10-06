@@ -694,6 +694,18 @@
     "Settings.TimingUnlinked": "已解除 {0} 个样式的时间处理关联。",
     "Settings.TimingStyleAssociated": "此样式已关联时间处理参数。",
     "Settings.TimingSavingAssociation": "正在保存样式关联…",
-    "Settings.TimingAssociationFailed": "样式关联保存失败。{0}"
+    "Settings.TimingAssociationFailed": "样式关联保存失败。{0}",
+    "Workflow.SubtitleTimelineOriginUnknown": "无法确认媒体的播放零点。继续将按工程相对时间交换字幕，无法保证与外部播放器对齐；工程和媒体时间不会被修改。",
+    "Preview.CatchingUp": "同步画面中",
+    "Settings.AudioTiming": "音频同步",
+    "Settings.AudioNoDevice": "打开带音轨的媒体后可校准输出设备。",
+    "Settings.AudioClockUnavailable": "音频设备时钟不可用，正在暂停并重新打开输出设备。",
+    "Settings.AudioSystemClock": "{0} 系统播放时钟 · {1} Hz · {2} 声道",
+    "Settings.AudioEstimatedClock": "{0} 播放位置估计 · {1} Hz · {2} 声道",
+    "Settings.AudioExtraDelay": "额外出声延迟（毫秒）",
+    "Settings.AudioUncalibrated": "当前输出设备与格式尚未校准。",
+    "Settings.AudioCalibrated": "已保存当前输出设备与格式的校准。",
+    "Settings.AudioCalibrationInvalid": "请输入 −1000 至 1000 的整数毫秒。",
+    "Settings.AudioCalibrationDescription": "按当前输出链路的实测偏移填写。正值表示声音比系统报告的位置更晚到达。校准影响播放和之后的打轴快捷键，不会平移已有字幕或导出时间。"
   }
 }

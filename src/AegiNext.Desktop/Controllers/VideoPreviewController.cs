@@ -21,6 +21,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly SemaphoreSlim dispatchGate = new(1, 1);
     private VideoPreviewRun? current;
+    private VideoPreviewSnapshot? terminalSnapshot;
     private string? requestedPath;
     private long epoch;
     private long revision;
@@ -166,6 +167,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                 revision++;
                 pendingSeek = null;
                 current?.ConversionCancellation?.Cancel();
+                ClearPreparedFramesUnderLock(current);
             }
         }
     }
@@ -224,6 +226,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             pendingSeek = null;
             requestedPath = path;
             opening = true;
+            terminalSnapshot = null;
             previous = current;
             ClearPresentationMeasurementUnderLock(previous);
             BeginOperationUnderLock();
@@ -258,6 +261,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                     {
                         lock (gate)
                         {
+                            audio.ConfigureCalibration(audioCalibration);
                             audio.SetGain(muted ? 0 : volume);
                         }
 
@@ -275,9 +279,8 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                 }
             }
 
-            Func<MediaTime?>? audioClock = run.Audio is { } attachedAudio
-                ? () => run.AudioError is null && attachedAudio.Error is null ? attachedAudio.Position : null
-                : null;
+            Func<MediaTime?>? audioClock = media.AudioStreamIndex is not null && audioFactory is not null
+                ? () => run.Audio?.Position : null;
             var session = sessionFactory(path, media.VideoStreamIndex, audioClock, new() { Mode = mode });
             try
             {
@@ -294,6 +297,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                 run.Media = media;
             }
 
+            session.ConfigurePreparation(new());
             await session.OpenAsync(run.Token).ConfigureAwait(false);
             var decodedStart = session.Snapshot.DisplayTime;
             if (initialPosition is { } target)
@@ -518,6 +522,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             pendingSeek = null;
             opening = false;
             requestedPath = null;
+            terminalSnapshot = null;
             previous = current;
             current = null;
             ClearPresentationMeasurementUnderLock(previous);
@@ -767,70 +772,12 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         try
         {
             using var converter = converterFactory();
-            while (!run.Token.IsCancellationRequested)
-            {
-                Task resume;
-                lock (gate)
-                {
-                    resume = run.Resume.Task;
-                }
-
-                using var presentation = await session.ReadPresentationAsync(run.Token).ConfigureAwait(false);
-                if (presentation is null)
-                {
-                    var pause = Task.CompletedTask;
-                    lock (gate)
-                    {
-                        if (rangeCancellation is null && IsCurrentUnderLock(run) && session.Snapshot.State == VideoPlaybackState.ENDED &&
-                            run.AudioError is null && run.Audio is { Error: null } audio)
-                        {
-                            pause = TryAudioAsync(run, audio.PauseAsync);
-                        }
-                    }
-                    await pause.ConfigureAwait(false);
-                    await resume.WaitAsync(run.Token).ConfigureAwait(false);
-                    continue;
-                }
-
-                VideoPreviewDelivery identity;
-                lock (gate)
-                {
-                    identity = new(session, presentation.Generation, revision,
-                        presentation.PositionedFrame.Time, presentation.PositionedFrame.NextFrameTime);
-                    if (!IsPresentationCurrentUnderLock(run, identity))
-                    {
-                        continue;
-                    }
-                }
-
-                using var conversion = CancellationTokenSource.CreateLinkedTokenSource(run.Token);
-                lock (gate)
-                {
-                    if (!IsPresentationCurrentUnderLock(run, identity))
-                    {
-                        continue;
-                    }
-                    run.ConversionCancellation = conversion;
-                }
-                try
-                {
-                    var frame = converter.Convert(presentation.PositionedFrame.Frame, conversion.Token);
-                    await DispatchAsync(run, identity, frame, false, run.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (conversion.IsCancellationRequested && !run.Token.IsCancellationRequested)
-                {
-                }
-                finally
-                {
-                    lock (gate)
-                    {
-                        if (ReferenceEquals(run.ConversionCancellation, conversion))
-                        {
-                            run.ConversionCancellation = null;
-                        }
-                    }
-                }
-            }
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(run.Token);
+            var preparation = Task.Run(() => CancelCompanionOnExitAsync(
+                () => PrepareFramesAsync(run, session, converter, cancellation.Token), cancellation), CancellationToken.None);
+            var presentation = Task.Run(() => CancelCompanionOnExitAsync(
+                () => PresentPreparedFramesAsync(run, session, cancellation.Token), cancellation), CancellationToken.None);
+            await Task.WhenAll(preparation, presentation).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (run.Token.IsCancellationRequested)
         {
@@ -860,6 +807,13 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                 await session.CloseAsync().ConfigureAwait(false);
             }
         }
+        finally
+        {
+            lock (gate)
+            {
+                ClearPreparedFramesUnderLock(run);
+            }
+        }
     }
 
     private async Task DispatchAsync(VideoPreviewRun run,
@@ -874,6 +828,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             }
         }
 
+        var dispatchStarted = identity?.Session.TimeProvider.GetTimestamp();
         await dispatchGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -895,11 +850,17 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                     }
 
                     var snapshot = GetSnapshotUnderLock();
+                    if (identity is { } finalDelivery &&
+                        (finalDelivery.Time > snapshot.Position || finalDelivery.NextTime is { } end && snapshot.Position >= end))
+                    {
+                        return;
+                    }
                     if (identity is { } delivery && frame is not null)
                     {
                         snapshot = snapshot with
                         {
                             PresentedFrameTime = delivery.Time,
+                            PresentedFrameEnd = delivery.NextTime,
                             PresentedAtPosition = snapshot.Position,
                             PresentedGeneration = delivery.Generation
                         };
@@ -909,6 +870,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                     if (identity is { } completed && frame is not null && IsDeliveryIdentityCurrentUnderLock(run, completed))
                     {
                         run.PresentedFrameTime = snapshot.PresentedFrameTime;
+                        run.PresentedFrameEnd = snapshot.PresentedFrameEnd;
                         run.PresentedAtPosition = snapshot.PresentedAtPosition;
                         run.PresentedGeneration = snapshot.PresentedGeneration;
                         run.FirstPresentation.TrySetResult(true);
@@ -922,14 +884,34 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         }
         finally
         {
+            if (identity is { } measured && dispatchStarted is { } started)
+            {
+                var elapsed = MediaTime.FromTimeSpan(measured.Session.TimeProvider.GetElapsedTime(started));
+                lock (gate)
+                {
+                    if (IsCurrentUnderLock(run))
+                    {
+                        ObservePreparationCostUnderLock(run, measured.Session, elapsed, true);
+                    }
+                }
+            }
             dispatchGate.Release();
         }
     }
 
     private bool CanPresentUnderLock(VideoPreviewRun run, VideoPreviewDelivery? identity)
     {
-        return IsCurrentUnderLock(run) && (identity is not { } value ||
-            IsPresentationCurrentUnderLock(run, value));
+        if (!IsCurrentUnderLock(run) || identity is { } value && !IsPresentationCurrentUnderLock(run, value))
+        {
+            return false;
+        }
+        if (identity is not { } delivery)
+        {
+            return true;
+        }
+        var playback = delivery.Session.Snapshot;
+        return delivery.Time <= playback.Position &&
+            (delivery.NextTime is not { } next || playback.Position < next);
     }
 
     private async Task TryAudioAsync(VideoPreviewRun run, Func<Task> action)
@@ -957,8 +939,8 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
 
     private bool IsDeliveryIdentityCurrentUnderLock(VideoPreviewRun run, VideoPreviewDelivery delivery)
     {
-        return IsCurrentUnderLock(run) && ReferenceEquals(run.Session, delivery.Session) &&
-            delivery.Session.Snapshot.Generation == delivery.Generation && revision == delivery.Revision;
+        return IsCurrentUnderLock(run) && run.Error is null && !delivery.PreparationToken.IsCancellationRequested &&
+            ReferenceEquals(run.Session, delivery.Session) && delivery.Session.Snapshot.Generation == delivery.Generation && revision == delivery.Revision;
     }
 
     private static void ClearPresentationMeasurementUnderLock(VideoPreviewRun? run)
@@ -968,7 +950,9 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             return;
         }
 
+        ClearPreparedFramesUnderLock(run);
         run.PresentedFrameTime = null;
+        run.PresentedFrameEnd = null;
         run.PresentedAtPosition = null;
         run.PresentedGeneration = null;
     }
@@ -996,6 +980,11 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
 
     private VideoPreviewSnapshot GetSnapshotUnderLock()
     {
+        if (!opening && current is null && terminalSnapshot is { } terminal && terminal.Epoch == epoch)
+        {
+            return terminal with { State = closed ? VideoPlaybackState.CLOSED : terminal.State, Volume = volume, IsMuted = muted };
+        }
+
         var playback = current?.Session?.Snapshot;
         var state = closed ? VideoPlaybackState.CLOSED : opening ? VideoPlaybackState.OPENING :
             current?.Error is not null ? VideoPlaybackState.FAULTED : playback?.State ?? VideoPlaybackState.CREATED;
@@ -1007,7 +996,9 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             opening ? null : current?.Error ?? playback?.Error, epoch,
             current?.PresentedFrameTime, current?.PresentedAtPosition, current?.PresentedGeneration,
             current?.Audio is not null, current?.AudioError ?? current?.Audio?.Error, volume, muted,
-            current?.Session?.DecodeSessionInfo, audioAuditionActive, playbackRangeInstalled);
+            current?.Session?.DecodeSessionInfo, audioAuditionActive, playbackRangeInstalled,
+            current?.PresentedFrameEnd, current?.PreparedFrameCount ?? 0, current?.PreparedBytes ?? 0,
+            playback?.PreparationPendingCount ?? 0, playback?.PreparationPendingBytes ?? 0);
     }
 
     private void BeginOperationUnderLock()
@@ -1033,11 +1024,36 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         previous.TrySetResult(true);
     }
 
-    private static async Task RetireAsync(VideoPreviewRun? run)
+    private async Task RetireAsync(VideoPreviewRun? run)
     {
         if (run is null)
         {
             return;
+        }
+
+        lock (gate)
+        {
+            if (ReferenceEquals(current, run))
+            {
+                if (!closed && !opening && run.Error is not null && epoch == run.Epoch)
+                {
+                    terminalSnapshot = GetSnapshotUnderLock() with
+                    {
+                        AudioAvailable = false,
+                        AudioAuditionActive = false,
+                        PlaybackRangeInstalled = false,
+                        PresentedFrameTime = null,
+                        PresentedFrameEnd = null,
+                        PresentedAtPosition = null,
+                        PresentedGeneration = null,
+                        PreparedFrameCount = 0,
+                        PreparedBytes = 0,
+                        PreparationPendingCount = 0,
+                        PreparationPendingBytes = 0
+                    };
+                }
+                current = null;
+            }
         }
 
         try

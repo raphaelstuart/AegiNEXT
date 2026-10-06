@@ -73,6 +73,14 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
         }
     }
 
+    /// <inheritdoc />
+    public long GetRetainedBytes(SdrVideoFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        var background = previewFrames?.FindBackground(frame);
+        return frame.Pixels.Length + (background is not null && !ReferenceEquals(background, frame) ? (long)background.Pixels.Length : 0);
+    }
+
     internal static (int Width, int Height) GetPreviewSize(ProjectDocument document, int width, int height)
     {
         var scale = Math.Min((double)width / document.Width, (double)height / document.Height);

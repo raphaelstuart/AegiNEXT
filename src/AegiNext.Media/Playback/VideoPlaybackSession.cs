@@ -6,7 +6,7 @@ namespace AegiNext.Media.Playback;
 /// <summary>
 /// 串行管理视频源、单调播放时钟和有界显示队列；定位完成后暂停，关闭负责终止并回收源。
 /// </summary>
-public sealed class VideoPlaybackSession : IAsyncDisposable
+public sealed partial class VideoPlaybackSession : IAsyncDisposable
 {
     private readonly Func<CancellationToken, IVideoFrameSource> sourceFactory;
     private readonly TimeProvider timeProvider;
@@ -59,7 +59,13 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
         {
             lock (gate)
             {
-                return snapshot with { Position = GetPositionUnderLock() };
+                UpdatePreparedTimingUnderLock();
+                return snapshot with
+                {
+                    Position = GetPositionUnderLock(),
+                    PreparationPendingCount = preparationPendingCount,
+                    PreparationPendingBytes = preparationPendingBytes
+                };
             }
         }
     }
@@ -84,6 +90,7 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
             ObjectDisposedException.ThrowIf(closeRequested, this);
             playbackRange = range;
             ClearPresentationsUnderLock();
+            needsResynchronization |= preparationOptions is not null;
             PulseCommandUnderLock();
         }
     }
@@ -150,8 +157,20 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
     /// <summary>
     /// 等待并接管显示帧；正常结束或关闭返回 null，源失败传播异常，读取取消不影响会话。
     /// </summary>
-    public async ValueTask<VideoPresentation?> ReadPresentationAsync(CancellationToken cancellationToken = default)
+    public ValueTask<VideoPresentation?> ReadPresentationAsync(CancellationToken cancellationToken = default)
     {
+        return ReadPresentationCoreAsync(false, cancellationToken);
+    }
+
+    private async ValueTask<VideoPresentation?> ReadPresentationCoreAsync(bool preparation, CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            if (preparation != (preparationOptions is not null))
+            {
+                throw new InvalidOperationException("准备模式必须使用准备读取，普通模式必须使用显示读取。");
+            }
+        }
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -171,6 +190,7 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
                         presentation.PositionedFrame.Time != snapshot.DisplayTime;
                     if (!expiredWhilePlaying && !obsoleteAtEnd)
                     {
+                        PulseCommandUnderLock();
                         return presentation;
                     }
 
@@ -314,13 +334,16 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
                 Task changed;
                 MediaTime? due;
                 long generation;
+                var prepareAdvance = false;
                 lock (gate)
                 {
                     requests.TryDequeue(out activeRequest);
                     changed = commandChanged.Task;
                     generation = snapshot.Generation;
-                    due = snapshot.State == VideoPlaybackState.PLAYING ? nextFrameTime - GetPositionUnderLock() : null;
-                    if (snapshot.State == VideoPlaybackState.PLAYING && playbackRange is { } range)
+                    due = preparationOptions is not null
+                        ? GetPreparationDueUnderLock(out prepareAdvance)
+                        : snapshot.State == VideoPlaybackState.PLAYING ? nextFrameTime - GetPositionUnderLock() : null;
+                    if (preparationOptions is null && snapshot.State == VideoPlaybackState.PLAYING && playbackRange is { } range)
                     {
                         var boundary = range.End - GetPositionUnderLock();
                         due = due is { } frameDue && frameDue < boundary ? frameDue : boundary;
@@ -353,7 +376,14 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
 
                             if (restore)
                             {
-                                AdvancePlayback(activeRequest.Generation);
+                                if (preparationOptions is null)
+                                {
+                                    AdvancePlayback(activeRequest.Generation);
+                                }
+                                else
+                                {
+                                    AdvancePreparation(activeRequest.Generation);
+                                }
                             }
                         }
                     }
@@ -364,9 +394,18 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
 
                 if (due is { } remaining)
                 {
-                    if (needsResynchronization || remaining <= MediaTime.Zero)
+                    if (preparationOptions is not null && prepareAdvance)
+                    {
+                        AdvancePreparation(generation);
+                        continue;
+                    }
+                    if (preparationOptions is null && (needsResynchronization || remaining <= MediaTime.Zero))
                     {
                         AdvancePlayback(generation);
+                        continue;
+                    }
+                    if (remaining <= MediaTime.Zero)
+                    {
                         continue;
                     }
 
@@ -703,7 +742,17 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
             presentations.Dequeue().Dispose();
         }
 
-        presentations.Enqueue(new(frame, generation));
+        if (preparationOptions is null)
+        {
+            presentations.Enqueue(new(frame, generation));
+        }
+        else
+        {
+            var bytes = GetPreparationFrameBytes(frame.Frame);
+            preparationPendingCount++;
+            preparationPendingBytes += bytes;
+            presentations.Enqueue(new(frame, generation, () => ReleasePreparation(bytes)));
+        }
         PulsePresentationUnderLock();
     }
 
@@ -717,6 +766,7 @@ public sealed class VideoPlaybackSession : IAsyncDisposable
 
     private void ClearPresentationsUnderLock()
     {
+        preparedTimings.Clear();
         while (presentations.TryDequeue(out var presentation))
         {
             presentation.Dispose();

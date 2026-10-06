@@ -5,6 +5,7 @@ using AegiNext.Desktop.Shortcuts;
 using AegiNext.Media.Decoding;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.TimingPostProcessor;
+using AegiNext.Desktop.Settings.Media;
 
 namespace AegiNext.Desktop.Settings;
 
@@ -31,6 +32,7 @@ public sealed record WorkbenchPreferences
     public bool TimelineWaveformVisible { get; init; } = true;
     public ProjectPreferences Projects { get; init; } = new();
     public TimingPostProcessorPreferences TimingPostProcessor { get; init; } = new();
+    public ImmutableArray<AudioDeviceCalibration> AudioCalibrations { get; init; } = [];
 
     /// <summary>拒绝未知设置版本、语言、主题、非法音量或非正试听时长。</summary>
     public void Validate()
@@ -47,6 +49,15 @@ public sealed record WorkbenchPreferences
         TimelineClips.Validate();
         Projects.Validate();
         TimingPostProcessor.Validate();
+        if (AudioCalibrations.IsDefault || AudioCalibrations.Length > 32 || AudioCalibrations.Any(value => value is null) ||
+            AudioCalibrations.Select(value => (value.DeviceId, value.Backend, value.SampleRate, value.Channels)).Distinct().Count() != AudioCalibrations.Length)
+        {
+            throw new InvalidDataException("音频设备校准配置无效或存在重复设备。");
+        }
+        foreach (var calibration in AudioCalibrations)
+        {
+            calibration.Validate();
+        }
         ShortcutConfiguration.Validate(ShortcutBindings);
         if (ShortcutBindings.Length != Enum.GetValues<WorkbenchCommand>().Length)
         {
@@ -85,6 +96,7 @@ public sealed record WorkbenchPreferences
                TimelineSnapEnabled == other.TimelineSnapEnabled && TimelineStepEnabled == other.TimelineStepEnabled &&
                TimelineSpectrumVisible == other.TimelineSpectrumVisible && TimelineWaveformVisible == other.TimelineWaveformVisible &&
                Projects == other.Projects && TimingPostProcessor == other.TimingPostProcessor &&
+               AudioCalibrations.AsSpan().SequenceEqual(other.AudioCalibrations.AsSpan()) &&
                ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
     }
 
@@ -110,6 +122,10 @@ public sealed record WorkbenchPreferences
         hash.Add(TimelineWaveformVisible);
         hash.Add(Projects);
         hash.Add(TimingPostProcessor);
+        foreach (var calibration in AudioCalibrations)
+        {
+            hash.Add(calibration);
+        }
         foreach (var binding in ShortcutBindings)
         {
             hash.Add(binding);

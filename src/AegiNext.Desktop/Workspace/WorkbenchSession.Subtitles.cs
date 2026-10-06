@@ -34,13 +34,15 @@ internal sealed partial class WorkbenchSession
         SelectCue(cue.Id);
     }
 
-    internal async Task SetCueStartAsync()
+    internal Task SetCueStartAsync() => SetCueStartAsync(ProjectPosition);
+
+    private async Task SetCueStartAsync(MediaTime position)
     {
         if (CurrentTrackId is not { } trackId)
         {
             return;
         }
-        var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
+        var start = position < MediaTime.Zero ? MediaTime.Zero : position;
         await BeginTimingCueAsync(trackId, start);
     }
 

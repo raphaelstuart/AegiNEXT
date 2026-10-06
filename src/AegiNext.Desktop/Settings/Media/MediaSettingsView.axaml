@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:media="using:AegiNext.Desktop.Settings.Media"
+             xmlns:inputs="using:AegiNext.Desktop.Controls"
              x:Class="AegiNext.Desktop.Settings.Media.MediaSettingsView" Classes="business-surface"
              x:DataType="media:MediaSettingsViewModel">
   <ScrollViewer Name="MediaPage" IsVisible="{Binding $parent[UserControl].IsVisible}">
@@ -20,6 +21,21 @@
           </Grid>
           <TextBlock Text="{Binding DecodeDescription}" Classes="field" TextWrapping="Wrap" />
           <TextBlock Name="DecodeStatus" Text="{Binding DecodeStatus}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Loc Key=Settings.AudioTiming}" Classes="heading" />
+          <TextBlock Name="AudioClockStatus" Text="{Binding AudioClockStatus}" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioExtraDelay}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="AudioExtraDelayInput" Grid.Column="1"
+                RawText="{Binding ExtraDelayMillisecondsText, Mode=TwoWay}" IsEnabled="{Binding CanCalibrate}"
+                Minimum="-1000" Maximum="1000" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
+          </Grid>
+          <TextBlock Text="{Binding AudioCalibrationError}" Foreground="{DynamicResource SettingsError}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding AudioCalibrationStatus}" Classes="field" />
+          <TextBlock Text="{Loc Key=Settings.AudioCalibrationDescription}" Classes="field" TextWrapping="Wrap" />
         </StackPanel>
       </Border>
     </StackPanel>

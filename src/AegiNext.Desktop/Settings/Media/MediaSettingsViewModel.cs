@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AegiNext.Desktop.Settings.Media;
 
 /// <summary>媒体偏好与解码状态；媒体会话的重建和保存由工作台协调。</summary>
-public sealed class MediaSettingsViewModel : ObservableObject
+public sealed partial class MediaSettingsViewModel : ObservableObject
 {
     private bool updating;
     private bool isBusy;
@@ -51,6 +51,7 @@ public sealed class MediaSettingsViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(CanChangeDecodeMode));
                 OnPropertyChanged(nameof(DecodeStatus));
+                OnPropertyChanged(nameof(CanCalibrate));
             }
         }
     }
@@ -86,6 +87,7 @@ public sealed class MediaSettingsViewModel : ObservableObject
         }
 
         RefreshLanguage();
+        UpdateCalibrationPreferences(preferences);
     }
 
     /// <summary>同步实际后端证据，不从请求的模式推断 GPU 是否启用。</summary>
@@ -112,6 +114,7 @@ public sealed class MediaSettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(SelectedDecodeMode));
             OnPropertyChanged(nameof(DecodeDescription));
             OnPropertyChanged(nameof(DecodeStatus));
+            RefreshAudioLanguage();
         }
         finally
         {

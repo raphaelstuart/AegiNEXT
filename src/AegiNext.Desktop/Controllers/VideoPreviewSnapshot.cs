@@ -13,4 +13,15 @@ public sealed record VideoPreviewSnapshot(string? FilePath, VideoPlaybackState S
     MediaTime? PresentedFrameTime = null, MediaTime? PresentedAtPosition = null, long? PresentedGeneration = null,
     bool AudioAvailable = false, Exception? AudioError = null, float Volume = 1, bool IsMuted = false,
     VideoDecodeSessionInfo? DecodeSessionInfo = null, bool AudioAuditionActive = false,
-    bool PlaybackRangeInstalled = false);
+    bool PlaybackRangeInstalled = false, MediaTime? PresentedFrameEnd = null,
+    int PreparedFrameCount = 0, long PreparedBytes = 0,
+    int PreparationPendingCount = 0, long PreparationPendingBytes = 0)
+{
+    public bool IsPresentedFrameCurrent => Error is null && !IsOpening &&
+        State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED &&
+        PresentedFrameTime is { } time && time <= Position &&
+        (PresentedFrameEnd is not { } next || Position < next);
+
+    public MediaTime? PresentationLateness => PresentedFrameEnd is { } next
+        ? Position > next ? Position - next : MediaTime.Zero : null;
+}

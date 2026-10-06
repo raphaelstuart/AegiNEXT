@@ -17,6 +17,18 @@ internal static partial class NativeAudioMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial uint AbiVersion();
 
+    [LibraryImport(LIBRARY, EntryPoint = "an_audio_clock_snapshot_size")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial uint ClockSnapshotSize();
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_audio_output_create_system")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static unsafe partial int CreateSystemOutput(out nint output, int rate, int channels, byte* error, uint capacity);
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_audio_output_snapshot")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static unsafe partial int Snapshot(AudioOutputHandle output, ref NativeAudioClock snapshot, byte* error, uint capacity);
+
     [LibraryImport(LIBRARY, EntryPoint = "an_audio_decoder_create")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe partial int CreateDecoder(out nint decoder, byte* error, uint capacity);
@@ -73,4 +85,3 @@ internal static partial class NativeAudioMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void DestroyOutput(nint output);
 }
-

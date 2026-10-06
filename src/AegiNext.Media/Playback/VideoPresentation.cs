@@ -7,17 +7,24 @@ namespace AegiNext.Media.Playback;
 /// </summary>
 public sealed class VideoPresentation : IDisposable
 {
+    private readonly Action? released;
     private int disposed;
 
     /// <summary>
     /// 接管定位帧的唯一所有权，并记录其会话代数。
     /// </summary>
     public VideoPresentation(PositionedVideoFrame positionedFrame, long generation)
+        : this(positionedFrame, generation, null)
+    {
+    }
+
+    internal VideoPresentation(PositionedVideoFrame positionedFrame, long generation, Action? released)
     {
         ArgumentNullException.ThrowIfNull(positionedFrame);
         ArgumentOutOfRangeException.ThrowIfNegative(generation);
         PositionedFrame = positionedFrame;
         Generation = generation;
+        this.released = released;
     }
 
     public PositionedVideoFrame PositionedFrame { get; }
@@ -29,7 +36,14 @@ public sealed class VideoPresentation : IDisposable
     {
         if (Interlocked.Exchange(ref disposed, 1) == 0)
         {
-            PositionedFrame.Dispose();
+            try
+            {
+                PositionedFrame.Dispose();
+            }
+            finally
+            {
+                released?.Invoke();
+            }
         }
     }
 }

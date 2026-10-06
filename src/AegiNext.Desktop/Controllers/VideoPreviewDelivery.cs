@@ -4,4 +4,4 @@ using AegiNext.Media.Playback;
 namespace AegiNext.Desktop.Controllers;
 
 internal sealed record VideoPreviewDelivery(VideoPlaybackSession Session, long Generation, long Revision,
-    MediaTime Time, MediaTime? NextTime);
+    MediaTime Time, MediaTime? NextTime, CancellationToken PreparationToken = default);

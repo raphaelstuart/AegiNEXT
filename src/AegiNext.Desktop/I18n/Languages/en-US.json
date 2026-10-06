@@ -694,6 +694,18 @@
     "Settings.TimingUnlinked": "Unlinked timing settings from {0} styles.",
     "Settings.TimingStyleAssociated": "This style has timing settings.",
     "Settings.TimingSavingAssociation": "Saving style associations…",
-    "Settings.TimingAssociationFailed": "Could not save style associations. {0}"
+    "Settings.TimingAssociationFailed": "Could not save style associations. {0}",
+    "Workflow.SubtitleTimelineOriginUnknown": "The media playback origin is unknown. Continue to exchange subtitles using project-relative time; alignment with external players cannot be guaranteed. Project and media times will not be changed.",
+    "Preview.CatchingUp": "Catching up",
+    "Settings.AudioTiming": "Audio timing",
+    "Settings.AudioNoDevice": "Open media with an audio track to calibrate the output device.",
+    "Settings.AudioClockUnavailable": "The audio device clock is unavailable. Playback is paused while the output is rebuilt.",
+    "Settings.AudioSystemClock": "{0} system playback clock · {1} Hz · {2} channels",
+    "Settings.AudioEstimatedClock": "{0} estimated playback clock · {1} Hz · {2} channels",
+    "Settings.AudioExtraDelay": "Extra output delay (ms)",
+    "Settings.AudioUncalibrated": "This output device and format have not been calibrated.",
+    "Settings.AudioCalibrated": "Calibration is saved for this output device and format.",
+    "Settings.AudioCalibrationInvalid": "Enter an integer between −1000 and 1000 ms.",
+    "Settings.AudioCalibrationDescription": "Use a measured offset for this output chain. Positive values mean the sound reaches you later than the system reports. Calibration affects playback and new timing shortcuts; it does not shift existing subtitles or exports."
   }
 }

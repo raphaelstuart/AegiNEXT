@@ -61,7 +61,7 @@ public static partial class SubtitleTextFormat
     }
 
     /// <summary>输出 SRT；开始向下、结束向上量化到毫秒，保留正持续时间并明确拒绝负时间。</summary>
-    public static string WriteSrt(IEnumerable<SubtitleLine> lines)
+    public static string WriteSrt(IEnumerable<SubtitleLine> lines, MediaTime timeOffset = default)
     {
         ArgumentNullException.ThrowIfNull(lines);
         var result = new StringBuilder();
@@ -69,15 +69,21 @@ public static partial class SubtitleTextFormat
         foreach (var line in lines.OrderBy(line => line.Start))
         {
             CheckText(line.Text);
-            if (line.Start < MediaTime.Zero || line.Start >= line.End || string.IsNullOrWhiteSpace(line.Text) ||
+            var start = line.Start + timeOffset;
+            var end = line.End + timeOffset;
+            if (start < MediaTime.Zero)
+            {
+                throw new InvalidDataException($"SRT 字幕 {line.Id} 的外部开始时间 {start} 为负；请调整区间或播放零点，不会自动裁剪。");
+            }
+            if (start >= end || string.IsNullOrWhiteSpace(line.Text) ||
                 Normalize(line.Text).Split('\n').Any(string.IsNullOrWhiteSpace))
             {
                 throw new InvalidDataException("SRT 不支持负时间、空行文本或无效区间。");
             }
 
             result.AppendLine((++index).ToString(CultureInfo.InvariantCulture));
-            result.Append(FormatTime(line.Start, MediaTimeRounding.FLOOR)).Append(" --> ")
-                .AppendLine(FormatTime(line.End, MediaTimeRounding.CEILING));
+            result.Append(FormatTime(start, MediaTimeRounding.FLOOR)).Append(" --> ")
+                .AppendLine(FormatTime(end, MediaTimeRounding.CEILING));
             result.AppendLine(Normalize(line.Text)).AppendLine();
             if (index > 100000 || result.Length > 16 * 1024 * 1024)
             {

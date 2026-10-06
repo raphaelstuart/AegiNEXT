@@ -135,9 +135,9 @@ public sealed partial class SubtitleTimelineControl
         {
             AggregateWaveform(overview, start, end, ref minimum, ref maximum);
         }
-        else if (spectrum is { } fallback)
+        else if (spectrum is { } fallback && !fallback.Waveform.IsEmpty)
         {
-            AggregateWaveformBuckets(fallback.Waveform.Span, 0, Seconds(fallback.Duration) / fallback.Width,
+            AggregateWaveformBuckets(fallback.Waveform.Span, Seconds(fallback.Start), Seconds(fallback.ColumnDuration),
                 fallback.Width, start, end, ref minimum, ref maximum);
         }
     }

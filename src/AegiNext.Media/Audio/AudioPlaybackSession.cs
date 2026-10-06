@@ -4,7 +4,7 @@ using System.Diagnostics;
 namespace AegiNext.Media.Audio;
 
 /// <summary>
-/// 以设备消费样本和一块设备缓冲的延迟估计驱动音频主时钟；设备 PCM 队列最多 250ms。
+/// 使用系统输出时钟与设备校准驱动音频主时钟；设备 PCM 队列最多 250ms。
 /// </summary>
 public sealed class AudioPlaybackSession : IAsyncDisposable
 {
@@ -12,6 +12,7 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
     private const int TARGET_FRAMES = 9600;
     private readonly IAudioSampleSource source;
     private readonly IAudioOutput output;
+    private Func<AudioOutputClockSnapshot, MediaTime>? calibration;
     private readonly Lock stateGate = new();
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly CancellationTokenSource lifetime = new();
@@ -33,11 +34,15 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
     private MediaTimeRange? playbackRange;
     private bool reachedPlaybackRangeEnd;
     private long? rangeDrainedAt;
+    private AudioOutputClockSnapshot clockSnapshot = new(0, 0, 1, "unknown", "estimated", 0, AudioClockQuality.ESTIMATED, 0);
+    private long clockEpoch;
+    private string clockDeviceId = "unknown";
 
     /// <summary>
     /// 接管已创建的源和输出；调用方在后台线程构造，初始设备暂停并定位到原始时间轴目标。
     /// </summary>
-    public AudioPlaybackSession(IAudioSampleSource source, IAudioOutput output, MediaTime initialPosition)
+    public AudioPlaybackSession(IAudioSampleSource source, IAudioOutput output, MediaTime initialPosition,
+        Func<AudioOutputClockSnapshot, MediaTime>? calibration = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(output);
@@ -48,8 +53,10 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
 
         this.source = source;
         this.output = output;
+        this.calibration = calibration;
         source.Seek(initialPosition);
         output.SetPaused(true);
+        output.Clear();
         ResetPosition(initialPosition);
         worker = Task.Run(RunAsync);
     }
@@ -81,6 +88,32 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
             {
                 return error;
             }
+        }
+    }
+
+    public AudioOutputClockSnapshot ClockSnapshot
+    {
+        get
+        {
+            lock (stateGate)
+            {
+                _ = Position;
+                return error is null ? clockSnapshot : clockSnapshot with { Quality = AudioClockQuality.UNAVAILABLE };
+            }
+        }
+    }
+
+    /// <summary>在暂停时替换按设备读取的校准；调用方随后以原位置 seek 重建输出时间映射。</summary>
+    public void ConfigureCalibration(Func<AudioOutputClockSnapshot, MediaTime>? provider)
+    {
+        lock (stateGate)
+        {
+            ThrowIfUnavailable();
+            if (playing)
+            {
+                throw new InvalidOperationException("更改音频设备校准前必须暂停播放。");
+            }
+            calibration = provider;
         }
     }
 
@@ -139,16 +172,23 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
     public static Task<AudioPlaybackSession> OpenAsync(string path, int streamIndex, MediaTime initialPosition,
         CancellationToken cancellationToken = default)
     {
+        return OpenAsync(path, streamIndex, initialPosition, null, cancellationToken);
+    }
+
+    /// <summary>打开系统输出设备，并按设备身份读取额外出声延迟校准。</summary>
+    public static Task<AudioPlaybackSession> OpenAsync(string path, int streamIndex, MediaTime initialPosition,
+        Func<AudioOutputClockSnapshot, MediaTime>? calibration, CancellationToken cancellationToken = default)
+    {
         return Task.Run(() =>
         {
             var source = FfmpegAudioDecoder.Open(path, streamIndex, cancellationToken: cancellationToken);
-            SdlAudioOutput? output = null;
+            SystemAudioOutput? output = null;
             try
             {
                 using var registration = cancellationToken.UnsafeRegister(static state => ((IAudioSampleSource)state!).Cancel(), source);
-                output = new SdlAudioOutput();
+                output = new SystemAudioOutput();
                 cancellationToken.ThrowIfCancellationRequested();
-                return new AudioPlaybackSession(source, output, initialPosition);
+                return new AudioPlaybackSession(source, output, initialPosition, calibration);
             }
             catch
             {
@@ -341,7 +381,11 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
                         if (playing)
                         {
                             rangeDrainedAt ??= Stopwatch.GetTimestamp();
-                            if (Stopwatch.GetElapsedTime(rangeDrainedAt.Value).TotalSeconds >= (double)output.LatencyFrames / SAMPLE_RATE)
+                            var clock = output.ReadClock();
+                            var tail = clock.Quality == AudioClockQuality.SYSTEM
+                                ? Math.Max(0, (calibration?.Invoke(clock) ?? MediaTime.Zero).ToTimeSpan(MediaTimeRounding.CEILING).TotalSeconds)
+                                : (double)output.LatencyFrames / SAMPLE_RATE;
+                            if (Stopwatch.GetElapsedTime(rangeDrainedAt.Value).TotalSeconds >= tail)
                             {
                                 position = range.End;
                                 playing = false;
@@ -404,8 +448,22 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
     {
         if (playing && !closed && error is null)
         {
-            var consumed = Math.Max(0, submitted - output.QueuedFrames - output.LatencyFrames);
+            clockSnapshot = output.ReadClock();
+            if (clockSnapshot.Quality == AudioClockQuality.UNAVAILABLE || clockSnapshot.Epoch != clockEpoch ||
+                clockSnapshot.DeviceId != clockDeviceId || clockSnapshot.PlayedFrames < 0 || clockSnapshot.HostFrequency <= 0)
+            {
+                throw new IOException("音频输出时钟已失效或设备发生变化，需要重新打开播放设备。");
+            }
+
+            var consumed = clockSnapshot.Quality == AudioClockQuality.SYSTEM
+                ? Math.Clamp(clockSnapshot.PlayedFrames, 0, submitted)
+                : Math.Max(0, submitted - clockSnapshot.QueuedFrames - output.LatencyFrames);
+            if (consumed == 0)
+            {
+                return position;
+            }
             var estimated = new MediaTime(checked(originSample + consumed), SAMPLE_RATE);
+            estimated -= calibration?.Invoke(clockSnapshot) ?? MediaTime.Zero;
             if (estimated > position)
             {
                 position = playbackRange is { } range && estimated > range.End ? range.End : estimated;
@@ -421,6 +479,13 @@ public sealed class AudioPlaybackSession : IAsyncDisposable
         nextSample = originSample;
         submitted = 0;
         position = target;
+        clockSnapshot = output.ReadClock();
+        if (clockSnapshot.Quality == AudioClockQuality.UNAVAILABLE)
+        {
+            throw new IOException("音频输出设备没有可用的播放时钟。");
+        }
+        clockEpoch = clockSnapshot.Epoch;
+        clockDeviceId = clockSnapshot.DeviceId;
     }
 
     private void ThrowIfUnavailable()

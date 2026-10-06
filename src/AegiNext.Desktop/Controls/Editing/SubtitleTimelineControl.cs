@@ -33,6 +33,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private readonly Dictionary<(Guid LayerId, AnimationProperty Property), (double Minimum, double Maximum)> valueRanges = [];
     private SpectrogramData? spectrum;
     private WriteableBitmap? spectrumBitmap;
+    private SpectrogramData? spectrumOverview;
+    private WriteableBitmap? spectrumOverviewBitmap;
     private AudioGraphPalette audioGraphPalette = new();
     private TimelineDrawingPalette drawingPalette = new(false);
     private Color[] spectrumColors = AudioGraphColorRamp.Create(new());
@@ -259,9 +261,10 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     }
 
     /// <summary>建立一次有界显示位图，高频率在顶端。</summary>
-    public void SetSpectrogram(SpectrogramData? value)
+    public void SetSpectrogram(SpectrogramData? value, SpectrogramData? overview = null)
     {
         spectrum = value;
+        spectrumOverview = overview;
         waveformGeometryDirty = true;
         RebuildSpectrogramBitmap();
         InvalidateVisual();
@@ -297,31 +300,38 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         InvalidateVisual();
     }
 
-    private unsafe void RebuildSpectrogramBitmap()
+    private void RebuildSpectrogramBitmap()
     {
         spectrumBitmap?.Dispose();
-        spectrumBitmap = null;
-        if (spectrum is { } value)
+        spectrumOverviewBitmap?.Dispose();
+        spectrumBitmap = CreateSpectrogramBitmap(spectrum);
+        spectrumOverviewBitmap = CreateSpectrogramBitmap(spectrumOverview);
+    }
+
+    private unsafe WriteableBitmap? CreateSpectrogramBitmap(SpectrogramData? value)
+    {
+        if (value is null)
         {
-            spectrumBitmap = new(new(value.Width, value.Height), new Vector(96, 96), PixelFormat.Bgra8888,
-                AlphaFormat.Opaque);
-            using var target = spectrumBitmap.Lock();
-            var levels = value.Levels.Span;
-            for (var y = 0; y < value.Height; y++)
+            return null;
+        }
+        var bitmap = new WriteableBitmap(new(value.Width, value.Height), new Vector(96, 96), PixelFormat.Bgra8888,
+            AlphaFormat.Opaque);
+        using var target = bitmap.Lock();
+        var levels = value.Levels.Span;
+        for (var y = 0; y < value.Height; y++)
+        {
+            var row = new Span<byte>((void*)(target.Address + y * target.RowBytes), value.Width * 4);
+            for (var x = 0; x < value.Width; x++)
             {
-                var row = new Span<byte>((void*)(target.Address + y * target.RowBytes), value.Width * 4);
-                for (var x = 0; x < value.Width; x++)
-                {
-                    var color = spectrumColors[levels[(value.Height - 1 - y) * value.Width + x]];
-                    var offset = x * 4;
-                    row[offset] = color.B;
-                    row[offset + 1] = color.G;
-                    row[offset + 2] = color.R;
-                    row[offset + 3] = 255;
-                }
+                var color = spectrumColors[levels[(value.Height - 1 - y) * value.Width + x]];
+                var offset = x * 4;
+                row[offset] = color.B;
+                row[offset + 1] = color.G;
+                row[offset + 2] = color.R;
+                row[offset + 3] = 255;
             }
         }
-
+        return bitmap;
     }
 
     /// <inheritdoc />
@@ -337,17 +347,10 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         RefreshClipRangeProjection();
         using (context.PushClip(body))
         {
-            if (IsSpectrumVisible && spectrum is not null && spectrumBitmap is not null)
+            if (IsSpectrumVisible)
             {
-                var length = Seconds(spectrum.Duration);
-                var start = Math.Clamp(ViewStart / length * spectrum.Width, 0, spectrum.Width);
-                var visible = Math.Min(spectrum.Width - start, VisibleDuration / length * spectrum.Width);
-                if (visible > 0)
-                {
-                    context.DrawImage(spectrumBitmap, new Rect(start, 0, visible, spectrum.Height),
-                        new Rect(HeaderWidth, body.Top, visible / spectrum.Width * length * PixelsPerSecond, body.Height));
-                }
-
+                DrawSpectrogram(context, body, spectrumOverview, spectrumOverviewBitmap);
+                DrawSpectrogram(context, body, spectrum, spectrumBitmap);
             }
 
             if (IsWaveformVisible)
@@ -847,6 +850,10 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         CancelDrag();
         spectrumBitmap?.Dispose();
         spectrumBitmap = null;
+        spectrumOverviewBitmap?.Dispose();
+        spectrumOverviewBitmap = null;
+        spectrum = null;
+        spectrumOverview = null;
         waveformGeometry = null;
         waveform = null;
         waveformOverview = null;

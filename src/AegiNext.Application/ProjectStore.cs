@@ -104,9 +104,9 @@ public static class ProjectStore
             if (parsed.RootElement.ValueKind != JsonValueKind.Object ||
                 !parsed.RootElement.TryGetProperty("version", out var version) ||
                 version.ValueKind != JsonValueKind.Number ||
-                !version.TryGetInt32(out var number) || number is not (3 or 4 or ProjectDocument.CURRENT_VERSION))
+                !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or ProjectDocument.CURRENT_VERSION))
             {
-                throw new InvalidDataException($"只支持项目版本 3、4 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
+                throw new InvalidDataException($"只支持项目版本 3、4、5 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
             }
 
             var content = JsonNode.Parse(parsed.RootElement.GetRawText(), documentOptions: new() { MaxDepth = 128 })!.AsObject();
@@ -122,6 +122,7 @@ public static class ProjectStore
                 ClipMaskJsonMigration.RejectCurrentLegacyFields(content);
             }
 
+            PlaybackOriginJsonMigration.Upgrade(content, number);
             var document = content.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
             return SubtitleKaraokeNormalization.Normalize(document);
         }

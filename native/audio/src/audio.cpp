@@ -1,5 +1,6 @@
 #include "aeginext_audio.h"
 #include "audio_versions.h"
+#include "audio_output.h"
 #include <SDL3/SDL.h>
 extern "C" {
 #include <libavformat/avformat.h>
@@ -15,6 +16,7 @@ extern "C" {
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <vector>
 
@@ -255,22 +257,89 @@ struct Decoder
         pending_offset = 0;
     }
 };
-struct Output
+class SdlOutput final : public AudioOutput
 {
+public:
     SDL_AudioStream *stream = nullptr;
-    int rate;
-    int channels;
+    int rate = 48000;
+    int channels = 2;
     bool initialized = false;
-    Output(int rate_value, int channels_value) : rate(rate_value), channels(channels_value) {}
-    ~Output()
+    uint64_t epoch = 0;
+    int64_t submitted = 0;
+    std::mutex gate;
+    SdlOutput()
+    {
+        require(SDL_GetVersion() == SDL_VERSION && SDL_VERSION == SDL_VERSIONNUM(3, 4, 16), "SDL3 build/runtime version must be 3.4.16");
+        require(SDL_InitSubSystem(SDL_INIT_AUDIO), SDL_GetError());
+        initialized = true;
+        SDL_AudioSpec spec{SDL_AUDIO_F32, channels, rate};
+        stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+        if (!stream)
+        {
+            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+            initialized = false;
+            throw std::runtime_error(SDL_GetError());
+        }
+    }
+    ~SdlOutput() override
     {
         if (stream) { SDL_DestroyAudioStream(stream); }
         if (initialized) { SDL_QuitSubSystem(SDL_INIT_AUDIO); }
     }
+    void write(const float *samples, int frames) override
+    {
+        std::scoped_lock lock(gate);
+        const auto queued = SDL_GetAudioStreamQueued(stream);
+        require(queued >= 0 && queued + frames * channels * 4 <= 12000 * channels * 4, "Audio playback queue capacity exceeded");
+        require(SDL_PutAudioStreamData(stream, samples, frames * channels * 4), SDL_GetError());
+        submitted += frames;
+    }
+    void pause(bool paused) override
+    {
+        require(paused ? SDL_PauseAudioStreamDevice(stream) : SDL_ResumeAudioStreamDevice(stream), SDL_GetError());
+    }
+    void clear() override
+    {
+        std::scoped_lock lock(gate);
+        require(SDL_ClearAudioStream(stream), SDL_GetError());
+        submitted = 0;
+        ++epoch;
+    }
+    void gain(float value) override
+    {
+        require(SDL_SetAudioStreamGain(stream, value), SDL_GetError());
+    }
+    int latency() const override
+    {
+        SDL_AudioSpec spec{};
+        int frames = 0;
+        require(SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(stream), &spec, &frames) && spec.freq > 0, SDL_GetError());
+        return static_cast<int>(av_rescale_rnd(frames, rate, spec.freq, AV_ROUND_UP));
+    }
+    an_audio_clock_snapshot snapshot() override
+    {
+        std::scoped_lock lock(gate);
+        const auto bytes = SDL_GetAudioStreamQueued(stream);
+        require(bytes >= 0, SDL_GetError());
+        an_audio_clock_snapshot result{};
+        result.size = sizeof(result);
+        result.quality = 1;
+        result.queued_frames = bytes / (channels * 4);
+        result.played_frames = std::max<int64_t>(0, submitted - result.queued_frames - latency());
+        result.host_timestamp = SDL_GetTicksNS();
+        result.host_frequency = 1000000000;
+        result.epoch = epoch;
+        result.sample_rate = rate;
+        result.channels = channels;
+        result.backend = 3;
+        std::snprintf(result.device_id, sizeof(result.device_id), "sdl-default-estimated");
+        return result;
+    }
 };
 }
 
-uint32_t an_audio_abi_version() { return 1; }
+uint32_t an_audio_abi_version() { return 2; }
+uint32_t an_audio_clock_snapshot_size() { return sizeof(an_audio_clock_snapshot); }
 int an_audio_decoder_create(void **decoder, char *error, uint32_t capacity)
 {
     return boundary(error, capacity, [&] { require(decoder, "Missing decoder output"); *decoder = new Decoder(); return 0; });
@@ -297,15 +366,31 @@ int an_audio_output_create(void **output, int rate, int channels, char *error, u
     return boundary(error, capacity, [&]
     {
         require(output && rate == 48000 && channels == 2, "Playback requires 48kHz stereo");
-        require(SDL_GetVersion() == SDL_VERSION && SDL_VERSION == SDL_VERSIONNUM(3, 4, 16), "SDL3 build/runtime version must be 3.4.16");
         *output = nullptr;
-        auto result = std::make_unique<Output>(rate, channels);
-        require(SDL_InitSubSystem(SDL_INIT_AUDIO), SDL_GetError());
-        result->initialized = true;
-        SDL_AudioSpec spec{SDL_AUDIO_F32, channels, rate};
-        result->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-        require(result->stream, SDL_GetError());
-        *output = result.release();
+        *output = new SdlOutput();
+        return 0;
+    });
+}
+int an_audio_output_create_system(void **output, int rate, int channels, char *error, uint32_t capacity)
+{
+    return boundary(error, capacity, [&]
+    {
+        require(output && rate == 48000 && channels == 2, "Playback requires 48kHz stereo");
+        *output = nullptr;
+#if defined(__APPLE__) || defined(_WIN32)
+        *output = create_system_audio_output().release();
+#else
+        *output = new SdlOutput();
+#endif
+        return 0;
+    });
+}
+int an_audio_output_snapshot(void *output, an_audio_clock_snapshot *snapshot, char *error, uint32_t capacity)
+{
+    return boundary(error, capacity, [&]
+    {
+        require(output && snapshot && snapshot->size == sizeof(an_audio_clock_snapshot), "Audio clock snapshot ABI mismatch");
+        *snapshot = static_cast<AudioOutput *>(output)->snapshot();
         return 0;
     });
 }
@@ -314,41 +399,34 @@ int an_audio_output_write(void *output, const float *samples, int frames, char *
     return boundary(error, capacity, [&]
     {
         require(output && samples && frames > 0 && frames <= 12000, "Invalid playback PCM block");
-        auto *device = static_cast<Output *>(output);
-        const auto queued = SDL_GetAudioStreamQueued(device->stream);
-        require(queued >= 0 && queued + frames * device->channels * 4 <= 12000 * device->channels * 4, "Audio playback queue capacity exceeded");
-        require(SDL_PutAudioStreamData(device->stream, samples, frames * device->channels * 4), SDL_GetError());
+        static_cast<AudioOutput *>(output)->write(samples, frames);
         return 0;
     });
 }
 int an_audio_output_pause(void *output, int pause, char *error, uint32_t capacity)
 {
-    return boundary(error, capacity, [&] { require(output, "Missing audio output"); auto *stream = static_cast<Output *>(output)->stream;
-        require(pause ? SDL_PauseAudioStreamDevice(stream) : SDL_ResumeAudioStreamDevice(stream), SDL_GetError()); return 0; });
+    return boundary(error, capacity, [&] { require(output, "Missing audio output");
+        static_cast<AudioOutput *>(output)->pause(pause != 0); return 0; });
 }
 int an_audio_output_clear(void *output, char *error, uint32_t capacity)
 {
-    return boundary(error, capacity, [&] { require(output, "Missing audio output"); require(SDL_ClearAudioStream(static_cast<Output *>(output)->stream), SDL_GetError()); return 0; });
+    return boundary(error, capacity, [&] { require(output, "Missing audio output"); static_cast<AudioOutput *>(output)->clear(); return 0; });
 }
 int an_audio_output_queued(void *output)
 {
     if (!output) { return -1; }
-    const auto *device = static_cast<Output *>(output);
-    const auto bytes = SDL_GetAudioStreamQueued(device->stream);
-    return bytes < 0 ? -1 : bytes / (device->channels * 4);
+    try { return static_cast<AudioOutput *>(output)->snapshot().queued_frames; }
+    catch (...) { return -1; }
 }
 int an_audio_output_latency(void *output)
 {
     if (!output) { return -1; }
-    const auto *device = static_cast<Output *>(output);
-    SDL_AudioSpec spec{};
-    int frames = 0;
-    if (!SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(device->stream), &spec, &frames) || spec.freq <= 0) { return -1; }
-    return static_cast<int>(av_rescale_rnd(frames, device->rate, spec.freq, AV_ROUND_UP));
+    try { return static_cast<AudioOutput *>(output)->latency(); }
+    catch (...) { return -1; }
 }
 int an_audio_output_gain(void *output, float gain, char *error, uint32_t capacity)
 {
     return boundary(error, capacity, [&] { require(output && std::isfinite(gain) && gain >= 0 && gain <= 1, "Invalid audio gain");
-        require(SDL_SetAudioStreamGain(static_cast<Output *>(output)->stream, gain), SDL_GetError()); return 0; });
+        static_cast<AudioOutput *>(output)->gain(gain); return 0; });
 }
-void an_audio_output_destroy(void *output) { delete static_cast<Output *>(output); }
+void an_audio_output_destroy(void *output) { delete static_cast<AudioOutput *>(output); }

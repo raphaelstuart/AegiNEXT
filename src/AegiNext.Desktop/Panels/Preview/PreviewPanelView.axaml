@@ -11,6 +11,12 @@
               <TextBlock Name="EmptyLabel" Foreground="#A5ADBD" FontSize="13" Text="{Binding EmptyLabel, Mode=OneWay}" />
             </StackPanel>
             <ProgressBar Name="OpeningProgress" IsIndeterminate="True" Height="3" VerticalAlignment="Top" IsVisible="{Binding IsOpening, Mode=OneWay}" />
+            <Border Name="CatchingUpOverlay" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Padding="12,6" CornerRadius="6" Background="{DynamicResource PreviewSurface}"
+                    BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="1" IsHitTestVisible="False"
+                    IsVisible="{Binding IsCatchingUp, Mode=OneWay}">
+              <TextBlock Classes="field" Text="{Loc Key=Preview.CatchingUp}" />
+            </Border>
             <Grid Name="PreviewOptions" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" ColumnDefinitions="Auto,Auto" ColumnSpacing="6">
             <ComboBox Name="QualityCombo" Height="{StaticResource WorkbenchControlHeight}" Padding="6,2" FontSize="11" MaxWidth="160"
                       VerticalContentAlignment="Center" ItemsSource="{Binding QualityChoices}" SelectedItem="{Binding SelectedQuality, Mode=TwoWay}"

@@ -172,7 +172,7 @@ public static class AssSubtitleFormat
     }
 
     /// <summary>按工程合成层顺序导出全部字幕，静态样式去重，时间显式量化到厘秒。</summary>
-    public static SubtitleFormatWriteResult Write(ProjectDocument document)
+    public static SubtitleFormatWriteResult Write(ProjectDocument document, MediaTime timeOffset = default)
     {
         ProjectValidator.Validate(document);
         var result = new StringBuilder();
@@ -209,9 +209,9 @@ public static class AssSubtitleFormat
         foreach (var layer in SubtitleFormatLossAnalysis.Flatten(document.Layers).Where(layer => layer.SubtitleId.HasValue))
         {
             var line = byId[layer.SubtitleId!.Value];
-            if (line.Start < MediaTime.Zero)
+            if (line.Start + timeOffset < MediaTime.Zero)
             {
-                throw new InvalidDataException("ASS 不支持负对白时间。");
+                throw new InvalidDataException($"ASS 字幕 {line.Id} 的外部开始时间 {line.Start + timeOffset} 为负；请调整区间或播放零点，不会自动裁剪。");
             }
             if (line.Style.FontAssetId.HasValue)
             {
@@ -235,7 +235,7 @@ public static class AssSubtitleFormat
                 placement += "\\pos(" + AssFormatValues.Number(px) + "," + AssFormatValues.Number(py) + ")";
             }
             placement += "}";
-            foreach (var sample in AssMaskSampling.Samples(document, layer, line, diagnostics))
+            foreach (var sample in AssMaskSampling.Samples(document, layer, line, diagnostics, timeOffset))
             {
                 if (exportedCount++ >= 100000)
                 {
@@ -259,7 +259,7 @@ public static class AssSubtitleFormat
                 }
                 var maskTags = sample.Tags.Length == 0 ? string.Empty : "{" + sample.Tags + "}";
                 result.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                    $"Dialogue: {order},{AssFormatValues.Time(sample.Start, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End, MediaTimeRounding.CEILING)},{styles[line.Style with { FontAssetId = null, Position = null }]},,0,0,0,,{placement}{maskTags}{body.Text}"));
+                    $"Dialogue: {order},{AssFormatValues.Time(sample.Start + timeOffset, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End + timeOffset, MediaTimeRounding.CEILING)},{styles[line.Style with { FontAssetId = null, Position = null }]},,0,0,0,,{placement}{maskTags}{body.Text}"));
                 if (result.Length > 16 * 1024 * 1024)
                 {
                     throw new InvalidDataException("ASS 导出文本超过 16 Mi 字符预算。");
