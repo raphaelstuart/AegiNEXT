@@ -19,8 +19,17 @@ internal sealed partial class WorkbenchSession
 
     private ProjectPersistenceState? CapturePersistenceState()
     {
-        return projectPath is null || closing ? null : new(projectGeneration, projectPath, projectDirectory,
-            editor.Snapshot, editor.HasUnsavedChanges, projectBusy || !documentChangeTask.IsCompleted);
+        if (projectPath is null || closing)
+        {
+            return null;
+        }
+
+        var contentSnapshot = editor.Snapshot;
+        return new(projectGeneration, projectPath, projectDirectory,
+            CreatePersistenceSnapshot(contentSnapshot), HasUnsavedChanges, projectBusy || !documentChangeTask.IsCompleted)
+        {
+            ContentSnapshot = contentSnapshot
+        };
     }
 
     private void OnProjectAutomaticallySaved(ProjectPersistenceSaveResult result)
@@ -30,7 +39,7 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
-        editor.MarkSaved(result.State.Snapshot, result.PersistedSnapshot);
+        AcceptProjectSave(result.State.ContentSnapshot, result.PersistedSnapshot);
         LogInfo("Project", I18n.Localization.Get("WorkflowLog.ProjectAutoSaved"), result.State.ProjectPath);
     }
 

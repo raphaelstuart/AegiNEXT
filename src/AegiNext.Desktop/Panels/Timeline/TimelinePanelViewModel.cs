@@ -15,6 +15,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
 {
     private readonly WorkbenchSession session;
     private ProjectDocument document = new();
+    private TimelineViewState timelineViewState = new();
     private Guid? selectedCueId;
     private Guid? selectedTrackId;
     private Guid? renamingTrackId;
@@ -74,6 +75,12 @@ internal sealed class TimelinePanelViewModel : ObservableObject
                 RefreshClipCommands();
             }
         }
+    }
+
+    public TimelineViewState TimelineViewState
+    {
+        get => timelineViewState;
+        internal set => SetProperty(ref timelineViewState, value);
     }
 
     public Guid? SelectedMaskNodeId
@@ -365,6 +372,9 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     }
     /// <summary>选择关键帧并同步属性检查器。</summary>
     public bool SelectKeyframe(TimelineKeyframeEventArgs value) => session.SelectKeyframe(value);
+    /// <summary>更新工程的独立属性行视图状态，不提交内容草稿。</summary>
+    public void SetAnimationRowCollapsed(TimelineAnimationRowCollapseEventArgs value) =>
+        session.SetTimelineAnimationRowCollapsed(value.Id, value.IsCollapsed);
     /// <summary>提交完成的关键帧手势。</summary>
     public Task MoveKeyframeAsync(TimelineKeyframeEventArgs value) => session.RunCommandAsync(() => session.EditAsync(() => session.MoveKeyframe(value)));
     /// <summary>提交冻结目标集合的一次整体平移。</summary>

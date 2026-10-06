@@ -20,4 +20,5 @@ public sealed record ProjectDocument
     public ImmutableArray<SubtitleLine> Subtitles { get; init; } = [];
     public ImmutableArray<ProjectLayer> Layers { get; init; } = [];
     public ImmutableArray<EffectPreset> Presets { get; init; } = [];
+    public TimelineViewState TimelineViewState { get; init; } = new();
 }

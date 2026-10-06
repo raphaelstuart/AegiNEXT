@@ -22,7 +22,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             return false;
         }
 
-        if (!session.Editor.HasUnsavedChanges)
+        if (!session.HasUnsavedChanges)
         {
             return true;
         }
@@ -130,6 +130,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             session.SetProjectLocation(path, directory);
             session.ClearTimelineClipboard();
             session.ResetSelection();
+            session.ResetTimelineViewState(document);
             session.Editor.Reset(document);
             session.ActivateProjectPersistence();
             unavailableMediaBinding = null;
@@ -311,6 +312,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             session.SetProjectLocation(path, directory);
             session.ClearTimelineClipboard();
             session.ResetSelection();
+            session.ResetTimelineViewState(document);
             session.Editor.Reset(document);
             session.ActivateProjectPersistence();
             unavailableMediaBinding = deferredBinding;
@@ -520,21 +522,15 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             destination = Path.GetFullPath(destination);
             var locationChanged = !WorkbenchSession.PathsEqual(destination, session.ProjectPath);
             var snapshot = session.Editor.Snapshot;
+            var persistenceSnapshot = session.CreatePersistenceSnapshot(snapshot);
             var directory = Path.GetDirectoryName(destination)!;
             var sameDirectory = WorkbenchSession.PathsEqual(directory, session.ProjectDirectory);
             var prepared = sameDirectory
-                ? ProjectResources.NormalizeMediaReferences(snapshot, directory)
-                : await ProjectResources.RebaseAsync(snapshot, session.ProjectDirectory, directory);
+                ? ProjectResources.NormalizeMediaReferences(persistenceSnapshot, directory)
+                : await ProjectResources.RebaseAsync(persistenceSnapshot, session.ProjectDirectory, directory);
             await ProjectStore.SaveAsync(prepared, destination);
             session.SetProjectLocation(destination, directory);
-            if (sameDirectory)
-            {
-                session.Editor.MarkSaved(snapshot, prepared);
-            }
-            else
-            {
-                session.Editor.Reset(prepared);
-            }
+            session.AcceptProjectSave(snapshot, prepared, !sameDirectory);
 
             if (locationChanged)
             {

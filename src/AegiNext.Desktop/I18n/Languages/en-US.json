@@ -72,6 +72,7 @@
     "Workbench.ImportFont": "Import font",
     "Workbench.Fonts": "Font files",
     "Workbench.SplitCaret": "Place the caret at the text split first.",
+    "Workbench.SubtitleContinuationTimeRequired": "Move the playhead past this subtitle's end to create the next row.",
     "Workbench.EaseIn": "Ease in",
     "Workbench.EaseOut": "Ease out",
     "Workbench.NoAudio": "No audio",

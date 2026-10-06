@@ -31,6 +31,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private readonly ToolbarToggleButton spectrumButton;
     private readonly ToolbarToggleButton waveformButton;
     private AegiNext.Media.Analysis.SpectrogramData? spectrum;
+    private IPointer? animationRowCollapsePointer;
     private bool disposed;
     private bool applying;
     internal TimelinePanelView(TimelinePanelViewModel viewModel, WorkbenchSession session)
@@ -92,6 +93,9 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         timeline.ClipsMoveCompleted += async (_, e) => await viewModel.CommitClipsMoveAsync(e);
         timeline.KeyframeSelected += (_, e) => e.SelectionAccepted = viewModel.SelectKeyframe(e);
         timeline.KeyframeMoved += async (_, e) => await viewModel.MoveKeyframeAsync(e);
+        timeline.AnimationRowCollapseRequested += OnAnimationRowCollapseRequested;
+        AddHandler(PointerPressedEvent, OnPreviewPointerPressed, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, OnPreviewPointerReleased, RoutingStrategies.Tunnel);
         timeline.AddHandler(PointerPressedEvent, (_, _) => viewModel.IsSeeking = timeline.IsSeeking, RoutingStrategies.Bubble, true);
         timeline.AddHandler(PointerReleasedEvent, (_, _) => viewModel.IsSeeking = false, RoutingStrategies.Bubble, true);
         timeline.AddHandler(PointerCaptureLostEvent, (_, _) => viewModel.IsSeeking = false, RoutingStrategies.Bubble, true);
@@ -195,6 +199,33 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             });
         }
     }
+    private void OnAnimationRowCollapseRequested(object? sender, TimelineAnimationRowCollapseEventArgs e) =>
+        viewModel.SetAnimationRowCollapsed(e);
+
+    private void OnPreviewPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (ReferenceEquals(animationRowCollapsePointer, e.Pointer))
+        {
+            animationRowCollapsePointer = null;
+        }
+
+        if (ReferenceEquals(e.Source, timeline) && e.GetCurrentPoint(timeline).Properties.IsLeftButtonPressed &&
+            timeline.TryRequestAnimationRowCollapse(e.GetPosition(timeline)))
+        {
+            animationRowCollapsePointer = e.Pointer;
+            e.Handled = true;
+        }
+    }
+
+    private void OnPreviewPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (ReferenceEquals(animationRowCollapsePointer, e.Pointer))
+        {
+            animationRowCollapsePointer = null;
+            e.Handled = true;
+        }
+    }
+
     private void ApplyState()
     {
         if (applying || disposed)
@@ -215,6 +246,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             timeline.SetDocument(viewModel.Document, viewModel.SelectedCueId, viewModel.SelectedLayer,
                 viewModel.SelectedLayerIds.Count == 0 && viewModel.SelectedLayer is { } selected ? [selected.Id] : viewModel.SelectedLayerIds,
                 viewModel.SelectedTrackId);
+            timeline.TimelineViewState = viewModel.TimelineViewState;
             timeline.SetViewport(viewModel.Viewport, viewModel.FullDuration);
             if (!ReferenceEquals(spectrum, viewModel.Spectrogram))
             {
@@ -328,6 +360,10 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             overview.ViewportChanged -= OnViewportChanged;
             timeline.TrackContextRequested -= OnTrackContextRequested;
             timeline.ClipContextRequested -= OnClipContextRequested;
+            timeline.AnimationRowCollapseRequested -= OnAnimationRowCollapseRequested;
+            RemoveHandler(PointerPressedEvent, OnPreviewPointerPressed);
+            RemoveHandler(PointerReleasedEvent, OnPreviewPointerReleased);
+            animationRowCollapsePointer = null;
             TrackMenu.Close();
             ClipMenu.Close();
             overview.CancelGesture();

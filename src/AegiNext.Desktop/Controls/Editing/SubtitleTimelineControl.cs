@@ -376,7 +376,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                                 if (CurveRectangle(clip.Id, target) is { } curve &&
                                     curve.Bottom >= RulerHeight && curve.Top <= Bounds.Height)
                                 {
-                                    DrawEffects(context, clip, layer, DisplayedTrack(layer, target, tracks), curve);
+                                    DrawEffects(context, clip, layer, DisplayedTrack(layer, target, tracks), curve, animation.IsCollapsed);
                                 }
                             }
                         }
@@ -549,9 +549,15 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             return;
         }
 
-        Focus();
         var point = e.GetPosition(this);
         var row = RowAt(point.Y);
+        if (TryRequestAnimationRowCollapse(point, row))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        Focus();
         if (point.X < HeaderWidth)
         {
             if (row is not null)
@@ -934,7 +940,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         }
     }
 
-    private void DrawEffects(DrawingContext context, ProjectLayer source, ProjectLayer layer, AnimationTrack? track, Rect curve)
+    private void DrawEffects(DrawingContext context, ProjectLayer source, ProjectLayer layer, AnimationTrack? track, Rect curve,
+        bool isCollapsed)
     {
         var startX = Math.Max(HeaderWidth, X(Seconds(layer.Start)));
         var endX = Math.Min(Bounds.Width, X(Seconds(layer.End)));
@@ -944,6 +951,12 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         }
         if (track is null)
         {
+            return;
+        }
+        if (isCollapsed)
+        {
+            context.DrawLine(new Pen(drawingPalette.Foreground, IsSelectedMaskTarget(layer.Id, track.Target) ? 3 : 2),
+                new(startX, curve.Center.Y), new(endX, curve.Center.Y));
             return;
         }
         var sharedRange = CachedValueRange(source, track);
@@ -992,17 +1005,19 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                 using var titleLayout = WorkbenchTextFormatting.CreateLayout(this, title, 11, foreground);
                 var selectedNode = selectedLayer is { } layer && animation.TargetsFor(layer.Id).Any(target => IsSelectedMaskTarget(layer.Id, target));
                 context.DrawRectangle(drawingPalette.Surface, null,
-                    new(HeaderWidth + 2, top, titleLayout.Width + 6, titleLayout.Height + 3), 2, 2);
+                    new(HeaderWidth + 2, top, titleLayout.Width + 26, titleLayout.Height + 3), 2, 2);
                 if (selectedNode)
                 {
                     context.DrawLine(new Pen(drawingPalette.ActiveClipBorder, 2), new(HeaderWidth + 2, top), new(HeaderWidth + 2, top + titleLayout.Height + 3));
                 }
-                titleLayout.Draw(context, new(HeaderWidth + 5, top + 2));
-                if (animation.Property is AnimationProperty.FILL or AnimationProperty.STROKE)
+                DrawExpander(context, animation.ExpanderRectangle(RowY(row), HeaderWidth), animation.IsCollapsed);
+                titleLayout.Draw(context, new(HeaderWidth + 25, top + 2));
+                if (!animation.IsCollapsed && animation.Property is AnimationProperty.FILL or AnimationProperty.STROKE)
                 {
-                    DrawText(context, "R", new(HeaderWidth + 105, top + 2), drawingPalette.ColorComponents[0], 10);
-                    DrawText(context, "G", new(HeaderWidth + 118, top + 2), drawingPalette.ColorComponents[1], 10);
-                    DrawText(context, "B", new(HeaderWidth + 131, top + 2), drawingPalette.ColorComponents[2], 10);
+                    var componentsLeft = HeaderWidth + Math.Max(125, titleLayout.Width + 33);
+                    DrawText(context, "R", new(componentsLeft, top + 2), drawingPalette.ColorComponents[0], 10);
+                    DrawText(context, "G", new(componentsLeft + 13, top + 2), drawingPalette.ColorComponents[1], 10);
+                    DrawText(context, "B", new(componentsLeft + 26, top + 2), drawingPalette.ColorComponents[2], 10);
                     DrawText(context, "A  0–1", new(HeaderWidth + 5, top + animation.Height - 44), foreground, 10);
                 }
             }
@@ -1099,7 +1114,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                                 (operation.End, operation.Value, false)
                             })
                             {
-                                var operationMarkers = CreateMarkers(layer, track.Target, new(time, value), curve, range);
+                                var operationMarkers = CreateMarkers(layer, track.Target, new(time, value), curve, range, animation.IsCollapsed);
                                 result.AddRange(operationMarkers.Select(marker => marker with
                                 {
                                     Identity = marker.Identity with { OperationId = operation.Id, IsOperationStart = isStart }
@@ -1111,7 +1126,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                             var x = X(Seconds(layer.Start + key.Time - layer.AnimationOffset));
                             if (x >= HeaderWidth - 9 && x <= Bounds.Width + 9)
                             {
-                                result.AddRange(CreateMarkers(layer, track.Target, key, curve, range));
+                                result.AddRange(CreateMarkers(layer, track.Target, key, curve, range, animation.IsCollapsed));
                             }
                         }
                     }
@@ -1124,10 +1139,17 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     }
 
     private List<TimelineKeyframeMarker> CreateMarkers(ProjectLayer layer, AnimationTrackTarget target,
-        Keyframe key, Rect curve, (double Minimum, double Maximum) range)
+        Keyframe key, Rect curve, (double Minimum, double Maximum) range, bool isCollapsed)
     {
         var x = X(Seconds(layer.Start + key.Time - layer.AnimationOffset));
         var result = new List<TimelineKeyframeMarker>();
+        if (isCollapsed)
+        {
+            var components = (TimelineComponentMask)((1 << key.Value.ComponentCount) - 1);
+            result.Add(new(new(layer.Id, target, key.Time), key.Value, components, new(x, curve.Center.Y), curve,
+                range.Minimum, range.Maximum));
+            return result;
+        }
         for (var component = 0; component < key.Value.ComponentCount; component++)
         {
             var area = ComponentCurve(curve, key.Value, component);
@@ -1445,7 +1467,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             return null;
         }
         var range = CachedValueRange(layer, track);
-        return CreateMarkers(DisplayedLayer(layer), target, new(time, value), curve, range)
+        return CreateMarkers(DisplayedLayer(layer), target, new(time, value), curve, range,
+                animationRowsByTarget[(layerId, target)].IsCollapsed)
             .First(marker => Contains(marker.Components, component ?? 0)).Position;
     }
 
@@ -1509,9 +1532,15 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     {
         var row = rowsByLayer.GetValueOrDefault(layerId);
         var animation = animationRowsByTarget.GetValueOrDefault((layerId, target));
-        return row is not null && animation is not null
-            ? new Rect(HeaderWidth, RowY(row) + animation.Top + 20,
-                Math.Max(0, Bounds.Width - HeaderWidth), Math.Max(1, animation.Height - 34)) : null;
+        if (row is null || animation is null)
+        {
+            return null;
+        }
+
+        return animation.IsCollapsed
+            ? new Rect(HeaderWidth, RowY(row) + animation.Top + 24, Math.Max(0, Bounds.Width - HeaderWidth), 12)
+            : new Rect(HeaderWidth, RowY(row) + animation.Top + 20,
+                Math.Max(0, Bounds.Width - HeaderWidth), Math.Max(1, animation.Height - 34));
     }
 
     private void RebuildRows()
@@ -1533,7 +1562,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                 displayedClips.Add(flattened.Single(layer => layer.Id == dragId));
             }
             var animations = !collapsed
-                ? CreateAnimationRows(displayedClips) : [];
+                ? CreateAnimationRows(displayedClips, TimelineRowScope.SUBTITLE_TRACK, track.Id) : [];
             var curve = animations.Sum(animation => animation.Height);
             var height = (track.StylePresetName is null ? 28 : 48) + curve;
             result.Add(new(track.Id, track.Id, track.Name, clips, 0, false, collapsed, top, height, animations,
@@ -1564,7 +1593,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             var group = layer.Kind == LayerKind.GROUP;
             var collapsed = collapsedGroups.Contains(layer.Id);
             var animations = !collapsed
-                ? CreateAnimationRows([layer]) : [];
+                ? CreateAnimationRows([layer], TimelineRowScope.SCENE_LAYER, layer.Id) : [];
             var curve = animations.Sum(animation => animation.Height);
             var height = 28 + curve;
             result.Add(new(layer.Id, null, layer.Name, [layer], depth, group, collapsed, top, height, animations));
@@ -1576,7 +1605,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         }
     }
 
-    private static TimelineAnimationRow[] CreateAnimationRows(IEnumerable<ProjectLayer> clips)
+    private TimelineAnimationRow[] CreateAnimationRows(IEnumerable<ProjectLayer> clips, TimelineRowScope scope, Guid ownerId)
     {
         var bindings = new Dictionary<AnimationProperty, Dictionary<Guid, List<AnimationTrackTarget>>>();
         foreach (var layer in clips)
@@ -1613,8 +1642,11 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                          return index >= 0 ? index : AnimationPropertyMetadata.CurrentProperties.Length + (int)binding.Key;
                      }))
         {
-            var height = binding.Key is AnimationProperty.FILL or AnimationProperty.STROKE ? 112 : 76;
-            result.Add(new(binding.Key, binding.Value.ToImmutableDictionary(pair => pair.Key, pair => pair.Value.ToImmutableArray()), top, height));
+            var id = new TimelineAnimationRowId(scope, ownerId, binding.Key);
+            var collapsed = collapsedAnimationRows.Contains(id);
+            var height = collapsed ? COLLAPSED_ANIMATION_ROW_HEIGHT :
+                binding.Key is AnimationProperty.FILL or AnimationProperty.STROKE ? 112 : 76;
+            result.Add(new(id, binding.Value.ToImmutableDictionary(pair => pair.Key, pair => pair.Value.ToImmutableArray()), collapsed, top, height));
             top += height;
         }
         return result.ToArray();
@@ -1850,7 +1882,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
     private TimelineKeyframeMarker? FindKeyframe(Point point)
     {
-        if (!BodyRectangle().Contains(point))
+        if (!BodyRectangle().Contains(point) || IsAnimationRowExpanderPoint(point))
         {
             return null;
         }

@@ -141,6 +141,7 @@ public static class ProjectStore
                 foreach (var property in info.Properties)
                 {
                     property.IsRequired = (property.Get is not null || property.Set is not null) &&
+                        !(info.Type == typeof(ProjectDocument) && property.Name == "timelineViewState") &&
                         !(info.Type == typeof(SubtitleStyle) && property.Name == "fontVariant") &&
                         !(info.Type == typeof(SubtitleFontVariant) && property.Name == "postScriptName") &&
                         !(info.Type == typeof(SubtitleInlineStyleOverride) && property.Name is "fontVariant" or "clearFontVariant") &&

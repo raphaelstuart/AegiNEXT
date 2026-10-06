@@ -40,6 +40,7 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         };
         list = this.FindControl<ListBox>("SubtitleList")!;
         list.SelectionChanged += OnSelectionChanged;
+        list.AddHandler(KeyDownEvent, OnSubtitleKeyDown, RoutingStrategies.Tunnel);
         var detailItem = new MenuItem { Command = viewModel.DetailsCommand };
         detailMenuBinding = detailItem.Bind(MenuItem.HeaderProperty,
             AegiNext.Desktop.I18n.Localization.Observe("Workbench.SubtitleDetails").ToBinding());
@@ -239,6 +240,8 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     public void Dispose()
     {
         disposed = true;
+        ReleaseKeyboardRoot();
+        list.RemoveHandler(KeyDownEvent, OnSubtitleKeyDown);
         detailMenuBinding.Dispose();
         list.SelectionChanged -= OnSelectionChanged;
         session.SubtitleScrollRequested -= OnScrollRequested;

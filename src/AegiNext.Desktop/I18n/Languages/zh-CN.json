@@ -72,6 +72,7 @@
     "Workbench.ImportFont": "导入字体",
     "Workbench.Fonts": "字体文件",
     "Workbench.SplitCaret": "先在字幕文字中定位拆分位置。",
+    "Workbench.SubtitleContinuationTimeRequired": "当前播放进度需晚于本段字幕的结束时间，才能创建下一行。",
     "Workbench.EaseIn": "缓入",
     "Workbench.EaseOut": "缓出",
     "Workbench.NoAudio": "无音频",

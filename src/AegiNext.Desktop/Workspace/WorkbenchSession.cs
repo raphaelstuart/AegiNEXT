@@ -108,6 +108,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ViewModel.Export.PropertyChanged += OnExportPropertyChanged;
         SubscribeTimelinePreferences();
         ApplyPreferences();
+        ResetTimelineViewState(this.editor.Snapshot);
         RefreshDocument();
         styles.Initialize();
         effectScripts.Initialize();
@@ -606,7 +607,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private void RefreshTitle()
     {
-        ViewModel.Title = WorkbenchProjectTitle.Format(ProjectDisplayName, editor.HasUnsavedChanges);
+        ViewModel.Title = WorkbenchProjectTitle.Format(ProjectDisplayName, HasUnsavedChanges);
     }
 
     internal void ResetSelection()

@@ -111,4 +111,6 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
     public void SetCaret(Guid id, int index) => session.SetTextCaret(id, index);
     /// <summary>焦点提交使用统一的原子草稿边界。</summary>
     public void CommitRow(SubtitleRow row) => session.CommitRow(row);
+    /// <summary>提交草稿后激活下一行，或从当前行结尾到播放进度创建字幕。</summary>
+    public Task<Guid?> AdvanceRowAsync(Guid id) => session.AdvanceSubtitleRowAsync(id);
 }

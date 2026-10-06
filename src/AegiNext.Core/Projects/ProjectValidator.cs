@@ -13,6 +13,8 @@ public static class ProjectValidator
     public static void Validate(ProjectDocument document, bool enforceAnimationRange = true)
     {
         ArgumentNullException.ThrowIfNull(document);
+        NotNull(document.TimelineViewState, "时间轴视图状态不能为 null。");
+        document.TimelineViewState.Validate();
         Require(document.Version == ProjectDocument.CURRENT_VERSION, "不支持的项目版本。");
         Require(document.Id != Guid.Empty && document.Name is { Length: <= 1024 }, "项目标识或名称无效。");
         ValidateText(document.Name);
