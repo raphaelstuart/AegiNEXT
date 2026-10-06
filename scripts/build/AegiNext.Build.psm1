@@ -44,7 +44,8 @@ function Invoke-AegiNextCommand
         [Parameter(Mandatory)][string] $FilePath,
         [string[]] $Arguments = [string[]]@(),
         [Parameter(Mandatory)][string] $WorkingDirectory,
-        [hashtable] $Environment = @{}
+        [hashtable] $Environment = @{},
+        [switch] $StreamOutput
     )
     $savedEnvironment = @{}
     $previousExitCode = Get-Variable LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
@@ -61,7 +62,13 @@ function Invoke-AegiNextCommand
         }
 
         $global:LASTEXITCODE = 0
-        $output = @(& $FilePath @Arguments 2>&1)
+        $output = @(& $FilePath @Arguments 2>&1 | ForEach-Object {
+            if ($StreamOutput)
+            {
+                Write-Information -MessageData $_.ToString() -InformationAction Continue
+            }
+            $_
+        })
         $succeeded = $?
         $code = $global:LASTEXITCODE
         if (!$succeeded -and $code -eq 0)

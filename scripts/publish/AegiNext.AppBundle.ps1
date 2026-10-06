@@ -39,11 +39,11 @@ function New-AegiNextMacDiskImage
     {
         [IO.Directory]::CreateDirectory($staging) | Out-Null
         $stagedApp = Join-Path $staging 'AegiNext.app'
-        $null = Invoke-AegiNextPublishCommand '/usr/bin/ditto' @('--rsrc', '--extattr', '--acl', $AppDirectory, $stagedApp) $PublishDirectory
+        $null = Invoke-AegiNextPublishCommand '/usr/bin/ditto' @('--rsrc', '--extattr', '--acl', $AppDirectory, $stagedApp) $PublishDirectory -StreamOutput
         $null = Invoke-AegiNextPublishCommand '/bin/ln' @('-s', '/Applications', (Join-Path $staging 'Applications')) $PublishDirectory
-        $null = Invoke-AegiNextPublishCommand '/usr/bin/codesign' @('--verify', '--deep', '--strict', $stagedApp) $PublishDirectory
-        $null = Invoke-AegiNextPublishCommand '/usr/bin/hdiutil' @('create', '-srcfolder', $staging, '-volname', 'AegiNext', '-format', 'UDZO', $image) $PublishDirectory
-        $null = Invoke-AegiNextPublishCommand '/usr/bin/hdiutil' @('verify', $image) $PublishDirectory
+        $null = Invoke-AegiNextPublishCommand '/usr/bin/codesign' @('--verify', '--deep', '--strict', $stagedApp) $PublishDirectory -StreamOutput
+        $null = Invoke-AegiNextPublishCommand '/usr/bin/hdiutil' @('create', '-srcfolder', $staging, '-volname', 'AegiNext', '-format', 'UDZO', $image) $PublishDirectory -StreamOutput
+        $null = Invoke-AegiNextPublishCommand '/usr/bin/hdiutil' @('verify', $image) $PublishDirectory -StreamOutput
         if (!(Test-Path -LiteralPath $image -PathType Leaf)) { throw "Disk image was not created: $image" }
         return $image
     }
