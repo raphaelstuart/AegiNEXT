@@ -8,5 +8,6 @@ public enum SettingsPage
     STYLES,
     EFFECTS,
     COLORS,
-    MEDIA
+    MEDIA,
+    PROJECTS
 }

@@ -64,7 +64,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         WorkbenchPreferencesStore? preferencesStore = null,
         IWorkbenchExportService? exportService = null,
         WorkbenchPreferences? initialPreferences = null,
-        DesktopApplicationContext? applicationContext = null)
+        DesktopApplicationContext? applicationContext = null,
+        TimeProvider? persistenceTimeProvider = null, IProjectPersistenceStorage? persistenceStorage = null)
     {
         this.dialogs = dialogs;
         this.dispatch = dispatch ?? DispatchAsync;
@@ -92,11 +93,15 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         layerEditing = new(this, dialogs);
         MaskEditing = new(this);
         playback = new(this, controller);
+        persistence = new(persistenceTimeProvider ?? TimeProvider.System,
+            action => this.dispatch(action, CancellationToken.None), CapturePersistenceState,
+            OnProjectAutomaticallySaved, error => ShowError(error, false), persistenceStorage);
+        persistence.UpdatePreferences(preferences.Projects);
         this.applicationContext.PreferencesChanged += OnApplicationPreferencesChanged;
         this.applicationContext.StylesChanged += OnApplicationStylesChanged;
         this.applicationContext.EffectsChanged += OnApplicationEffectsChanged;
         this.applicationContext.ErrorChanged += OnApplicationErrorChanged;
-        this.editor.Changed += OnDocumentChanged;
+        this.editor.StateChanged += OnEditorStateChanged;
         ViewModel.Styles.PropertyChanged += OnStylePropertyChanged;
         ViewModel.Effects.PropertyChanged += OnEffectPropertyChanged;
         ViewModel.Preview.PropertyChanged += OnPreviewPropertyChanged;
@@ -161,6 +166,11 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         return workflow.CreateProjectAsync(path, cancellationToken);
     }
 
+    internal Task<ProjectOpenResult> CreateProjectAsync(ProjectCreationRequest request, CancellationToken cancellationToken = default)
+    {
+        return workflow.CreateProjectAsync(request, cancellationToken);
+    }
+
     internal Task<ProjectOpenResult> OpenProjectAsync(string path, CancellationToken cancellationToken = default)
     {
         return workflow.OpenProjectAsync(path, cancellationToken);
@@ -192,6 +202,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         var value = applicationContext.Preferences;
         var qualityChanged = preferences.PreviewQuality != value.PreviewQuality;
         preferences = value;
+        persistence.UpdatePreferences(value.Projects);
         if (qualityChanged)
         {
             previewQualityRevision++;
@@ -336,6 +347,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
 
         await WaitForProjectIdleAsync();
+        await using var persistencePause = await persistence.PauseAsync();
         if (!await workflow.ConfirmDiscardOrSaveAsync())
         {
             return false;
@@ -371,6 +383,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private async Task DisposeCoreAsync()
     {
         closing = true;
+        projectOperationsCancellation.Cancel();
+        await persistence.DisposeAsync();
         applicationContext.PreferencesChanged -= OnApplicationPreferencesChanged;
         applicationContext.StylesChanged -= OnApplicationStylesChanged;
         applicationContext.EffectsChanged -= OnApplicationEffectsChanged;
@@ -379,7 +393,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         Details.Changed -= OnSubtitleDetailsChanged;
         Details.Dispose();
         ClearInspectorPreview();
-        editor.Changed -= OnDocumentChanged;
+        editor.StateChanged -= OnEditorStateChanged;
         playback.Invalidate();
         ViewModel.CancelGestures();
         analysis.Cancel();
@@ -402,6 +416,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
                 await applicationContext.DisposeAsync();
             }
             DisposeJournal();
+            projectOperationsCancellation.Dispose();
             PreviewUpdated = null;
             if (Directory.Exists(scratchDirectory))
             {
@@ -576,6 +591,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     internal void SetProjectLocation(string? path, string directory)
     {
+        if (!PathsEqual(projectPath, path) || !PathsEqual(projectDirectory, directory))
+        {
+            projectGeneration++;
+        }
         projectPath = path;
         projectDirectory = directory;
         RefreshTitle();

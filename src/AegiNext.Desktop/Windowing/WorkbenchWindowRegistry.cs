@@ -104,7 +104,9 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
 
     internal void RegisterAuxiliary(Window window)
     {
-        Register(window, () => window.Title ?? string.Empty, role: WorkbenchWindowRole.AUXILIARY);
+        var host = window as IWindowTitleBarHost;
+        host?.ReleaseStandaloneChrome();
+        Register(window, () => window.Title ?? string.Empty, host?.TitleBar, WorkbenchWindowRole.AUXILIARY);
     }
 
     internal void RefreshTitles()

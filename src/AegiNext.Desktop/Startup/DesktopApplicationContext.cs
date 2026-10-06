@@ -81,6 +81,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(update);
         WorkbenchPreferences value;
+        bool languageChanged;
         Task previous;
         TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (lifetime)
@@ -94,6 +95,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
                 return;
             }
 
+            languageChanged = !string.Equals(preferences.Language, value.Language, StringComparison.OrdinalIgnoreCase);
             preferences = value;
             previous = preferencesCompletion;
             preferencesCompletion = completion.Task;
@@ -101,7 +103,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
 
         try
         {
-            ApplyAppearance(value);
+            ApplyAppearance(value, languageChanged);
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
         }
         finally
@@ -256,9 +258,12 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         }
     }
 
-    private static void ApplyAppearance(WorkbenchPreferences value)
+    private static void ApplyAppearance(WorkbenchPreferences value, bool applyLanguage = true)
     {
-        WorkbenchCompositionRoot.ApplyLanguagePreference(value.Language);
+        if (applyLanguage)
+        {
+            WorkbenchCompositionRoot.ApplyLanguagePreference(value.Language);
+        }
         if (Avalonia.Application.Current is not { } application)
         {
             return;

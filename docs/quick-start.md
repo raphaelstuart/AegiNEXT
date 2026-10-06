@@ -15,19 +15,25 @@ Keep the entire directory: it contains .NET, FFmpeg/FFprobe, audio, export, and 
 
 Normal startup opens the welcome window. Search recent projects by name or path, click an available project to open it, or use New Project, Open Project, and Settings in the top toolbar. Each project has a name abbreviation and a stable color. Right-click an entry to remove it from recent history; the project file remains on disk. Missing files appear dimmed and cannot be opened, but can still be removed from history.
 
-New Project asks for an `.aeginext` save path. The file must be saved successfully before the workspace opens; cancelling keeps the welcome window visible. A new project can have no video. The full Settings window is also available before opening a project.
+New Project opens a panel for the project name and location, defaulting to the workspace root. The project must be created successfully before the workbench opens; cancelling keeps the welcome window visible. A new project can have no video. The full Settings window is also available before opening a project.
 
 The workspace has Preview, Timeline, Subtitles, Styles, Effects, Export, and Log. Use Layout → Standard to restore the initial arrangement, and View to reopen hidden panels.
 
 ## 2. Open media and save a project
 
-1. Choose New Project in the welcome window, select a path, and save the `.aeginext` project. Open Project can load an existing file.
+1. Choose New Project in the welcome window and enter its name and parent directory. The panel previews the final `.aeginext` path. Open Project can load an existing file.
 2. Choose File → Open Video when you need to associate a video, and wait for Preview. Audio analysis runs in the background.
 3. Use File → Save for later changes, or Save As for another path. File → New Project also requires saving the new file before replacing the current project.
 
 File → Close Project or closing the workspace window returns to the welcome window after handling unsaved changes. File → Quit ends the application.
 
 Projects store subtitles, tracks, styles, and animation. Video stays an external file reference and must remain accessible. Saving a project and exporting a finished video are separate actions. Project v3 is supported; v1/v2 are explicitly rejected.
+
+Settings → Projects sets the default workspace root. Its initial value is `AegiNext/Workspace` under the OS Documents directory; directories are created when a project is created. You can choose another parent in the creation panel. A project named `Subtitles` creates `workspace/Subtitles/Subtitles.aeginext` and an empty `workspace/Subtitles/backup` directory. An existing target directory, including an empty one, rejects creation; change the name or parent to retry in the same panel.
+
+Automatic saving and backups have separate switches and intervals in Settings → Projects. Defaults are automatic saving every 2 minutes, backups every 5 minutes, and at most 20 backups. Intervals accept 1–1440 minutes; the count accepts 1–1000. Automatic saving writes committed edits to the main file without committing pending input or changing undo history. A successful save clears the unsaved marker for that version. Backups still run after automatic saving clears the marker, and unchanged content does not generate another backup within the same project session.
+
+Backups are stored beside the current main file in `backup`, named `Subtitles-yyyyMMdd-HHmmssfff.aeginext` using local time with milliseconds. To restore, close the project and copy the chosen backup into the project root, replacing the main file or choosing another filename, then open that root file. Backups keep the original resource references and do not copy media or fonts, so retain the project resources. Opening a historical file directly from `backup` prompts you to copy it to the root first.
 
 The title is `AegiNEXT - Project name`, with `•` for unsaved changes. Projects opened through the welcome window use the project filename. Successful Save As updates the title; cancellation or failure leaves it unchanged.
 
@@ -151,9 +157,9 @@ In Settings → Shortcuts, select a command, click Record, press the chord, rele
 - Wheel scrolls tracks vertically; Shift+wheel pans horizontally; Ctrl/Cmd+wheel zooms around the pointer. Touchpads support pinch zoom and horizontal scrolling.
 - The top minimap shows the project and viewport. Drag the viewport to pan or its edges to zoom, without changing playback position.
 - Drag panel headings to dock, tab, split, or float. Layout offers builtins and personal presets. Current space autosaves; named presets update only with explicit Save. Active tabs use text/background highlighting without borders.
-- Settings contains appearance, colors, shortcuts, subtitle styles, and effect scripts. macOS can choose system or main-window menus in Appearance.
+- Settings contains project preferences, appearance, colors, shortcuts, subtitle styles, and effect scripts. macOS can choose system or main-window menus in Appearance.
 - Colors contains accent and audio palettes: Classic, Ice, Ember, and Grayscale adapt to light/dark themes. Edit low/mid/high energy and waveform colors for a custom palette. Builtins can switch directly back to Classic; custom values display as entered. Valid input applies immediately, previews reflect the actual theme, and waveform supports alpha. Restore Default Colors resets accent and Classic audio colors, clears their drafts, and saves immediately, preserving other settings.
-- Project edits require Save; automatic layout/appearance persistence does not save the project.
+- Automatic project saving is controlled separately in Settings → Projects; layout/appearance persistence does not save project content.
 
 ## Troubleshooting
 

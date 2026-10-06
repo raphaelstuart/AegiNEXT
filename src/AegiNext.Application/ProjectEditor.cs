@@ -28,6 +28,7 @@ public sealed partial class ProjectEditor
     }
 
     public event EventHandler? Changed;
+    public event EventHandler<ProjectEditorChangedEventArgs>? StateChanged;
 
     public ProjectDocument Snapshot
     {
@@ -124,7 +125,7 @@ public sealed partial class ProjectEditor
             }
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        NotifyChanged(ProjectEditorChangeKind.DOCUMENT);
     }
 
     /// <summary>撤销最近一个事务；没有历史时返回 false。</summary>
@@ -144,7 +145,7 @@ public sealed partial class ProjectEditor
             snapshot = entry.Before;
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        NotifyChanged(ProjectEditorChangeKind.DOCUMENT);
         return true;
     }
 
@@ -165,7 +166,7 @@ public sealed partial class ProjectEditor
             snapshot = entry.After;
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        NotifyChanged(ProjectEditorChangeKind.DOCUMENT);
         return true;
     }
 
@@ -182,7 +183,7 @@ public sealed partial class ProjectEditor
             redo.Clear();
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        NotifyChanged(ProjectEditorChangeKind.DOCUMENT);
     }
 
     /// <summary>标记实际写盘的快照；后台保存旧快照不会将较新的编辑误标为已保存。</summary>
@@ -194,7 +195,7 @@ public sealed partial class ProjectEditor
             saved = savedSnapshot ?? snapshot;
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        NotifyChanged(ProjectEditorChangeKind.SAVE_POINT);
     }
 
     /// <summary>新增字幕行及同标识字幕层，作为一个事务。</summary>
@@ -468,6 +469,12 @@ public sealed partial class ProjectEditor
         {
             throw new InvalidOperationException("编辑委托不能重入编辑会话。");
         }
+    }
+
+    private void NotifyChanged(ProjectEditorChangeKind kind)
+    {
+        StateChanged?.Invoke(this, new(kind));
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     private static ProjectLayer CreateSubtitleLayer(SubtitleLine line)

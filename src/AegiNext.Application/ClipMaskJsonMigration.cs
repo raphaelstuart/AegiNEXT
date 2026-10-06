@@ -113,7 +113,7 @@ internal static class ClipMaskJsonMigration
         {
             var id = owner["id"] is JsonValue value && value.TryGetValue<string>(out var identifier)
                 ? identifier : "未知标识";
-            throw new InvalidDataException($"{location}（{id}）含有非空旧局部蒙版，无法安全升级为工程坐标 Clip 蒙版；原文件未修改。");
+            throw new InvalidDataException($"{location}（{id}）含有非空旧局部蒙版，无法安全升级为项目坐标 Clip 蒙版；原文件未修改。");
         }
     }
 

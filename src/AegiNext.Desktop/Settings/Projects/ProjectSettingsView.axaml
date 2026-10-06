@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:projects="using:AegiNext.Desktop.Settings.Projects"
+             xmlns:inputs="using:AegiNext.Desktop.Controls"
+             xmlns:icons="using:Material.Icons.Avalonia"
+             x:Class="AegiNext.Desktop.Settings.Projects.ProjectSettingsView"
+             x:DataType="projects:ProjectSettingsViewModel" Classes="business-surface">
+  <ScrollViewer Name="ProjectsPage">
+    <StackPanel Spacing="16">
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Loc Key=Settings.ProjectWorkspace}" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Name="WorkspaceRootInput" Text="{Binding WorkspaceRootText, Mode=TwoWay}" />
+            <Button Name="BrowseWorkspaceButton" Grid.Column="1" ToolTip.Tip="{Loc Key=Workbench.BrowseProjectLocation}">
+              <icons:MaterialIcon Kind="FolderOpenOutline" Width="18" Height="18" />
+            </Button>
+          </Grid>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <CheckBox Name="AutoSaveToggle" Content="{Loc Key=Settings.ProjectAutoSave}"
+                    IsChecked="{Binding AutoSaveEnabled, Mode=TwoWay}" />
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.ProjectIntervalMinutes}" VerticalAlignment="Center" />
+            <inputs:NumericDraftInput Name="AutoSaveIntervalInput" Grid.Column="1"
+                RawText="{Binding AutoSaveIntervalText, Mode=TwoWay}" Minimum="1" Maximum="1440" Increment="1"
+                FormatString="0" IsEnabled="{Binding AutoSaveEnabled}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <CheckBox Name="BackupToggle" Content="{Loc Key=Settings.ProjectBackup}"
+                    IsChecked="{Binding BackupEnabled, Mode=TwoWay}" />
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16" RowDefinitions="Auto,Auto" RowSpacing="12">
+            <TextBlock Text="{Loc Key=Settings.ProjectIntervalMinutes}" VerticalAlignment="Center" />
+            <inputs:NumericDraftInput Name="BackupIntervalInput" Grid.Column="1"
+                RawText="{Binding BackupIntervalText, Mode=TwoWay}" Minimum="1" Maximum="1440" Increment="1"
+                FormatString="0" IsEnabled="{Binding BackupEnabled}" />
+            <TextBlock Grid.Row="1" Text="{Loc Key=Settings.ProjectMaximumBackups}" VerticalAlignment="Center" />
+            <inputs:NumericDraftInput Name="MaximumBackupCountInput" Grid.Column="1" Grid.Row="1"
+                RawText="{Binding MaximumBackupCountText, Mode=TwoWay}" Minimum="1" Maximum="1000" Increment="1"
+                FormatString="0" IsEnabled="{Binding BackupEnabled}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

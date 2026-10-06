@@ -3,6 +3,7 @@ using System.Buffers;
 using System.Globalization;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Media.Decoding;
+using AegiNext.Desktop.Settings.Projects;
 
 namespace AegiNext.Desktop.Settings;
 
@@ -20,6 +21,7 @@ public sealed record WorkbenchPreferences
     public bool WindowMenuOnMac { get; init; }
     public PreviewQuality PreviewQuality { get; init; } = PreviewQuality.LOW;
     public VideoDecodeMode PreviewDecodeMode { get; init; } = VideoDecodeMode.Auto;
+    public ProjectPreferences Projects { get; init; } = new();
 
     /// <summary>拒绝未知设置版本、语言、主题或非法音量。</summary>
     public void Validate()
@@ -27,12 +29,13 @@ public sealed record WorkbenchPreferences
         if (Version != 1 || !IsValidLanguage(Language) ||
             !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !Enum.IsDefined(PreviewDecodeMode) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
             AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
-            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null)
+            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || Projects is null)
         {
             throw new InvalidDataException("桌面偏好无效或版本不受支持。");
         }
 
         AudioGraph.Validate();
+        Projects.Validate();
         ShortcutConfiguration.Validate(ShortcutBindings);
         if (ShortcutBindings.Length != Enum.GetValues<WorkbenchCommand>().Length)
         {
@@ -67,7 +70,7 @@ public sealed record WorkbenchPreferences
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
                AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
-               ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
+               Projects == other.Projects && ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
     }
 
     /// <inheritdoc />
@@ -83,6 +86,7 @@ public sealed record WorkbenchPreferences
         hash.Add(WindowMenuOnMac);
         hash.Add(PreviewQuality);
         hash.Add(PreviewDecodeMode);
+        hash.Add(Projects);
         foreach (var binding in ShortcutBindings)
         {
             hash.Add(binding);

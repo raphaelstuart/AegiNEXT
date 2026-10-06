@@ -53,7 +53,7 @@ internal sealed class AssMaskParser(MediaTime duration, double scaleX, double sc
             var target = ParseGeometry(clip.Name, clip.Value);
             if (acceleration < 0)
             {
-                diagnostics.Add(new("Ass.MaskAcceleration", "负 accel 在变换起点产生无穷大，不能保存为有限工程蒙版；已保留基础裁切并舍弃该变换。", sourceStart, sourceLength, subtitleId));
+                diagnostics.Add(new("Ass.MaskAcceleration", "负 accel 在变换起点产生无穷大，不能保存为有限项目蒙版；已保留基础裁切并舍弃该变换。", sourceStart, sourceLength, subtitleId));
                 continue;
             }
             if (target is not RectangleClipMask rectangle)

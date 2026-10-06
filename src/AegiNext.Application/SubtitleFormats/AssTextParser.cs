@@ -283,7 +283,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 karaokeTime = new(AssFormatValues.Integer(value), 100);
                 if (projectSource && karaokeTime < MediaTime.Zero)
                 {
-                    throw new InvalidDataException("工程高级代码的卡拉 OK 时间不能为负。");
+                    throw new InvalidDataException("项目高级代码的卡拉 OK 时间不能为负。");
                 }
                 break;
             case "k":

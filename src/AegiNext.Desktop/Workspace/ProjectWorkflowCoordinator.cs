@@ -14,6 +14,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
 {
     private const int MAX_SUBTITLE_FILE_BYTES = 16 * 1024 * 1024;
     private UnavailableProjectMediaBinding? unavailableMediaBinding;
+    internal bool IsNewProjectDialogOpen { get; private set; }
     internal async Task<bool> ConfirmDiscardOrSaveAsync()
     {
         if (!session.TryCommitDrafts())
@@ -32,31 +33,61 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
 
     internal async Task NewProjectAsync()
     {
-        if (session.IsProjectBusy || !await ConfirmDiscardOrSaveAsync() || session.IsClosing)
+        if (session.IsProjectBusy || session.IsClosing || IsNewProjectDialogOpen)
         {
             return;
         }
+        IsNewProjectDialogOpen = true;
+        session.ViewModel.RefreshCommands();
+        try
+        {
+            await using var pause = await session.Persistence.PauseAsync();
+            if (!await ConfirmDiscardOrSaveAsync() || session.IsClosing)
+            {
+                return;
+            }
+            await dialogs.ShowNewProjectAsync(session.Preferences.Projects.WorkspaceRoot, async (request, cancellationToken) =>
+            {
+                var result = await CreateProjectAsync(request, cancellationToken);
+                foreach (var diagnostic in result.Diagnostics)
+                {
+                    session.ShowError(diagnostic);
+                }
+                return result;
+            }, session.ProjectOperationsToken);
+        }
+        finally
+        {
+            IsNewProjectDialogOpen = false;
+            session.ViewModel.RefreshCommands();
+        }
+    }
 
-        var path = await dialogs.SaveFileAsync("NewProject", "Projects", ["*.aeginext"], ".aeginext",
-            Localization.Get("Workbench.Untitled") + ".aeginext");
-        if (path is null || session.IsClosing)
+    internal async Task<ProjectOpenResult> CreateProjectAsync(ProjectCreationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
         {
-            return;
+            return new(ProjectOpenStatus.CANCELLED);
         }
-
-        var result = await CreateProjectAsync(path);
-        if (result.Error is { } error)
-        {
-            session.ShowError(error);
-        }
-        foreach (var diagnostic in result.Diagnostics)
-        {
-            session.ShowError(diagnostic);
-        }
+        await using var pause = await session.Persistence.PauseAsync();
+        return await session.Persistence.RunExclusiveAsync(() => CreateProjectCoreAsync(
+            ProjectCreationService.GetProjectPath(request), request, cancellationToken));
     }
 
     internal async Task<ProjectOpenResult> CreateProjectAsync(string path,
         CancellationToken cancellationToken = default)
+    {
+        if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
+        {
+            return new(ProjectOpenStatus.CANCELLED);
+        }
+        await using var pause = await session.Persistence.PauseAsync();
+        return await session.Persistence.RunExclusiveAsync(() => CreateProjectCoreAsync(path, null, cancellationToken));
+    }
+
+    private async Task<ProjectOpenResult> CreateProjectCoreAsync(string path, ProjectCreationRequest? request,
+        CancellationToken cancellationToken)
     {
         if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
         {
@@ -72,9 +103,10 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         {
             path = Path.GetFullPath(path);
             var directory = Path.GetDirectoryName(path)!;
-            var document = new ProjectDocument { Name = Path.GetFileNameWithoutExtension(path) };
-            await ProjectStore.SaveAsync(document, path, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
+            if (request is not null)
+            {
+                ProjectCreationService.Validate(request);
+            }
             previewChanged = true;
             await session.Controller.CloseMediaAsync();
             cancellationToken.ThrowIfCancellationRequested();
@@ -83,9 +115,22 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                 throw new OperationCanceledException();
             }
 
+            ProjectDocument document;
+            if (request is not null)
+            {
+                var created = await ProjectCreationService.CreateAsync(request, cancellationToken);
+                path = created.Path;
+                document = created.Document;
+            }
+            else
+            {
+                document = new() { Name = Path.GetFileNameWithoutExtension(path) };
+                await ProjectStore.CreateAsync(document, path, cancellationToken);
+            }
             session.SetProjectLocation(path, directory);
             session.ResetSelection();
             session.Editor.Reset(document);
+            session.ActivateProjectPersistence();
             unavailableMediaBinding = null;
             committed = true;
             await session.ApplicationContext.RecentProjects.RecordAsync(path);
@@ -137,6 +182,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             return;
         }
 
+        await using var pickerPause = await session.Persistence.PauseAsync();
         var path = await dialogs.OpenFileAsync("OpenProject", "Projects", ["*.aeginext"]);
         if (path is null)
         {
@@ -163,9 +209,14 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             return new(ProjectOpenStatus.CANCELLED);
         }
 
+        await using var pause = await session.Persistence.PauseAsync();
         try
         {
             path = Path.GetFullPath(path);
+            if (ProjectBackupStore.IsBackupPath(path))
+            {
+                return new(ProjectOpenStatus.FAILED, new InvalidDataException(Localization.Get("Workbench.BackupRestoreRequired")));
+            }
             if (!await ConfirmDiscardOrSaveAsync() || session.IsProjectBusy || session.IsClosing ||
                 cancellationToken.IsCancellationRequested)
             {
@@ -181,6 +232,15 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             return new(ProjectOpenStatus.FAILED, error);
         }
 
+        return await session.Persistence.RunExclusiveAsync(() => OpenProjectCoreAsync(path, cancellationToken));
+    }
+
+    private async Task<ProjectOpenResult> OpenProjectCoreAsync(string path, CancellationToken cancellationToken)
+    {
+        if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
+        {
+            return new(ProjectOpenStatus.CANCELLED);
+        }
         session.SetProjectBusy(true);
         var previousDocument = session.Editor.Snapshot;
         var previousPreview = session.Controller.Snapshot;
@@ -250,6 +310,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             session.SetProjectLocation(path, directory);
             session.ResetSelection();
             session.Editor.Reset(document);
+            session.ActivateProjectPersistence();
             unavailableMediaBinding = deferredBinding;
             committed = true;
             await session.ApplicationContext.RecentProjects.RecordAsync(path);
@@ -421,7 +482,12 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
 
     internal async Task<bool> SaveProjectAsync(bool saveAs)
     {
-        if (session.IsProjectBusy || !session.TryCommitDrafts())
+        if (session.IsProjectBusy || session.IsClosing)
+        {
+            return false;
+        }
+        await using var pause = await session.Persistence.PauseAsync();
+        if (!session.TryCommitDrafts())
         {
             return false;
         }
@@ -437,12 +503,23 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             }
         }
 
+        if (session.IsClosing)
+        {
+            return false;
+        }
+        return await session.Persistence.RunExclusiveAsync(() => SaveProjectCoreAsync(destination));
+    }
+
+    private async Task<bool> SaveProjectCoreAsync(string destination)
+    {
         session.SetProjectBusy(true);
         try
         {
+            destination = Path.GetFullPath(destination);
+            var locationChanged = !WorkbenchSession.PathsEqual(destination, session.ProjectPath);
             var snapshot = session.Editor.Snapshot;
             var directory = Path.GetDirectoryName(destination)!;
-            var sameDirectory = directory == session.ProjectDirectory;
+            var sameDirectory = WorkbenchSession.PathsEqual(directory, session.ProjectDirectory);
             var prepared = sameDirectory
                 ? ProjectResources.NormalizeMediaReferences(snapshot, directory)
                 : await ProjectResources.RebaseAsync(snapshot, session.ProjectDirectory, directory);
@@ -457,6 +534,11 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                 session.Editor.Reset(prepared);
             }
 
+            if (locationChanged)
+            {
+                session.ActivateProjectPersistence();
+            }
+            await session.Persistence.RecordManualSaveAsync(prepared);
             session.LogInfo("Project", Localization.Get("Workbench.Saved"), destination);
             await session.ApplicationContext.RecentProjects.RecordAsync(destination);
             return true;

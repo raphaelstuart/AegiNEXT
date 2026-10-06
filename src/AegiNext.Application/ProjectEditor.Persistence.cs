@@ -26,7 +26,7 @@ public sealed partial class ProjectEditor
             saved = persistedSnapshot;
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        NotifyChanged(ProjectEditorChangeKind.SAVE_POINT);
     }
 
     private static void ReplaceHistorySnapshot(List<ProjectHistoryEntry> history, ProjectDocument originalSnapshot,

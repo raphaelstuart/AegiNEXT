@@ -1,3 +1,4 @@
+using AegiNext.Application;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Views;
 using Avalonia.Controls;
@@ -48,6 +49,41 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
         return file is null ? null : file.TryGetLocalPath() ?? throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
     }
 
+    /// <summary>填写项目创建信息；错误留在同一面板中，成功后才关闭。</summary>
+    public async Task<bool> ShowNewProjectAsync(string workspaceRoot,
+        Func<ProjectCreationRequest, CancellationToken, Task<ProjectOpenResult>> create,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        NewProjectDialog? dialog = null;
+        using var model = new NewProjectDialogViewModel(workspaceRoot, create, async token =>
+        {
+            token.ThrowIfCancellationRequested();
+            var folders = await (storageProvider?.Invoke() ?? dialog!.StorageProvider).OpenFolderPickerAsync(new()
+            {
+                Title = Localization.Get("Workbench.BrowseProjectLocation"), AllowMultiple = false
+            });
+            token.ThrowIfCancellationRequested();
+            return folders.Count == 0 ? null : folders[0].TryGetLocalPath()
+                ?? throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
+        }, cancellationToken);
+        dialog = new(model);
+        registerWindow?.Invoke(dialog);
+        var answer = dialog.ShowDialog<bool>(ownerProvider());
+        using var registration = cancellationToken.Register(() => Dispatcher.UIThread.Post(() => dialog.Close(false)));
+        var accepted = false;
+        try
+        {
+            accepted = await answer;
+        }
+        finally
+        {
+            model.Dispose();
+            await model.Completion;
+        }
+        return accepted || model.WasCreated;
+    }
+
     /// <summary>展示具体字幕转换损失，并等待用户明确继续或取消。</summary>
     public Task<bool> ConfirmSubtitleConversionAsync(IReadOnlyList<string> diagnostics)
     {
@@ -56,7 +92,7 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
         return dialog.ShowDialog<bool>(ownerProvider());
     }
 
-    /// <summary>等待用户决定如何处理工程的未保存修改。</summary>
+    /// <summary>等待用户决定如何处理项目的未保存修改。</summary>
     public Task<int> ConfirmUnsavedAsync()
     {
         var dialog = new UnsavedProjectDialog();

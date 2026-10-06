@@ -1,0 +1,40 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:AegiNext.Desktop.Views"
+        xmlns:common="using:AegiNext.Desktop.Controls.Common"
+        xmlns:materialIcons="using:Material.Icons.Avalonia"
+        x:Class="AegiNext.Desktop.Views.NewProjectDialog"
+        x:DataType="views:NewProjectDialogViewModel"
+        Classes="business-surface" Title="{Loc Key=Workbench.NewProject}"
+        Width="720" MinWidth="560" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource PreviewBackground}">
+  <Grid RowDefinitions="Auto,Auto">
+    <common:WindowTitleBar Name="NewProjectTitleBar" />
+    <Grid Grid.Row="1" Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+          ColumnDefinitions="Auto,*,Auto" RowSpacing="16" ColumnSpacing="12">
+      <TextBlock Grid.Row="0" Text="{Loc Key=Workbench.ProjectName}" VerticalAlignment="Center" />
+      <TextBox Name="ProjectNameInput" Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2"
+               Text="{Binding ProjectName, Mode=TwoWay}" IsEnabled="{Binding CanInteract}" />
+      <TextBlock Grid.Row="1" Text="{Loc Key=Workbench.ProjectLocation}" VerticalAlignment="Center" />
+      <TextBox Name="ProjectLocationInput" Grid.Row="1" Grid.Column="1"
+               Text="{Binding ProjectLocation, Mode=TwoWay}" IsEnabled="{Binding CanInteract}" />
+      <Button Name="BrowseProjectLocationButton" Grid.Row="1" Grid.Column="2" Width="36" Padding="6"
+              Command="{Binding BrowseCommand}" ToolTip.Tip="{Loc Key=Workbench.BrowseProjectLocation}"
+              AutomationProperties.Name="{Loc Key=Workbench.BrowseProjectLocation}">
+        <materialIcons:MaterialIcon Kind="FolderOpenOutline" Width="18" Height="18" />
+      </Button>
+      <TextBlock Name="ProjectPathPreview" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                 Text="{Binding PathPreview}" TextWrapping="Wrap"
+                 Foreground="{DynamicResource PreviewMuted}" />
+      <TextBlock Name="NewProjectError" Grid.Row="3" Grid.ColumnSpan="3"
+                 Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" MaxHeight="100"
+                 Foreground="{DynamicResource PreviewError}" />
+      <ProgressBar Grid.Row="4" Grid.ColumnSpan="3" Height="3" IsVisible="{Binding IsBusy}" IsIndeterminate="True" />
+      <StackPanel Grid.Row="5" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Name="CancelButton" Content="{Loc Key=Workbench.Cancel}" Click="OnCancel" />
+        <Button Name="CreateProjectButton" Content="{Loc Key=Workbench.CreateProject}"
+                Command="{Binding CreateCommand}" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

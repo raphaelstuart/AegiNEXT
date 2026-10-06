@@ -40,7 +40,15 @@ public static class ProjectStore
     }
 
     /// <summary>先验证快照并完整写入临时文件；提交前取消或失败不修改已有工程。</summary>
-    public static async Task SaveAsync(ProjectDocument document, string path, CancellationToken cancellationToken = default)
+    public static Task SaveAsync(ProjectDocument document, string path, CancellationToken cancellationToken = default)
+        => WriteAsync(document, path, true, cancellationToken);
+
+    /// <summary>原子提交新工程文件；已有文件或目录永不覆盖。</summary>
+    public static Task CreateAsync(ProjectDocument document, string path, CancellationToken cancellationToken = default)
+        => WriteAsync(document, path, false, cancellationToken);
+
+    private static async Task WriteAsync(ProjectDocument document, string path, bool overwrite,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         cancellationToken.ThrowIfCancellationRequested();
@@ -60,7 +68,7 @@ public static class ProjectStore
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporary, fullPath, true);
+            File.Move(temporary, fullPath, overwrite);
         }
         finally
         {

@@ -67,9 +67,9 @@ internal static class AssMaskSampling
         }
         if (geometryQuantized)
         {
-            diagnostics.Add(new("Ass.MaskQuantization", "展开后的矢量蒙版坐标已量化为 1/64 工程像素。", SubtitleId: line.Id));
+            diagnostics.Add(new("Ass.MaskQuantization", "展开后的矢量蒙版坐标已量化为 1/64 项目像素。", SubtitleId: line.Id));
         }
-        diagnostics.Add(new("Ass.MaskAnimationExpanded", $"蒙版动画按工程帧率展开为 {result.Count} 条静态裁切对白；导回后为独立静态 Clip。", SubtitleId: line.Id));
+        diagnostics.Add(new("Ass.MaskAnimationExpanded", $"蒙版动画按项目帧率展开为 {result.Count} 条静态裁切对白；导回后为独立静态 Clip。", SubtitleId: line.Id));
         if (quantized)
         {
             diagnostics.Add(new("Ass.MaskTimeQuantization", $"按帧蒙版的时间已量化为厘秒，{last - first} 个帧样本合并为 {result.Count} 个非重叠时间区间。", SubtitleId: line.Id));

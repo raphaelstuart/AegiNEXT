@@ -6,6 +6,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings.Effects;
+using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Workspace.Diagnostics;
@@ -121,6 +122,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ColorsChanged += OnColorsChanged;
         window.ShortcutsChanged += OnShortcutsChanged;
         window.PreviewDecodeModeChanged += OnPreviewDecodeModeChanged;
+        window.ProjectsChanged += OnProjectsChanged;
         window.UpsertStyleRequested += OnUpsertStyleRequested;
         window.DeleteStyleRequested += OnDeleteStyleRequested;
         window.CaptureStyleRequested += OnCaptureStyleRequested;
@@ -154,6 +156,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ColorsChanged -= OnColorsChanged;
         window.ShortcutsChanged -= OnShortcutsChanged;
         window.PreviewDecodeModeChanged -= OnPreviewDecodeModeChanged;
+        window.ProjectsChanged -= OnProjectsChanged;
         window.UpsertStyleRequested -= OnUpsertStyleRequested;
         window.DeleteStyleRequested -= OnDeleteStyleRequested;
         window.CaptureStyleRequested -= OnCaptureStyleRequested;
@@ -277,6 +280,11 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private void OnColorsChanged(object? sender, SettingsColorsChangedEventArgs e)
     {
         UpdatePreferences(value => value with { AccentColor = e.AccentColor, AudioGraph = e.AudioGraph });
+    }
+
+    private void OnProjectsChanged(object? sender, ProjectPreferencesChangedEventArgs e)
+    {
+        UpdatePreferences(value => value with { Projects = e.Preferences });
     }
 
     private void OnShortcutsChanged(object? sender, SettingsShortcutsChangedEventArgs e)

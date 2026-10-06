@@ -109,30 +109,60 @@ internal sealed class DesktopStartupCoordinator : IAsyncDisposable
         MainWindow? pendingWindow = null;
         try
         {
+            ProjectOpenResult? result = null;
             if (create)
             {
-                path = await dialogs.SaveFileAsync("NewProject", "Projects", ["*.aeginext"], ".aeginext",
-                    Localization.Get("Workbench.Untitled") + ".aeginext");
-                if (path is null)
+                var created = await dialogs.ShowNewProjectAsync(context.Preferences.Projects.WorkspaceRoot,
+                    async (request, token) =>
+                    {
+                        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, cancellation.Token);
+                        await context.Initialization;
+                        linked.Token.ThrowIfCancellationRequested();
+                        WorkbenchSession? trial = sessionFactory(dialogs, context);
+                        try
+                        {
+                            var attempt = await trial.CreateProjectAsync(request, linked.Token);
+                            if (attempt.Status == ProjectOpenStatus.OPENED)
+                            {
+                                candidate = trial;
+                                result = attempt;
+                                trial = null;
+                            }
+                            else
+                            {
+                                linked.Token.ThrowIfCancellationRequested();
+                            }
+                            return attempt;
+                        }
+                        finally
+                        {
+                            if (trial is not null)
+                            {
+                                await trial.DisposeAsync();
+                            }
+                        }
+                    }, cancellation.Token);
+                if (!created || candidate is null || result is null)
                 {
                     return;
                 }
             }
-            else if (path is null)
+            else
             {
-                path = await dialogs.OpenFileAsync("OpenProject", "Projects", ["*.aeginext"]);
                 if (path is null)
                 {
-                    return;
+                    path = await dialogs.OpenFileAsync("OpenProject", "Projects", ["*.aeginext"]);
+                    if (path is null)
+                    {
+                        return;
+                    }
                 }
+                cancellation.Token.ThrowIfCancellationRequested();
+                await context.Initialization;
+                cancellation.Token.ThrowIfCancellationRequested();
+                candidate = sessionFactory(dialogs, context);
+                result = await candidate.OpenProjectAsync(path, cancellation.Token);
             }
-            cancellation.Token.ThrowIfCancellationRequested();
-            await context.Initialization;
-            cancellation.Token.ThrowIfCancellationRequested();
-            candidate = sessionFactory(dialogs, context);
-            var result = create
-                ? await candidate.CreateProjectAsync(path!, cancellation.Token)
-                : await candidate.OpenProjectAsync(path!, cancellation.Token);
             if (result.Status != ProjectOpenStatus.OPENED)
             {
                 WelcomeWindow.ViewModel.Error = result.Error?.Message;
@@ -161,7 +191,9 @@ internal sealed class DesktopStartupCoordinator : IAsyncDisposable
         {
             if (!closing)
             {
-                WelcomeWindow.ViewModel.Error = error.Message;
+                WelcomeWindow.ViewModel.Error = create && candidate?.ProjectPath is { } createdPath
+                    ? Localization.Format("Workbench.NewProjectActivationFailed", createdPath, error.Message)
+                    : error.Message;
             }
         }
         finally

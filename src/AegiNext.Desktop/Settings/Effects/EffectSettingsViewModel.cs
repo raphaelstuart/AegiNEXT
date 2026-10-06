@@ -174,18 +174,25 @@ public sealed class EffectSettingsViewModel : ObservableObject
 
     private void RebuildItems(Guid? selectedId)
     {
-        var builtins = BuiltinEffectScripts.Templates.Select(template =>
-        {
-            var id = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(template.Script.Id)).AsSpan(0, 16));
-            return new EffectScriptSettingsItem(new(id, Localization.Get("Settings.Effect_" + template.Script.Id), template.Source), true);
-        });
-        var custom = presets.Concat(drafts.Values.Where(draft => presets.All(item => item.Id != draft.Id)))
-            .Select(preset => new EffectScriptSettingsItem(preset, false));
-        items = builtins.Concat(custom).ToImmutableArray();
-        OnPropertyChanged(nameof(Effects));
+        var wasLoading = loading;
         loading = true;
-        SelectedEffect = items.FirstOrDefault(item => item.Id == selectedId) ?? items.FirstOrDefault();
-        loading = false;
+        try
+        {
+            var builtins = BuiltinEffectScripts.Templates.Select(template =>
+            {
+                var id = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(template.Script.Id)).AsSpan(0, 16));
+                return new EffectScriptSettingsItem(new(id, Localization.Get("Settings.Effect_" + template.Script.Id), template.Source), true);
+            });
+            var custom = presets.Concat(drafts.Values.Where(draft => presets.All(item => item.Id != draft.Id)))
+                .Select(preset => new EffectScriptSettingsItem(preset, false));
+            items = builtins.Concat(custom).ToImmutableArray();
+            OnPropertyChanged(nameof(Effects));
+            SelectedEffect = items.FirstOrDefault(item => item.Id == selectedId) ?? items.FirstOrDefault();
+        }
+        finally
+        {
+            loading = wasLoading;
+        }
         LoadDraft();
     }
 

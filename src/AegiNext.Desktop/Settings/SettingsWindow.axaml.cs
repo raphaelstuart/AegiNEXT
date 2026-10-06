@@ -5,6 +5,7 @@ using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings.Effects;
+using AegiNext.Desktop.Settings.Projects;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
@@ -36,6 +37,7 @@ public sealed partial class SettingsWindow : Window
         viewModel.Colors.Changed += OnColorsChanged;
         viewModel.Shortcuts.Changed += OnShortcutsChanged;
         viewModel.Media.DecodeModeChanged += OnPreviewDecodeModeChanged;
+        viewModel.Projects.Changed += OnProjectsChanged;
         viewModel.Styles.UpsertRequested += OnUpsertStyleRequested;
         viewModel.Styles.DeleteRequested += OnDeleteStyleRequested;
         viewModel.Styles.ApplyRequested += OnApplyStyleRequested;
@@ -57,6 +59,7 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler<SettingsColorsChangedEventArgs>? ColorsChanged;
     public event EventHandler<SettingsShortcutsChangedEventArgs>? ShortcutsChanged;
     public event EventHandler<SettingsPreviewDecodeModeChangedEventArgs>? PreviewDecodeModeChanged;
+    public event EventHandler<ProjectPreferencesChangedEventArgs>? ProjectsChanged;
     public event EventHandler<SettingsStyleEventArgs>? UpsertStyleRequested;
     public event EventHandler<SettingsStyleDeleteEventArgs>? DeleteStyleRequested;
     public event EventHandler? CaptureStyleRequested;
@@ -98,6 +101,7 @@ public sealed partial class SettingsWindow : Window
         ViewModel.Appearance.UpdatePreferences(value);
         ViewModel.Colors.UpdatePreferences(value);
         ViewModel.Media.UpdatePreferences(value);
+        ViewModel.Projects.UpdatePreferences(value.Projects);
         RefreshLanguage();
     }
 
@@ -119,6 +123,7 @@ public sealed partial class SettingsWindow : Window
         ViewModel.Colors.Changed -= OnColorsChanged;
         ViewModel.Shortcuts.Changed -= OnShortcutsChanged;
         ViewModel.Media.DecodeModeChanged -= OnPreviewDecodeModeChanged;
+        ViewModel.Projects.Changed -= OnProjectsChanged;
         ViewModel.Styles.UpsertRequested -= OnUpsertStyleRequested;
         ViewModel.Styles.DeleteRequested -= OnDeleteStyleRequested;
         ViewModel.Styles.ApplyRequested -= OnApplyStyleRequested;
@@ -153,6 +158,11 @@ public sealed partial class SettingsWindow : Window
     private void OnPreviewDecodeModeChanged(object? sender, SettingsPreviewDecodeModeChangedEventArgs e)
     {
         PreviewDecodeModeChanged?.Invoke(this, e);
+    }
+
+    private void OnProjectsChanged(object? sender, ProjectPreferencesChangedEventArgs e)
+    {
+        ProjectsChanged?.Invoke(this, e);
     }
 
     private void OnUpsertStyleRequested(object? sender, SettingsStyleEventArgs e)
