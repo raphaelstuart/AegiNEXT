@@ -19,7 +19,9 @@ internal static class WorkbenchPreferencesMigration
         var previous = commands.Where(command => command <= WorkbenchCommand.LAYOUT_RESTORE_DEFAULT);
         var current = commands.Where(command => command <= WorkbenchCommand.VIEW_LOG);
         var subtitleDetails = commands.Where(command => command <= WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
-        if (!present.SetEquals(legacy) && !present.SetEquals(previous) && !present.SetEquals(current) && !present.SetEquals(subtitleDetails))
+        var focusCommands = commands.Where(command => command <= WorkbenchCommand.END_TEXT_INPUT);
+        var projectCommands = commands.Where(command => command <= WorkbenchCommand.CLOSE_PROJECT);
+        if (!present.SetEquals(legacy) && !present.SetEquals(previous) && !present.SetEquals(current) && !present.SetEquals(subtitleDetails) && !present.SetEquals(focusCommands) && !present.SetEquals(projectCommands))
         {
             return value;
         }

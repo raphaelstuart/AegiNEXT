@@ -23,13 +23,13 @@ public static class SubtitleStylePresetService
         if (style.FontAssetId is { } fontId)
         {
             var asset = project.Assets.FirstOrDefault(item => item.Id == fontId && item.Kind == ProjectAssetKind.FONT) ??
-                throw new InvalidDataException("样式引用的工程字体不存在。");
+                throw new InvalidDataException("样式引用的项目字体不存在。");
             var path = ProjectAssetLocation.Resolve(asset, projectDirectory);
             var bytes = await PresetFileReader.ReadAsync(path, SubtitleStylePresetValidator.MAXIMUM_FONT_BYTES, cancellationToken).ConfigureAwait(false);
             var digest = Convert.ToHexStringLower(SHA256.HashData(bytes));
             if (asset.Sha256 is { } expected && !string.Equals(digest, expected, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidDataException("工程字体内容与记录的 SHA-256 不一致。");
+                throw new InvalidDataException("项目字体内容与记录的 SHA-256 不一致。");
             }
 
             preset = preset with
@@ -93,14 +93,14 @@ public static class SubtitleStylePresetService
                     SubtitleStylePresetValidator.MAXIMUM_FONT_BYTES, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(Convert.ToHexStringLower(SHA256.HashData(existing)), font.Sha256, StringComparison.Ordinal))
                 {
-                    throw new InvalidDataException("目标工程已有字体资源被替换，不能复用。");
+                    throw new InvalidDataException("目标项目已有字体资源被替换，不能复用。");
                 }
             }
             else
             {
                 if (assets.Length >= 10000)
                 {
-                    throw new InvalidDataException("工程资源数量已达到上限，无法导入字体。");
+                    throw new InvalidDataException("项目资源数量已达到上限，无法导入字体。");
                 }
 
                 asset = await ImportFontAsync(font, projectDirectory, cancellationToken).ConfigureAwait(false);

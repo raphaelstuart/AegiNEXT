@@ -138,7 +138,7 @@ public sealed class VideoExporter
         ArgumentException.ThrowIfNullOrWhiteSpace(request.OutputPath);
         if (!Path.IsPathFullyQualified(request.ProjectDirectory) || !Path.IsPathFullyQualified(request.OutputPath))
         {
-            throw new ArgumentException("工程目录和输出文件必须使用完整路径。", nameof(request));
+            throw new ArgumentException("项目目录和输出文件必须使用完整路径。", nameof(request));
         }
 
         if (request.Project.Media is null || request.Project.Width % 2 != 0 || request.Project.Height % 2 != 0)

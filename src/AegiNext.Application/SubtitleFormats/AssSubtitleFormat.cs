@@ -125,7 +125,7 @@ public static class AssSubtitleFormat
         }
         if (attachments)
         {
-            diagnostics.Add(new("Ass.Attachments", "ASS 嵌入字体或图片未导入，请在工程中单独添加资源。"));
+            diagnostics.Add(new("Ass.Attachments", "ASS 嵌入字体或图片未导入，请在项目中单独添加资源。"));
         }
         foreach (var fields in events.OrderBy(row => AssFormatValues.Integer(Get(row, "Layer", "0"))))
         {
@@ -161,7 +161,7 @@ public static class AssSubtitleFormat
             }
             if (unsupportedGeometry.Contains(name))
             {
-                diagnostics.Add(new("Ass.StyleGeometry", "ASS 样式的缩放、字距、旋转或背景框未导入，请使用工程特效。", SubtitleId: line.Id));
+                diagnostics.Add(new("Ass.StyleGeometry", "ASS 样式的缩放、字距、旋转或背景框未导入，请使用项目特效。", SubtitleId: line.Id));
             }
         }
         return new(lines.ToImmutable(), diagnostics.ToImmutable());
@@ -211,11 +211,11 @@ public static class AssSubtitleFormat
             diagnostics.AddRange(body.Diagnostics);
             if (line.Style.FontAssetId.HasValue)
             {
-                diagnostics.Add(new("Ass.FontResource", "ASS 文件不包含工程嵌入字体，请在播放环境安装对应字体。", SubtitleId: line.Id));
+                diagnostics.Add(new("Ass.FontResource", "ASS 文件不包含项目嵌入字体，请在播放环境安装对应字体。", SubtitleId: line.Id));
             }
             if (!line.Style.LineHeight.Equals(1.2))
             {
-                diagnostics.Add(new("Ass.LineHeight", "ASS 不支持工程自定义行高。", SubtitleId: line.Id));
+                diagnostics.Add(new("Ass.LineHeight", "ASS 不支持项目自定义行高。", SubtitleId: line.Id));
             }
             var position = line.Style.Position;
             var placement = "{\\an" + AssFormatValues.Alignment(line.Style.Alignment).ToString(CultureInfo.InvariantCulture);

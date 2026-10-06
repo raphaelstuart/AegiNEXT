@@ -12,18 +12,18 @@ public static class ProjectValidator
     public static void Validate(ProjectDocument document, bool enforceAnimationRange = true)
     {
         ArgumentNullException.ThrowIfNull(document);
-        Require(document.Version == ProjectDocument.CURRENT_VERSION, "不支持的工程版本。");
-        Require(document.Id != Guid.Empty && document.Name is { Length: <= 1024 }, "工程标识或名称无效。");
+        Require(document.Version == ProjectDocument.CURRENT_VERSION, "不支持的项目版本。");
+        Require(document.Id != Guid.Empty && document.Name is { Length: <= 1024 }, "项目标识或名称无效。");
         ValidateText(document.Name);
         Require(document.Width is > 0 and <= 32768 && document.Height is > 0 and <= 32768 &&
-            (long)document.Width * document.Height <= 33177600, "工程画布超过像素预算。");
+            (long)document.Width * document.Height <= 33177600, "项目画布超过像素预算。");
         Require(document.FrameRate is { Numerator: > 0 } &&
-            (double)document.FrameRate.Numerator / document.FrameRate.Denominator <= 1000, "工程帧率无效。");
+            (double)document.FrameRate.Numerator / document.FrameRate.Denominator <= 1000, "项目帧率无效。");
         Number(document.ReferenceWhiteNits, 0.001, 10000, "参考白");
         Require(!document.Assets.IsDefault && document.Assets.Length <= 10000 &&
             !document.SubtitleTracks.IsDefaultOrEmpty && document.SubtitleTracks.Length <= 10000 &&
             !document.Subtitles.IsDefault && document.Subtitles.Length <= 100000 &&
-            !document.Layers.IsDefault && !document.Presets.IsDefault, "工程集合无效或过大。");
+            !document.Layers.IsDefault && !document.Presets.IsDefault, "项目集合无效或过大。");
         var assets = new Dictionary<Guid, ProjectAsset>();
         foreach (var asset in document.Assets)
         {
@@ -77,7 +77,7 @@ public static class ProjectValidator
                 !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
             ValidateText(line.Text);
             totalText += line.Text.Length;
-            Require(totalText <= 8 * 1024 * 1024, "工程文本总量超过预算。");
+            Require(totalText <= 8 * 1024 * 1024, "项目文本总量超过预算。");
             Style(line.Style, assets);
             if (line.KaraokeStyle is { } karaokeStyle)
             {
@@ -174,7 +174,7 @@ public static class ProjectValidator
     {
         Require(!string.IsNullOrWhiteSpace(path) && path.Length <= 4096 && !path.Contains('\\') && !path.Contains(':') &&
             !path.Any(char.IsControl) && !System.IO.Path.IsPathRooted(path) &&
-            path.Split('/').All(segment => segment is not "" and not "." and not ".."), "资源必须使用工程内的规范相对路径。");
+            path.Split('/').All(segment => segment is not "" and not "." and not ".."), "资源必须使用项目内的规范相对路径。");
         ValidateText(path);
     }
 

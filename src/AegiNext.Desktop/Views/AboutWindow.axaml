@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:common="using:AegiNext.Desktop.Controls.Common"
+        xmlns:views="using:AegiNext.Desktop.Views"
+        x:Class="AegiNext.Desktop.Views.AboutWindow" x:DataType="views:AboutViewModel"
+        Classes="business-surface" Title="{Loc Key=About.Title}"
+        Width="460" SizeToContent="Height" CanResize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,Auto">
+    <common:WindowTitleBar Name="AboutTitleBar" Title="{Loc Key=About.Title}" />
+    <StackPanel Grid.Row="1" Margin="32,24,32,24" Spacing="16">
+      <Image Name="AboutApplicationIcon" Source="avares://aegi-next/Assets/AppIcon-256.png"
+             Width="96" Height="96" HorizontalAlignment="Center"
+             AutomationProperties.Name="{Binding ProductName}" />
+      <StackPanel Spacing="6">
+        <TextBlock Name="AboutProductName" Classes="heading" Text="{Binding ProductName}"
+                   FontSize="26" LineHeight="NaN" FontWeight="SemiBold" HorizontalAlignment="Center" />
+        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+          <TextBlock Text="{Loc Key=About.Version}" Foreground="{DynamicResource PreviewMuted}" />
+          <TextBlock Name="AboutVersion" Text="{Binding Version}" Foreground="{DynamicResource PreviewMuted}" />
+        </StackPanel>
+      </StackPanel>
+      <StackPanel Spacing="4">
+        <TextBlock Name="AboutCopyright" Text="{Binding CopyrightNotice}" TextAlignment="Center" />
+        <TextBlock Name="AboutLicense" Text="{Loc Key=About.License}" TextAlignment="Center" TextWrapping="Wrap" />
+      </StackPanel>
+      <Button Name="AboutCloseButton" Content="{Loc Key=About.Close}" HorizontalAlignment="Center"
+              MinWidth="88" IsDefault="True" IsCancel="True" Click="OnCloseClick" />
+    </StackPanel>
+  </Grid>
+</Window>

@@ -179,6 +179,10 @@
   </Style>
   <Style Selector="dock|ToolChromeControl /template/ Path">
     <Setter Property="Fill" Value="{DynamicResource PreviewMuted}"/>
+    <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+    <Setter Property="RenderTransform">
+      <ScaleTransform ScaleX="0.5" ScaleY="0.5"/>
+    </Setter>
   </Style>
   <Style Selector="dock|ToolChromeControl:active /template/ TextBlock#PART_Title">
     <Setter Property="Foreground" Value="{DynamicResource WorkbenchDockActiveForeground}"/>

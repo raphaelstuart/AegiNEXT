@@ -69,6 +69,7 @@ internal sealed class PreviewPanelViewModel : ObservableObject
     {
         QualityChoices =
         [
+            new(PreviewQuality.LOWEST, Localization.Get("Preview.QualityLowest")),
             new(PreviewQuality.LOW, Localization.Get("Preview.QualityLow")),
             new(PreviewQuality.STANDARD, Localization.Get("Preview.QualityStandard")),
             new(PreviewQuality.HIGH, Localization.Get("Preview.QualityHigh"))

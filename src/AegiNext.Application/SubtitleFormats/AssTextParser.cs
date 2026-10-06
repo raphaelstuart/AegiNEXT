@@ -199,7 +199,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 current = current with { ShadowBlur = value.Length == 0 ? baseline.ShadowBlur : AssFormatValues.Number(value) * scaleY };
                 if (current.ShadowBlur > 0 && (current.Fill.Alpha > 0 || current.StrokeWidth > 0 && current.Stroke.Alpha > 0 || current.ShadowColor.Alpha > 0))
                 {
-                    Report("Ass.ShadowBlur", "ASS 的模糊作用于文字或描边边缘，转换为工程阴影模糊会改变边缘外观。", sourceStart, sourceLength);
+                    Report("Ass.ShadowBlur", "ASS 的模糊作用于文字或描边边缘，转换为项目阴影模糊会改变边缘外观。", sourceStart, sourceLength);
                 }
                 break;
             case "r":
@@ -231,7 +231,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             case "pos":
                 if (projectSource)
                 {
-                    Report("Ass.ProjectPositionUnsupported", "工程 ASS 代码不支持位置标签，请移除 \\pos，并在工程原生位置属性中调整定位。", sourceStart, sourceLength);
+                    Report("Ass.ProjectPositionUnsupported", "项目 ASS 代码不支持位置标签，请移除 \\pos，并在项目原生位置属性中调整定位。", sourceStart, sourceLength);
                     break;
                 }
                 var coordinates = value.Trim('(', ')').Split(',');
@@ -269,10 +269,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 break;
             case "p":
                 drawing = AssFormatValues.Integer(value) != 0;
-                Report("Ass.Drawing", "ASS 绘图未导入，请使用工程图形图层。", sourceStart, sourceLength);
+                Report("Ass.Drawing", "ASS 绘图未导入，请使用项目图形图层。", sourceStart, sourceLength);
                 break;
             default:
-                Report("Ass.UnsupportedTag", name == "move" ? "ASS move 不受支持，请使用工程位置特效。" : $"ASS 标签 {name} 未导入。", sourceStart, sourceLength);
+                Report("Ass.UnsupportedTag", name == "move" ? "ASS move 不受支持，请使用项目位置特效。" : $"ASS 标签 {name} 未导入。", sourceStart, sourceLength);
                 break;
         }
     }

@@ -30,7 +30,7 @@ public static class SubtitleFormatLossAnalysis
                 !layer.Tracks.IsEmpty || layer.MotionPath is not null || layer.Mask is not null ||
                 layer.Transform != new LayerTransform() || !layer.Opacity.Equals(1d) || layer.Blend != BlendMode.NORMAL)
             {
-                diagnostics.Add(new("Subtitle.Composition", "字幕格式不能保留工程合成、动画或图形图层。", SubtitleId: layer.SubtitleId));
+                diagnostics.Add(new("Subtitle.Composition", "字幕格式不能保留项目合成、动画或图形图层。", SubtitleId: layer.SubtitleId));
             }
         }
     }

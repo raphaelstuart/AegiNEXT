@@ -89,7 +89,7 @@ public static class ProjectResources
                 var existingHash = await SHA256.HashDataAsync(existing, cancellationToken).ConfigureAwait(false);
                 if (!CryptographicOperations.FixedTimeEquals(hash, existingHash))
                 {
-                    throw new InvalidDataException("已存在同名但内容不同的工程资源。");
+                    throw new InvalidDataException("已存在同名但内容不同的项目资源。");
                 }
             }
             else
@@ -157,7 +157,7 @@ public static class ProjectResources
             if (asset.Sha256 is { } expected &&
                 !string.Equals(expected, imported.Sha256, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidDataException("资源内容与工程记录的 SHA-256 不一致。");
+                throw new InvalidDataException("资源内容与项目记录的 SHA-256 不一致。");
             }
 
             assets.Add(imported with { Id = asset.Id });

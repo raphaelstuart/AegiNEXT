@@ -38,5 +38,7 @@ public enum WorkbenchCommand
     IMPORT_ASS,
     EXPORT_ASS,
     OPEN_SUBTITLE_DETAILS,
-    END_TEXT_INPUT
+    END_TEXT_INPUT,
+    CLOSE_PROJECT,
+    OPEN_ABOUT
 }

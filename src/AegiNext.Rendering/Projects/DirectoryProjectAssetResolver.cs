@@ -30,7 +30,7 @@ public sealed class DirectoryProjectAssetResolver : IProjectAssetResolver
 
             if (asset.Sha256 is { } expected && !Convert.ToHexString(SHA256.HashData(stream)).Equals(expected, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidDataException("工程资源 SHA-256 校验失败。");
+                throw new InvalidDataException("项目资源 SHA-256 校验失败。");
             }
 
             stream.Position = 0;

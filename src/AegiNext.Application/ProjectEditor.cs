@@ -101,7 +101,7 @@ public sealed partial class ProjectEditor
             editing = true;
             try
             {
-                var next = edit(snapshot) ?? throw new InvalidOperationException("编辑不能返回空工程。");
+                var next = edit(snapshot) ?? throw new InvalidOperationException("编辑不能返回空项目。");
                 next = SubtitleKaraokeNormalization.Normalize(next);
                 if (next == snapshot)
                 {

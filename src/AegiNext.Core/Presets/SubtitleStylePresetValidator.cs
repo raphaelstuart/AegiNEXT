@@ -19,7 +19,7 @@ public static class SubtitleStylePresetValidator
         Require(preset is not null && preset.Id != Guid.Empty, "预设标识无效。");
         ValidateName(preset.Name);
         ProjectValidator.ValidateSubtitleStyle(preset.Style);
-        Require(preset.Style.FontAssetId is null, "便携样式不能持有工程字体标识；请捕获并内嵌字体。");
+        Require(preset.Style.FontAssetId is null, "便携样式不能持有项目字体标识；请捕获并内嵌字体。");
         if (preset.Font is { } font)
         {
             ValidateFont(font);

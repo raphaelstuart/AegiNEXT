@@ -10,11 +10,11 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
     private int queuedOperations;
     private EffectScriptChoice[] choices = [];
     public Task Completion { get; private set; } = Task.CompletedTask;
-    internal bool IsBusy => queuedOperations > 0;
+    internal bool IsBusy => queuedOperations > 0 || session.ApplicationContext.EffectsBusy;
 
     internal void Initialize() => Queue(async () =>
     {
-        await session.EffectScriptLibrary.LoadAsync();
+        await session.ApplicationContext.Initialization;
         RefreshChoices();
     });
 
@@ -22,7 +22,6 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
     {
         queuedOperations++;
         Completion = RunAsync(Completion, action, onFailure);
-        session.NotifyEffectLibraryChanged();
     }
 
     private async Task RunAsync(Task previous, Func<Task> action, Action<WorkbenchLogEntry>? onFailure)
@@ -38,7 +37,6 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         finally
         {
             queuedOperations--;
-            session.NotifyEffectLibraryChanged();
         }
     }
 
@@ -82,7 +80,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
 
     internal async Task UpsertAsync(EffectScriptPreset preset)
     {
-        await session.EffectScriptLibrary.UpsertAsync(preset);
+        await session.ApplicationContext.RunEffectOperationAsync(() => session.EffectScriptLibrary.UpsertAsync(preset));
         RefreshChoices();
         session.NotifyEffectLibraryChanged();
         session.LogInfo("Effects", Localization.Get("Workbench.SavePreset"), preset.Name);
@@ -90,7 +88,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
 
     internal async Task DeleteAsync(Guid id)
     {
-        await session.EffectScriptLibrary.RemoveAsync(id);
+        await session.ApplicationContext.RunEffectOperationAsync(() => session.EffectScriptLibrary.RemoveAsync(id));
         RefreshChoices();
         session.NotifyEffectLibraryChanged();
     }
@@ -102,7 +100,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         {
             return;
         }
-        await session.EffectScriptLibrary.ImportAsync(path);
+        await session.ApplicationContext.RunEffectOperationAsync(() => session.EffectScriptLibrary.ImportAsync(path));
         RefreshChoices();
         session.NotifyEffectLibraryChanged();
     }
@@ -113,7 +111,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         var path = await dialogs.SaveFileAsync("ExportEffectScripts", "EffectScriptFiles", ["*.aegifx"], ".aegifx", script.Id + ".aegifx");
         if (path is not null)
         {
-            await EffectScriptPresetStore.WriteScriptAsync(preset.Source, path);
+            await session.ApplicationContext.RunEffectOperationAsync(() => EffectScriptPresetStore.WriteScriptAsync(preset.Source, path));
         }
     }
 

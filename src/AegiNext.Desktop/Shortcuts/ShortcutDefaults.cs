@@ -45,7 +45,9 @@ public static class ShortcutDefaults
             new(WorkbenchCommand.IMPORT_ASS, ""),
             new(WorkbenchCommand.EXPORT_ASS, ""),
             new(WorkbenchCommand.OPEN_SUBTITLE_DETAILS, ""),
-            new(WorkbenchCommand.END_TEXT_INPUT, "Escape")
+            new(WorkbenchCommand.END_TEXT_INPUT, "Escape"),
+            new(WorkbenchCommand.CLOSE_PROJECT, ""),
+            new(WorkbenchCommand.OPEN_ABOUT, "")
         ];
     }
 }

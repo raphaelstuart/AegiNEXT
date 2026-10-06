@@ -32,22 +32,22 @@ public sealed partial class SettingsWindow : Window
         DataContext = viewModel;
         AvaloniaXamlLoader.Load(this);
         TitleBar = this.FindControl<WindowTitleBar>("SettingsTitleBar")!;
-        viewModel.Appearance.Changed += (_, value) => AppearanceChanged?.Invoke(this, value);
-        viewModel.Colors.Changed += (_, value) => ColorsChanged?.Invoke(this, value);
-        viewModel.Shortcuts.Changed += (_, value) => ShortcutsChanged?.Invoke(this, value);
-        viewModel.Media.DecodeModeChanged += (_, value) => PreviewDecodeModeChanged?.Invoke(this, value);
-        viewModel.Styles.UpsertRequested += (_, value) => UpsertStyleRequested?.Invoke(this, value);
-        viewModel.Styles.DeleteRequested += (_, value) => DeleteStyleRequested?.Invoke(this, value);
-        viewModel.Styles.ApplyRequested += (_, value) => ApplyStyleRequested?.Invoke(this, value);
-        viewModel.Styles.CaptureRequested += (_, _) => CaptureStyleRequested?.Invoke(this, EventArgs.Empty);
-        viewModel.Styles.ImportRequested += (_, _) => ImportStylesRequested?.Invoke(this, EventArgs.Empty);
-        viewModel.Styles.ExportRequested += (_, _) => ExportStylesRequested?.Invoke(this, EventArgs.Empty);
-        viewModel.Effects.SaveRequested += (_, value) => UpsertEffectRequested?.Invoke(this, value);
-        viewModel.Effects.DeleteRequested += (_, value) => DeleteEffectRequested?.Invoke(this, value);
-        viewModel.Effects.ImportRequested += (_, _) => ImportEffectRequested?.Invoke(this, EventArgs.Empty);
-        viewModel.Effects.ExportRequested += (_, value) => ExportEffectRequested?.Invoke(this, value);
+        viewModel.Appearance.Changed += OnAppearanceChanged;
+        viewModel.Colors.Changed += OnColorsChanged;
+        viewModel.Shortcuts.Changed += OnShortcutsChanged;
+        viewModel.Media.DecodeModeChanged += OnPreviewDecodeModeChanged;
+        viewModel.Styles.UpsertRequested += OnUpsertStyleRequested;
+        viewModel.Styles.DeleteRequested += OnDeleteStyleRequested;
+        viewModel.Styles.ApplyRequested += OnApplyStyleRequested;
+        viewModel.Styles.CaptureRequested += OnCaptureStyleRequested;
+        viewModel.Styles.ImportRequested += OnImportStylesRequested;
+        viewModel.Styles.ExportRequested += OnExportStylesRequested;
+        viewModel.Effects.SaveRequested += OnUpsertEffectRequested;
+        viewModel.Effects.DeleteRequested += OnDeleteEffectRequested;
+        viewModel.Effects.ImportRequested += OnImportEffectRequested;
+        viewModel.Effects.ExportRequested += OnExportEffectRequested;
         viewModel.Effects.ValidationFailed += OnEffectValidationFailed;
-        Deactivated += (_, _) => viewModel.Shortcuts.CancelCapture();
+        Deactivated += OnDeactivated;
         Closed += OnClosed;
         Localization.LanguageChanged += OnLanguageChanged;
         UpdatePreferences(preferences);
@@ -115,7 +115,98 @@ public sealed partial class SettingsWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         Localization.LanguageChanged -= OnLanguageChanged;
+        ViewModel.Appearance.Changed -= OnAppearanceChanged;
+        ViewModel.Colors.Changed -= OnColorsChanged;
+        ViewModel.Shortcuts.Changed -= OnShortcutsChanged;
+        ViewModel.Media.DecodeModeChanged -= OnPreviewDecodeModeChanged;
+        ViewModel.Styles.UpsertRequested -= OnUpsertStyleRequested;
+        ViewModel.Styles.DeleteRequested -= OnDeleteStyleRequested;
+        ViewModel.Styles.ApplyRequested -= OnApplyStyleRequested;
+        ViewModel.Styles.CaptureRequested -= OnCaptureStyleRequested;
+        ViewModel.Styles.ImportRequested -= OnImportStylesRequested;
+        ViewModel.Styles.ExportRequested -= OnExportStylesRequested;
+        ViewModel.Effects.SaveRequested -= OnUpsertEffectRequested;
+        ViewModel.Effects.DeleteRequested -= OnDeleteEffectRequested;
+        ViewModel.Effects.ImportRequested -= OnImportEffectRequested;
+        ViewModel.Effects.ExportRequested -= OnExportEffectRequested;
         ViewModel.Effects.ValidationFailed -= OnEffectValidationFailed;
+        Deactivated -= OnDeactivated;
+        Closed -= OnClosed;
+        ViewModel.Shortcuts.CancelCapture();
+    }
+
+    private void OnAppearanceChanged(object? sender, SettingsAppearanceChangedEventArgs e)
+    {
+        AppearanceChanged?.Invoke(this, e);
+    }
+
+    private void OnColorsChanged(object? sender, SettingsColorsChangedEventArgs e)
+    {
+        ColorsChanged?.Invoke(this, e);
+    }
+
+    private void OnShortcutsChanged(object? sender, SettingsShortcutsChangedEventArgs e)
+    {
+        ShortcutsChanged?.Invoke(this, e);
+    }
+
+    private void OnPreviewDecodeModeChanged(object? sender, SettingsPreviewDecodeModeChangedEventArgs e)
+    {
+        PreviewDecodeModeChanged?.Invoke(this, e);
+    }
+
+    private void OnUpsertStyleRequested(object? sender, SettingsStyleEventArgs e)
+    {
+        UpsertStyleRequested?.Invoke(this, e);
+    }
+
+    private void OnDeleteStyleRequested(object? sender, SettingsStyleDeleteEventArgs e)
+    {
+        DeleteStyleRequested?.Invoke(this, e);
+    }
+
+    private void OnApplyStyleRequested(object? sender, SettingsStyleEventArgs e)
+    {
+        ApplyStyleRequested?.Invoke(this, e);
+    }
+
+    private void OnCaptureStyleRequested(object? sender, EventArgs e)
+    {
+        CaptureStyleRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnImportStylesRequested(object? sender, EventArgs e)
+    {
+        ImportStylesRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnExportStylesRequested(object? sender, EventArgs e)
+    {
+        ExportStylesRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnUpsertEffectRequested(object? sender, SettingsEffectEventArgs e)
+    {
+        UpsertEffectRequested?.Invoke(this, e);
+    }
+
+    private void OnDeleteEffectRequested(object? sender, SettingsEffectDeleteEventArgs e)
+    {
+        DeleteEffectRequested?.Invoke(this, e);
+    }
+
+    private void OnImportEffectRequested(object? sender, EventArgs e)
+    {
+        ImportEffectRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnExportEffectRequested(object? sender, SettingsEffectEventArgs e)
+    {
+        ExportEffectRequested?.Invoke(this, e);
+    }
+
+    private void OnDeactivated(object? sender, EventArgs e)
+    {
         ViewModel.Shortcuts.CancelCapture();
     }
 

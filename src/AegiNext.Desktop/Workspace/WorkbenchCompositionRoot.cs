@@ -2,6 +2,7 @@ using AegiNext.Application;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Startup;
 using AegiNext.Media.Encoding;
 
 namespace AegiNext.Desktop.Workspace;
@@ -11,13 +12,18 @@ internal static class WorkbenchCompositionRoot
     internal static WorkbenchSession Create(IWorkbenchDialogService dialogs,
         Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory = null,
         IWorkbenchExportService? exportService = null,
-        WorkbenchStartupPreferences? startup = null)
+        WorkbenchStartupPreferences? startup = null,
+        DesktopApplicationContext? applicationContext = null)
     {
         var editor = new ProjectEditor();
-        startup ??= LoadPreferences();
-        return new(dialogs, controllerFactory, editor: editor, preferencesStore: startup.Store,
+        if (applicationContext is null)
+        {
+            startup ??= LoadPreferences();
+        }
+
+        return new(dialogs, controllerFactory, editor: editor, preferencesStore: startup?.Store,
             exportService: exportService ?? new VideoWorkbenchExportService(new VideoExporter()),
-            initialPreferences: startup.Preferences);
+            initialPreferences: startup?.Preferences, applicationContext: applicationContext);
     }
 
     internal static WorkbenchStartupPreferences LoadPreferences()

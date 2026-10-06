@@ -5,6 +5,7 @@ using Avalonia.Markup.Xaml;
 using AegiNext.Desktop.Views;
 using AegiNext.Desktop.Diagnostics;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Startup;
 using System.Runtime.Versioning;
 
 namespace AegiNext.Desktop;
@@ -59,8 +60,9 @@ public class App : Avalonia.Application
             }
             else
             {
-                desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
-                desktop.MainWindow = new MainWindow();
+                desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                var startup = new DesktopStartupCoordinator(desktop);
+                startup.Start();
             }
         }
 

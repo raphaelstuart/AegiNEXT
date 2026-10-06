@@ -23,9 +23,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
-using Avalonia.Media;
-using Avalonia.Styling;
-using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 
@@ -45,19 +42,38 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool closing;
     private bool closeCompleted;
     private Task? disposeTask;
-    private SettingsWindow? settingsWindow;
+    private readonly SettingsWindowCoordinator settingsCoordinator;
+    private SettingsWindow? settingsWindow => settingsCoordinator.Window;
 
     /// <summary>通过显式组合根创建唯一工作台会话和固定长生命周期面板。</summary>
-    public MainWindow() : this(null)
+    public MainWindow() : this((Func<Action<VideoPreviewUpdate>, VideoPreviewController>?)null)
     {
     }
 
     internal MainWindow(Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory)
+        : this(controllerFactory, null)
     {
-        var startup = WorkbenchCompositionRoot.LoadPreferences();
+    }
+
+    internal MainWindow(WorkbenchSession preparedSession) : this(null, preparedSession)
+    {
+    }
+
+    private MainWindow(Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory,
+        WorkbenchSession? preparedSession)
+    {
+        if (preparedSession is not null &&
+            (preparedSession.ProjectPath is not { } projectPath || !File.Exists(projectPath)))
+        {
+            throw new InvalidOperationException("必须先保存或打开项目文件，才能进入主界面。");
+        }
+
+        var startup = preparedSession is null ? WorkbenchCompositionRoot.LoadPreferences() : null;
         AvaloniaXamlLoader.Load(this);
-        Session = WorkbenchCompositionRoot.Create(new WindowWorkbenchDialogService(this,
+        Session = preparedSession ?? WorkbenchCompositionRoot.Create(new WindowWorkbenchDialogService(this,
             registerWindow: RegisterAuxiliaryWindow), controllerFactory, startup: startup);
+        settingsCoordinator = new(Session.ApplicationContext);
+        settingsCoordinator.EffectScriptErrorReported += RevealEffectScriptError;
         ViewModel = Session.ViewModel;
         DataContext = ViewModel;
         panels = new(StringComparer.Ordinal)
@@ -73,7 +89,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         };
         workspaceHost = this.FindControl<ContentControl>("WorkspaceHost")!;
         menuCatalog = new(ViewModel.GetCommand);
-        windowRegistry = new(menuCatalog, Session.InvalidateTimingSession, ViewModel.CancelGestures);
+        windowRegistry = new(menuCatalog, Session.InvalidateTimingSession, ViewModel.CancelGestures,
+            includeApplicationMenu: preparedSession is null);
         windowRegistry.Register(this, () => ViewModel.Title, this.FindControl<WindowTitleBar>("TitleBar")!,
             WorkbenchWindowRole.MAIN);
         layouts = new(this, panels, Session.PreferencesStore.DirectoryPath, ViewModel.TryCommitDrafts,
@@ -87,9 +104,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.Log.PropertyChanged += OnLogChanged;
         ViewModel.DraftErrorFocusRequested += OnDraftErrorFocusRequested;
         Session.PreferencesChanged += OnPreferencesChanged;
-        Session.StyleLibraryChanged += OnStyleLibraryChanged;
-        Session.EffectLibraryChanged += OnEffectLibraryChanged;
-        Session.SelectionChanged += OnSelectionChanged;
         clockTimer.Tick += (_, _) => Session.Tick();
         Opened += (_, _) => clockTimer.Start();
         Closed += (_, _) => clockTimer.Stop();
@@ -109,6 +123,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     internal WorkbenchLayoutController Layouts => layouts;
     internal WorkbenchWindowRegistry WindowRegistry => windowRegistry;
     internal ProjectDocument DocumentSnapshot => Session.DocumentSnapshot;
+    internal bool IsApplicationExitRequested { get; private set; }
+
+    internal void RequestApplicationExit()
+    {
+        IsApplicationExitRequested = true;
+        Close();
+    }
+
     internal ICommand GetCommand(WorkbenchCommand command) => ViewModel.GetCommand(command);
     internal Task OpenMediaAsync(string path, bool updateProject) => Session.OpenMediaAsync(path, updateProject);
 
@@ -134,6 +156,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             if (!await Session.RequestCloseAsync(layouts.FlushAsync))
             {
                 closing = false;
+                IsApplicationExitRequested = false;
                 return;
             }
             await DisposeAsync();
@@ -144,6 +167,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             Session.ShowError(error);
             closing = false;
+            IsApplicationExitRequested = false;
         }
     }
 
@@ -159,7 +183,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.Log.PropertyChanged -= OnLogChanged;
         workspaceHost.IsEnabled = false;
         clockTimer.Stop();
-        settingsWindow?.Close();
+        settingsCoordinator.EffectScriptErrorReported -= RevealEffectScriptError;
+        settingsCoordinator.Dispose();
+        aboutWindow?.Close();
         try
         {
             try
@@ -181,9 +207,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             ViewModel.PropertyChanged -= OnViewModelChanged;
             ViewModel.DraftErrorFocusRequested -= OnDraftErrorFocusRequested;
             Session.PreferencesChanged -= OnPreferencesChanged;
-            Session.StyleLibraryChanged -= OnStyleLibraryChanged;
-            Session.EffectLibraryChanged -= OnEffectLibraryChanged;
-            Session.SelectionChanged -= OnSelectionChanged;
             layouts.Changed -= OnLayoutChanged;
             layouts.Error -= OnLayoutError;
             layouts.FloatingWindowTitleChanged -= OnFloatingWindowTitleChanged;
@@ -217,6 +240,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             OpenSettings(request.SettingsPage);
         }
+        else if (request.Command == WorkbenchCommand.OPEN_ABOUT)
+        {
+            OpenAbout();
+        }
         else if (request.Command == WorkbenchCommand.OPEN_SUBTITLE_DETAILS)
         {
             if (ViewModel.TryCommitDrafts())
@@ -231,9 +258,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 }
             }
         }
-        else if (request.Command == WorkbenchCommand.EXIT)
+        else if (request.Command == WorkbenchCommand.CLOSE_PROJECT)
         {
             Close();
+        }
+        else if (request.Command == WorkbenchCommand.EXIT)
+        {
+            RequestApplicationExit();
         }
         else if (request.Command == WorkbenchCommand.LAYOUT_SAVE)
         {
@@ -360,42 +391,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     }
 
     private void OnPreferencesChanged(object? sender, EventArgs e) => ApplyWindowPreferences();
-    private void OnStyleLibraryChanged(object? sender, EventArgs e)
-    {
-        settingsWindow?.UpdateStyles(Session.StyleLibrary.Snapshot.Presets);
-        settingsWindow?.SetStyleOperationBusy(Session.Styles.IsBusy);
-    }
-    private void OnEffectLibraryChanged(object? sender, EventArgs e)
-    {
-        settingsWindow?.UpdateEffects(Session.EffectScriptLibrary.Snapshot.Presets);
-        settingsWindow?.SetEffectOperationBusy(Session.EffectScripts.IsBusy);
-    }
-    private void OnSelectionChanged(object? sender, EventArgs e) => settingsWindow?.UpdateSelectionAvailability(Session.HasSelectedCue && !Session.IsProjectBusy && !Session.IsClosing);
     private void ApplyWindowPreferences()
     {
-        var preferences = Session.Preferences;
-        windowRegistry.UpdatePreferences(preferences);
-        if (Avalonia.Application.Current is { } application)
-        {
-            application.RequestedThemeVariant = preferences.Theme switch
-            {
-                WorkbenchTheme.LIGHT => ThemeVariant.Light, WorkbenchTheme.DARK => ThemeVariant.Dark, _ => ThemeVariant.Default
-            };
-            application.Resources["SystemAccentColor"] = Color.Parse(preferences.AccentColor);
-            if (application.Styles.OfType<FluentTheme>().FirstOrDefault() is { } fluent)
-            {
-                foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
-                {
-                    if (!fluent.Palettes.TryGetValue(variant, out var palette))
-                    {
-                        palette = new();
-                        fluent.Palettes[variant] = palette;
-                    }
-                    palette.Accent = Color.Parse(preferences.AccentColor);
-                }
-            }
-        }
-        settingsWindow?.UpdatePreferences(preferences);
+        windowRegistry.UpdatePreferences(Session.Preferences);
         ViewModel.Log.RefreshLanguage();
     }
 }

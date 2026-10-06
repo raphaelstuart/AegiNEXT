@@ -59,7 +59,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         if (destination.Info.Width != document.Width || destination.Info.Height != document.Height ||
             !destination.Info.ReferenceWhiteNits.Equals((float)document.ReferenceWhiteNits))
         {
-            throw new ArgumentException("渲染表面必须匹配工程尺寸和参考白。", nameof(destination));
+            throw new ArgumentException("渲染表面必须匹配项目尺寸和参考白。", nameof(destination));
         }
 
         Prepare(document);
@@ -384,7 +384,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         {
             using var stream = assets.Open(asset);
             using var data = SKData.Create(stream);
-            image = SKImage.FromEncodedData(data) ?? throw new InvalidDataException("无法解码工程图片。");
+            image = SKImage.FromEncodedData(data) ?? throw new InvalidDataException("无法解码项目图片。");
             if ((long)image.Width * image.Height > 33177600)
             {
                 image.Dispose();
@@ -489,7 +489,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         {
             using var stream = assets.Open(document.Assets.Single(value => value.Id == id));
             using var data = SKData.Create(stream);
-            return SKTypeface.FromData(data) ?? throw new InvalidDataException("无法打开工程字体。");
+            return SKTypeface.FromData(data) ?? throw new InvalidDataException("无法打开项目字体。");
         }
         return SKTypeface.FromFamilyName(style.FontFamily, FontStyle(style));
     }

@@ -50,7 +50,7 @@ internal sealed partial class WorkbenchSession
         {
             throw new ArgumentOutOfRangeException(nameof(mode));
         }
-        if (mode == preferences.PreviewDecodeMode)
+        if (mode == Preferences.PreviewDecodeMode)
         {
             return true;
         }
@@ -70,7 +70,7 @@ internal sealed partial class WorkbenchSession
                 return false;
             }
 
-            UpdatePreferences(preferences with { PreviewDecodeMode = mode });
+            UpdatePreferences(current => current with { PreviewDecodeMode = mode });
             return true;
         }
         catch (OperationCanceledException)

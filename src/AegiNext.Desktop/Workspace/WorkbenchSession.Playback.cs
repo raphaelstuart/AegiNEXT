@@ -28,8 +28,7 @@ internal sealed partial class WorkbenchSession
         {
             var value = (float)ViewModel.Preview.Volume;
             controller.SetVolume(value);
-            preferences = preferences with { Volume = value };
-            QueuePreferencesWrite();
+            UpdatePreferences(current => current with { Volume = value });
         }
         else if (e.PropertyName == "IsMuted")
         {
@@ -37,9 +36,9 @@ internal sealed partial class WorkbenchSession
             ViewModel.Preview.MuteLabel = Localization.Get("Preview." + (ViewModel.Preview.IsMuted ? "Unmute" : "Mute"));
         }
         else if (e.PropertyName == "SelectedQuality" && ViewModel.Preview.SelectedQuality is { } quality &&
-                 quality.Id != preferences.PreviewQuality)
+                 quality.Id != Preferences.PreviewQuality)
         {
-            UpdatePreferences(preferences with { PreviewQuality = quality.Id });
+            UpdatePreferences(current => current with { PreviewQuality = quality.Id });
         }
     }
     private void OnExportPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

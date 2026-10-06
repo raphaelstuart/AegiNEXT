@@ -28,12 +28,13 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
     private ShortcutRouter router = new(ShortcutDefaults.CreateBindings());
     private bool disposed;
 
-    internal WorkbenchWindowRegistry(WorkbenchMenuCatalog catalog, Action invalidateTiming, Action? cancelGestures = null)
+    internal WorkbenchWindowRegistry(WorkbenchMenuCatalog catalog, Action invalidateTiming, Action? cancelGestures = null,
+        bool includeApplicationMenu = true)
     {
         this.catalog = catalog;
         this.invalidateTiming = invalidateTiming;
         this.cancelGestures = cancelGestures;
-        if (OperatingSystem.IsMacOS() && Avalonia.Application.Current is { } application)
+        if (includeApplicationMenu && OperatingSystem.IsMacOS() && Avalonia.Application.Current is { } application)
         {
             applicationMenu = new(application, catalog);
         }

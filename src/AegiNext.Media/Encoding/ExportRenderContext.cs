@@ -36,7 +36,7 @@ internal sealed class ExportRenderContext : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             if (width != project.Width || height != project.Height || channels != (ulong)pixels.Length || output is null)
             {
-                throw new InvalidDataException("原生导出帧尺寸与工程不一致。");
+                throw new InvalidDataException("原生导出帧尺寸与项目不一致。");
             }
 
             var time = new MediaTimestamp(pts, new(timeBaseNumerator, timeBaseDenominator)).ToMediaTime() - project.Media!.MediaOrigin;

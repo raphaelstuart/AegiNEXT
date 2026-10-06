@@ -30,7 +30,7 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         var state = getState();
-        var quality = state.IsInteractive ? PreviewQuality.LOW : state.Quality;
+        var quality = PreviewQualityOptions.GetEffectiveQuality(state.Quality, state.IsInteractive);
         if (!converters.TryGetValue(quality, out var activeConverter))
         {
             activeConverter = new(PreviewQualityOptions.Get(quality));

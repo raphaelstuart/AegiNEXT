@@ -225,7 +225,7 @@ internal static class AssTextWriter
         }
         if (style.ShadowBlur > 0 && (style.ShadowColor.Alpha > 0 || style.Fill.Alpha > 0 || style.StrokeWidth > 0 && style.Stroke.Alpha > 0))
         {
-            diagnostics.Add(new("Ass.ShadowBlur", "工程的阴影模糊与 ASS 的文字边缘模糊语义不同，保留数值会改变文字或描边边缘。", SubtitleId: id));
+            diagnostics.Add(new("Ass.ShadowBlur", "项目的阴影模糊与 ASS 的文字边缘模糊语义不同，保留数值会改变文字或描边边缘。", SubtitleId: id));
         }
     }
 

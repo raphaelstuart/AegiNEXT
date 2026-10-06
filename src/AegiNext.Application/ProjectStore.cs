@@ -19,7 +19,7 @@ public static class ProjectStore
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, true);
         if (stream.Length > MAXIMUM_BYTES)
         {
-            throw new InvalidDataException("工程文件超过 32 MiB。");
+            throw new InvalidDataException("项目文件超过 32 MiB。");
         }
 
         using var buffer = new MemoryStream();
@@ -29,7 +29,7 @@ public static class ProjectStore
         {
             if (buffer.Length + read > MAXIMUM_BYTES)
             {
-                throw new InvalidDataException("工程文件超过 32 MiB。");
+                throw new InvalidDataException("项目文件超过 32 MiB。");
             }
 
             buffer.Write(chunk, 0, read);
@@ -75,7 +75,7 @@ public static class ProjectStore
         var result = JsonSerializer.SerializeToUtf8Bytes(document, options);
         if (result.Length > MAXIMUM_BYTES)
         {
-            throw new InvalidDataException("工程文件超过 32 MiB。");
+            throw new InvalidDataException("项目文件超过 32 MiB。");
         }
 
         return result;
@@ -86,7 +86,7 @@ public static class ProjectStore
     {
         if (json.Length > MAXIMUM_BYTES)
         {
-            throw new InvalidDataException("工程文件超过 32 MiB。");
+            throw new InvalidDataException("项目文件超过 32 MiB。");
         }
 
         try
@@ -98,19 +98,19 @@ public static class ProjectStore
                 version.ValueKind != JsonValueKind.Number ||
                 !version.TryGetInt32(out var number) || number is not (3 or ProjectDocument.CURRENT_VERSION))
             {
-                throw new InvalidDataException($"只支持工程版本 3 和 {ProjectDocument.CURRENT_VERSION}，更旧工程需要使用对应版本打开。");
+                throw new InvalidDataException($"只支持项目版本 3 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
             }
 
             var content = JsonNode.Parse(parsed.RootElement.GetRawText(), documentOptions: new() { MaxDepth = 128 })!.AsObject();
             SubtitleContentJsonMigration.UpgradeProject(content, number);
             using var normalized = JsonDocument.Parse(content.ToJsonString(new() { MaxDepth = 128 }), new() { MaxDepth = 128 });
             var upgraded = VectorAnimationJsonMigration.Upgrade(normalized.RootElement, options);
-            var document = upgraded.Deserialize<ProjectDocument>(options) ?? throw new JsonException("工程不能为空。");
+            var document = upgraded.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
             return SubtitleKaraokeNormalization.Normalize(document);
         }
         catch (Exception error) when (error is JsonException or ArgumentException or OverflowException)
         {
-            throw new InvalidDataException("工程 JSON 格式无效。", error);
+            throw new InvalidDataException("项目 JSON 格式无效。", error);
         }
     }
 

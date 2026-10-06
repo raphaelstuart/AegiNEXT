@@ -35,16 +35,92 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             return;
         }
 
+        var path = await dialogs.SaveFileAsync("NewProject", "Projects", ["*.aeginext"], ".aeginext",
+            Localization.Get("Workbench.Untitled") + ".aeginext");
+        if (path is null || session.IsClosing)
+        {
+            return;
+        }
+
+        var result = await CreateProjectAsync(path);
+        if (result.Error is { } error)
+        {
+            session.ShowError(error);
+        }
+        foreach (var diagnostic in result.Diagnostics)
+        {
+            session.ShowError(diagnostic);
+        }
+    }
+
+    internal async Task<ProjectOpenResult> CreateProjectAsync(string path,
+        CancellationToken cancellationToken = default)
+    {
+        if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
+        {
+            return new(ProjectOpenStatus.CANCELLED);
+        }
+
+        var previousDocument = session.Editor.Snapshot;
+        var previousDirectory = session.ProjectDirectory;
+        var previousPosition = session.Controller.Snapshot.Position;
+        var previewChanged = false;
+        var committed = false;
         session.SetProjectBusy(true);
         try
         {
+            path = Path.GetFullPath(path);
+            var directory = Path.GetDirectoryName(path)!;
+            var document = new ProjectDocument { Name = Path.GetFileNameWithoutExtension(path) };
+            await ProjectStore.SaveAsync(document, path, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            previewChanged = true;
             await session.Controller.CloseMediaAsync();
-            await session.Analysis.ClearAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (session.IsClosing)
+            {
+                throw new OperationCanceledException();
+            }
 
-            session.SetProjectLocation(null, session.ScratchDirectory);
+            session.SetProjectLocation(path, directory);
             session.ResetSelection();
-            session.Editor.Reset(new());
-            session.LogInfo("Project", Localization.Get("WorkflowLog.ProjectCreated"), session.Editor.Snapshot.Name);
+            session.Editor.Reset(document);
+            committed = true;
+            await session.ApplicationContext.RecentProjects.RecordAsync(path);
+            var diagnostics = new List<Exception>();
+            try
+            {
+                await session.Analysis.ClearAsync();
+            }
+            catch (Exception error)
+            {
+                diagnostics.Add(error);
+            }
+
+            session.LogInfo("Project", Localization.Get("WorkflowLog.ProjectCreated"), path);
+            return new(ProjectOpenStatus.OPENED, diagnostics: diagnostics.AsReadOnly());
+        }
+        catch (Exception error)
+        {
+            if (committed)
+            {
+                return new(ProjectOpenStatus.OPENED, diagnostics: [error]);
+            }
+
+            if (previewChanged)
+            {
+                try
+                {
+                    await RestorePreviewAsync(previousDocument, previousDirectory, previousPosition, error);
+                }
+                catch (Exception recoveryError)
+                {
+                    return new(ProjectOpenStatus.FAILED, recoveryError);
+                }
+            }
+            return error is OperationCanceledException
+                ? new(ProjectOpenStatus.CANCELLED)
+                : new(ProjectOpenStatus.FAILED, error);
         }
         finally
         {
@@ -60,9 +136,47 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         }
 
         var path = await dialogs.OpenFileAsync("OpenProject", "Projects", ["*.aeginext"]);
-        if (path is null || !await ConfirmDiscardOrSaveAsync() || session.IsClosing)
+        if (path is null)
         {
             return;
+        }
+
+        var result = await OpenProjectAsync(path);
+        if (result.Error is { } error)
+        {
+            session.ShowError(error);
+        }
+
+        foreach (var diagnostic in result.Diagnostics)
+        {
+            session.ShowError(diagnostic);
+        }
+    }
+
+    internal async Task<ProjectOpenResult> OpenProjectAsync(string path,
+        CancellationToken cancellationToken = default)
+    {
+        if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
+        {
+            return new(ProjectOpenStatus.CANCELLED);
+        }
+
+        try
+        {
+            path = Path.GetFullPath(path);
+            if (!await ConfirmDiscardOrSaveAsync() || session.IsProjectBusy || session.IsClosing ||
+                cancellationToken.IsCancellationRequested)
+            {
+                return new(ProjectOpenStatus.CANCELLED);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return new(ProjectOpenStatus.CANCELLED);
+        }
+        catch (Exception error)
+        {
+            return new(ProjectOpenStatus.FAILED, error);
         }
 
         session.SetProjectBusy(true);
@@ -72,7 +186,8 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
         var committed = false;
         try
         {
-            var document = await ProjectStore.LoadAsync(path);
+            var document = await ProjectStore.LoadAsync(path, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             var directory = Path.GetDirectoryName(path)!;
             var mediaPath = document.Media is { } binding
                 ? ProjectAssetLocation.Resolve(document.Assets.Single(asset => asset.Id == binding.AssetId), directory)
@@ -83,7 +198,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             }
             else
             {
-                await session.Controller.OpenAsync(mediaPath);
+                await session.Controller.OpenAsync(mediaPath, cancellationToken);
                 if (session.Controller.Snapshot.Error is { } error)
                 {
                     throw error;
@@ -93,30 +208,75 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                 ProjectMediaBindingValidator.Validate(document, media);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+            if (session.IsClosing)
+            {
+                throw new OperationCanceledException();
+            }
+
             session.SetProjectLocation(path, directory);
             session.ResetSelection();
             session.Editor.Reset(document);
             committed = true;
+            await session.ApplicationContext.RecentProjects.RecordAsync(path);
+            var diagnostics = new List<Exception>();
             if (mediaPath is not null)
             {
-                await session.Controller.SeekAsync(session.Controller.Snapshot.Start ?? MediaTime.Zero);
-                await session.Analysis.StartAsync(mediaPath);
+                try
+                {
+                    await session.Controller.SeekAsync(session.Controller.Snapshot.Start ?? MediaTime.Zero);
+                    if (session.Controller.Snapshot.Error is { } previewError)
+                    {
+                        diagnostics.Add(previewError);
+                    }
+                }
+                catch (Exception error)
+                {
+                    diagnostics.Add(error);
+                }
+
+                try
+                {
+                    await session.Analysis.StartAsync(mediaPath);
+                }
+                catch (Exception error)
+                {
+                    diagnostics.Add(error);
+                }
             }
             else
             {
-                await session.Analysis.ClearAsync();
-
+                try
+                {
+                    await session.Analysis.ClearAsync();
+                }
+                catch (Exception error)
+                {
+                    diagnostics.Add(error);
+                }
             }
             session.LogInfo("Project", Localization.Get("WorkflowLog.ProjectOpened"), path);
+            return new(ProjectOpenStatus.OPENED, diagnostics: diagnostics.AsReadOnly());
         }
         catch (Exception error)
         {
             if (!committed)
             {
-                await RestorePreviewAsync(previousDocument, previousDirectory, previousPosition, error);
+                try
+                {
+                    await RestorePreviewAsync(previousDocument, previousDirectory, previousPosition, error);
+                }
+                catch (Exception recoveryError)
+                {
+                    return new(ProjectOpenStatus.FAILED, recoveryError);
+                }
+
+                return error is OperationCanceledException
+                    ? new(ProjectOpenStatus.CANCELLED)
+                    : new(ProjectOpenStatus.FAILED, error);
             }
 
-            throw;
+            return new(ProjectOpenStatus.OPENED, diagnostics: [error]);
         }
         finally
         {
@@ -257,6 +417,7 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             }
 
             session.LogInfo("Project", Localization.Get("Workbench.Saved"), destination);
+            await session.ApplicationContext.RecentProjects.RecordAsync(destination);
             return true;
         }
         finally

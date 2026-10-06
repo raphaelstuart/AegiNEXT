@@ -1,0 +1,86 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:common="using:AegiNext.Desktop.Controls.Common"
+        xmlns:startup="using:AegiNext.Desktop.Startup"
+        x:Class="AegiNext.Desktop.Views.WelcomeWindow" x:DataType="startup:WelcomeViewModel"
+        Classes="business-surface" Title="{Binding Title}"
+        Width="960" Height="640" MinWidth="800" MinHeight="520"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource PreviewBackground}">
+  <Window.Styles>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="TextBlock.project-path">
+      <Setter Property="Foreground" Value="{DynamicResource PreviewMuted}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Grid.project-entry.unavailable">
+      <Setter Property="Opacity" Value="0.55" />
+    </Style>
+    <Style Selector="Grid.project-entry.unavailable TextBlock.project-name">
+      <Setter Property="Foreground" Value="{DynamicResource PreviewMuted}" />
+    </Style>
+  </Window.Styles>
+  <Grid RowDefinitions="Auto,*">
+    <common:WindowTitleBar Name="WelcomeTitleBar" Title="{Binding Title}" />
+    <Grid Grid.Row="1" Margin="24" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="16">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+        <TextBox Name="ProjectSearchInput" Text="{Binding SearchText, Mode=TwoWay}"
+                 PlaceholderText="{Loc Key=Welcome.SearchProjects}" IsEnabled="{Binding CanInteract}"
+                 AutomationProperties.Name="{Loc Key=Welcome.SearchProjects}" />
+        <Button Grid.Column="1" Name="WelcomeNewProjectButton" Command="{Binding NewProjectCommand}">
+          <common:IconText IconKey="New" Text="{Loc Key=Welcome.NewProject}" />
+        </Button>
+        <Button Grid.Column="2" Name="WelcomeOpenProjectButton" Command="{Binding OpenProjectCommand}">
+          <common:IconText IconKey="OpenProject" Text="{Loc Key=Welcome.OpenProject}" />
+        </Button>
+        <Button Grid.Column="3" Name="WelcomeSettingsButton" Command="{Binding SettingsCommand}">
+          <common:IconText IconKey="Settings" Text="{Loc Key=Settings.Settings}" />
+        </Button>
+      </Grid>
+      <Border Grid.Row="1" Height="1" Background="{DynamicResource PreviewBorder}" />
+      <ListBox Grid.Row="2" Name="RecentProjectList" ItemsSource="{Binding Projects}"
+               SelectedItem="{Binding SelectedProject, Mode=TwoWay}" IsVisible="{Binding HasProjects}"
+               IsEnabled="{Binding CanInteract}" Background="Transparent" BorderThickness="0"
+               Tapped="OnProjectTapped" KeyDown="OnProjectKeyDown"
+               AutomationProperties.Name="{Loc Key=Welcome.RecentProjects}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="startup:RecentProjectListItem">
+            <Grid Classes="project-entry" Classes.unavailable="{Binding IsUnavailable}"
+                  ColumnDefinitions="40,*" ColumnSpacing="12">
+              <Border Name="ProjectIcon" Width="40" Height="40" CornerRadius="8" VerticalAlignment="Top"
+                      Background="{Binding IconBackground}">
+                <TextBlock Name="ProjectIconInitials" Text="{Binding IconInitials}" Foreground="{Binding IconForeground}"
+                           FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="3">
+                <TextBlock Classes="project-name" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="project-path" Text="{Binding Path}" TextTrimming="CharacterEllipsis"
+                           ToolTip.Tip="{Binding Path}" />
+                <TextBlock Text="{Binding Availability}" IsVisible="{Binding IsUnavailable}"
+                           Foreground="{DynamicResource PreviewMuted}" FontSize="12" />
+              </StackPanel>
+              <Grid.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="{Loc Key=Welcome.RemoveFromRecent}"
+                            Click="OnRemoveProject" CommandParameter="{Binding}" />
+                </ContextMenu>
+              </Grid.ContextMenu>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Grid.Row="2" Name="WelcomeEmptyState" Text="{Binding EmptyTitle}"
+                 IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 Foreground="{DynamicResource PreviewMuted}" />
+      <StackPanel Grid.Row="3" Spacing="8">
+        <ProgressBar Name="WelcomeProgress" IsVisible="{Binding IsBusy}" IsIndeterminate="True" Height="3" />
+        <TextBlock Name="WelcomeError" Text="{Binding Error}" IsVisible="{Binding HasError}"
+                   Foreground="{DynamicResource PreviewError}" TextWrapping="Wrap" MaxHeight="80" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

@@ -13,7 +13,7 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
         new("File", [WorkbenchCommand.NEW_PROJECT, WorkbenchCommand.OPEN_PROJECT, WorkbenchCommand.OPEN_MEDIA, null,
             WorkbenchCommand.SAVE_PROJECT, WorkbenchCommand.SAVE_PROJECT_AS, null,
             WorkbenchCommand.EXPORT_VIDEO, null,
-            WorkbenchCommand.EXIT]),
+            WorkbenchCommand.CLOSE_PROJECT, WorkbenchCommand.EXIT]),
         new("Format", [], [new("Aegisub", [WorkbenchCommand.IMPORT_ASS, WorkbenchCommand.EXPORT_ASS]),
             new("SRT", [WorkbenchCommand.IMPORT_SUBTITLES, WorkbenchCommand.EXPORT_SUBTITLES])]),
         new("Edit", [WorkbenchCommand.UNDO, WorkbenchCommand.REDO, null, WorkbenchCommand.OPEN_SETTINGS]),
@@ -24,7 +24,8 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
         new("Playback", [WorkbenchCommand.PLAY_PAUSE, WorkbenchCommand.SEEK_BACKWARD, WorkbenchCommand.SEEK_FORWARD]),
         new("Subtitles", [WorkbenchCommand.TIMING_ENTER, WorkbenchCommand.TIMING_EXIT, null,
             WorkbenchCommand.ADD_SUBTITLE, WorkbenchCommand.DELETE_SUBTITLE, WorkbenchCommand.SPLIT_SUBTITLE,
-            WorkbenchCommand.MERGE_SUBTITLE, null, WorkbenchCommand.OPEN_SUBTITLE_DETAILS])
+            WorkbenchCommand.MERGE_SUBTITLE, null, WorkbenchCommand.OPEN_SUBTITLE_DETAILS]),
+        new("Help", [WorkbenchCommand.OPEN_ABOUT])
     ];
 
     private WorkbenchPreferences preferences = new();

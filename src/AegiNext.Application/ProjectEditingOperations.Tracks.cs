@@ -99,7 +99,7 @@ public static partial class ProjectEditingOperations
         var index = TrackIndex(document, trackId);
         if (document.SubtitleTracks.Length == 1 || document.Subtitles.Any(line => line.TrackId == trackId))
         {
-            throw new InvalidOperationException("只能删除空轨道，且工程必须保留至少一条字幕轨道。");
+            throw new InvalidOperationException("只能删除空轨道，且项目必须保留至少一条字幕轨道。");
         }
 
         return Verified(document with { SubtitleTracks = document.SubtitleTracks.RemoveAt(index) });

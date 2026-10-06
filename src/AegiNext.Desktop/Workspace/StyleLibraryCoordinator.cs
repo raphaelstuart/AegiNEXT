@@ -2,7 +2,6 @@ using AegiNext.Application.Presets;
 using AegiNext.Core.Presets;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
-using AegiNext.Desktop.Workspace.Diagnostics;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -10,10 +9,10 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
 {
     public Task Completion { get; private set; } = Task.CompletedTask;
     private int queuedOperations;
-    internal bool IsBusy => queuedOperations > 0;
+    internal bool IsBusy => queuedOperations > 0 || session.ApplicationContext.StylesBusy;
     internal void Initialize() => Queue(async () =>
     {
-        await session.StyleLibrary.LoadAsync();
+        await session.ApplicationContext.Initialization;
         Refresh();
         session.LogInfo("Styles", $"{Localization.Get("WorkflowLog.StyleLibraryLoaded")} ({session.StyleLibrary.Snapshot.Presets.Length})");
     });
@@ -22,7 +21,6 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
     {
         queuedOperations++;
         Completion = RunAsync(Completion, action);
-        session.NotifyStyleLibraryChanged();
     }
 
     private async Task RunAsync(Task previous, Func<Task> action)
@@ -38,13 +36,12 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         finally
         {
             queuedOperations--;
-            session.NotifyStyleLibraryChanged();
         }
     }
 
     internal async Task UpsertAsync(SubtitleStylePreset preset)
     {
-        await session.StyleLibrary.UpsertAsync(preset);
+        await session.ApplicationContext.RunStyleOperationAsync(() => session.StyleLibrary.UpsertAsync(preset));
         Refresh(preset.Id);
         session.LogInfo("Styles", Localization.Get("WorkflowLog.StyleSaved"), preset.Name);
     }
@@ -52,7 +49,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
     internal async Task DeleteAsync(Guid id)
     {
         var preset = session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == id);
-        await session.StyleLibrary.RemoveAsync(id);
+        await session.ApplicationContext.RunStyleOperationAsync(() => session.StyleLibrary.RemoveAsync(id));
         Refresh();
         if (preset is not null)
         {
@@ -187,7 +184,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         var path = await dialogs.OpenFileAsync("ImportStyles", "StyleFiles", ["*.aegistyles"]);
         if (path is not null)
         {
-            await session.StyleLibrary.ImportAsync(path);
+            await session.ApplicationContext.RunStyleOperationAsync(() => session.StyleLibrary.ImportAsync(path));
             Refresh();
             session.LogInfo("Styles", Localization.Get("WorkflowLog.StylesImported"), path);
         }
@@ -198,7 +195,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         var path = await dialogs.SaveFileAsync("ExportStyles", "StyleFiles", ["*.aegistyles"], ".aegistyles", "styles.aegistyles");
         if (path is not null)
         {
-            await session.StyleLibrary.ExportAsync(path);
+            await session.ApplicationContext.RunStyleOperationAsync(() => session.StyleLibrary.ExportAsync(path));
             session.LogInfo("Styles", Localization.Get("WorkflowLog.StylesExported"), path);
         }
     }

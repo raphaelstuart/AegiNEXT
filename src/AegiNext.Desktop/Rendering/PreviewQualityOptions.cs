@@ -5,23 +5,30 @@ namespace AegiNext.Desktop.Rendering;
 
 internal static class PreviewQualityOptions
 {
+    private static readonly SdrPreviewOptions lowest = new(568, 320);
     private static readonly SdrPreviewOptions low = new(960, 540);
     private static readonly SdrPreviewOptions standard = new(1280, 720);
     private static readonly SdrPreviewOptions high = new(1920, 1080);
 
     internal static SdrPreviewOptions Get(PreviewQuality quality, bool interactive = false)
     {
-        if (!Enum.IsDefined(quality))
+        return GetEffectiveQuality(quality, interactive) switch
         {
-            throw new ArgumentOutOfRangeException(nameof(quality));
-        }
-
-        return (interactive ? PreviewQuality.LOW : quality) switch
-        {
+            PreviewQuality.LOWEST => lowest,
             PreviewQuality.LOW => low,
             PreviewQuality.STANDARD => standard,
             PreviewQuality.HIGH => high,
             _ => throw new ArgumentOutOfRangeException(nameof(quality))
         };
+    }
+
+    internal static PreviewQuality GetEffectiveQuality(PreviewQuality quality, bool interactive = false)
+    {
+        if (!Enum.IsDefined(quality))
+        {
+            throw new ArgumentOutOfRangeException(nameof(quality));
+        }
+
+        return interactive && quality != PreviewQuality.LOWEST ? PreviewQuality.LOW : quality;
     }
 }

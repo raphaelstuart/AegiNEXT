@@ -10,6 +10,7 @@ using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Rendering;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
+using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace.Diagnostics;
 using AegiNext.Media.Playback;
 using Avalonia.Threading;
@@ -25,6 +26,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly VideoPreviewController controller;
     private readonly IWorkbenchDialogService dialogs;
     private readonly Func<Action, CancellationToken, Task> dispatch;
+    private readonly DesktopApplicationContext applicationContext;
+    private readonly bool ownsApplicationContext;
     private readonly WorkbenchPreferencesStore preferencesStore;
     private readonly SubtitleStylePresetLibrary styleLibrary;
     private readonly EffectScriptPresetLibrary effectScriptLibrary;
@@ -40,7 +43,6 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly PreviewFrameCatalog previewFrames = new();
     private ProjectPreviewState previewState = new(new(), Path.GetTempPath());
     private WorkbenchPreferences preferences;
-    private Task preferencesWrite = Task.CompletedTask;
     private string? projectPath;
     private string projectDirectory;
     private Exception? previewRenderError;
@@ -59,18 +61,20 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ProjectEditor? editor = null,
         WorkbenchPreferencesStore? preferencesStore = null,
         IWorkbenchExportService? exportService = null,
-        WorkbenchPreferences? initialPreferences = null)
+        WorkbenchPreferences? initialPreferences = null,
+        DesktopApplicationContext? applicationContext = null)
     {
         this.dialogs = dialogs;
         this.dispatch = dispatch ?? DispatchAsync;
         this.editor = editor ?? new();
-        this.preferencesStore = preferencesStore ?? new(Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
-        preferences = initialPreferences ?? this.preferencesStore.Load();
-        WorkbenchCompositionRoot.ApplyLanguagePreference(preferences.Language);
+        ownsApplicationContext = applicationContext is null;
+        this.applicationContext = applicationContext ?? new(preferencesStore, initialPreferences);
+        this.preferencesStore = this.applicationContext.PreferencesStore;
+        preferences = this.applicationContext.Preferences;
         scratchDirectory = Path.Combine(Path.GetTempPath(), "AegiNext", Guid.NewGuid().ToString("N"));
         projectDirectory = scratchDirectory;
-        styleLibrary = new(Path.Combine(this.preferencesStore.DirectoryPath, "subtitle-styles.aegistyles"));
-        effectScriptLibrary = new(Path.Combine(this.preferencesStore.DirectoryPath, "effect-scripts.json"));
+        styleLibrary = this.applicationContext.StyleLibrary;
+        effectScriptLibrary = this.applicationContext.EffectScriptLibrary;
         ViewModel = new(this);
         controller = controllerFactory?.Invoke(ApplyUpdate) ?? new(this.dispatch, ApplyUpdate,
             () => new ProjectPreviewConverter(GetPreviewState,
@@ -85,6 +89,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         effectScripts = new(this, dialogs);
         layerEditing = new(this, dialogs);
         playback = new(this, controller);
+        this.applicationContext.PreferencesChanged += OnApplicationPreferencesChanged;
+        this.applicationContext.StylesChanged += OnApplicationStylesChanged;
+        this.applicationContext.EffectsChanged += OnApplicationEffectsChanged;
+        this.applicationContext.ErrorChanged += OnApplicationErrorChanged;
         this.editor.Changed += OnDocumentChanged;
         ViewModel.Styles.PropertyChanged += OnStylePropertyChanged;
         ViewModel.Effects.PropertyChanged += OnEffectPropertyChanged;
@@ -99,7 +107,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         {
             LogWarning("Localization", diagnostic.Message, diagnostic.FilePath);
         }
-        if (this.preferencesStore.LoadError is { } error)
+        if (this.applicationContext.LastError is { } error)
         {
             ShowError(error);
         }
@@ -117,7 +125,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal ProjectEditor Editor => editor;
     internal SubtitleDetailsCoordinator Details { get; }
     internal VideoPreviewController Controller => controller;
-    internal WorkbenchPreferences Preferences => preferences;
+    internal DesktopApplicationContext ApplicationContext => applicationContext;
+    internal WorkbenchPreferences Preferences => applicationContext.Preferences;
     internal WorkbenchPreferencesStore PreferencesStore => preferencesStore;
     internal SubtitleStylePresetLibrary StyleLibrary => styleLibrary;
     internal EffectScriptPresetLibrary EffectScriptLibrary => effectScriptLibrary;
@@ -144,6 +153,16 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal StyleLibraryCoordinator Styles => styles;
 
     internal Task OpenMediaAsync(string path, bool updateProject) => workflow.OpenMediaAsync(path, updateProject);
+    internal Task<ProjectOpenResult> CreateProjectAsync(string path, CancellationToken cancellationToken = default)
+    {
+        return workflow.CreateProjectAsync(path, cancellationToken);
+    }
+
+    internal Task<ProjectOpenResult> OpenProjectAsync(string path, CancellationToken cancellationToken = default)
+    {
+        return workflow.OpenProjectAsync(path, cancellationToken);
+    }
+
     internal Task RequestSettingsAsync(SettingsPage? page = null)
     {
         return ViewModel.RequestHostCommandAsync(WorkbenchCommand.OPEN_SETTINGS, page);
@@ -152,23 +171,55 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal void UpdatePreferences(WorkbenchPreferences value)
     {
         value.Validate();
+        applicationContext.UpdatePreferences(_ => value);
+    }
+
+    internal void UpdatePreferences(Func<WorkbenchPreferences, WorkbenchPreferences> update)
+    {
+        applicationContext.UpdatePreferences(update);
+    }
+
+    private void OnApplicationPreferencesChanged(object? sender, EventArgs e)
+    {
+        if (closing)
+        {
+            return;
+        }
+
+        var value = applicationContext.Preferences;
         var qualityChanged = preferences.PreviewQuality != value.PreviewQuality;
-        var languageChanged = !string.Equals(preferences.Language, value.Language, StringComparison.OrdinalIgnoreCase);
         preferences = value;
         if (qualityChanged)
         {
             previewQualityRevision++;
             controller.InvalidatePreview();
         }
-        if (languageChanged)
-        {
-            WorkbenchCompositionRoot.ApplyLanguagePreference(preferences.Language);
-        }
         ApplyPreferences();
-        QueuePreferencesWrite();
         if (qualityChanged)
         {
             _ = RunCommandAsync(controller.RefreshPausedPreviewAsync);
+        }
+    }
+
+    private void OnApplicationStylesChanged(object? sender, EventArgs e)
+    {
+        styles.Refresh();
+    }
+
+    private void OnApplicationEffectsChanged(object? sender, EventArgs e)
+    {
+        if (!closing)
+        {
+            effectScripts.RefreshChoices();
+            NotifyEffectLibraryChanged();
+        }
+    }
+
+    private void OnApplicationErrorChanged(object? sender, EventArgs e)
+    {
+        if (!closing && applicationContext.LastError is { } error)
+        {
+            ShowError(error, false);
         }
     }
 
@@ -298,6 +349,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private async Task DisposeCoreAsync()
     {
         closing = true;
+        applicationContext.PreferencesChanged -= OnApplicationPreferencesChanged;
+        applicationContext.StylesChanged -= OnApplicationStylesChanged;
+        applicationContext.EffectsChanged -= OnApplicationEffectsChanged;
+        applicationContext.ErrorChanged -= OnApplicationErrorChanged;
         Localization.LanguageChanged -= OnLanguageChanged;
         Details.Changed -= OnSubtitleDetailsChanged;
         Details.Dispose();
@@ -309,7 +364,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         export.Cancel();
         try
         {
-            await Task.WhenAll(analysis.Completion, export.Completion, preferencesWrite, styles.Completion, effectScripts.Completion);
+            await Task.WhenAll(analysis.Completion, export.Completion, styles.Completion, effectScripts.Completion);
         }
         finally
         {
@@ -318,9 +373,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             layerPlacement.Dispose();
             analysis.Dispose();
             export.Dispose();
-            styleLibrary.Dispose();
-            effectScriptLibrary.Dispose();
-            preferencesStore.Dispose();
+            if (ownsApplicationContext)
+            {
+                await applicationContext.DisposeAsync();
+            }
             DisposeJournal();
             PreviewUpdated = null;
             if (Directory.Exists(scratchDirectory))
@@ -332,8 +388,17 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private void ApplyPreferences()
     {
-        ViewModel.Preview.Volume = preferences.Volume;
-        controller.SetVolume(preferences.Volume);
+        var previous = updatingWorkbench;
+        updatingWorkbench = true;
+        try
+        {
+            ViewModel.Preview.Volume = preferences.Volume;
+            controller.SetVolume(preferences.Volume);
+        }
+        finally
+        {
+            updatingWorkbench = previous;
+        }
         RefreshLocalizedState();
         PreferencesChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -381,29 +446,6 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             updatingWorkbench = previous;
         }
 
-    }
-
-    private void QueuePreferencesWrite()
-    {
-        var previous = preferencesWrite;
-        var value = preferences;
-        preferencesWrite = SavePreferencesAsync(previous, value);
-    }
-
-    private async Task SavePreferencesAsync(Task previous, WorkbenchPreferences value)
-    {
-        await previous;
-        try
-        {
-            await preferencesStore.SaveAsync(value);
-        }
-        catch (Exception error)
-        {
-            if (!closing)
-            {
-                ShowError(error);
-            }
-        }
     }
 
     private void ApplyUpdate(VideoPreviewUpdate update)

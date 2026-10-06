@@ -136,7 +136,7 @@ public static class EffectScriptCompiler
             if (!double.IsFinite(number) || number < AnimationPropertyMetadata.GetMinimum(property, component) ||
                 number > AnimationPropertyMetadata.GetMaximum(property, component))
             {
-                throw new EffectScriptException($"{source.Property} 的求值结果超出工程允许范围。", source.Line, source.Column);
+                throw new EffectScriptException($"{source.Property} 的求值结果超出项目允许范围。", source.Line, source.Column);
             }
         }
 

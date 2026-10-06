@@ -5,13 +5,28 @@ using Avalonia.Platform.Storage;
 
 namespace AegiNext.Desktop.Workspace;
 
-internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStorageProvider>? storageProvider = null,
-    Action<Window>? registerWindow = null) : IWorkbenchDialogService
+internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
 {
+    private readonly Func<Window> ownerProvider;
+    private readonly Func<IStorageProvider>? storageProvider;
+    private readonly Action<Window>? registerWindow;
+
+    internal WindowWorkbenchDialogService(Window owner, Func<IStorageProvider>? storageProvider = null,
+        Action<Window>? registerWindow = null) : this(() => owner, storageProvider, registerWindow)
+    {
+    }
+
+    internal WindowWorkbenchDialogService(Func<Window> ownerProvider, Func<IStorageProvider>? storageProvider = null,
+        Action<Window>? registerWindow = null)
+    {
+        this.ownerProvider = ownerProvider;
+        this.storageProvider = storageProvider;
+        this.registerWindow = registerWindow;
+    }
     /// <summary>在所属窗口选择本地文件；取消时返回空路径。</summary>
     public async Task<string?> OpenFileAsync(string title, string typeName, string[] patterns)
     {
-        var files = await (storageProvider?.Invoke() ?? owner.StorageProvider).OpenFilePickerAsync(new()
+        var files = await (storageProvider?.Invoke() ?? ownerProvider().StorageProvider).OpenFilePickerAsync(new()
         {
             Title = Localization.Get("Workbench." + (title)), AllowMultiple = false,
             FileTypeFilter = [new(Localization.Get("Workbench." + (typeName))) { Patterns = patterns }]
@@ -22,7 +37,7 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
     /// <summary>选择带指定扩展名的本地保存路径，并由系统确认覆盖。</summary>
     public async Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName)
     {
-        var file = await (storageProvider?.Invoke() ?? owner.StorageProvider).SaveFilePickerAsync(new()
+        var file = await (storageProvider?.Invoke() ?? ownerProvider().StorageProvider).SaveFilePickerAsync(new()
         {
             Title = Localization.Get("Workbench." + (title)),
             SuggestedFileName = suggestedName.EndsWith(extension, StringComparison.OrdinalIgnoreCase) ? suggestedName[..^extension.Length] : suggestedName,
@@ -37,7 +52,7 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
     {
         var dialog = new SubtitleConversionDialog(diagnostics);
         registerWindow?.Invoke(dialog);
-        return dialog.ShowDialog<bool>(owner);
+        return dialog.ShowDialog<bool>(ownerProvider());
     }
 
     /// <summary>等待用户决定如何处理工程的未保存修改。</summary>
@@ -45,7 +60,7 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
     {
         var dialog = new UnsavedProjectDialog();
         registerWindow?.Invoke(dialog);
-        return dialog.ShowDialog<int>(owner);
+        return dialog.ShowDialog<int>(ownerProvider());
     }
 
     /// <summary>决定是否将更换的轨道预设同步到现有片段；默认仅更新后续创建样式。</summary>
@@ -53,6 +68,6 @@ internal sealed class WindowWorkbenchDialogService(Window owner, Func<IStoragePr
     {
         var dialog = new TrackStyleChangeDialog(trackName, presetName, subtitleCount);
         registerWindow?.Invoke(dialog);
-        return dialog.ShowDialog<TrackStyleUpdateDecision>(owner);
+        return dialog.ShowDialog<TrackStyleUpdateDecision>(ownerProvider());
     }
 }
