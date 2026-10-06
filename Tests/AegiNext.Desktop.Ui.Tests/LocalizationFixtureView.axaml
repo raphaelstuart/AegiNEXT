@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tests="using:AegiNext.Desktop.Ui.Tests"
+             xmlns:controls="using:AegiNext.Desktop.Controls.Common"
+             x:Class="AegiNext.Desktop.Ui.Tests.LocalizationFixtureView"
+             x:DataType="tests:LocalizationFixtureViewModel">
+  <StackPanel>
+    <TextBlock Name="StaticLabel" Text="{Loc Key=Workbench.Codec}">
+      <TextBlock.ContextMenu>
+        <ContextMenu>
+          <MenuItem Name="ContextCommand" Header="{Loc Key=Workbench.Cancel}" />
+        </ContextMenu>
+      </TextBlock.ContextMenu>
+    </TextBlock>
+    <Label Name="LocalizedLabel" Content="{Loc Key=Workbench.Font}" />
+    <Button Name="LocalizedButton" Content="{Loc Key=Workbench.Save}" ToolTip.Tip="{Loc Key=Workbench.AnchorPresetHint}"
+            AutomationProperties.Name="{Loc Key=Workbench.Save}" />
+    <Button Name="IconButton">
+      <controls:IconText Name="LocalizedIcon" Text="{Loc Key=Workbench.Cancel}" IconKey="Cancel" />
+    </Button>
+    <CheckBox Name="LocalizedCheck" Content="{Loc Key=Settings.Bold}" />
+    <Expander Name="LocalizedExpander" Header="{Loc Key=Settings.Advanced}" />
+    <TextBox Name="BusinessInput" Text="{Binding BusinessText, Mode=TwoWay}" />
+    <Menu Name="LocalizedMenu">
+      <MenuItem Name="MenuCommand" Header="{Loc Key=Workbench.File}" />
+    </Menu>
+    <Button Name="FlyoutButton" Content="{Loc Key=Workbench.Add}">
+      <Button.Flyout>
+        <Flyout>
+          <TextBlock Name="FlyoutLabel" Text="{Loc Key=Workbench.Name}" />
+        </Flyout>
+      </Button.Flyout>
+    </Button>
+    <ItemsControl Name="TemplatedItems" ItemsSource="{Binding Items}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <TextBlock Classes="localized-template" Text="{Loc Key=Workbench.Open}" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

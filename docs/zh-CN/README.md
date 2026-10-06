@@ -8,6 +8,7 @@
 
 - [Quick Start：用户快速开始](quick-start.md)：从启动到完成第一条字幕、保存项目和压制成片。
 - [工作台操作说明](workbench.md)：轨道、时间线、样式、关键帧、布局、设置和日志。
+- [时间后续处理器](timing-post-processor.md)：样式关联、处理参数与样式库兼容性。
 - [字幕详细编辑与格式交换](subtitle-editing.md)：可贴靠的富文本、卡拉 OK、高级代码、范围试听与 ASS／SRT。
 - [压制与 HDR 边界](export.md)：编码选项、音频处理、输出限制和色彩契约。
 - [特效 DSL 与样板](effect-dsl.md)：固定／自由时间段、向量、完整 RGBA、关键帧与设置编辑器。

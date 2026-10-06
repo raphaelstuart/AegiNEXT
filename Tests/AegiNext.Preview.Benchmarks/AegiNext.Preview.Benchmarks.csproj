@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup Condition="'$(BaselineAssemblyRoot)' == ''">
+    <ProjectReference Include="../../src/AegiNext.Media/AegiNext.Media.csproj" />
+    <ProjectReference Include="../../src/AegiNext.Rendering/AegiNext.Rendering.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(BaselineAssemblyRoot)' != ''">
+    <Reference Include="AegiNext.Core"><HintPath>$(BaselineAssemblyRoot)/AegiNext.Core.dll</HintPath></Reference>
+    <Reference Include="AegiNext.Media"><HintPath>$(BaselineAssemblyRoot)/AegiNext.Media.dll</HintPath></Reference>
+    <Reference Include="AegiNext.Rendering"><HintPath>$(BaselineAssemblyRoot)/AegiNext.Rendering.dll</HintPath></Reference>
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" />
+    <None Include="$(BaselineAssemblyRoot)/libaeginext_decode.dylib" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

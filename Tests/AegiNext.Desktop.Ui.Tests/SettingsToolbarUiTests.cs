@@ -21,7 +21,7 @@ public sealed class SettingsToolbarUiTests
     private static readonly string[] styleButtonNames =
     [
         "AddStyleButton", "DuplicateStyleButton", "DeleteStyleButton", "ImportStylesButton", "ExportStylesButton",
-        "CaptureStyleButton", "ApplyStyleButton", "SaveStyleButton"
+        "CaptureStyleButton", "SaveStyleButton"
     ];
 
     [AvaloniaTheory]

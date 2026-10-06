@@ -1,0 +1,78 @@
+using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Settings.Projects;
+
+namespace AegiNext.Desktop.Tests;
+
+public sealed class ProjectPreferencesTests
+{
+    [Fact]
+    public async Task LegacyPreferencesUseProtectionDefaultsWithoutRewritingTheFile()
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        using var store = new WorkbenchPreferencesStore(directory.Path);
+        var path = Path.Combine(directory.Path, "preferences.json");
+        const string JSON = "{\"Language\":\"zh-CN\",\"Volume\":0.375}";
+        await File.WriteAllTextAsync(path, JSON, CancellationToken.None);
+
+        var preferences = store.Load();
+
+        Assert.Null(store.LoadError);
+        Assert.Equal("zh-CN", preferences.Language);
+        Assert.Equal(0.375f, preferences.Volume);
+        Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AegiNext", "Workspace"),
+            preferences.Projects.WorkspaceRoot);
+        Assert.True(preferences.Projects.AutoSaveEnabled);
+        Assert.Equal(2, preferences.Projects.AutoSaveIntervalMinutes);
+        Assert.True(preferences.Projects.BackupEnabled);
+        Assert.Equal(5, preferences.Projects.BackupIntervalMinutes);
+        Assert.Equal(20, preferences.Projects.MaximumBackupCount);
+        Assert.Equal(JSON, await File.ReadAllTextAsync(path, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ProjectPreferencesRoundTripAndParticipateInSnapshotEquality()
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        using var store = new WorkbenchPreferencesStore(directory.Path);
+        var expected = new WorkbenchPreferences
+        {
+            Language = "zh-CN", Volume = 0.25f,
+            Projects = new()
+            {
+                WorkspaceRoot = Path.Combine(directory.Path, "项目 空间"), AutoSaveEnabled = false,
+                AutoSaveIntervalMinutes = 3, BackupIntervalMinutes = 7, MaximumBackupCount = 4
+            }
+        };
+
+        await store.SaveAsync(expected, CancellationToken.None);
+
+        Assert.Equal(expected, store.Load());
+        Assert.NotEqual(expected, expected with { Projects = expected.Projects with { BackupEnabled = false } });
+        Assert.NotEqual(expected.GetHashCode(), (expected with { Projects = expected.Projects with { MaximumBackupCount = 9 } }).GetHashCode());
+    }
+
+    [Theory]
+    [InlineData(0, 5, 20)]
+    [InlineData(1441, 5, 20)]
+    [InlineData(2, 0, 20)]
+    [InlineData(2, 1441, 20)]
+    [InlineData(2, 5, 0)]
+    [InlineData(2, 5, 1001)]
+    public void InvalidProtectionValuesAreRejected(int autoSave, int backup, int count)
+    {
+        var preferences = new WorkbenchPreferences
+        {
+            Projects = new() { AutoSaveIntervalMinutes = autoSave, BackupIntervalMinutes = backup, MaximumBackupCount = count }
+        };
+
+        Assert.Throws<InvalidDataException>(preferences.Validate);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("relative/workspace")]
+    public void WorkspaceMustBeAnAbsoluteLocalPath(string path)
+    {
+        Assert.Throws<InvalidDataException>(() => new ProjectPreferences { WorkspaceRoot = path }.Validate());
+    }
+}

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>AegiNext.Media.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <_ProbeHostRuntimeIdentifier Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_ProbeHostRuntimeIdentifier>
+    <_ProbeHostRuntimeIdentifier Condition="'$(_ProbeHostRuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</_ProbeHostRuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../AegiNext.Media.TestHost/AegiNext.Media.TestHost.csproj" ReferenceOutputAssembly="false"
+                      AdditionalProperties="RuntimeIdentifier=$(_ProbeHostRuntimeIdentifier)" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <ProjectReference Include="../../src/AegiNext.Media/AegiNext.Media.csproj" />
+    <ProjectReference Include="../../src/AegiNext.Application/AegiNext.Application.csproj" />
+    <Using Include="Xunit" />
+    <None Include="../AegiNext.Rendering.Tests/Fixtures/NotoSans.ttf" Link="Fixtures/NotoSans.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CopyProbeProcessTestHost" AfterTargets="Build">
+    <MSBuild Projects="../AegiNext.Media.TestHost/AegiNext.Media.TestHost.csproj" Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(_ProbeHostRuntimeIdentifier)">
+      <Output TaskParameter="TargetOutputs" ItemName="_ProbeProcessHostTarget" />
+    </MSBuild>
+    <ItemGroup>
+      <_ProbeProcessHostFile Include="$([System.IO.Path]::GetDirectoryName('%(_ProbeProcessHostTarget.Identity)'))/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ProbeProcessHostFile)"
+          DestinationFiles="@(_ProbeProcessHostFile->'$(TargetDir)ProbeTestHost/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -8,6 +8,7 @@ User guides and developer documentation live in `docs/`. Checkpoints and accepta
 
 - [Quick Start](quick-start.md): launch, first subtitle, save, and export.
 - [Workbench guide](workbench.md): tracks, timeline, styles, keyframes, layouts, settings, and logs.
+- [Timing post-processor](timing-post-processor.md): style associations, timing parameters, and library compatibility.
 - [Subtitle detail editing and formats](subtitle-editing.md): dockable rich text, karaoke, advanced code, bounded playback, ASS and SRT.
 - [Export and HDR](export.md): encoding, audio, restrictions, and color contracts.
 - [Effect DSL and examples](effect-dsl.md): fixed/flexible timing, vectors, full RGBA, keyframes, and the settings editor.
