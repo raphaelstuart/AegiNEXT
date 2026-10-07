@@ -23,9 +23,14 @@ internal sealed partial class WorkbenchSession
                 var family = selection.FamilyName;
                 var parsesFontDraft = !preview && (family != vm.FontFamily || selection.Variant != vm.FontVariant);
                 var fontSize = ReadNumber(vm.FontSizeText, line.Style.FontSize, "Size", "FontSizeInput");
+                var lineHeight = ReadNumber(vm.LineHeightText, line.Style.LineHeight, "LineHeight", "LineHeightInput");
                 var strokeWidth = PrepareStrokeWidth(ref prepared, selected, line.Style.StrokeWidth, vm.StrokeWidthText);
                 var fill = PrepareColor(ref prepared, selected, ReadColorDraft(vm.FillDraft, "FillPicker"), line.Style.Fill, false);
                 var stroke = PrepareColor(ref prepared, selected, ReadColorDraft(vm.StrokeDraft, "StrokePicker"), line.Style.Stroke, true);
+                var shadowX = ReadNumber(vm.ShadowXText, line.Style.ShadowOffset.X, "ShadowX", "ShadowXInput");
+                var shadowY = ReadNumber(vm.ShadowYText, line.Style.ShadowOffset.Y, "ShadowY", "ShadowYInput");
+                var shadowBlur = ReadNumber(vm.ShadowBlurText, line.Style.ShadowBlur, "ShadowBlur", "ShadowBlurInput");
+                var shadowColor = ReadColorDraft(vm.ShadowDraft, "ShadowPicker");
                 if (fontSize <= 0 || strokeWidth < 0 || string.IsNullOrWhiteSpace(vm.FontFamily))
                 {
                     throw new InvalidDataException(Localization.Get("Workbench.Font") + ": " + Localization.Get("Workbench.Size"));
@@ -43,9 +48,13 @@ internal sealed partial class WorkbenchSession
                     FontVariant = selection.Variant,
                     FontAssetId = fontChanged ? null : line.Style.FontAssetId,
                     FontSize = fontSize,
+                    LineHeight = lineHeight,
                     StrokeWidth = strokeWidth,
                     Fill = fill,
                     Stroke = stroke,
+                    ShadowOffset = new(shadowX, shadowY),
+                    ShadowBlur = shadowBlur,
+                    ShadowColor = shadowColor,
                     Bold = parsesFontDraft && selection.Variant is { } selectedVariant ? selectedVariant.Weight >= 700 : vm.Bold == true,
                     Italic = parsesFontDraft && selection.Variant is { } selectedItalicVariant ? selectedItalicVariant.Italic : vm.Italic == true,
                     Alignment = (TextAlignment)vm.Alignment,

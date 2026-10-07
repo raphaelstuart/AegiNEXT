@@ -203,9 +203,18 @@ public sealed partial class StyleSettingsView : UserControl
                 _ = colorInput.TryFocusInvalidField(colorField[1]);
                 return;
             }
-            if (!this.FindControl<SubtitlePositionEditor>("PositionEditor")!.FocusInvalidField(fieldKey))
+            if (!this.FindControl<VectorDraftInput>("ShadowOffsetInput")!.FocusField(fieldKey) &&
+                !this.FindControl<SubtitlePositionEditor>("PositionEditor")!.FocusInvalidField(fieldKey))
             {
-                this.FindControl<Control>(fieldKey)!.Focus();
+                var input = this.FindControl<Control>(fieldKey)!;
+                if (input is NumericDraftInput numeric)
+                {
+                    numeric.FocusInput();
+                }
+                else
+                {
+                    input.Focus();
+                }
             }
         }
     }

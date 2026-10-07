@@ -782,6 +782,8 @@
     "Settings.TransferLater": "稍后",
     "Workbench.ExportUserSettings": "导出个人设置",
     "Workbench.ImportUserSettings": "导入个人设置",
-    "Workbench.UserSettingsFiles": "AegiNext 设置文件"
+    "Workbench.UserSettingsFiles": "AegiNext 设置文件",
+    "Settings.ShadowOffset": "阴影偏移",
+    "Workbench.LineHeight": "行高"
   }
 }

@@ -77,8 +77,7 @@ public sealed class VectorDraftInput : UserControl
             return false;
         }
 
-        input.BringIntoView();
-        return input.Focus();
+        return input.FocusInput();
     }
 
     private NumericDraftInput CreateInput(string valueProperty, string textProperty)

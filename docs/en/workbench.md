@@ -31,7 +31,7 @@ Settings → Media selects Auto/CPU/GPU preview decoding and saves additional au
 
 ## Styles, animation, and masks
 
-Set font, size, fill, stroke, and alignment in Styles. Text sizes to its content. Position uses normalized Anchor/Pivot and pixel Offset; preset clicks preserve position, Shift also changes Pivot, and Alt also clears Offset. **Restore Automatic Position** clears manual positioning and position/path animation while preserving other effects.
+Set font, size, line height, fill, stroke, shadow color/offset/blur, and alignment in Styles, including its floating window. Text sizes to its content. Position uses normalized Anchor/Pivot and pixel Offset; preset clicks preserve position, Shift also changes Pivot, and Alt also clears Offset. **Restore Automatic Position** clears manual positioning and position/path animation while preserving other effects.
 
 Assign a style preset from a track context menu. On a nonempty track, choose whether to update existing clips or only its default for new clips. The project stores a style snapshot, so later personal-library edits do not change it. Exchange libraries through Settings → Subtitle Styles as `.aegistyles`; system fonts still need installation on another machine.
 

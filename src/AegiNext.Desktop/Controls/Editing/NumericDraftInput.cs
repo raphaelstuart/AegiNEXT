@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Controls;
 
@@ -52,6 +53,14 @@ public sealed class NumericDraftInput : NumericUpDown
     {
         get => GetValue(PreserveDoublePrecisionProperty);
         set => SetValue(PreserveDoublePrecisionProperty, value);
+    }
+
+    /// <summary>将焦点移至模板内的原文输入框，供字段验证定位使用。</summary>
+    public bool FocusInput()
+    {
+        this.BringIntoView();
+        ApplyTemplate();
+        return this.GetVisualDescendants().OfType<TextBox>().FirstOrDefault()?.Focus() ?? Focus();
     }
 
     /// <inheritdoc />

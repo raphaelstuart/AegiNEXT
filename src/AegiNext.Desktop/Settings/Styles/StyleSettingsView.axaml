@@ -93,6 +93,12 @@
                                           Increment="1" />
             </StackPanel>
           </Grid>
+          <StackPanel Name="StyleLineHeightField" Spacing="8">
+            <TextBlock Text="{Loc Key=Settings.LineHeight}" Classes="field" />
+            <controls:NumericDraftInput Name="LineHeightInput" RawText="{Binding LineHeightText, Mode=TwoWay}"
+                                        Value="{Binding LineHeight, Mode=TwoWay}"
+                                        Minimum="0.1" Maximum="10" Increment="0.1" />
+          </StackPanel>
           <StackPanel Spacing="8">
             <TextBlock Text="{Loc Key=Settings.Alignment}" Classes="field" />
             <controls:SubtitleAlignmentPicker Name="AlignmentPicker"
@@ -101,46 +107,25 @@
           <controls:SubtitlePositionEditor Name="PositionEditor" DataContext="{Binding Position}" />
           <TextBlock Text="{Binding PositionMeasurementError}" IsVisible="{Binding HasPositionMeasurementError}"
                      TextWrapping="Wrap" Classes="field" />
-          <Expander Header="{Loc Key=Settings.Advanced}" HorizontalAlignment="Stretch">
-            <StackPanel Spacing="12" Margin="0,12,0,0">
-              <StackPanel Spacing="8">
-                <TextBlock Text="{Loc Key=Settings.LineHeight}" Classes="field" />
-                <controls:NumericDraftInput Name="LineHeightInput" RawText="{Binding LineHeightText, Mode=TwoWay}"
-                                            Value="{Binding LineHeight, Mode=TwoWay}"
-                                            Minimum="0.1"
-                                            Maximum="10" Increment="0.1" />
-              </StackPanel>
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                <StackPanel Spacing="8">
-                  <TextBlock Text="{Loc Key=Settings.ShadowX}" Classes="field" />
-                  <controls:NumericDraftInput Name="ShadowXInput" RawText="{Binding ShadowXText, Mode=TwoWay}"
-                                              Value="{Binding ShadowX, Mode=TwoWay}"
-                                              Minimum="-1000000000"
-                                              Maximum="1000000000" Increment="1" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="8">
-                  <TextBlock Text="{Loc Key=Settings.ShadowY}" Classes="field" />
-                  <controls:NumericDraftInput Name="ShadowYInput" RawText="{Binding ShadowYText, Mode=TwoWay}"
-                                              Value="{Binding ShadowY, Mode=TwoWay}"
-                                              Minimum="-1000000000"
-                                              Maximum="1000000000" Increment="1" />
-                </StackPanel>
-              </Grid>
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                <StackPanel Spacing="8">
-                  <TextBlock Text="{Loc Key=Settings.ShadowBlur}" Classes="field" />
-                  <controls:NumericDraftInput Name="ShadowBlurInput" RawText="{Binding ShadowBlurText, Mode=TwoWay}"
-                                              Value="{Binding ShadowBlur, Mode=TwoWay}"
-                                              Minimum="0"
-                                              Maximum="512" Increment="0.5" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="8">
-                  <TextBlock Text="{Loc Key=Settings.ShadowColor}" Classes="field" />
-                  <controls:ColorDraftInput Name="ShadowPicker" Draft="{Binding ShadowDraft}" />
-                </StackPanel>
-              </Grid>
+          <StackPanel Name="StyleShadowFields" Spacing="12">
+            <StackPanel Spacing="8">
+              <TextBlock Text="{Loc Key=Settings.ShadowColor}" Classes="field" />
+              <controls:ColorDraftInput Name="ShadowPicker" Draft="{Binding ShadowDraft}" />
             </StackPanel>
-          </Expander>
+            <StackPanel Spacing="8">
+              <TextBlock Text="{Loc Key=Settings.ShadowOffset}" Classes="field" />
+              <controls:VectorDraftInput Name="ShadowOffsetInput"
+                                         X="{Binding ShadowX, Mode=TwoWay}" Y="{Binding ShadowY, Mode=TwoWay}"
+                                         XText="{Binding ShadowXText, Mode=TwoWay}" YText="{Binding ShadowYText, Mode=TwoWay}"
+                                         XFieldKey="ShadowXInput" YFieldKey="ShadowYInput" />
+            </StackPanel>
+            <StackPanel Spacing="8">
+              <TextBlock Text="{Loc Key=Settings.ShadowBlur}" Classes="field" />
+              <controls:NumericDraftInput Name="ShadowBlurInput" RawText="{Binding ShadowBlurText, Mode=TwoWay}"
+                                          Value="{Binding ShadowBlur, Mode=TwoWay}"
+                                          Minimum="0" Maximum="512" Increment="0.5" />
+            </StackPanel>
+          </StackPanel>
         </StackPanel>
       </ScrollViewer>
     </Grid>

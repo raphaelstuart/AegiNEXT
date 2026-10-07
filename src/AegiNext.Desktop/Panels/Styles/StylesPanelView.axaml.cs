@@ -1,4 +1,5 @@
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Workspace;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -52,6 +53,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         };
         viewModel.FillDraft.Committed += (_, _) => viewModel.CommitDrafts();
         viewModel.StrokeDraft.Committed += (_, _) => viewModel.CommitDrafts();
+        viewModel.ShadowDraft.Committed += OnShadowCommitted;
         alignment = this.FindControl<SubtitleAlignmentPicker>("AlignmentPicker")!;
         alignment.AlignmentCommitted += (_, e) =>
         {
@@ -86,7 +88,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         bold.PointerCaptureLost += (_, _) => EndFormattingPointer();
         italic.PointerCaptureLost += (_, _) => EndFormattingPointer();
         alignment.AddHandler(PointerCaptureLostEvent, (_, _) => EndFormattingPointer(), RoutingStrategies.Bubble, true);
-        AddHandler(KeyDownEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, e) =>
         {
             if (e.Key == Key.Enter && e.Source is Control source &&
@@ -163,6 +165,10 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     }
     public void FocusInvalidField(string? fieldKey)
     {
+        if (fieldKey is not null && this.FindControl<VectorDraftInput>("ShadowOffsetInput")!.FocusField(fieldKey))
+        {
+            return;
+        }
         if (fieldKey is not null && this.FindControl<SubtitlePositionEditor>("PositionEditor")!.FocusInvalidField(fieldKey))
         {
             return;
@@ -173,14 +179,36 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         {
             return;
         }
+        if (control is NumericDraftInput numeric && numeric.FocusInput())
+        {
+            return;
+        }
         control.Focus();
     }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
+
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        suppressFocusCommit = false;
+        if (e.Key == Key.Escape && e.Source is Control source &&
+            !source.GetSelfAndVisualAncestors().OfType<ColorDraftInput>().Any())
+        {
+            var field = source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault();
+            if (field?.Name is { } name && viewModel.RestoreNumberField(name))
+            {
+                focusCommitRevision++;
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void OnShadowCommitted(object? sender, ColorDraftCommittedEventArgs e) => viewModel.CommitDrafts();
 
     public void Dispose()
     {
         disposed = true;
         focusCommitRevision++;
+        viewModel.ShadowDraft.Committed -= OnShadowCommitted;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
     }
 }

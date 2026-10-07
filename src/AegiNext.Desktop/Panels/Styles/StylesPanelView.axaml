@@ -40,6 +40,12 @@
                                       Increment="0.5" />
         </StackPanel>
       </Grid>
+      <StackPanel Name="StyleLineHeightField" Spacing="4">
+        <TextBlock Classes="field" Text="{Loc Key=Workbench.LineHeight}" />
+        <controls:NumericDraftInput Name="LineHeightInput" ShowButtonSpinner="False"
+                                    RawText="{Binding LineHeightText, Mode=TwoWay}" Value="{Binding LineHeight, Mode=TwoWay}"
+                                    Minimum="0.1" Maximum="10" Increment="0.1" IsEnabled="{Binding HasCue}" />
+      </StackPanel>
       <StackPanel Spacing="4">
         <TextBlock Classes="field" Text="{Loc Key=Workbench.Fill}" />
         <controls:ColorDraftInput Name="FillPicker" Draft="{Binding FillDraft}" />
@@ -47,6 +53,25 @@
       <StackPanel Spacing="4">
         <TextBlock Classes="field" Text="{Loc Key=Workbench.Stroke}" />
         <controls:ColorDraftInput Name="StrokePicker" Draft="{Binding StrokeDraft}" />
+      </StackPanel>
+      <StackPanel Name="StyleShadowFields" IsEnabled="{Binding HasCue}" Spacing="8">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.Shadow}" />
+          <controls:ColorDraftInput Name="ShadowPicker" Draft="{Binding ShadowDraft}" />
+        </StackPanel>
+        <StackPanel Spacing="4">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.ShadowOffset}" />
+          <controls:VectorDraftInput Name="ShadowOffsetInput"
+                                     X="{Binding ShadowX, Mode=TwoWay}" Y="{Binding ShadowY, Mode=TwoWay}"
+                                     XText="{Binding ShadowXText, Mode=TwoWay}" YText="{Binding ShadowYText, Mode=TwoWay}"
+                                     XFieldKey="ShadowXInput" YFieldKey="ShadowYInput" />
+        </StackPanel>
+        <StackPanel Spacing="4">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.ShadowBlur}" />
+          <controls:NumericDraftInput Name="ShadowBlurInput" ShowButtonSpinner="False"
+                                      RawText="{Binding ShadowBlurText, Mode=TwoWay}" Value="{Binding ShadowBlur, Mode=TwoWay}"
+                                      Minimum="0" Maximum="512" Increment="0.5" />
+        </StackPanel>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="16">
         <CheckBox Name="BoldCheck" IsChecked="{Binding Bold, Mode=TwoWay}" IsEnabled="{Binding HasCue}" Content="{Loc Key=Workbench.Bold}" />

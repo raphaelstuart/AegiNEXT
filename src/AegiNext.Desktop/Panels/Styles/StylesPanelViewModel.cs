@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using AegiNext.Desktop.Workspace;
@@ -15,6 +16,11 @@ internal sealed class StylesPanelViewModel : ObservableObject
 {
     private string fontSizeText = "64";
     private string strokeWidthText = "2";
+    private readonly NumericValueDraft shadowX = new() { RawText = "2" };
+    private readonly NumericValueDraft shadowY = new() { RawText = "2" };
+    private readonly NumericValueDraft shadowBlur = new() { RawText = "2" };
+    private readonly NumericValueDraft lineHeight = new() { RawText = "1.2" };
+    private bool loadingStyleNumbers;
     private readonly WorkbenchSession session;
     private string fontFamily = "Noto Sans CJK SC";
     private string fontDraft = "Noto Sans CJK SC";
@@ -38,6 +44,11 @@ internal sealed class StylesPanelViewModel : ObservableObject
         this.session = session;
         FillDraft.Changed += (_, _) => OnPropertyChanged(nameof(FillDraft));
         StrokeDraft.Changed += (_, _) => OnPropertyChanged(nameof(StrokeDraft));
+        ShadowDraft.Changed += (_, _) => OnPropertyChanged(nameof(ShadowDraft));
+        shadowX.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(ShadowXText), nameof(ShadowX));
+        shadowY.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(ShadowYText), nameof(ShadowY));
+        shadowBlur.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(ShadowBlurText), nameof(ShadowBlur));
+        lineHeight.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(LineHeightText), nameof(LineHeight));
         Position.Changed += (_, _) => OnPropertyChanged(nameof(Position));
         ApplyStyleCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ApplySelectedStyleAsync()));
         ManageStylesCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.RequestSettingsAsync(SettingsPage.STYLES)));
@@ -85,6 +96,130 @@ internal sealed class StylesPanelViewModel : ObservableObject
 
     public ColorDraft FillDraft { get; } = new();
     public ColorDraft StrokeDraft { get; } = new(SceneColor.Black);
+    public ColorDraft ShadowDraft { get; } = new(new(0, 0, 0, 0.6));
+
+    public decimal? ShadowX
+    {
+        get => shadowX.Value;
+        set => shadowX.Value = value;
+    }
+
+    public decimal? ShadowY
+    {
+        get => shadowY.Value;
+        set => shadowY.Value = value;
+    }
+
+    public decimal? ShadowBlur
+    {
+        get => shadowBlur.Value;
+        set => shadowBlur.Value = value;
+    }
+
+    public string ShadowXText
+    {
+        get => shadowX.RawText;
+        set => shadowX.RawText = value;
+    }
+
+    public string ShadowYText
+    {
+        get => shadowY.RawText;
+        set => shadowY.RawText = value;
+    }
+
+    public string ShadowBlurText
+    {
+        get => shadowBlur.RawText;
+        set => shadowBlur.RawText = value;
+    }
+
+    public decimal? LineHeight
+    {
+        get => lineHeight.Value;
+        set => lineHeight.Value = value;
+    }
+
+    public string LineHeightText
+    {
+        get => lineHeight.RawText;
+        set => lineHeight.RawText = value;
+    }
+
+    internal void LoadStyleNumbers(SubtitleStyle style, CultureInfo culture)
+    {
+        loadingStyleNumbers = true;
+        try
+        {
+            LoadStyleNumberDraft(lineHeight, style.LineHeight, culture);
+            LoadStyleNumberDraft(shadowX, style.ShadowOffset.X, culture);
+            LoadStyleNumberDraft(shadowY, style.ShadowOffset.Y, culture);
+            LoadStyleNumberDraft(shadowBlur, style.ShadowBlur, culture);
+        }
+        finally
+        {
+            loadingStyleNumbers = false;
+        }
+        PublishStyleNumber(nameof(LineHeightText), nameof(LineHeight));
+        PublishStyleNumber(nameof(ShadowXText), nameof(ShadowX));
+        PublishStyleNumber(nameof(ShadowYText), nameof(ShadowY));
+        PublishStyleNumber(nameof(ShadowBlurText), nameof(ShadowBlur));
+    }
+
+    internal void LoadStyleNumber(string fieldKey, double number, CultureInfo culture)
+    {
+        var (draft, textProperty, valueProperty) = fieldKey switch
+        {
+            "LineHeightInput" => (lineHeight, nameof(LineHeightText), nameof(LineHeight)),
+            "ShadowXInput" => (shadowX, nameof(ShadowXText), nameof(ShadowX)),
+            "ShadowYInput" => (shadowY, nameof(ShadowYText), nameof(ShadowY)),
+            "ShadowBlurInput" => (shadowBlur, nameof(ShadowBlurText), nameof(ShadowBlur)),
+            _ => throw new ArgumentOutOfRangeException(nameof(fieldKey))
+        };
+        loadingStyleNumbers = true;
+        try
+        {
+            LoadStyleNumberDraft(draft, number, culture);
+        }
+        finally
+        {
+            loadingStyleNumbers = false;
+        }
+        PublishStyleNumber(textProperty, valueProperty);
+    }
+
+    private void OnStyleNumberChanged(string? property, string textProperty, string valueProperty)
+    {
+        if (!loadingStyleNumbers)
+        {
+            if (property == nameof(NumericValueDraft.RawText))
+            {
+                OnPropertyChanged(textProperty);
+            }
+            else if (property == nameof(NumericValueDraft.Value))
+            {
+                OnPropertyChanged(valueProperty);
+            }
+        }
+    }
+
+    private static void LoadStyleNumberDraft(NumericValueDraft draft, double number, CultureInfo culture)
+    {
+        var value = (decimal)number;
+        draft.RawText = value.ToString(culture);
+        draft.Value = value;
+    }
+
+    private void PublishStyleNumber(string textProperty, string valueProperty)
+    {
+        OnPropertyChanged(textProperty);
+        OnPropertyChanged(valueProperty);
+    }
+
+    internal bool RestoreShadowField(string fieldKey) => fieldKey is "ShadowXInput" or "ShadowYInput" or "ShadowBlurInput"
+        && session.RestoreStyleNumericDraftField(fieldKey);
+
+    internal bool RestoreNumberField(string fieldKey) => session.RestoreStyleNumericDraftField(fieldKey);
 
     public Color Fill
     {

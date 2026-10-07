@@ -13,7 +13,8 @@ internal sealed partial class WorkbenchSession
 {
     private static readonly HashSet<string> styleDraftProperties =
     [
-        "FontFamily", "FontVariant", "FontSelectionCommitted", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "AlignmentSelectionCommitted", "Position"
+        "FontFamily", "FontVariant", "FontSelectionCommitted", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "AlignmentSelectionCommitted", "Position",
+        "ShadowX", "ShadowXText", "ShadowY", "ShadowYText", "ShadowBlur", "ShadowBlurText", "ShadowDraft", "LineHeight", "LineHeightText"
     ];
     private static readonly HashSet<string> effectDraftProperties =
     [
@@ -241,6 +242,9 @@ internal sealed partial class WorkbenchSession
         {
             "FontSizeInput" => (0.01m, 4096m),
             "StrokeWidthInput" => (0m, 4096m),
+            "LineHeightInput" => (0.1m, 10m),
+            "ShadowXInput" or "ShadowYInput" => (-1000000000m, 1000000000m),
+            "ShadowBlurInput" => (0m, 512m),
             "LayerWidthInput" or "LayerHeightInput" => (1m, 32768m),
             "PositionXInput" or "PositionYInput" => (-2000032768m, 2000032768m),
             "ScaleXInput" or "ScaleYInput" => (0.001m, 100m),
@@ -458,6 +462,8 @@ internal sealed partial class WorkbenchSession
             vm.StrokeWidth = (decimal)(layer is null ? 0 : InspectorValue(layer, AnimationProperty.STROKE_WIDTH, cue is null ? layer.StrokeWidth : style.StrokeWidth));
             vm.FillDraft.Load(layer is null ? SceneColor.White : InspectorColor(layer, cue is null ? layer.Fill : style.Fill, false));
             vm.StrokeDraft.Load(layer is null ? SceneColor.Black : InspectorColor(layer, cue is null ? layer.Stroke : style.Stroke, true));
+            vm.LoadStyleNumbers(style, InterfaceCulture);
+            vm.ShadowDraft.Load(style.ShadowColor);
             vm.Bold = style.Bold;
             vm.Italic = style.Italic;
             vm.LoadAlignment(style.Alignment);
