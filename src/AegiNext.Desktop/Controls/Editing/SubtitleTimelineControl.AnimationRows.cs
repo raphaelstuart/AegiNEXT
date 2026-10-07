@@ -1,4 +1,6 @@
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
 using Avalonia;
 
 namespace AegiNext.Desktop.Controls;
@@ -22,6 +24,9 @@ public sealed partial class SubtitleTimelineControl
     }
 
     public event EventHandler<TimelineAnimationRowCollapseEventArgs>? AnimationRowCollapseRequested;
+
+    /// <summary>右键命中关键帧或曲线时提交片段与属性身份，其余属性行区域提交整行身份。</summary>
+    public event EventHandler<TimelineAnimationRowContextEventArgs>? AnimationRowContextRequested;
 
     /// <inheritdoc />
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -96,4 +101,114 @@ public sealed partial class SubtitleTimelineControl
 
     private bool IsAnimationRowExpanderPoint(Point point) => RowAt(point.Y) is { } row &&
         row.Animations.Any(animation => animation.ExpanderRectangle(RowY(row), HeaderWidth).Contains(point));
+
+    private bool TryRequestAnimationRowContext(Point point)
+    {
+        if (FindClipAnimationContext(point) is { } context)
+        {
+            AnimationRowContextRequested?.Invoke(this, context);
+            return true;
+        }
+        var row = BodyRectangle().Contains(point) ? RowAt(point.Y) : null;
+        var animation = row?.Animations.FirstOrDefault(value => value.Rectangle(RowY(row), HeaderWidth, Bounds.Width).Contains(point));
+        if (animation is null)
+        {
+            return false;
+        }
+        AnimationRowContextRequested?.Invoke(this, new(animation.Id));
+        return true;
+    }
+
+    private TimelineAnimationRowContextEventArgs? FindClipAnimationContext(Point point)
+    {
+        if (FindKeyframe(point) is { } marker &&
+            animationRowsByTarget.GetValueOrDefault((marker.Identity.LayerId, marker.Identity.Target)) is { } markerRow)
+        {
+            return new(markerRow.Id, marker.Identity.LayerId);
+        }
+        var row = BodyRectangle().Contains(point) ? RowAt(point.Y) : null;
+        var animation = row?.Animations.FirstOrDefault(value => value.Rectangle(RowY(row), HeaderWidth, Bounds.Width).Contains(point));
+        if (animation is null)
+        {
+            return null;
+        }
+        return FindAnimationCurveClip(point, row!, animation) is { } clipId ? new(animation.Id, clipId) : null;
+    }
+
+    private Guid? FindAnimationCurveClip(Point point, TimelineRow row, TimelineAnimationRow animation)
+    {
+        Guid? hit = null;
+        var nearest = 36d;
+        foreach (var source in ClipsForRow(row).Reverse())
+        {
+            var layer = DisplayedLayer(source);
+            var startX = Math.Max(HeaderWidth, X(Seconds(layer.Start)));
+            var endX = Math.Min(Bounds.Width, X(Seconds(layer.End)));
+            if (endX <= startX || point.X < startX || point.X > endX)
+            {
+                continue;
+            }
+            var tracks = TracksFor(layer);
+            foreach (var target in animation.TargetsFor(layer.Id))
+            {
+                if (CurveRectangle(layer.Id, target) is not { } curve || !curve.Inflate(6).Contains(point) ||
+                    DisplayedTrack(layer, target, tracks) is not { } track)
+                {
+                    continue;
+                }
+                if (animation.IsCollapsed)
+                {
+                    if (Math.Abs(point.Y - curve.Center.Y) <= 6)
+                    {
+                        return layer.Id;
+                    }
+                    continue;
+                }
+                var range = CachedValueRange(source, track);
+                var value = track.InitialValue ?? track.Keyframes[0].Value;
+                var samples = Math.Max(2, (int)(endX - startX) / 3);
+                for (var component = 0; component < value.ComponentCount; component++)
+                {
+                    var area = ComponentCurve(curve, value, component);
+                    var limits = ComponentRange(value, component, range);
+                    Point? previous = null;
+                    for (var index = 0; index <= samples; index++)
+                    {
+                        var x = startX + index * (endX - startX) / samples;
+                        var sample = AnimationCurvePoint(layer, track, area, limits, component, x);
+                        if (previous is { } first)
+                        {
+                            var distance = DistanceSquaredToCurveSegment(point, first, sample);
+                            if (distance <= 36 && (hit is null || distance < nearest))
+                            {
+                                hit = layer.Id;
+                                nearest = distance;
+                            }
+                        }
+                        previous = sample;
+                    }
+                }
+            }
+        }
+        return hit;
+    }
+
+    private Point AnimationCurvePoint(ProjectLayer layer, AnimationTrack track, Rect area,
+        (double Minimum, double Maximum) range, int component, double x)
+    {
+        var time = new MediaTime((long)Math.Round((ViewStart + (x - HeaderWidth) / PixelsPerSecond) * 1000000), 1000000) -
+            layer.Start + layer.AnimationOffset;
+        return new(x, ValueY(SceneEvaluator.EvaluateTrack(track, time).GetComponent(component),
+            range.Minimum, range.Maximum, area));
+    }
+
+    private static double DistanceSquaredToCurveSegment(Point point, Point start, Point end)
+    {
+        var segment = end - start;
+        var length = segment.X * segment.X + segment.Y * segment.Y;
+        var relative = point - start;
+        var ratio = length == 0 ? 0 : Math.Clamp((relative.X * segment.X + relative.Y * segment.Y) / length, 0, 1);
+        var offset = point - (start + segment * ratio);
+        return offset.X * offset.X + offset.Y * offset.Y;
+    }
 }

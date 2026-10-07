@@ -789,6 +789,9 @@
     "Settings.ShadowOffset": "Shadow offset",
     "Settings.DeletePresetsConfirmation": "Delete {0} presets? This cannot be undone.",
     "Settings.DiscardPresetDraftConfirmation": "Discard this unsaved preset?",
+    "Workbench.ClearClipAnimationTracks": "Clear all effects",
+    "Workbench.ClearAnimationPropertyTracks": "Clear all effects of this type",
+    "Workbench.ClearClipAnimationPropertyTracks": "Clear this effect type from clip",
     "Workbench.LineHeight": "Line height",
     "Settings.StylePreviewNavigationHint": "Cmd/Ctrl + wheel to zoom; drag to pan"
   }

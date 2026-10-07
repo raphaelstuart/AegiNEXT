@@ -104,6 +104,69 @@ internal sealed partial class WorkbenchSession
             });
         });
 
+    internal Task ClearTimelineClipAnimationTracksAsync(IReadOnlyCollection<Guid> layerIds,
+        ProjectDocument? expected = null)
+    {
+        var selection = layerIds.ToArray();
+        return RunCommandAsync(() => TimelineContextIsCurrent(expected)
+            ? EditAsync(() => ClearTimelineAnimationTracks(selection, null)) : Task.CompletedTask);
+    }
+
+    internal Task ClearTimelineAnimationRowAsync(TimelineAnimationRowId row, ProjectDocument expected,
+        IReadOnlyCollection<Guid>? layerIds = null)
+    {
+        var selection = layerIds?.ToArray();
+        return RunCommandAsync(() =>
+        {
+            if (!TimelineContextIsCurrent(expected))
+            {
+                return Task.CompletedTask;
+            }
+            var targets = selection ?? TimelineAnimationRowLayerIds(expected, row).ToArray();
+            return EditAsync(() => ClearTimelineAnimationTracks(targets, row.Property));
+        });
+    }
+
+    internal Task ClearTimelineClipAnimationPropertyTracksAsync(Guid layerId, AnimationProperty property,
+        ProjectDocument expected) => RunCommandAsync(() => TimelineContextIsCurrent(expected)
+        ? EditAsync(() => ClearTimelineAnimationTracks([layerId], property)) : Task.CompletedTask);
+
+    internal static ImmutableArray<Guid> TimelineAnimationRowLayerIds(ProjectDocument source, TimelineAnimationRowId row)
+    {
+        if (row.Scope == TimelineRowScope.SUBTITLE_TRACK)
+        {
+            if (!source.SubtitleTracks.Any(track => track.Id == row.OwnerId))
+            {
+                throw new KeyNotFoundException("字幕轨道不存在。");
+            }
+            var subtitles = source.Subtitles.Where(line => line.TrackId == row.OwnerId).Select(line => line.Id).ToHashSet();
+            return [.. Flatten(source.Layers).Where(layer => layer.SubtitleId is { } id && subtitles.Contains(id)).Select(layer => layer.Id)];
+        }
+        if (row.Scope == TimelineRowScope.SCENE_LAYER)
+        {
+            if (!Flatten(source.Layers).Any(layer => layer.Id == row.OwnerId))
+            {
+                throw new KeyNotFoundException("图层不存在。");
+            }
+            return [row.OwnerId];
+        }
+        throw new ArgumentOutOfRangeException(nameof(row));
+    }
+
+    private void ClearTimelineAnimationTracks(IReadOnlyCollection<Guid> layerIds, AnimationProperty? property)
+    {
+        ViewModel.CancelGestures();
+        if (property is { } target)
+        {
+            editor.ClearAnimationTracks(layerIds, target);
+        }
+        else
+        {
+            editor.ClearAnimationTracks(layerIds);
+        }
+        ClearKeyframeSelection();
+    }
+
     internal Task CreateTimelineSubtitleAsync(Guid trackId, MediaTime time, ProjectDocument expected) =>
         RunCommandAsync(async () =>
         {

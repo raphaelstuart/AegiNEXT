@@ -1,9 +1,26 @@
 using AegiNext.Core.Effects;
+using AegiNext.Core.Projects;
 
 namespace AegiNext.Application;
 
 public sealed partial class ProjectEditor
 {
+    /// <summary>一次清除所选非组片段的全部动画轨道；无变化不新增历史，未知身份整批拒绝。</summary>
+    public void ClearAnimationTracks(IReadOnlyCollection<Guid> layerIds)
+    {
+        ArgumentNullException.ThrowIfNull(layerIds);
+        var selection = layerIds.ToArray();
+        Apply("Clear clip animation tracks", document => ProjectEditingOperations.ClearAnimationTracks(document, selection));
+    }
+
+    /// <summary>一次清除指定图层该属性的全部关键帧、有序变换和节点目标，保留其他动画及静态内容。</summary>
+    public void ClearAnimationTracks(IReadOnlyCollection<Guid> layerIds, AnimationProperty property)
+    {
+        ArgumentNullException.ThrowIfNull(layerIds);
+        var selection = layerIds.ToArray();
+        Apply("Clear animation property tracks", document => ProjectEditingOperations.ClearAnimationTracks(document, selection, property));
+    }
+
     /// <summary>按目标片段编译并原子组合脚本；保留未声明区间的既有动画、内容身份和路径。</summary>
     public void ApplyEffectScript(Guid layerId, EffectScript script)
     {

@@ -789,6 +789,9 @@
     "Settings.ShadowOffset": "阴影偏移",
     "Settings.DeletePresetsConfirmation": "删除这 {0} 个预设？此操作无法撤销。",
     "Settings.DiscardPresetDraftConfirmation": "丢弃这个未保存的预设？",
+    "Workbench.ClearClipAnimationTracks": "清除全部特效",
+    "Workbench.ClearAnimationPropertyTracks": "清除此类型的全部特效",
+    "Workbench.ClearClipAnimationPropertyTracks": "清除此片段的该类型特效",
     "Workbench.LineHeight": "行高",
     "Settings.StylePreviewNavigationHint": "Cmd/Ctrl＋滚轮缩放，左键拖动平移"
   }

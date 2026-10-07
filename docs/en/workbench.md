@@ -25,6 +25,8 @@ Classic Aegisub audition keys target the primary selected subtitle: **Q** plays 
 
 Classic mouse timing is off by default. Select a subtitle, then enable **Classic Aegisub timing** using the mouse icon at the timeline's bottom left. In the timeline body, **left click** sets the primary selected subtitle's start and **right click** sets its end at the clicked time. These clicks keep the primary selection; track headings and the top ruler retain their normal behavior. Turn the toggle off to restore normal selection, dragging, and clip context menus. See the [Quickstart control table](quick-start.md#classic-aegisub-controls).
 
+Right-clicking an effect keyframe or curve still opens its effect menu while classic mouse timing is enabled.
+
 Preview qualities are Low 320p, Smooth 540p (default), Standard 720p, and High 1080p. Scrubbing temporarily caps quality at 540p without exceeding the chosen level; release restores it. Small videos are not enlarged, and export is independent.
 
 Settings → Media selects Auto/CPU/GPU preview decoding and saves additional audio delay per output device. A positive delay means audible output arrives later. Device-clock loss temporarily disables timing until recovery.
@@ -38,6 +40,8 @@ Assign a style preset from a track context menu. On a nonempty track, choose whe
 Settings → Subtitle Styles renders editable sample text. Cmd/Ctrl + wheel zooms around the pointer; left drag pans the preview. These gestures change only the preview view. Style, script, export, and layout libraries support selecting multiple personal presets and confirming their deletion.
 
 Select a clip to edit Effects, or a keyframe to seek and edit its value/interpolation. Drag Preview text, motion-path nodes, or mask handles for visual editing. Node morph animation locks mask topology until those tracks are cleared. See [Subtitle editing](subtitle-editing.md) and [Effect scripts](effect-dsl.md).
+
+The clip context menu clears all animation tracks from selected clips. Right-click a keyframe or curve to clear that clip's animation of the clicked type; right-click the property heading or empty property row to clear that type across the whole track. Clearing preserves static styles, base placement, masks, motion paths, and karaoke, and forms one undo operation.
 
 Valid numeric/color drafts preview immediately and commit on Enter or blur; invalid text remains editable. Esc restores the current field. A completed gesture or committed edit forms one undo operation.
 

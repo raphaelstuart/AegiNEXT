@@ -416,7 +416,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             {
                 TrackContextRequested?.Invoke(this, new(RowAt(contextPoint.Y)?.TrackId));
             }
-            else
+            else if (!TryRequestAnimationRowContext(contextPoint))
             {
                 RequestClipContext(contextPoint, e.KeyModifiers);
             }
@@ -869,11 +869,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             for (var sample = 0; sample <= samples; sample++)
             {
                 var x = startX + sample * (endX - startX) / samples;
-                var time = new MediaTime((long)Math.Round((ViewStart + (x - HeaderWidth) / PixelsPerSecond) * 1000000), 1000000) -
-                    layer.Start + layer.AnimationOffset;
                 CurveSampleCount++;
-                var point = new Point(x, ValueY(SceneEvaluator.EvaluateTrack(track, time).GetComponent(component),
-                    range.Minimum, range.Maximum, area));
+                var point = AnimationCurvePoint(layer, track, area, range, component, x);
                 if (previous is { } first)
                 {
                     context.DrawLine(curvePen, first, point);

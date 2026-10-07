@@ -42,6 +42,11 @@ public sealed partial class SubtitleTimelineControl
             return false;
         }
 
+        if (properties.IsRightButtonPressed && FindClipAnimationContext(point) is not null)
+        {
+            return false;
+        }
+
         clipPastePointer = point;
         CancelDrag();
         if (!preserveFocus)

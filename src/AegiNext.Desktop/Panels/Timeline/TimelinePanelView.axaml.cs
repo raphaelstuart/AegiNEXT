@@ -29,6 +29,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private readonly MenuItem collapseTrackItem;
     private readonly MenuItem trackStyleItem;
     private readonly MenuItem autoTrackStyleItem;
+    private readonly MenuItem animationClearItem;
+    private bool animationContextIsClip;
     private readonly ToolbarToggleButton snapButton;
     private readonly ToolbarToggleButton stepButton;
     private readonly ToolbarToggleButton spectrumButton;
@@ -92,9 +94,15 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         ClipMenu.Items.Add(CreateMenuItem("CopyTimelineClipsMenuItem", "CopyTimelineClips", viewModel.CopyClipsCommand));
         ClipMenu.Items.Add(CreateMenuItem("PasteTimelineClipsMenuItem", "PasteTimelineClips", viewModel.PasteClipsCommand));
         ClipMenu.Items.Add(CreateMenuItem("MoveTimelineClipsMenuItem", "Move", viewModel.MoveClipsCommand));
+        ClipMenu.Items.Add(CreateMenuItem("ClearClipAnimationTracksMenuItem", "ClearClipAnimationTracks", viewModel.ClearClipAnimationTracksCommand));
         ClipMenu.Items.Add(CreateMenuItem("DeleteTimelineClipsMenuItem", "DeleteTimelineClips", viewModel.DeleteClipsCommand));
+        AnimationMenu = new();
+        animationClearItem = new() { Name = "ClearAnimationPropertyTracksMenuItem", Command = viewModel.ClearAnimationPropertyTracksCommand };
+        AnimationMenu.Items.Add(animationClearItem);
+        RefreshAnimationMenu();
         timeline.TrackContextRequested += OnTrackContextRequested;
         timeline.ClipContextRequested += OnClipContextRequested;
+        timeline.AnimationRowContextRequested += OnAnimationRowContextRequested;
         timeline.SeekRequested += async (_, e) =>
         {
             if (timeline.IsSeeking && !viewModel.IsSeeking)
@@ -162,9 +170,10 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     public string PanelId => "timeline";
     internal ContextMenu TrackMenu { get; }
     internal ContextMenu ClipMenu { get; }
+    internal ContextMenu AnimationMenu { get; }
     public bool CanExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
     {
-        if (!ReferenceEquals(focusedElement, timeline) || TrackMenu.IsOpen || ClipMenu.IsOpen)
+        if (!ReferenceEquals(focusedElement, timeline) || TrackMenu.IsOpen || ClipMenu.IsOpen || AnimationMenu.IsOpen)
         {
             return false;
         }
@@ -379,6 +388,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     }
     private void OnTrackContextRequested(object? sender, TimelineTrackContextEventArgs e)
     {
+        AnimationMenu.Close();
         ClipMenu.Close();
         TrackMenu.Close();
         if (e.TrackId is { } id && !viewModel.SelectTrack(id))
@@ -391,11 +401,24 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     }
     private void OnClipContextRequested(object? sender, TimelineClipContextEventArgs e)
     {
+        AnimationMenu.Close();
         TrackMenu.Close();
         ClipMenu.Close();
         viewModel.SetClipContext(e);
         ClipMenu.Open(timeline);
     }
+    private void OnAnimationRowContextRequested(object? sender, TimelineAnimationRowContextEventArgs e)
+    {
+        TrackMenu.Close();
+        ClipMenu.Close();
+        AnimationMenu.Close();
+        viewModel.SetAnimationRowContext(e);
+        animationContextIsClip = e.ClipId.HasValue;
+        RefreshAnimationMenu();
+        AnimationMenu.Open(timeline);
+    }
+    private void RefreshAnimationMenu() => animationClearItem.Header = Localization.Get("Workbench." +
+        (animationContextIsClip ? "ClearClipAnimationPropertyTracks" : "ClearAnimationPropertyTracks"));
     private void RefreshTrackMenu()
     {
         collapseTrackItem.IsEnabled = viewModel.SelectedTrackId.HasValue;
@@ -446,6 +469,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private void OnLanguageChanged(object? sender, EventArgs e)
     {
         RefreshTrackMenu();
+        RefreshAnimationMenu();
     }
     private static MenuItem CreateMenuItem(string name, string key, ICommand? command = null)
     {
@@ -510,12 +534,14 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             overview.ViewportChanged -= OnViewportChanged;
             timeline.TrackContextRequested -= OnTrackContextRequested;
             timeline.ClipContextRequested -= OnClipContextRequested;
+            timeline.AnimationRowContextRequested -= OnAnimationRowContextRequested;
             timeline.AnimationRowCollapseRequested -= OnAnimationRowCollapseRequested;
             RemoveHandler(PointerPressedEvent, OnPreviewPointerPressed);
             RemoveHandler(PointerReleasedEvent, OnPreviewPointerReleased);
             animationRowCollapsePointer = null;
             TrackMenu.Close();
             ClipMenu.Close();
+            AnimationMenu.Close();
             overview.CancelGesture();
             overview.Dispose();
             timeline.Dispose();
