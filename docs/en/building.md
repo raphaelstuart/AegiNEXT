@@ -77,3 +77,18 @@ pwsh -NoProfile -File ./scripts/test-build.ps1
 ```
 
 The first command restores pinned QA tools to project artifacts. Headless UI and silent audio tests do not establish native appearance or audible latency. Package the result with [Publishing](publishing.md).
+
+## Documentation website
+
+The MkDocs Material website builds directly from the two root README files and `docs/`. Use Python **3.13+** in an activated virtual environment (`python3` on macOS when `python` is unavailable):
+
+```sh
+python -m pip install -r scripts/docs/requirements.txt
+python -m unittest discover -s Tests/Docs -v
+python -m mkdocs build --strict
+python -m mkdocs serve
+```
+
+The build output is `artifacts/docs-site/`. The preview command prints its local URL, including the `/Aegisub-NEXT/` project prefix. `AEGINEXT_DOCS_SITE_URL` overrides the website URL for custom domains or other deployment paths.
+
+In the GitHub repository, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**. The **Documentation** workflow validates documentation pull requests, then builds and deploys updates on `main`; it can also be run manually. CI reads the deployment URL from GitHub Pages, so project prefixes and custom domains are reflected in the output. This build requires no application or native media dependencies.

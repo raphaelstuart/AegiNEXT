@@ -72,3 +72,6 @@ packages*.lock.json
 ### Local verification artifacts
 artifacts/
 /testResults.xml
+
+### Documentation tooling
+__pycache__/

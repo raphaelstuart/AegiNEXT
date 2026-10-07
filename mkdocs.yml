@@ -1,0 +1,110 @@
+site_name: AegiNext
+site_description: Modern, native cross-platform subtitle creation
+site_url: https://raphaelstuart.github.io/Aegisub-NEXT/
+repo_url: !ENV [AEGINEXT_DOCS_REPOSITORY_URL, 'https://github.com/raphaelstuart/Aegisub-NEXT']
+repo_name: Aegisub-NEXT
+edit_uri: blob/main/
+docs_dir: docs
+site_dir: artifacts/docs-site
+use_directory_urls: true
+
+hooks:
+  - scripts/docs/hooks.py
+
+watch:
+  - README.md
+  - README.zh-CN.md
+  - scripts/docs
+  - src/AegiNext.Desktop/Assets/AppIcon.png
+  - src/AegiNext.Core/Effects/Scripts/fade-in-out.aegifx
+
+theme:
+  name: material
+  custom_dir: scripts/docs/overrides
+  language: en
+  logo: src/AegiNext.Desktop/Assets/AppIcon.png
+  favicon: src/AegiNext.Desktop/Assets/AppIcon.png
+  font: false
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search:
+      lang:
+        - en
+        - zh
+
+markdown_extensions:
+  - tables
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    anchors: warn
+    unrecognized_links: warn
+
+extra:
+  repository_branch: main
+
+nav:
+  - English:
+      - Home: README.md
+      - Documentation: docs/en/README.md
+      - Use AegiNext:
+          - Quickstart: docs/en/quick-start.md
+          - Workbench: docs/en/workbench.md
+          - Subtitle editing: docs/en/subtitle-editing.md
+          - Timing post-processor: docs/en/timing-post-processor.md
+          - Effect scripts: docs/en/effect-dsl.md
+          - Video export: docs/en/export.md
+      - Develop AegiNext:
+          - Building: docs/en/building.md
+          - Publishing: docs/en/publishing.md
+          - Architecture: docs/en/architecture.md
+          - Workspace integration: docs/en/composable-workspace.md
+          - Media: docs/en/media.md
+          - Rendering: docs/en/rendering.md
+  - 简体中文:
+      - 首页: README.zh-CN.md
+      - 文档目录: docs/zh-cn/README.md
+      - 使用 AegiNext:
+          - 快速开始: docs/zh-cn/quick-start.md
+          - 工作台: docs/zh-cn/workbench.md
+          - 字幕编辑: docs/zh-cn/subtitle-editing.md
+          - 时间后处理: docs/zh-cn/timing-post-processor.md
+          - 特效脚本: docs/zh-cn/effect-dsl.md
+          - 视频导出: docs/zh-cn/export.md
+      - 开发 AegiNext:
+          - 构建: docs/zh-cn/building.md
+          - 发布: docs/zh-cn/publishing.md
+          - 架构: docs/zh-cn/architecture.md
+          - 工作区集成: docs/zh-cn/composable-workspace.md
+          - 媒体: docs/zh-cn/media.md
+          - 渲染: docs/zh-cn/rendering.md

@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://raphaelstuart.github.io/Aegisub-NEXT/">Documentation website</a> ·
   <a href="docs/en/quick-start.md">Quickstart</a> ·
   <a href="docs/en/README.md">English Docs</a> ·
   <a href="docs/zh-cn/README.md">中文文档</a>

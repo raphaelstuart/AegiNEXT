@@ -77,3 +77,18 @@ pwsh -NoProfile -File ./scripts/test-build.ps1
 ```
 
 首条命令将固定版本 QA 工具还原到工程产物目录。Headless UI 和静音音频测试不能证明原生外观或可听延迟；应用打包见[发布](publishing.md)。
+
+## 文档网站
+
+MkDocs Material 网站直接使用根目录的两篇 README 与 `docs/` 构建。使用 Python **3.13+**，先激活虚拟环境，再执行以下命令（macOS 没有 `python` 时使用 `python3`）：
+
+```sh
+python -m pip install -r scripts/docs/requirements.txt
+python -m unittest discover -s Tests/Docs -v
+python -m mkdocs build --strict
+python -m mkdocs serve
+```
+
+构建产物位于 `artifacts/docs-site/`。预览命令会输出带 `/Aegisub-NEXT/` 项目前缀的本地地址；可通过 `AEGINEXT_DOCS_SITE_URL` 覆盖网站地址，适配自定义域名或其他部署路径。
+
+在 GitHub 仓库的 **Settings → Pages → Build and deployment → Source** 中选择 **GitHub Actions**。**Documentation** 工作流检查文档相关 PR，在 `main` 更新后构建并发布，也支持手动触发。CI 从 GitHub Pages 读取部署地址，生成物会使用相应的项目前缀或自定义域名。文档构建不需要应用和原生媒体依赖。
