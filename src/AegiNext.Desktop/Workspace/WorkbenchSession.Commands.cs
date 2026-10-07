@@ -114,7 +114,7 @@ internal sealed partial class WorkbenchSession
                 case WorkbenchCommand.SAVE_PROJECT: await workflow.SaveProjectAsync(false); break;
                 case WorkbenchCommand.SAVE_PROJECT_AS: await workflow.SaveProjectAsync(true); break;
                 case WorkbenchCommand.OPEN_MEDIA:
-                    var path = await dialogs.OpenFileAsync("Open", "Videos", ["*.mkv", "*.mp4", "*.mov", "*.webm", "*.avi", "*.m4v", "*.ts", "*.m2ts"]);
+                    var path = await dialogs.OpenFileAsync("Open", "Videos", VideoFileTypes.Patterns);
                     if (path is not null && !closing)
                     {
                         await workflow.OpenMediaAsync(path, true);

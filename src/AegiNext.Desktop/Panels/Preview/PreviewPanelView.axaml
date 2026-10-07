@@ -4,7 +4,7 @@
     x:Class="AegiNext.Desktop.Panels.Preview.PreviewPanelView" Classes="business-surface">
 <Border Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0" CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
         <Grid RowDefinitions="*,Auto">
-          <Grid Name="VideoSurface" Background="#080A0E" MinHeight="250" ClipToBounds="True" ToolTip.Tip="{Binding FileTitle}">
+          <Grid Name="VideoSurface" Background="#080A0E" MinHeight="250" ClipToBounds="True" ToolTip.Tip="{Binding FileTitle}" DragDrop.AllowDrop="True">
             <controls:EffectCanvasControl Name="EffectCanvas" />
             <StackPanel Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" IsVisible="{Binding !HasFrame, Mode=OneWay}">
               <TextBlock Classes="ui-icon" Text="▷" FontSize="42" Foreground="#7C8AA6" HorizontalAlignment="Center" />
