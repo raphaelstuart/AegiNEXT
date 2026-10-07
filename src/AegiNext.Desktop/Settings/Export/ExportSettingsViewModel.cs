@@ -33,7 +33,7 @@ public sealed class ExportSettingsViewModel : VideoExportSettingsViewModel
         AddCommand = new(() => SelectionCompletion = CreateDraftAsync(false), () => !IsBusy && !switching);
         DuplicateCommand = new(() => SelectionCompletion = CreateDraftAsync(true), () => CanEdit && !switching);
         SaveCommand = new(() => SelectionCompletion = SavePendingAsync(), () => CanEdit && !switching);
-        DeleteCommand = new(Delete, () => CanEdit && !switching);
+        DeleteCommand = new(Delete, () => CanDelete);
         CaptureCommand = new(() => SelectionCompletion = CaptureAsync(), () => HasWorkspace && !IsBusy && !switching);
         ImportCommand = new(() => ImportRequested?.Invoke(this, EventArgs.Empty), () => !IsBusy && !switching);
         ExportCommand = new(() => ExportRequested?.Invoke(this,
@@ -64,6 +64,8 @@ public sealed class ExportSettingsViewModel : VideoExportSettingsViewModel
     public bool IsEmpty => exportPresets.IsEmpty;
     public bool IsAvailable => !IsBusy && !switching;
     public bool CanEdit => HasDraft && selectedIds.Length <= 1 && !IsBusy;
+    public bool CanDelete => !IsBusy && !switching && (!selectedIds.IsEmpty ||
+        draft is not null && !exportPresets.Any(value => value.Id == draft.Id));
     public bool IsDirty
     {
         get
@@ -428,14 +430,18 @@ public sealed class ExportSettingsViewModel : VideoExportSettingsViewModel
 
     private void Delete()
     {
-        if (draft is not null && exportPresets.Any(value => value.Id == draft.Id))
+        if (!CanDelete)
         {
-            DeleteRequested?.Invoke(this, new(draft.Id));
+            return;
         }
-        else
+
+        if (!selectedIds.IsEmpty)
         {
-            SetSelection(null, []);
-            LoadDraft(null, false);
+            DeleteRequested?.Invoke(this, new(selectedIds));
+        }
+        else if (draft is not null)
+        {
+            DeleteRequested?.Invoke(this, new([], true, draft.Id));
         }
     }
 
@@ -477,6 +483,7 @@ public sealed class ExportSettingsViewModel : VideoExportSettingsViewModel
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(IsAvailable));
         OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanDelete));
         foreach (var command in new[] { AddCommand, DuplicateCommand, SaveCommand, DeleteCommand, CaptureCommand, ImportCommand, ExportCommand })
         {
             command.NotifyCanExecuteChanged();

@@ -71,7 +71,8 @@ public sealed class EffectSettingsViewModel : ObservableObject
     public bool HasSelection => !SelectedIds.IsEmpty;
     public bool IsReadOnly => !HasDraft || SelectedIds.Length > 1 || newDraft is null && selectedEffect?.IsBuiltin != false;
     public bool CanEdit => HasDraft && !IsReadOnly && !IsBusy && !changingSelection;
-    public bool CanDelete => CanEdit;
+    public bool CanDelete => !IsBusy && !changingSelection && (newDraft is not null ||
+        !SelectedIds.IsEmpty && SelectedIds.All(id => items.Any(item => item.Id == id && !item.IsBuiltin)));
     public bool IsDirty => newDraft is not null || SelectedIds.Length == 1 && selectedEffect is { } selected && drafts.ContainsKey(selected.Id);
     public string EditorStatus => SelectedIds.Length > 1 ? Localization.Format("Settings.MultipleScriptsSelected", SelectedIds.Length) :
         Localization.Get("Settings." + (IsReadOnly ? "BuiltinScriptReadOnly" : IsDirty ? "ScriptUnsaved" : "ScriptSaved"));
@@ -464,11 +465,11 @@ public sealed class EffectSettingsViewModel : ObservableObject
 
         if (newDraft is not null)
         {
-            DiscardDraft();
+            DeleteRequested?.Invoke(this, new([], true, newDraft.Id));
         }
-        else if (selectedEffect is { IsBuiltin: false } selected)
+        else
         {
-            DeleteRequested?.Invoke(this, new(selected.Id));
+            DeleteRequested?.Invoke(this, new(SelectedIds));
         }
     }
 

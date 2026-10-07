@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace AegiNext.Application.Presets;
 
 /// <summary>串行提交个人脚本库；仅在原子写入成功后发布不可变快照。</summary>
@@ -47,16 +49,30 @@ public sealed class EffectScriptPresetLibrary : IDisposable
     /// <summary>删除个人模板，失败时保留快照和磁盘内容。</summary>
     public Task RemoveAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        return RemoveAsync([id], cancellationToken);
+    }
+
+    /// <summary>固定并去重全部身份；完整验证后一次提交，失败或取消不部分删除。</summary>
+    public Task RemoveAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        var selection = ids.ToHashSet();
         return ExecuteAsync(async () =>
         {
+            if (selection.Count == 0)
+            {
+                return;
+            }
+
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-            var index = FindIndex(id);
-            if (index < 0)
+            if (snapshot.Presets.Count(preset => selection.Contains(preset.Id)) != selection.Count)
             {
                 throw new InvalidDataException("特效模板不存在。");
             }
 
-            await CommitAsync(snapshot with { Presets = snapshot.Presets.RemoveAt(index) }, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var items = snapshot.Presets.Where(preset => !selection.Contains(preset.Id)).ToImmutableArray();
+            await CommitAsync(snapshot with { Presets = items }, cancellationToken).ConfigureAwait(false);
         }, cancellationToken);
     }
 

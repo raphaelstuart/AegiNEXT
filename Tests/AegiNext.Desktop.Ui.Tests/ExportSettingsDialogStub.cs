@@ -39,6 +39,12 @@ internal sealed class ExportSettingsDialogStub : IWorkbenchDialogService
     }
 
     /// <inheritdoc />
+    public Task<bool> ConfirmPresetDeletionAsync(PresetDeletionRequest request, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(true);
+    }
+
+    /// <inheritdoc />
     public Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default)
     {
         return Inner.ShowIntegerInputAsync(request, cancellationToken);

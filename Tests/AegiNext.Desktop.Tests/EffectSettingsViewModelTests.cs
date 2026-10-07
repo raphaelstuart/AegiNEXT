@@ -115,12 +115,13 @@ public sealed class EffectSettingsViewModelTests
     }
 
     [Fact]
-    public async Task UnsavedInvalidScriptIsDeletedLocallyWithoutPersistenceOrValidation()
+    public async Task UnsavedInvalidScriptIsDeletedAfterConfirmationWithoutPersistenceOrValidation()
     {
         var model = new EffectSettingsViewModel();
         await model.AddCommand.ExecuteAsync(null);
         model.Source = "effect broken";
         model.ValidateCommand.Execute(null);
+        var error = model.Error;
         var deletes = 0;
         var saves = 0;
         model.DeleteRequested += (_, _) => deletes++;
@@ -129,8 +130,12 @@ public sealed class EffectSettingsViewModelTests
 
         model.DeleteCommand.Execute(null);
 
-        Assert.Equal(0, deletes);
+        Assert.Equal(1, deletes);
         Assert.Equal(0, saves);
+        Assert.NotNull(model.Draft);
+        Assert.Equal(error, model.Error);
+        Assert.Equal("effect broken", model.Source);
+        model.DiscardDraft();
         Assert.Null(model.Draft);
         Assert.False(model.IsDirty);
         Assert.Null(model.Error);
@@ -139,7 +144,7 @@ public sealed class EffectSettingsViewModelTests
     }
 
     [Fact]
-    public void SavedScriptWithAnInvalidPendingEditCanBeDeletedDirectly()
+    public void SavedScriptWithAnInvalidPendingEditRequestsDeletionWithoutSaving()
     {
         var saved = Preset("saved-delete");
         var model = new EffectSettingsViewModel();

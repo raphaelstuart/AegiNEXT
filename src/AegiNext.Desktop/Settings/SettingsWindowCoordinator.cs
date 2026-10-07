@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.ComponentModel;
 using AegiNext.Application.Presets;
 using AegiNext.Core.Effects;
@@ -32,9 +33,12 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private SettingsExportPresetCoordinator? exportPresets;
     private SettingsTransferCoordinator? transfer;
     private Task closedTransferCompletion = Task.CompletedTask;
+    private CancellationTokenSource? deletionCancellation;
+    private bool deletionActive;
     internal Task ExportCompletion => exportPresets?.Completion ?? Task.CompletedTask;
     internal Task TransferCompletion => Task.WhenAll(closedTransferCompletion, transfer?.Completion ?? Task.CompletedTask);
     internal Task TimingCompletion { get; private set; } = Task.CompletedTask;
+    internal Task DeletionCompletion { get; private set; } = Task.CompletedTask;
 
     internal event Action<WorkbenchLogEntry>? EffectScriptErrorReported;
     internal SettingsWindow? Window { get; private set; }
@@ -61,6 +65,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         this.session = session;
         presentedPreferences = applicationContext.Preferences;
         dialogs = createDialogs?.Invoke(window) ?? new WindowWorkbenchDialogService(window);
+        deletionCancellation = new();
         try
         {
             Subscribe(window);
@@ -98,6 +103,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         }
         catch
         {
+            CancelDeletion();
             DisposeTransfer();
             exportPresets?.Dispose();
             exportPresets = null;
@@ -127,6 +133,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         }
 
         disposed = true;
+        CancelDeletion();
         DisposeTransfer();
         exportPresets?.Dispose();
         Window?.CloseImmediately();
@@ -228,6 +235,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     {
         if (sender is SettingsWindow window && ReferenceEquals(Window, window))
         {
+            CancelDeletion();
             DisposeTransfer();
             exportPresets?.Dispose();
             exportPresets = null;
@@ -249,6 +257,14 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
             closedTransferCompletion = Task.WhenAll(closedTransferCompletion, current.Completion);
             transfer = null;
         }
+    }
+
+    private void CancelDeletion()
+    {
+        deletionCancellation?.Cancel();
+        deletionCancellation?.Dispose();
+        deletionCancellation = null;
+        deletionActive = false;
     }
 
     private void OnPreferencesChanged(object? sender, EventArgs e)
@@ -304,8 +320,8 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private void RefreshAvailability()
     {
         var projectBusy = session is { } active && (active.IsProjectBusy || active.IsClosing);
-        Window?.SetStyleOperationBusy(applicationContext.StylesBusy || projectBusy || session?.Styles.IsBusy == true);
-        Window?.SetEffectOperationBusy(applicationContext.EffectsBusy || projectBusy || session?.EffectScripts.IsBusy == true);
+        Window?.SetStyleOperationBusy(deletionActive || applicationContext.StylesBusy || projectBusy || session?.Styles.IsBusy == true);
+        Window?.SetEffectOperationBusy(deletionActive || applicationContext.EffectsBusy || projectBusy || session?.EffectScripts.IsBusy == true);
         Window?.UpdateSelectionAvailability(session is { HasSelectedCue: true, IsProjectBusy: false, IsClosing: false });
         RefreshTimingStyles();
     }
@@ -484,7 +500,74 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
 
     private void OnDeleteStyleRequested(object? sender, SettingsStyleDeleteEventArgs e)
     {
-        _ = RunAsync(() => applicationContext.RunStyleOperationAsync(() => applicationContext.StyleLibrary.RemoveAsync(e.Id)));
+        RequestPresetDeletion(e.Ids, e.IsDraftOnly, e.DraftId, false);
+    }
+
+    private void RequestPresetDeletion(ImmutableArray<Guid> ids, bool isDraftOnly, Guid? draftId, bool effects)
+    {
+        if (disposed || deletionActive || Window is not { } target || dialogs is not { } service
+            || deletionCancellation is not { } cancellation || (effects ? applicationContext.EffectsBusy : applicationContext.StylesBusy))
+        {
+            return;
+        }
+
+        deletionActive = true;
+        RefreshAvailability();
+        var token = cancellation.Token;
+        DeletionCompletion = RunAsync(async () =>
+        {
+            try
+            {
+                var names = isDraftOnly
+                    ? ImmutableArray.Create(effects ? target.ViewModel.Effects.Name : target.ViewModel.Styles.Name)
+                    : effects
+                        ? ids.Select(id => applicationContext.EffectScriptLibrary.Snapshot.Presets.Single(preset => preset.Id == id).Name).ToImmutableArray()
+                        : ids.Select(id => applicationContext.StyleLibrary.Snapshot.Presets.Single(preset => preset.Id == id).Name).ToImmutableArray();
+                var accepted = await service.ConfirmPresetDeletionAsync(new(names, isDraftOnly), token).WaitAsync(token);
+                token.ThrowIfCancellationRequested();
+                if (!accepted || disposed || !ReferenceEquals(Window, target))
+                {
+                    return;
+                }
+
+                if (!isDraftOnly)
+                {
+                    if (effects)
+                    {
+                        await applicationContext.RunEffectOperationAsync(() => applicationContext.EffectScriptLibrary.RemoveAsync(ids, token));
+                    }
+                    else
+                    {
+                        await applicationContext.RunStyleOperationAsync(() => applicationContext.StyleLibrary.RemoveAsync(ids, token));
+                    }
+                }
+                if (disposed || !ReferenceEquals(Window, target))
+                {
+                    return;
+                }
+
+                var currentDraftId = effects ? target.ViewModel.Effects.Draft?.Id : target.ViewModel.Styles.Draft?.Id;
+                if (currentDraftId is { } current && (isDraftOnly ? current == draftId : ids.Contains(current)))
+                {
+                    if (effects)
+                    {
+                        target.ViewModel.Effects.DiscardDraft();
+                    }
+                    else
+                    {
+                        target.ViewModel.Styles.DiscardDraft();
+                    }
+                }
+            }
+            finally
+            {
+                if (ReferenceEquals(Window, target))
+                {
+                    deletionActive = false;
+                    RefreshAvailability();
+                }
+            }
+        }, effects);
     }
 
     private void OnCaptureStyleRequested(object? sender, EventArgs e)
@@ -556,7 +639,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
 
     private void OnDeleteEffectRequested(object? sender, SettingsEffectDeleteEventArgs e)
     {
-        _ = RunAsync(() => applicationContext.RunEffectOperationAsync(() => applicationContext.EffectScriptLibrary.RemoveAsync(e.Id)), true);
+        RequestPresetDeletion(e.Ids, e.IsDraftOnly, e.DraftId, true);
     }
 
     private void OnImportEffectRequested(object? sender, EventArgs e)

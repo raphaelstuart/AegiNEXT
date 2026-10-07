@@ -203,7 +203,7 @@ public sealed class ExportSettingsTests
         Assert.Equal(new[] { values[0], values[2] }, exported);
         Assert.False(model.CanEdit);
         Assert.False(model.SaveCommand.CanExecute(null));
-        Assert.False(model.DeleteCommand.CanExecute(null));
+        Assert.True(model.DeleteCommand.CanExecute(null));
         Assert.False(model.DuplicateCommand.CanExecute(null));
         Assert.True(model.ExportCommand.CanExecute(null));
     }
@@ -226,7 +226,16 @@ public sealed class ExportSettingsTests
         Assert.Equal(saved, Assert.Single(model.ExportPresets));
         Assert.Empty(model.SelectedIds);
         Assert.True(model.IsDirty);
+        var requests = 0;
+        model.DeleteRequested += (_, args) =>
+        {
+            requests++;
+            Assert.True(args.IsDraftOnly);
+        };
         model.DeleteCommand.Execute(null);
+        Assert.Equal(1, requests);
+        Assert.NotNull(model.Draft);
+        model.DiscardDraft();
         Assert.Null(model.Draft);
         Assert.Equal(saved, Assert.Single(model.ExportPresets));
     }

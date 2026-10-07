@@ -109,19 +109,33 @@ public sealed class SubtitleStylePresetLibrary : IDisposable
     }
 
     /// <summary>删除已存在预设，提交失败时仍保留原库。</summary>
-    public async Task RemoveAsync(Guid id, CancellationToken cancellationToken = default)
+    public Task RemoveAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        return RemoveAsync([id], cancellationToken);
+    }
+
+    /// <summary>固定并去重全部标识；完整验证后一次提交，失败或取消不部分删除。</summary>
+    public async Task RemoveAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        var selection = ids.ToHashSet();
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (selection.Count == 0)
+            {
+                return;
+            }
+
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-            var index = FindIndex(id);
-            if (index < 0)
+            if (snapshot.Presets.Count(preset => selection.Contains(preset.Id)) != selection.Count)
             {
                 throw new InvalidDataException("待删除的样式预设不存在。");
             }
 
-            await CommitAsync(snapshot with { Presets = snapshot.Presets.RemoveAt(index) }, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var items = snapshot.Presets.Where(preset => !selection.Contains(preset.Id)).ToImmutableArray();
+            await CommitAsync(snapshot with { Presets = items }, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

@@ -21,14 +21,14 @@ public sealed class SettingsStyleSelectionTests
 
         Assert.Equal(new[] { values[0], values[2] }, exported);
         Assert.False(model.CanEdit);
-        Assert.False(model.DeleteCommand.CanExecute(null));
+        Assert.True(model.DeleteCommand.CanExecute(null));
         Assert.False(model.SaveCommand.CanExecute(null));
         model.SelectStyles(null, []);
         Assert.False(model.ExportCommand.CanExecute(null));
     }
 
     [Fact]
-    public void NewDraftStaysOutsideListAndDeleteDiscardsItLocally()
+    public void NewDraftStaysOutsideListAndDeleteWaitsForConfirmation()
     {
         var model = new StyleSettingsViewModel();
         var requests = 0;
@@ -40,9 +40,11 @@ public sealed class SettingsStyleSelectionTests
 
         model.DeleteCommand.Execute(null);
 
+        Assert.NotNull(model.Draft);
+        Assert.Equal(1, requests);
+        model.DiscardDraft();
         Assert.Null(model.Draft);
         Assert.Empty(model.Styles);
-        Assert.Equal(0, requests);
     }
 
     [Fact]

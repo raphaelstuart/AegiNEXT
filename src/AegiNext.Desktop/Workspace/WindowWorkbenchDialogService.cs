@@ -183,6 +183,17 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
         return dialog.ShowDialog<TrackStyleUpdateDecision>(ownerProvider());
     }
 
+    /// <summary>确认删除冻结的预设选择或未保存草稿；关闭时默认取消。</summary>
+    public async Task<bool> ConfirmPresetDeletionAsync(PresetDeletionRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var dialog = new PresetDeletionDialog(request);
+        registerWindow?.Invoke(dialog);
+        var answer = dialog.ShowDialog<bool>(ownerProvider());
+        using var registration = cancellationToken.Register(() => Dispatcher.UIThread.Post(() => dialog.Close(false)));
+        return await answer;
+    }
+
     /// <summary>确认删除字幕轨道及全部内容；取消请求会关闭窗口，默认选择取消。</summary>
     public async Task<bool> ConfirmTrackDeletionAsync(string trackName, int subtitleCount, CancellationToken cancellationToken)
     {

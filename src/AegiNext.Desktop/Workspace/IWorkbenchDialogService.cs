@@ -10,6 +10,8 @@ internal interface IWorkbenchDialogService
     Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default);
     Task<int> ConfirmPresetChangesAsync(bool effects);
     Task<int> ConfirmExportPresetChangesAsync() => ConfirmPresetChangesAsync(false);
+    Task<bool> ConfirmPresetDeletionAsync(PresetDeletionRequest request, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
     Task<bool> ConfirmSettingsRestartAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
     Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName);
     Task<bool> ShowNewProjectAsync(string workspaceRoot,

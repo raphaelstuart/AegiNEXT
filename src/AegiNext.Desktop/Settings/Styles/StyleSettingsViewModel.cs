@@ -131,7 +131,8 @@ public sealed class StyleSettingsViewModel : ObservableObject
         FillDraft.IsDirty || StrokeDraft.IsDirty || ShadowDraft.IsDirty || Position.Validate() is not null ||
         new[] { FontSizeText, StrokeWidthText, MarginText, LineHeightText, ShadowBlurText, ShadowXText, ShadowYText }
             .Any(value => ParseNumber(value) is null) || HasPendingInputs?.Invoke() == true);
-    public bool CanDelete => CanEdit && !switching;
+    public bool CanDelete => !IsBusy && !switching && (!selectedIds.IsEmpty ||
+        draft is not null && !styles.Any(value => value.Id == draft.Preset.Id));
     public bool CanEdit => HasDraft && selectedIds.Length <= 1 && !IsBusy;
     public bool CanApply => CanEdit && HasSelectedSubtitle;
     public bool IsAvailable => !IsBusy;
@@ -499,7 +500,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         LoadDraft(SelectedStyle is null ? null : new(SelectedStyle));
     }
 
-    /// <summary>按稳定身份同步列表选择；多选仅用于导出。</summary>
+    /// <summary>按稳定身份同步列表选择；多选支持批量导出与删除。</summary>
     public void SelectStyles(Guid? primaryId, IEnumerable<Guid> ids)
     {
         if (loading)
@@ -644,14 +645,18 @@ public sealed class StyleSettingsViewModel : ObservableObject
 
     private void Delete()
     {
-        if (draft is not null && styles.Any(value => value.Id == draft.Preset.Id))
+        if (!CanDelete)
         {
-            DeleteRequested?.Invoke(this, new(draft.Preset.Id));
+            return;
         }
-        else
+
+        if (!selectedIds.IsEmpty)
         {
-            ClearSelection();
-            LoadDraft(null);
+            DeleteRequested?.Invoke(this, new(selectedIds));
+        }
+        else if (draft is not null)
+        {
+            DeleteRequested?.Invoke(this, new([], true, draft.Preset.Id));
         }
     }
 

@@ -60,19 +60,33 @@ public sealed class VideoExportPresetLibrary : IDisposable
     }
 
     /// <summary>删除已存在的预设；提交失败或身份不存在时保留当前库。</summary>
-    public async Task RemoveAsync(Guid id, CancellationToken cancellationToken = default)
+    public Task RemoveAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        return RemoveAsync([id], cancellationToken);
+    }
+
+    /// <summary>固定并去重全部身份；完整验证后一次提交，失败或取消不部分删除。</summary>
+    public async Task RemoveAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        var selection = ids.ToHashSet();
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (selection.Count == 0)
+            {
+                return;
+            }
+
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-            var index = FindIndex(id);
-            if (index < 0)
+            if (snapshot.Presets.Count(preset => selection.Contains(preset.Id)) != selection.Count)
             {
                 throw new InvalidDataException("待删除的压制预设不存在。");
             }
 
-            await CommitAsync(snapshot with { Presets = snapshot.Presets.RemoveAt(index) }, cancellationToken)
+            cancellationToken.ThrowIfCancellationRequested();
+            var items = snapshot.Presets.Where(preset => !selection.Contains(preset.Id)).ToImmutableArray();
+            await CommitAsync(snapshot with { Presets = items }, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally

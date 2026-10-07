@@ -787,6 +787,8 @@
     "Workbench.ImportUserSettings": "Import personal settings",
     "Workbench.UserSettingsFiles": "AegiNext settings files",
     "Settings.ShadowOffset": "Shadow offset",
+    "Settings.DeletePresetsConfirmation": "Delete {0} presets? This cannot be undone.",
+    "Settings.DiscardPresetDraftConfirmation": "Discard this unsaved preset?",
     "Workbench.LineHeight": "Line height",
     "Settings.StylePreviewNavigationHint": "Cmd/Ctrl + wheel to zoom; drag to pan"
   }

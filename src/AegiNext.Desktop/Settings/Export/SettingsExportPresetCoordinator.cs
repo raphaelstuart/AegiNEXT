@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Media.Encoding.Presets;
@@ -151,9 +152,25 @@ internal sealed class SettingsExportPresetCoordinator : IDisposable
     {
         _ = RunAsync(async token =>
         {
-            await applicationContext.RunExportPresetOperationAsync(() =>
-                applicationContext.ExportPresetLibrary.RemoveAsync(e.Id, token));
-            if (!disposed && window.ViewModel.ExportPresets.Draft?.Id == e.Id)
+            var names = e.IsDraftOnly
+                ? ImmutableArray.Create(window.ViewModel.ExportPresets.Name)
+                : e.Ids.Select(id => applicationContext.ExportPresetLibrary.Snapshot.Presets.Single(preset => preset.Id == id).Name).ToImmutableArray();
+            if (!await dialogs.ConfirmPresetDeletionAsync(new(names, e.IsDraftOnly), token).WaitAsync(token))
+            {
+                return;
+            }
+            token.ThrowIfCancellationRequested();
+            if (disposed)
+            {
+                return;
+            }
+            if (!e.IsDraftOnly)
+            {
+                await applicationContext.RunExportPresetOperationAsync(() =>
+                    applicationContext.ExportPresetLibrary.RemoveAsync(e.Ids, token));
+            }
+            if (!disposed && window.ViewModel.ExportPresets.Draft?.Id is { } current
+                && (e.IsDraftOnly ? current == e.DraftId : e.Ids.Contains(current)))
             {
                 window.ViewModel.ExportPresets.DiscardDraft();
             }
