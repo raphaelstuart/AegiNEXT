@@ -210,38 +210,6 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         CommitPreparedDetails(document, prepared, id, "Format subtitle selection");
     }
 
-    internal bool ApplyTextAlignment(SubtitleTextAlignment alignment)
-    {
-        if (!Enum.IsDefined(alignment))
-        {
-            throw new ArgumentOutOfRangeException(nameof(alignment));
-        }
-        if (draft is null || committing || disposed)
-        {
-            return false;
-        }
-        var current = draft.Style.TextAlign ?? (SubtitleTextAlignment)((int)draft.Style.Alignment % 3);
-        if (current == alignment)
-        {
-            return true;
-        }
-        var id = draft.Id;
-        var document = session.Editor.Snapshot;
-        if (!TryPrepare(document, out var prepared))
-        {
-            return false;
-        }
-        prepared = prepared with
-        {
-            Subtitles = prepared.Subtitles.Select(line => line.Id == id
-                ? line with { Style = line.Style with { TextAlign = alignment } }
-                : line).ToImmutableArray()
-        };
-        ProjectValidator.Validate(prepared);
-        CommitPreparedDetails(document, prepared, id, "Align subtitle text");
-        return true;
-    }
-
     internal void ClearSelectionStyle(int start, int length)
     {
         if (length > 0 && TryCommit())

@@ -48,7 +48,8 @@ internal sealed partial class WorkbenchSession
                     Stroke = stroke,
                     Bold = parsesFontDraft && selection.Variant is { } selectedVariant ? selectedVariant.Weight >= 700 : vm.Bold == true,
                     Italic = parsesFontDraft && selection.Variant is { } selectedItalicVariant ? selectedItalicVariant.Italic : vm.Italic == true,
-                    Alignment = alignments[Math.Clamp(vm.Alignment, 0, alignments.Length - 1)],
+                    Alignment = (TextAlignment)vm.Alignment,
+                    TextAlign = vm.AlignmentSelectionCommitted ? null : line.Style.TextAlign,
                     Position = vm.Position.CreatePosition()
                 };
                 prepared = WorkspaceDraftOperations.UpdateSubtitle(prepared, id, cue => cue with { Style = style });

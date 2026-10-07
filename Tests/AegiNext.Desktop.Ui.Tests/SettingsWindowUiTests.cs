@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using AegiNext.Core.Presets;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
@@ -156,8 +157,8 @@ public sealed class SettingsWindowUiTests
                 Localization.SetLanguage(change.Language);
                 window.UpdatePreferences(preferences);
             };
-            var alignment = UiTestActions.Find<ComboBox>(window, "AlignmentCombo");
-            Assert.Equal((int)ProjectTextAlignment.BOTTOM_CENTER, alignment.SelectedIndex);
+            var alignment = UiTestActions.Find<SubtitleAlignmentPicker>(window, "AlignmentPicker");
+            Assert.Equal((int)ProjectTextAlignment.BOTTOM_CENTER, alignment.AlignmentIndex);
             ClickVisibleControl(window, UiTestActions.Find<CheckBox>(window, "ExplicitPositionCheck"));
             Assert.True(window.ViewModel.Styles.Position.IsExplicit);
             var anchor = UiTestActions.Find<NumericDraftInput>(window, "AnchorXInput");
@@ -175,20 +176,23 @@ public sealed class SettingsWindowUiTests
             UiTestActions.SelectLanguage(window, "zh-CN");
             window.SelectPage(SettingsPage.STYLES);
             Assert.Equal(2, appearanceChanges);
-            Assert.Equal((int)ProjectTextAlignment.BOTTOM_CENTER, alignment.SelectedIndex);
-            Assert.Equal(Localization.Get("Settings." + nameof(ProjectTextAlignment.BOTTOM_CENTER)), alignment.SelectedItem);
+            Assert.Equal((int)ProjectTextAlignment.BOTTOM_CENTER, alignment.AlignmentIndex);
+            Assert.Equal(Localization.Get("Workbench.AlignCenter"),
+                ToolTip.GetTip(UiTestActions.Find<ToolbarToggleButton>(alignment, "HorizontalCenterButton")));
             Assert.Equal("0.25", anchor.RawText);
             Assert.Equal("7e-", offset.RawText);
             Assert.True(window.ViewModel.Styles.Position.IsExplicit);
             Assert.Equal(position, window.ViewModel.Styles.Draft.Style.Position);
-            alignment.SelectedIndex = (int)ProjectTextAlignment.TOP_RIGHT;
+            ClickVisibleControl(window, UiTestActions.Find<ToolbarToggleButton>(alignment, "HorizontalRightButton"));
+            ClickVisibleControl(window, UiTestActions.Find<ToolbarToggleButton>(alignment, "VerticalTopButton"));
             window.SelectPage(SettingsPage.APPEARANCE);
             UiTestActions.Find<ComboBox>(window, "ThemeCombo").SelectedIndex = 1;
             UiTestActions.SelectLanguage(window, "en-US");
             window.SelectPage(SettingsPage.STYLES);
             Assert.Equal(4, appearanceChanges);
-            Assert.Equal((int)ProjectTextAlignment.TOP_RIGHT, alignment.SelectedIndex);
-            Assert.Equal(Localization.Get("Settings." + nameof(ProjectTextAlignment.TOP_RIGHT)), alignment.SelectedItem);
+            Assert.Equal((int)ProjectTextAlignment.TOP_RIGHT, alignment.AlignmentIndex);
+            Assert.Equal(Localization.Get("Workbench.AlignTop"),
+                ToolTip.GetTip(UiTestActions.Find<ToolbarToggleButton>(alignment, "VerticalTopButton")));
             Assert.Equal("0.25", anchor.RawText);
             Assert.Equal("7e-", offset.RawText);
             Assert.Equal(position, window.ViewModel.Styles.Draft.Style.Position);
@@ -210,7 +214,7 @@ public sealed class SettingsWindowUiTests
             Assert.Null(saved[^1].Font);
             window.UpdateSelectionAvailability(false);
             Assert.False(UiTestActions.Find<Button>(window, "CaptureStyleButton").IsEffectivelyEnabled);
-            Assert.False(UiTestActions.Find<Button>(window, "ApplyStyleButton").IsEnabled);
+            Assert.False(window.ViewModel.Styles.CanApply);
         }
         finally
         {
@@ -353,6 +357,8 @@ public sealed class SettingsWindowUiTests
     private static void ClickVisibleControl(Window window, Control control)
     {
         Assert.True(control.IsEffectivelyEnabled);
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
         control.BringIntoView();
         window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();

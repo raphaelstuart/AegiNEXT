@@ -5,13 +5,6 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class WorkbenchSession
 {
-    private static readonly TextAlignment[] alignments =
-    [
-        TextAlignment.BOTTOM_CENTER, TextAlignment.TOP_CENTER, TextAlignment.MIDDLE_CENTER, TextAlignment.BOTTOM_LEFT,
-        TextAlignment.BOTTOM_RIGHT, TextAlignment.TOP_LEFT, TextAlignment.TOP_RIGHT, TextAlignment.MIDDLE_LEFT,
-        TextAlignment.MIDDLE_RIGHT
-    ];
-
     private AnimationProperty ActiveProperty => layerEditing.ActiveProperty;
     private Keyframe? SelectedKeyframe => layerEditing.SelectedKeyframe;
     internal void ClearKeyframeSelection() => layerEditing.ClearKeyframeSelection();

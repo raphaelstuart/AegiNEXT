@@ -14,7 +14,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     private readonly WorkbenchSession session;
     private readonly StylesPanelViewModel viewModel;
     private readonly FontFamilyPicker fonts;
-    private readonly ComboBox alignment;
+    private readonly SubtitleAlignmentPicker alignment;
     private bool suppressFocusCommit;
     private bool formattingPointerActive;
     private bool formattingFocusPending;
@@ -52,16 +52,14 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         };
         viewModel.FillDraft.Committed += (_, _) => viewModel.CommitDrafts();
         viewModel.StrokeDraft.Committed += (_, _) => viewModel.CommitDrafts();
-        alignment = this.FindControl<ComboBox>("AlignmentCombo")!;
-        alignment.SelectionChanged += (_, _) =>
+        alignment = this.FindControl<SubtitleAlignmentPicker>("AlignmentPicker")!;
+        alignment.AlignmentCommitted += (_, e) =>
         {
             if (!session.IsUpdating)
             {
-                viewModel.CommitAlignment(alignment.SelectedIndex);
+                viewModel.CommitAlignment((int)e.Alignment);
             }
         };
-        viewModel.AlignmentChoicesRefreshing += OnAlignmentChoicesRefreshing;
-        viewModel.AlignmentChoicesRefreshed += OnAlignmentChoicesRefreshed;
         var position = this.FindControl<SubtitlePositionEditor>("PositionEditor")!;
         position.AutomaticPositionRequested += async (_, _) => await viewModel.RestoreAutomaticPositionAsync();
         position.ExplicitPositionChanged += (_, _) => viewModel.CommitDrafts();
@@ -76,7 +74,8 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         AddHandler(PointerPressedEvent, (_, e) =>
         {
             suppressFocusCommit = false;
-            if (e.Source is Control source && source.GetSelfAndVisualAncestors().Any(value => ReferenceEquals(value, bold) || ReferenceEquals(value, italic)))
+            if (e.Source is Control source && source.GetSelfAndVisualAncestors().Any(value =>
+                ReferenceEquals(value, bold) || ReferenceEquals(value, italic) || ReferenceEquals(value, alignment)))
             {
                 formattingPointerActive = true;
                 formattingFocusPending = false;
@@ -86,6 +85,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         AddHandler(PointerReleasedEvent, (_, _) => EndFormattingPointer(), RoutingStrategies.Tunnel, true);
         bold.PointerCaptureLost += (_, _) => EndFormattingPointer();
         italic.PointerCaptureLost += (_, _) => EndFormattingPointer();
+        alignment.AddHandler(PointerCaptureLostEvent, (_, _) => EndFormattingPointer(), RoutingStrategies.Bubble, true);
         AddHandler(KeyDownEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -138,6 +138,11 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
                 ReferenceEquals(document, session.DocumentSnapshot) && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
                 this.IsAttachedToVisualTree())
             {
+                if (formattingPointerActive)
+                {
+                    formattingFocusPending = true;
+                    return;
+                }
                 viewModel.CommitDrafts();
             }
         }, DispatcherPriority.Background);
@@ -172,24 +177,10 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
 
-    private void OnAlignmentChoicesRefreshing(object? sender, EventArgs e)
-    {
-        var selectedIndex = alignment.SelectedIndex;
-        alignment.BeginInit();
-        alignment.SelectedIndex = selectedIndex;
-    }
-
-    private void OnAlignmentChoicesRefreshed(object? sender, EventArgs e)
-    {
-        alignment.EndInit();
-    }
-
     public void Dispose()
     {
         disposed = true;
         focusCommitRevision++;
-        viewModel.AlignmentChoicesRefreshing -= OnAlignmentChoicesRefreshing;
-        viewModel.AlignmentChoicesRefreshed -= OnAlignmentChoicesRefreshed;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
     }
 }

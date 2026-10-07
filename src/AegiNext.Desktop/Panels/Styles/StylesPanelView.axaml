@@ -54,14 +54,14 @@
                   IsEnabled="{Binding HasCue}" Content="{Loc Key=Workbench.Italic}" />
       </StackPanel>
       <TextBlock Classes="field" Text="{Loc Key=Workbench.Alignment}" />
-      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-        <ComboBox Name="AlignmentCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Alignment, Mode=TwoWay}"
-                  ItemsSource="{Binding Alignments}" IsEnabled="{Binding HasCue}" />
-        <Button Name="AutomaticPositionButton" Grid.Column="1"
+      <StackPanel Spacing="8">
+        <controls:SubtitleAlignmentPicker Name="AlignmentPicker" AlignmentIndex="{Binding Alignment, Mode=TwoWay}"
+                                          IsEnabled="{Binding HasCue}" />
+        <Button Name="AutomaticPositionButton" HorizontalAlignment="Left"
                 Command="{Binding RestoreAutomaticPositionCommand}" IsEnabled="{Binding HasCue}">
           <controlsCommon:IconText IconKey="ResetAutomaticPosition" Text="{Loc Key=Workbench.ResetAutomaticPosition}" />
         </Button>
-      </Grid>
+      </StackPanel>
       <StackPanel IsEnabled="{Binding HasCue}">
         <controls:SubtitlePositionEditor Name="PositionEditor" ShowAutomaticPositionAction="False"
                                          DataContext="{Binding Position}" />

@@ -23,6 +23,8 @@ The optional Duration display shows all clip lengths; otherwise labels appear du
 
 Valid drafts commit on Enter or blur; invalid text stays editable, and Esc restores the field. Text edits preserve unaffected clip identities and timing. Each completed style/timing operation has one Undo.
 
+Set alignment in the **Styles** panel using two groups of icon buttons: left/center/right and top/middle/bottom. Changing one direction preserves the other, and the same control is available in the style library. The combined value matches ASS `\an1`–`\an9`; editing that tag in the code page updates the style panel. Explicit position stays controlled by the position editor. Older projects retain their independent text alignment until you actively choose an alignment, which clears that legacy override.
+
 ## Audition a segment
 
 Use the header play/pause button to audition the selected clip, or the whole cue if none is selected. **Loop** repeats the range and defaults off. Changing Loop while paused does not start playback.

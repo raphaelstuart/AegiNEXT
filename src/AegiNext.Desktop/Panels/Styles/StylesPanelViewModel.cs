@@ -7,6 +7,7 @@ using AegiNext.Desktop.Settings;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
 using Avalonia.Media;
+using TextAlignment = AegiNext.Core.Projects.TextAlignment;
 
 namespace AegiNext.Desktop.Panels.Styles;
 
@@ -25,15 +26,12 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private decimal? strokeWidth = 2;
     private bool? bold = false;
     private bool? italic = false;
-    private int alignment;
-    private string[] alignments = [];
-    private bool refreshingAlignmentChoices;
+    private int alignment = (int)TextAlignment.BOTTOM_CENTER;
+    private bool alignmentSelectionCommitted;
     private bool hasCue;
     private StylePresetListItem[] presets = [];
     private StylePresetListItem? selectedPreset;
     private bool canApplyPreset;
-    internal event EventHandler? AlignmentChoicesRefreshing;
-    internal event EventHandler? AlignmentChoicesRefreshed;
 
     internal StylesPanelViewModel(WorkbenchSession session)
     {
@@ -129,17 +127,19 @@ internal sealed class StylesPanelViewModel : ObservableObject
         get => alignment;
         set
         {
-            if (!refreshingAlignmentChoices)
+            if (!Enum.IsDefined((TextAlignment)value))
             {
-                SetProperty(ref alignment, value);
+                throw new ArgumentOutOfRangeException(nameof(value));
             }
+            SetProperty(ref alignment, value);
         }
     }
 
-    public string[] Alignments
+    /// <summary>记录用户主动选择对齐，以在提交时清除历史独立文字对齐。</summary>
+    public bool AlignmentSelectionCommitted
     {
-        get => alignments;
-        set => SetProperty(ref alignments, value);
+        get => alignmentSelectionCommitted;
+        private set => SetProperty(ref alignmentSelectionCommitted, value);
     }
 
     public bool HasCue
@@ -320,37 +320,24 @@ internal sealed class StylesPanelViewModel : ObservableObject
         session.TryCommitDrafts();
     }
     /// <summary>提交用户选择的对齐方式。</summary>
-    public void CommitAlignment(int value)
+    public bool CommitAlignment(int value)
     {
-        if (refreshingAlignmentChoices)
+        if (!Enum.IsDefined((TextAlignment)value))
         {
-            return;
+            throw new ArgumentOutOfRangeException(nameof(value));
         }
+        if (session.IsUpdating || !HasCue)
+        {
+            return false;
+        }
+        AlignmentSelectionCommitted = true;
         Alignment = value;
-        session.TryCommitDrafts();
+        return session.TryCommitDrafts();
     }
 
-    internal void RefreshAlignmentChoices(string[] options)
+    internal void LoadAlignment(TextAlignment value)
     {
-        var selection = alignment;
-        refreshingAlignmentChoices = true;
-        try
-        {
-            AlignmentChoicesRefreshing?.Invoke(this, EventArgs.Empty);
-            Alignments = options;
-            alignment = selection;
-            OnPropertyChanged(nameof(Alignment));
-        }
-        finally
-        {
-            try
-            {
-                AlignmentChoicesRefreshed?.Invoke(this, EventArgs.Empty);
-            }
-            finally
-            {
-                refreshingAlignmentChoices = false;
-            }
-        }
+        Alignment = (int)value;
+        AlignmentSelectionCommitted = false;
     }
 }

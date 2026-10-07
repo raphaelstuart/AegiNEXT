@@ -424,18 +424,18 @@ public sealed class LocalizationUiTests
         var cueID = UiTestActions.CreateSubtitle(context);
         var styleView = context.Window.Panels[WorkbenchPanelIds.STYLES];
         var effectsView = context.Window.Panels[WorkbenchPanelIds.EFFECTS];
-        var alignment = styleView.FindControl<ComboBox>("AlignmentCombo")!;
+        var alignment = styleView.FindControl<SubtitleAlignmentPicker>("AlignmentPicker")!;
         var blend = effectsView.FindControl<ComboBox>("BlendCombo")!;
         var interpolation = effectsView.FindControl<ComboBox>("InterpolationCombo")!;
         var number = effectsView.FindControl<NumericDraftInput>("RotationInput")!;
         var color = styleView.FindControl<ColorDraftInput>("FillPicker")!;
-        alignment.SelectedIndex = 2;
+        context.ViewModel.Styles.CommitAlignment((int)TextAlignment.MIDDLE_CENTER);
         blend.SelectedIndex = (int)BlendMode.SCREEN;
         context.Session.Editor.SetKeyframe(cueID, AnimationProperty.ROTATION, new(new(1), 0));
         Assert.True(context.Session.SelectKeyframe(new(cueID, AnimationProperty.ROTATION, new(1), new(1))));
         interpolation.SelectedIndex = (int)KeyframeInterpolation.EASE_OUT;
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(2, context.ViewModel.Styles.Alignment);
+        Assert.Equal((int)TextAlignment.MIDDLE_CENTER, context.ViewModel.Styles.Alignment);
         Assert.Equal((int)BlendMode.SCREEN, context.ViewModel.Effects.Blend);
         Assert.Equal((int)KeyframeInterpolation.EASE_OUT, context.ViewModel.Effects.Interpolation);
         Assert.Equal(KeyframeInterpolation.EASE_OUT, Assert.Single(context.Session.SelectedLayer!.Tracks
@@ -457,8 +457,8 @@ public sealed class LocalizationUiTests
                 Localization.SetLanguage(languageID);
                 Dispatcher.UIThread.RunJobs();
 
-                Assert.Equal(2, alignment.SelectedIndex);
-                Assert.Equal(2, context.ViewModel.Styles.Alignment);
+                Assert.Equal((int)TextAlignment.MIDDLE_CENTER, alignment.AlignmentIndex);
+                Assert.Equal((int)TextAlignment.MIDDLE_CENTER, context.ViewModel.Styles.Alignment);
                 Assert.Equal((int)BlendMode.SCREEN, blend.SelectedIndex);
                 Assert.Equal((int)BlendMode.SCREEN, context.ViewModel.Effects.Blend);
                 Assert.Equal((int)KeyframeInterpolation.EASE_OUT, interpolation.SelectedIndex);

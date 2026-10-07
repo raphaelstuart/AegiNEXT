@@ -13,7 +13,7 @@ internal sealed partial class WorkbenchSession
 {
     private static readonly HashSet<string> styleDraftProperties =
     [
-        "FontFamily", "FontVariant", "FontSelectionCommitted", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "Position"
+        "FontFamily", "FontVariant", "FontSelectionCommitted", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "AlignmentSelectionCommitted", "Position"
     ];
     private static readonly HashSet<string> effectDraftProperties =
     [
@@ -460,7 +460,7 @@ internal sealed partial class WorkbenchSession
             vm.StrokeDraft.Load(layer is null ? SceneColor.Black : InspectorColor(layer, cue is null ? layer.Stroke : style.Stroke, true));
             vm.Bold = style.Bold;
             vm.Italic = style.Italic;
-            vm.Alignment = Array.IndexOf(alignments, style.Alignment);
+            vm.LoadAlignment(style.Alignment);
             var positionGeometry = placement.Geometry;
             if (positionGeometry is not null && layer is not null)
             {

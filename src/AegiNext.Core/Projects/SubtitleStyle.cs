@@ -18,6 +18,7 @@ public sealed record SubtitleStyle
     public bool Underline { get; init; }
     public bool Strikethrough { get; init; }
     public TextAlignment Alignment { get; init; } = TextAlignment.BOTTOM_CENTER;
+    /// <summary>保留旧工程的独立文字对齐；新编辑通过 Alignment 统一设置对齐。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SubtitleTextAlignment? TextAlign { get; init; }
     public double Margin { get; init; } = 40;

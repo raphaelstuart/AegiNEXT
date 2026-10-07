@@ -8,13 +8,13 @@ using Avalonia.Markup.Xaml;
 
 namespace AegiNext.Desktop.Settings.Styles;
 
-/// <summary>样式页面局部字体确认和焦点适配。</summary>
+/// <summary>样式页面局部字体、对齐确认和焦点适配。</summary>
 public sealed partial class StyleSettingsView : UserControl
 {
     private StyleSettingsViewModel? model;
     private bool synchronizingSelection;
 
-    /// <summary>先隔离父级上下文，再加载编译绑定；本地控件仅提交字体语义值。</summary>
+    /// <summary>先隔离父级上下文，再加载编译绑定和本地控件的语义提交。</summary>
     public StyleSettingsView()
     {
         DataContext = null;
@@ -23,6 +23,8 @@ public sealed partial class StyleSettingsView : UserControl
         this.FindControl<ListBox>("StyleList")!.SelectionChanged += SelectionChanged;
         this.FindControl<FontFamilyPicker>("FontInput")!.FamilyCommitted +=
             (_, value) => model?.CommitFont(value.Selection);
+        this.FindControl<SubtitleAlignmentPicker>("AlignmentPicker")!.AlignmentCommitted +=
+            (_, value) => model?.CommitAlignment(value.Alignment);
     }
 
     private void ChangeModel()
@@ -138,8 +140,8 @@ public sealed partial class StyleSettingsView : UserControl
         }
         else if (e.PropertyName == nameof(StyleSettingsViewModel.AlignmentIndex))
         {
-            this.FindControl<ComboBox>("AlignmentCombo")!.SetCurrentValue(
-                ComboBox.SelectedIndexProperty, model!.AlignmentIndex);
+            this.FindControl<SubtitleAlignmentPicker>("AlignmentPicker")!.SetCurrentValue(
+                SubtitleAlignmentPicker.AlignmentIndexProperty, model!.AlignmentIndex);
         }
     }
 

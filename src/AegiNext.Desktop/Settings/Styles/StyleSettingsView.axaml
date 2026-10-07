@@ -95,8 +95,8 @@
           </Grid>
           <StackPanel Spacing="8">
             <TextBlock Text="{Loc Key=Settings.Alignment}" Classes="field" />
-            <ComboBox Name="AlignmentCombo" ItemsSource="{Binding Alignments}"
-                      SelectedIndex="{Binding AlignmentIndex, Mode=TwoWay}" />
+            <controls:SubtitleAlignmentPicker Name="AlignmentPicker"
+                                              AlignmentIndex="{Binding AlignmentIndex, Mode=TwoWay}" />
           </StackPanel>
           <controls:SubtitlePositionEditor Name="PositionEditor" DataContext="{Binding Position}" />
           <TextBlock Text="{Binding PositionMeasurementError}" IsVisible="{Binding HasPositionMeasurementError}"

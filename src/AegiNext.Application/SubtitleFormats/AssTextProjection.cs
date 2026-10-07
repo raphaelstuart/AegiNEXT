@@ -47,6 +47,7 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
             Style = parsed.Line.Style with
             {
                 Alignment = parsed.Line.Style.Alignment == baseline.Style.Alignment ? original.Style.Alignment : parsed.Line.Style.Alignment,
+                TextAlign = parsed.Line.Style.Alignment == baseline.Style.Alignment ? original.Style.TextAlign : null,
                 Position = original.Style.Position
             }
         };

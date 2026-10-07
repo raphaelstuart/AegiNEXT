@@ -59,7 +59,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private readonly List<Control> bodyOnlyFields = [];
     private readonly List<Button> selectionActions = [];
     private readonly Dictionary<string, ToolbarToggleButton> toggles = [];
-    private readonly Dictionary<SubtitleTextAlignment, ToolbarToggleButton> alignmentToggles = [];
     private bool synchronizing;
     private bool disposed;
     private bool completingInput;
@@ -359,7 +358,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         AddHandler(PointerPressedEvent, (_, e) =>
         {
             if (e.Source is Control source && source.GetSelfAndVisualAncestors().Any(value => value is ToolbarToggleButton button &&
-                (toggles.ContainsValue(button) || alignmentToggles.ContainsValue(button))))
+                toggles.ContainsValue(button)))
             {
                 formattingPointerActive = true;
                 formattingFocusPending = false;
@@ -402,25 +401,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             }
             return Task.CompletedTask;
         }));
-        styleToolbar.Children.Add(ToolbarSeparator("TextAlignmentSeparator"));
-        foreach (var (alignment, key) in new[]
-        {
-            (SubtitleTextAlignment.LEFT, "AlignLeft"),
-            (SubtitleTextAlignment.CENTER, "AlignCenter"),
-            (SubtitleTextAlignment.RIGHT, "AlignRight")
-        })
-        {
-            var button = new ToolbarToggleButton { Name = key + "Button" };
-            ConfigureToggle(button, "Workbench." + key, WorkbenchIcon.Create(key));
-            button.Click += (_, _) =>
-            {
-                coordinator.ApplyTextAlignment(alignment);
-                Refresh();
-            };
-            button.PointerCaptureLost += (_, _) => EndFormattingPointer();
-            alignmentToggles.Add(alignment, button);
-            styleToolbar.Children.Add(button);
-        }
         var font = selectionFont;
         font.RefreshFontCandidates(session.Fonts.Candidates);
         font.SetCurrentFont(SubtitleFontSelectionService.FromStyle(coordinator.SelectionStyle()));
@@ -896,13 +876,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             foreach (var action in selectionActions)
             {
                 action.IsEnabled = styleFields.IsEnabled;
-            }
-            var textAlignment = line is null ? (SubtitleTextAlignment?)null :
-                line.Style.TextAlign ?? (SubtitleTextAlignment)((int)line.Style.Alignment % 3);
-            foreach (var pair in alignmentToggles)
-            {
-                pair.Value.IsEnabled = line is not null && !editingHighlight;
-                pair.Value.IsChecked = pair.Key == textAlignment;
             }
             if (editingHighlight)
             {

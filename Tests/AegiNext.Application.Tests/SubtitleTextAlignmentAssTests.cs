@@ -9,7 +9,7 @@ public sealed class SubtitleTextAlignmentAssTests
     [InlineData(SubtitleTextAlignment.LEFT)]
     [InlineData(SubtitleTextAlignment.CENTER)]
     [InlineData(SubtitleTextAlignment.RIGHT)]
-    public void AdvancedSourcePreservesNativeAlignmentAcrossUntouchedTextStyleAndPlacementEdits(SubtitleTextAlignment textAlign)
+    public void AdvancedSourcePreservesLegacyAlignmentUntilThePlacementTagChanges(SubtitleTextAlignment textAlign)
     {
         var original = new SubtitleLine
         {
@@ -40,7 +40,7 @@ public sealed class SubtitleTextAlignmentAssTests
 
         var placementEdit = AssTextProjection.Apply(original, projection.Source.Replace("\\an2", "\\an7", StringComparison.Ordinal)).Line;
         Assert.Equal(TextAlignment.TOP_LEFT, placementEdit.Style.Alignment);
-        Assert.Equal(textAlign, placementEdit.Style.TextAlign);
+        Assert.Null(placementEdit.Style.TextAlign);
         Assert.Equal(original.Style.Position, placementEdit.Style.Position);
         Assert.Equal(original.InlineSpans.ToArray(), placementEdit.InlineSpans.ToArray());
     }

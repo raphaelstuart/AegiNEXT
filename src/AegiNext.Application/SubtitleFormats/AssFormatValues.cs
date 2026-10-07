@@ -37,6 +37,23 @@ internal static class AssFormatValues
 
     internal static int Alignment(TextAlignment value) => (2 - (int)value / 3) * 3 + (int)value % 3 + 1;
 
+    internal static TextAlignment LegacyAlignment(int value)
+    {
+        return value switch
+        {
+            1 => TextAlignment.BOTTOM_LEFT,
+            2 => TextAlignment.BOTTOM_CENTER,
+            3 => TextAlignment.BOTTOM_RIGHT,
+            5 => TextAlignment.TOP_LEFT,
+            6 => TextAlignment.TOP_CENTER,
+            7 => TextAlignment.TOP_RIGHT,
+            9 => TextAlignment.MIDDLE_LEFT,
+            10 => TextAlignment.MIDDLE_CENTER,
+            11 => TextAlignment.MIDDLE_RIGHT,
+            _ => throw new InvalidDataException("SSA 对齐须为 1、2、3、5、6、7、9、10 或 11。")
+        };
+    }
+
     internal static SceneColor Color(string value, SceneColor? previous = null)
     {
         var token = value.Trim().TrimEnd('&');

@@ -38,7 +38,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private bool drawing;
     private bool explicitPosition;
     private bool explicitAlignment;
-    private static readonly string[] knownTags = ["iclip", "alpha", "xbord", "ybord", "xshad", "yshad", "fscx", "fscy", "bord", "shad", "blur", "move", "clip", "fade", "pos", "fad", "frz", "frx", "fry", "fsp", "org", "pbo", "fn", "fs", "an", "kf", "ko", "kt", "1c", "2c", "3c", "4c", "1a", "2a", "3a", "4a", "b", "i", "u", "s", "c", "r", "k", "K", "p", "q", "t"];
+    private static readonly string[] knownTags = ["iclip", "alpha", "xbord", "ybord", "xshad", "yshad", "fscx", "fscy", "bord", "shad", "blur", "move", "clip", "fade", "pos", "fad", "frz", "frx", "fry", "fsp", "org", "pbo", "fn", "fs", "an", "kf", "ko", "kt", "1c", "2c", "3c", "4c", "1a", "2a", "3a", "4a", "b", "i", "u", "s", "c", "r", "k", "K", "p", "q", "t", "a"];
 
     internal AssTextEditResult Parse(string source)
     {
@@ -243,7 +243,9 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 }
                 break;
             case "an":
-                var alignment = AssFormatValues.Alignment(AssFormatValues.Integer(value));
+            case "a":
+                var alignment = name == "an" ? AssFormatValues.Alignment(AssFormatValues.Integer(value)) :
+                    AssFormatValues.LegacyAlignment(AssFormatValues.Integer(value));
                 if (explicitAlignment)
                 {
                     Report("Ass.DuplicatePlacement", "ASS 同一行重复的对齐标签已忽略，采用首个值。", sourceStart, sourceLength);

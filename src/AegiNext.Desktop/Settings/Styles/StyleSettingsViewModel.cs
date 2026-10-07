@@ -31,7 +31,6 @@ public sealed class StyleSettingsViewModel : ObservableObject
     internal Func<bool>? HasPendingInputs { get; set; }
     internal Task SelectionCompletion { get; private set; } = Task.CompletedTask;
     private int draftVersion;
-    private string[] alignments = [];
     private decimal? fontSize;
     private decimal? strokeWidth;
     private decimal? margin;
@@ -128,7 +127,6 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public bool CanApply => CanEdit && HasSelectedSubtitle;
     public bool IsAvailable => !IsBusy;
     public string FontSource => Localization.Get("Settings." + (draft?.Preset.Font is null ? "SystemFont" : "EmbeddedFont"));
-    public string[] Alignments => alignments;
     public int DraftVersion => draftVersion;
 
     public string? InvalidFieldKey
@@ -596,6 +594,21 @@ public sealed class StyleSettingsViewModel : ObservableObject
         NotifyFontChanged();
     }
 
+    /// <summary>确认九宫格对齐并清除旧的独立文字对齐覆盖。</summary>
+    public void CommitAlignment(ProjectTextAlignment alignment)
+    {
+        if (!Enum.IsDefined(alignment))
+        {
+            throw new ArgumentOutOfRangeException(nameof(alignment));
+        }
+        if (CanEdit && draft is not null &&
+            (draft.Preset.Style.Alignment != alignment || draft.Preset.Style.TextAlign is not null))
+        {
+            ChangeStyle(style => style with { Alignment = alignment, TextAlign = null });
+            OnPropertyChanged(nameof(AlignmentIndex));
+        }
+    }
+
     private void NotifyFontChanged()
     {
         var wasLoading = loading;
@@ -628,9 +641,6 @@ public sealed class StyleSettingsViewModel : ObservableObject
         loading = true;
         try
         {
-            alignments = Enum.GetValues<ProjectTextAlignment>().Select(value => Localization.Get("Settings." + value.ToString()))
-                .ToArray();
-            OnPropertyChanged(nameof(Alignments));
             OnPropertyChanged(nameof(AlignmentIndex));
             OnPropertyChanged(nameof(FontSource));
             FillDraft.RefreshLanguage();

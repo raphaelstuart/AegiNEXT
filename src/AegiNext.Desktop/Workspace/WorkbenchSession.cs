@@ -491,7 +491,6 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         {
             ViewModel.Preview.EmptyLabel = Localization.Get("Preview.Empty");
             ViewModel.Preview.RefreshQualities(preferences.PreviewQuality);
-            ViewModel.Styles.RefreshAlignmentChoices(alignments.Select(value => Localization.Get("Settings." + value)).ToArray());
             foreach (var row in ViewModel.Subtitles.Rows)
             {
                 row.RefreshLanguage();
