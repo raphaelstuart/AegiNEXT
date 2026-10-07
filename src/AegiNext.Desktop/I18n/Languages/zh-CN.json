@@ -791,6 +791,7 @@
     "Settings.DiscardPresetDraftConfirmation": "丢弃这个未保存的预设？",
     "Workbench.ClearClipAnimationTracks": "清除全部特效",
     "Workbench.ClearAnimationPropertyTracks": "清除此类型的全部特效",
+    "Workbench.SoloSubtitleTrack": "只显示此轨道",
     "Workbench.ClearClipAnimationPropertyTracks": "清除此片段的该类型特效",
     "Workbench.LineHeight": "行高",
     "Settings.StylePreviewNavigationHint": "Cmd/Ctrl＋滚轮缩放，左键拖动平移"

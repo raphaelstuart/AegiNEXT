@@ -82,6 +82,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     /// <summary>创建可交互时间线。</summary>
     public SubtitleTimelineControl()
     {
+        InitializeTrackSolo();
         Focusable = true;
         ClipToBounds = true;
         ActualThemeVariantChanged += (_, _) => RefreshTheme();
@@ -242,6 +243,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
         var documentChanged = !ReferenceEquals(document, value);
         document = value;
+        ValidateTrackSoloDocument(value);
         if (documentChanged)
         {
             layersById = Flatten(value.Layers).ToDictionary(item => item.Id);
@@ -431,6 +433,11 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
         var point = e.GetPosition(this);
         var row = RowAt(point.Y);
+        if (TryRequestTrackSolo(point))
+        {
+            e.Handled = true;
+            return;
+        }
         if (TryRequestAnimationRowCollapse(point, row))
         {
             e.Handled = true;
@@ -657,6 +664,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             InvalidateSceneDrawing();
         }
         UpdateHover(point);
+        UpdateTrackSoloHover(point);
         UpdateCursor(point);
     }
 
@@ -713,6 +721,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     public void Dispose()
     {
         clipPasteDisposed = true;
+        DisposeTrackSolo();
         clipPastePointer = null;
         Localization.LanguageChanged -= OnLanguageChanged;
         CancelDrag();
@@ -749,6 +758,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
     private void OnLanguageChanged(object? sender, EventArgs e)
     {
+        RefreshTrackSoloTooltip();
         InvalidateSceneDrawing();
         if (hoveredMaskClipId.HasValue)
         {
@@ -1458,6 +1468,10 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         var top = 0d;
         foreach (var track in document.SubtitleTracks)
         {
+            if (!IsSubtitleTrackVisible(track.Id))
+            {
+                continue;
+            }
             var clips = document.Subtitles.Where(cue => cue.TrackId == track.Id).OrderBy(cue => cue.Start)
                 .Select(cue => byCue[cue.Id]).ToArray();
             var collapsed = collapsedTracks.Contains(track.Id);
@@ -1477,7 +1491,10 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             top += height;
         }
 
-        AddSceneRows(document.Layers, 0, result, ref top);
+        if (SoloTrackId is null)
+        {
+            AddSceneRows(document.Layers, 0, result, ref top);
+        }
         rows = result;
         rowClipIndexes = result.ToDictionary(row => row.Id, row => new TimelineVisibleClipIndex(row.Clips));
         VisibleClipIndexBuildCount++;

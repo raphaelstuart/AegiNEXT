@@ -7,8 +7,10 @@ internal sealed record TimelineRow(Guid Id, Guid? TrackId, string Name, IReadOnl
     int Depth, bool IsGroup, bool IsCollapsed, double Top, double Height, IReadOnlyList<TimelineAnimationRow> Animations,
     string? StylePresetName = null, bool AutoApplyStyle = true)
 {
+    private const double STYLE_BADGE_GAP = 2;
     internal double CurveHeight => Animations.Sum(row => row.Height);
     internal Rect? StyleBadgeRectangle(double rowY, double headerWidth) => StylePresetName is null
-        ? null : new Rect(26 + Depth * 8, rowY + 23, Math.Max(0, headerWidth - 34 - Depth * 8), 18);
+        ? null : new Rect(26 + Depth * 8, ExpanderRectangle(rowY).Bottom + STYLE_BADGE_GAP,
+            Math.Max(0, headerWidth - 34 - Depth * 8), 18);
     internal Rect ExpanderRectangle(double rowY) => new(4 + Depth * 8, rowY + 4, 20, 20);
 }

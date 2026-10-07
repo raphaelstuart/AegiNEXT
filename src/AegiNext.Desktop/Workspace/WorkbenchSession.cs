@@ -642,6 +642,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     internal void ResetSelection()
     {
+        ViewModel.Timeline.ClearTrackSolo();
         ViewModel.Timeline.ResumePlaybackFollow();
         InvalidateTimingSession();
         ResetSubtitleSelection();

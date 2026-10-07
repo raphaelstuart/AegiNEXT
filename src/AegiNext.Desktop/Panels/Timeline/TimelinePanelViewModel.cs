@@ -11,7 +11,7 @@ using Avalonia.Media;
 
 namespace AegiNext.Desktop.Panels.Timeline;
 
-internal sealed class TimelinePanelViewModel : ObservableObject
+internal sealed partial class TimelinePanelViewModel : ObservableObject
 {
     private readonly WorkbenchSession session;
     private ProjectDocument document = new();
@@ -85,6 +85,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         {
             if (SetProperty(ref document, value))
             {
+                ValidateTrackSoloDocument(value);
                 documentDuration = Math.Max(1, Flatten(value.Layers).Select(layer => Seconds(layer.End))
                     .Concat(value.Subtitles.Select(cue => Seconds(cue.End))).DefaultIfEmpty(1).Max());
                 OnPropertyChanged(nameof(FullDuration));

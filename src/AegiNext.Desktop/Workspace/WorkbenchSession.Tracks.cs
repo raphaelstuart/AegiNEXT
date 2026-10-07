@@ -42,6 +42,7 @@ internal sealed partial class WorkbenchSession
             return false;
         }
 
+        ViewModel.Timeline.ClearTrackSoloForTrackSelection(trackId);
         ViewModel.CancelGestures();
         InvalidateTimingSession();
         currentTrackId = trackId;
@@ -64,6 +65,7 @@ internal sealed partial class WorkbenchSession
 
     internal void SyncCurrentTrackForSelection()
     {
+        ViewModel.Timeline.ValidateTrackSoloSelection();
         if (SelectedCue is { } cue)
         {
             currentTrackId = cue.TrackId;

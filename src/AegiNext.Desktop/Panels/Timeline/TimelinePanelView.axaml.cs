@@ -103,6 +103,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         timeline.TrackContextRequested += OnTrackContextRequested;
         timeline.ClipContextRequested += OnClipContextRequested;
         timeline.AnimationRowContextRequested += OnAnimationRowContextRequested;
+        timeline.TrackSoloRequested += OnTrackSoloRequested;
         timeline.SeekRequested += async (_, e) =>
         {
             if (timeline.IsSeeking && !viewModel.IsSeeking)
@@ -251,6 +252,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             case "":
             case nameof(viewModel.Document):
             case nameof(viewModel.TimelineViewState):
+            case nameof(viewModel.SoloTrackId):
             case nameof(viewModel.SelectedCueId):
             case nameof(viewModel.SelectedLayer):
             case nameof(viewModel.SelectedLayerIds):
@@ -301,7 +303,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         }
 
         if (ReferenceEquals(e.Source, timeline) && e.GetCurrentPoint(timeline).Properties.IsLeftButtonPressed &&
-            timeline.TryRequestAnimationRowCollapse(e.GetPosition(timeline)))
+            (timeline.TryRequestTrackSolo(e.GetPosition(timeline)) ||
+                timeline.TryRequestAnimationRowCollapse(e.GetPosition(timeline))))
         {
             animationRowCollapsePointer = e.Pointer;
             e.Handled = true;
@@ -347,6 +350,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             timeline.SetDocument(viewModel.Document, viewModel.SelectedCueId, viewModel.SelectedLayer,
                 viewModel.SelectedLayerIds.Count == 0 && viewModel.SelectedLayer is { } selected ? [selected.Id] : viewModel.SelectedLayerIds,
                 viewModel.SelectedTrackId);
+            timeline.SoloTrackId = viewModel.SoloTrackId;
             timeline.TimelineViewState = viewModel.TimelineViewState;
             timeline.SetViewport(viewModel.Viewport, viewModel.FullDuration);
             if (!ReferenceEquals(spectrum, viewModel.Spectrogram) || !ReferenceEquals(spectrumOverview, viewModel.SpectrogramOverview))
@@ -399,6 +403,12 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         RefreshTrackMenu();
         TrackMenu.Open(timeline);
     }
+
+    private void OnTrackSoloRequested(object? sender, TimelineTrackSoloEventArgs e)
+    {
+        viewModel.ToggleTrackSolo(e.TrackId);
+    }
+
     private void OnClipContextRequested(object? sender, TimelineClipContextEventArgs e)
     {
         AnimationMenu.Close();
@@ -535,6 +545,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             timeline.TrackContextRequested -= OnTrackContextRequested;
             timeline.ClipContextRequested -= OnClipContextRequested;
             timeline.AnimationRowContextRequested -= OnAnimationRowContextRequested;
+            timeline.TrackSoloRequested -= OnTrackSoloRequested;
             timeline.AnimationRowCollapseRequested -= OnAnimationRowCollapseRequested;
             RemoveHandler(PointerPressedEvent, OnPreviewPointerPressed);
             RemoveHandler(PointerReleasedEvent, OnPreviewPointerReleased);

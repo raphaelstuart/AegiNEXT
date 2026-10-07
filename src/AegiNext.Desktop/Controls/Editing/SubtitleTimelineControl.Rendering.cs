@@ -293,11 +293,12 @@ public sealed partial class SubtitleTimelineControl
                     new(0, y, HeaderWidth, row.Height));
                 DrawExpander(context, row.ExpanderRectangle(y), row.IsCollapsed);
 
-                using (context.PushClip(new Rect(26 + row.Depth * 8, y, Math.Max(0, HeaderWidth - 28 - row.Depth * 8), row.Height)))
+                var nameRectangle = GetTrackHeaderNameRectangle(row, y);
+                using (context.PushClip(nameRectangle))
                 {
-                    DrawCenteredText(context, row.Name, new(26 + row.Depth * 8, y + 4,
-                        Math.Max(0, HeaderWidth - 28 - row.Depth * 8), 20), foreground, 11);
+                    DrawCenteredText(context, row.Name, nameRectangle, foreground, 11);
                 }
+                DrawTrackSoloToggle(context, row, y);
                 if (row.StyleBadgeRectangle(y, HeaderWidth) is { } badge)
                 {
                     using (context.PushOpacity(row.AutoApplyStyle ? 1 : 0.5))

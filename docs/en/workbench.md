@@ -14,6 +14,7 @@ The nine panels are Preview, Timeline, Subtitles, Styles, Effects, Subtitle Deta
 - Wheel scrolls tracks, Shift + wheel pans, and Cmd/Ctrl + wheel zooms around the pointer. Touchpads support pinch and horizontal scrolling. The minimap changes the viewport without seeking playback.
 - With Timeline focused, **Cmd/Ctrl + C/V** copies clips and pastes at the pointer. Multi-track copies retain their spacing relative to the track selected when copied; missing destination tracks or collisions reject the whole paste.
 - Expanding a track shows keyframe properties. Each property can collapse to time-only markers; these property states save with the project.
+- The **S** button in a subtitle track heading shows only that track in the timeline. Toggle it off, or select another track in the subtitle list, to show all tracks again.
 
 Subtitle list selection centers the primary clip without changing zoom. Enter commits the current text and advances; at the last row, it can create the next cue from that row's end to the playhead. Shift + Enter inserts a newline. Invalid inputs and IME confirmation retain editing focus.
 
