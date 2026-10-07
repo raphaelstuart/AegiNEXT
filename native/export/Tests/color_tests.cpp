@@ -1,11 +1,41 @@
 #include "color_pipeline.h"
 #include <cmath>
+#include <bit>
+#include <cstdint>
+#include <limits>
 #include <iostream>
 #include <stdexcept>
 using namespace aeginext::encode;
 void Require(bool value, const char *message)
 {
     if (!value) throw std::runtime_error(message);
+}
+void PreparedForegroundMatchesScalar(const ColorPipeline &colors)
+{
+    for (const float alpha : {0.0f, 0.0001f, 0.25f, 0.5f, 1.0f})
+    {
+        for (const float component : {-0.125f, -0.0f, 0.0f, 0.33f, 1.0f, 4.0f})
+        {
+            const std::array<float, 4> pixel{component * alpha, 0.77f * alpha, 2.0f * alpha, alpha};
+            for (const double white : {100.0, 203.0, 406.0})
+            {
+                const auto prepared = colors.PrepareForeground(pixel, white);
+                for (const Color source : {Color{-0.08, -0.3, 0.3}, Color{0.03, -0.08, 0.06},
+                    Color{0.45, 0.1, -0.1}, Color{0.98, 0.15, 0.15}, Color{1.2, -0.5, 0.5},
+                    Color{std::numeric_limits<double>::quiet_NaN(), 0, 0},
+                    Color{std::numeric_limits<double>::infinity(), 0, 0}})
+                {
+                    const auto legacy = colors.Composite(source, pixel, white);
+                    const auto actual = colors.CompositePrepared(source, prepared, white);
+                    for (size_t channel = 0; channel < legacy.size(); ++channel)
+                    {
+                        Require(std::bit_cast<uint64_t>(legacy[channel]) == std::bit_cast<uint64_t>(actual[channel]),
+                            "Prepared foreground changed double operations or NaN/opaque behavior.");
+                    }
+                }
+            }
+        }
+    }
 }
 int main()
 {
@@ -16,6 +46,7 @@ int main()
             const auto hdr = trc == AVCOL_TRC_SMPTE2084 || trc == AVCOL_TRC_ARIB_STD_B67;
             ColorPipeline colors(hdr ? AVCOL_SPC_BT2020_NCL : AVCOL_SPC_BT709,
                 hdr ? AVCOL_PRI_BT2020 : AVCOL_PRI_BT709, trc);
+            PreparedForegroundMatchesScalar(colors);
             for (const double code : {0.05, 0.3, 0.6, 0.9})
             {
                 const Color source{code, 0, 0};
@@ -34,6 +65,7 @@ int main()
         {
             ColorPipeline sd(primaries == AVCOL_PRI_BT470BG ? AVCOL_SPC_BT470BG : AVCOL_SPC_SMPTE170M,
                 primaries, AVCOL_TRC_SMPTE170M);
+            PreparedForegroundMatchesScalar(sd);
             const Color source{0.45, 0.08, -0.03};
             const auto roundtrip = sd.Encode(sd.Decode(source));
             for (size_t index = 0; index < source.size(); ++index)

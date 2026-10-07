@@ -8,8 +8,11 @@ void Require(bool value, const char *message)
 {
     if (!value) throw std::runtime_error(message);
 }
-int32_t AN_EXPORT_CALL Render(void *, int64_t, int32_t, int32_t, uint32_t, uint32_t, float *, uint64_t)
+int32_t AN_EXPORT_CALL Render(void *, int64_t, int32_t, int32_t, uint32_t, uint32_t, float *, uint64_t,
+    an_export_overlay_info *info)
 {
+    info->state = AN_EXPORT_OVERLAY_EMPTY;
+    info->revision = 1;
     return 0;
 }
 int main()
@@ -22,7 +25,8 @@ int main()
         static_assert(sizeof(an_export_result_info) == 344 && offsetof(an_export_result_info, fallback_reason) == 72 &&
             offsetof(an_export_result_info, rate_control_mode) == 328 && offsetof(an_export_result_info, video_bitrate) == 332 &&
             offsetof(an_export_result_info, crf) == 336 && offsetof(an_export_result_info, rate_control_reserved) == 340);
-        Require(an_export_abi_version() == 4, "ABI version mismatch");
+        static_assert(sizeof(an_export_overlay_info) == 24 && offsetof(an_export_overlay_info, revision) == 16);
+        Require(an_export_abi_version() == 5, "ABI version mismatch");
         Require(an_export_core_version() == 1 && (an_export_capabilities() & 7) == 7,
             "Shared media core version or capabilities are missing");
         std::array<char, 256> error{};
@@ -33,10 +37,10 @@ int main()
             void *context = nullptr;
             Require(an_export_create(&context, error.data(), error.size()) == 0 && context, "Context creation failed");
             uint64_t frames = 123;
-            an_export_request request{sizeof(request),4,0,0,20,64,48,0,"unused","unused","ultrafast",203,0,0,8000000,0,0,1,0};
+            an_export_request request{sizeof(request),5,0,0,20,64,48,0,"unused","unused","ultrafast",203,0,0,8000000,0,0,1,0};
             an_export_result_info info{};
             info.struct_size = sizeof(info);
-            info.abi_version = 4;
+            info.abi_version = 5;
             Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
                 "Result information reported before completion");
             Require(an_export_get_result_info(context, nullptr, error.data(), error.size()) == 1,
@@ -45,19 +49,19 @@ int main()
             Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
                 "Invalid result information layout accepted");
             info.struct_size = sizeof(info);
-            info.abi_version = 3;
+            info.abi_version = 4;
             Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
                 "Legacy result information ABI accepted");
-            info.abi_version = 4;
+            info.abi_version = 5;
             info.rate_control_reserved = 1;
             Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
                 "Rate-control result reserved field accepted");
             info.rate_control_reserved = 0;
             Require(std::strlen(an_export_encoder_name(context)) == 0, "Encoder reported before initialization");
-            request.abi_version = 3;
+            request.abi_version = 4;
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
                 "Invalid ABI was accepted");
-            request.abi_version = 4;
+            request.abi_version = 5;
             request.struct_size = 80;
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
                 "Legacy request size accepted");
@@ -155,7 +159,7 @@ int main()
             Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
                 "Destroyed result information handle accepted");
         }
-        std::cout << "PASS ABI 4, explicit CRF/VBR/CBR, active quality boundaries, inactive fields, pinned runtime, cancellation, ownership\n";
+        std::cout << "PASS ABI 5, overlay POD24, explicit CRF/VBR/CBR, active quality boundaries, inactive fields, pinned runtime, cancellation, ownership\n";
         return 0;
     }
     catch (const std::exception &error)

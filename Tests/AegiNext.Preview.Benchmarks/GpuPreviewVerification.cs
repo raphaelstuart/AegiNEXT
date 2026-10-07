@@ -122,6 +122,30 @@ internal static class GpuPreviewVerification
             throw new InvalidDataException("GPU subtitle disappeared inside its mask.");
         }
         Compare("subtitle-mask-blur", masked);
+        var cachedPixels = new float[masked.Width * masked.Height * 4];
+        var cacheUpdate = gpu.UpdateCachedFramePixels(masked, new(1), cachedPixels, 0);
+        var uncachedPixels = Pixels(gpu, masked).Select(value => (float)value).ToArray();
+        if (!cacheUpdate.Updated || cacheUpdate.Empty || !cachedPixels.SequenceEqual(uncachedPixels))
+        {
+            throw new InvalidDataException("GPU F32 foreground differs from its uncached F16 raster.");
+        }
+        cachedPixels.AsSpan().Fill(float.NaN);
+        var cacheHit = gpu.UpdateCachedFramePixels(masked, new(1), cachedPixels, cacheUpdate.Revision);
+        if (cacheHit.Updated || cacheHit.Revision != cacheUpdate.Revision || cachedPixels.Any(value => !float.IsNaN(value)))
+        {
+            throw new InvalidDataException("GPU foreground cache copied a retained revision.");
+        }
+        var beforeReuse = gpu.RenderSurfaceStatistics.Reuses;
+        using (gpu.Render(masked, new(1)))
+        using (gpu.Render(masked, new(1)))
+        {
+        }
+        var pooled = gpu.RenderSurfaceStatistics;
+        if (pooled.Reuses < beforeReuse + 2 || pooled.ActiveLeases != 0 || pooled.RetainedBytes > pooled.MaximumRetainedBytes)
+        {
+            throw new InvalidDataException("GPU temporary surfaces were not reused within the retained budget.");
+        }
+        results.Add(new { Name = "GPU-F32-revision-and-surface-reuse", Passed = true, pooled.Allocations, pooled.Reuses });
         var black = Enumerable.Range(0, 128 * 96).SelectMany(_ => new byte[] { 0, 0, 0, 255 }).ToArray();
         var composed = gpu.ComposePreview(masked, new(1), black, 128, 96, 128 * 4, 64, 48);
         var same = gpu.ComposePreview(masked, new(1), black, 128, 96, 128 * 4, 64, 48);

@@ -4,9 +4,10 @@ namespace AegiNext.Media.Encoding;
 
 internal static class NativeExportAbi
 {
-    internal const uint VERSION = 4;
+    internal const uint VERSION = 5;
     internal const uint REQUEST_SIZE = 88;
     internal const uint RESULT_SIZE = 344;
+    internal const uint OVERLAY_SIZE = 24;
     private const uint CORE_VERSION = 1;
     private const uint CORE_CAPABILITIES = 15;
 
@@ -26,7 +27,8 @@ internal static class NativeExportAbi
     {
         var requestSize = Marshal.SizeOf<NativeExportRequest>();
         var resultSize = Marshal.SizeOf<NativeExportResultInfo>();
-        if (nativeVersion == VERSION && requestSize == REQUEST_SIZE && resultSize == RESULT_SIZE)
+        var overlaySize = Marshal.SizeOf<NativeExportOverlayInfo>();
+        if (nativeVersion == VERSION && requestSize == REQUEST_SIZE && resultSize == RESULT_SIZE && overlaySize == OVERLAY_SIZE)
         {
             return;
         }
@@ -34,6 +36,7 @@ internal static class NativeExportAbi
         throw new NotSupportedException($"原生导出 ABI 不匹配：需要 ABI {VERSION}，实际 ABI {nativeVersion}；" +
             $"请求结构需要 {REQUEST_SIZE} 字节，实际 {requestSize} 字节；进程架构 {RuntimeInformation.ProcessArchitecture}；" +
             $"结果结构需要 {RESULT_SIZE} 字节，实际 {resultSize} 字节；" +
+            $"前景结构需要 {OVERLAY_SIZE} 字节，实际 {overlaySize} 字节；" +
             $"加载路径 {libraryPath}。请按当前 Debug/Release 配置运行 " +
             "pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Debug（或 Release），使用完整的同配置应用与 worker。");
     }

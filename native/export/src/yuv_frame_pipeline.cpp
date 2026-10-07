@@ -222,6 +222,104 @@ void YuvFramePipeline::Composite(const AVFrame *source, std::span<const float> l
     }
 }
 
+void YuvFramePipeline::Composite(const AVFrame *source, PreparedOverlay &overlay,
+    const ColorPipeline &color, double referenceWhite, const std::function<void()> &checkCancel)
+{
+    if (!ready_ || overlay.Width() != static_cast<uint32_t>(width_) ||
+        overlay.Height() != static_cast<uint32_t>(height_) || !overlay.IsCompatible(color, referenceWhite))
+    {
+        ready_ = false;
+        overlay.Invalidate();
+        throw std::invalid_argument("YUV composition requires a compatible prepared overlay");
+    }
+
+    try
+    {
+        checkCancel();
+        if (!overlay.CoverageKnown())
+        {
+            Composite(source, overlay.Pixels(), color, referenceWhite, checkCancel);
+            return;
+        }
+        if (!overlay.ActivePixels())
+        {
+            return;
+        }
+        const auto limited = source->color_range == AVCOL_RANGE_MPEG;
+        const double yOffset = limited ? 4096 : 0;
+        const double yScale = limited ? 56064 : 65535;
+        const double uvScale = limited ? 57344 : 65535;
+        const auto pixels = overlay.Pixels();
+        rows_.Execute(static_cast<size_t>(height_), [&](size_t begin, size_t end)
+        {
+            for (auto y = begin; y < end; ++y)
+            {
+                if (!(y % 32))
+                {
+                    checkCancel();
+                }
+                const auto &row = overlay.Row(y);
+                if (!row.end)
+                {
+                    continue;
+                }
+                uint16_t *planes[3]{};
+                for (auto plane = 0; plane < 3; ++plane)
+                {
+                    planes[plane] = reinterpret_cast<uint16_t *>(visible_->data[plane] + y * visible_->linesize[plane]);
+                }
+                const auto write = [&](uint32_t x, const Color &encoded)
+                {
+                    for (auto plane = 0; plane < 3; ++plane)
+                    {
+                        const auto value = encoded[plane] * (plane == 0 ? yScale : uvScale) +
+                            (plane == 0 ? yOffset : 32768);
+                        if (!std::isfinite(value))
+                        {
+                            throw aeginext::media::CoreError(aeginext::media::ErrorCode::Unsupported,
+                                "Non-finite composited sample");
+                        }
+                        planes[plane][x] = static_cast<uint16_t>(std::clamp(std::llround(value), 0LL, 65535LL));
+                    }
+                };
+                if (row.runCount)
+                {
+                    for (const auto &run : overlay.Runs(row))
+                    {
+                        const auto &foreground = overlay.Foreground(run.color);
+                        for (auto x = run.begin; x < run.end; ++x)
+                        {
+                            write(x, color.CompositePrepared({(planes[0][x] - yOffset) / yScale,
+                                (planes[1][x] - 32768.0) / uvScale, (planes[2][x] - 32768.0) / uvScale},
+                                foreground, referenceWhite));
+                        }
+                    }
+                }
+                else
+                {
+                    for (auto x = row.begin; x < row.end; ++x)
+                    {
+                        const auto *pixel = &pixels[(y * width_ + x) * 4];
+                        if (pixel[3] == 0)
+                        {
+                            continue;
+                        }
+                        write(x, color.Composite({(planes[0][x] - yOffset) / yScale,
+                            (planes[1][x] - 32768.0) / uvScale, (planes[2][x] - 32768.0) / uvScale},
+                            {pixel[0], pixel[1], pixel[2], pixel[3]}, referenceWhite));
+                    }
+                }
+            }
+        });
+    }
+    catch (...)
+    {
+        ready_ = false;
+        overlay.Invalidate();
+        throw;
+    }
+}
+
 int YuvFramePipeline::Downsample(AVFrame *output)
 {
     if (!ready_ || output->format != outputFormat_ || output->width != width_ || output->height != height_)

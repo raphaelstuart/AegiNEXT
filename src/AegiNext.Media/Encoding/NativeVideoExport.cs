@@ -100,11 +100,13 @@ internal static class NativeVideoExport
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static unsafe int Render(nint context, long pts, int numerator, int denominator, uint width, uint height, float* pixels, ulong channels)
+    private static unsafe int Render(nint context, long pts, int numerator, int denominator, uint width, uint height,
+        float* pixels, ulong channels, NativeExportOverlayInfo* overlay)
     {
         try
         {
-            return ((ExportRenderContext)GCHandle.FromIntPtr(context).Target!).Render(pts, numerator, denominator, width, height, pixels, channels);
+            return ((ExportRenderContext)GCHandle.FromIntPtr(context).Target!).Render(pts, numerator, denominator,
+                width, height, pixels, channels, overlay);
         }
         catch
         {

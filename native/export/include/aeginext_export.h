@@ -15,7 +15,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* ABI 4; one run per context. Cancel may run concurrently; destruction may not. */
+/* ABI 5; one run per context. Cancel may run concurrently; destruction may not. */
 typedef struct an_export_request
 {
     uint32_t struct_size, abi_version;
@@ -45,10 +45,24 @@ typedef struct an_export_result_info
     int32_t crf; /* initialized quality; zero for VBR/CBR */
     uint32_t rate_control_reserved;
 } an_export_result_info;
-/* Fill tight premultiplied linear-sRGB float RGBA; return 0 OK, 1 cancelled, 2 error. */
+typedef struct an_export_overlay_info
+{
+    uint32_t struct_size, abi_version, state, reserved;
+    uint64_t revision;
+} an_export_overlay_info;
+enum an_export_overlay_state
+{
+    AN_EXPORT_OVERLAY_UPDATED = 1,
+    AN_EXPORT_OVERLAY_UNCHANGED = 2,
+    AN_EXPORT_OVERLAY_EMPTY = 3
+};
+/* Updated fully overwrites tight premultiplied linear-sRGB float RGBA. Unchanged reuses the last
+   successful revision. Empty ignores RGBA. Revision must be nonzero; return 0 OK, 1 cancelled, 2 error.
+   Native initializes info to size 24, ABI 5, state/reserved/revision 0. The buffer belongs to native,
+   remains unchanged on Unchanged, and may not be retained by the callback. */
 typedef int32_t (AN_EXPORT_CALL *an_export_render_callback)(void *user, int64_t pts,
     int32_t time_base_num, int32_t time_base_den, uint32_t width, uint32_t height,
-    float *rgba, uint64_t channels);
+    float *rgba, uint64_t channels, an_export_overlay_info *info);
 AN_EXPORT_API uint32_t AN_EXPORT_CALL an_export_abi_version(void);
 AN_EXPORT_API uint32_t AN_EXPORT_CALL an_export_core_version(void);
 AN_EXPORT_API uint32_t AN_EXPORT_CALL an_export_capabilities(void);
@@ -66,5 +80,6 @@ AN_EXPORT_API int32_t AN_EXPORT_CALL an_export_run(void *context, const an_expor
 }
 static_assert(sizeof(an_export_request) == 88);
 static_assert(sizeof(an_export_result_info) == 344);
+static_assert(sizeof(an_export_overlay_info) == 24);
 #endif
 #endif

@@ -48,6 +48,6 @@ internal static partial class NativeExportMethods
     [LibraryImport(LIBRARY, EntryPoint = "an_export_run")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe partial int Run(nint context, ref NativeExportRequest request,
-        delegate* unmanaged[Cdecl]<nint, long, int, int, uint, uint, float*, ulong, int> callback,
+        delegate* unmanaged[Cdecl]<nint, long, int, int, uint, uint, float*, ulong, NativeExportOverlayInfo*, int> callback,
         nint user, out ulong frames, byte* error, uint capacity);
 }

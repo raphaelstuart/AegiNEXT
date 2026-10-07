@@ -3,11 +3,13 @@
 #include "export_performance.h"
 #include "export_versions.h"
 #include "yuv_frame_pipeline.h"
+#include "decode_prefetcher.h"
 #include "media_core.h"
 #include "color_resolution.h"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -32,10 +34,13 @@ namespace
 using aeginext::encode::ColorPipeline;
 using aeginext::encode::ExportStage;
 using aeginext::encode::YuvFramePipeline;
+using aeginext::encode::PreparedOverlay;
+using aeginext::encode::DecodePrefetcher;
+using aeginext::encode::ExportDecodedFrame;
 using aeginext::media::DecoderSession;
 using aeginext::media::DecodeMode;
 using aeginext::media::DecodeWorkload;
-constexpr uint32_t EXPORT_ABI_VERSION = 4;
+constexpr uint32_t EXPORT_ABI_VERSION = 5;
 constexpr int32_t RATE_CONTROL_CRF = 1;
 constexpr int32_t RATE_CONTROL_VBR = 2;
 constexpr int32_t RATE_CONTROL_CBR = 3;
@@ -79,6 +84,8 @@ struct Context
     AVPacket *encoded = nullptr;
     std::unique_ptr<DecoderSession> decoderSession;
     std::mutex decoderMutex;
+    std::mutex prefetchMutex;
+    std::weak_ptr<DecodePrefetcher> prefetcher;
     std::string encoderName;
     an_export_result_info resultInfo{};
     bool completed = false;
@@ -447,6 +454,8 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
     std::unique_ptr<ColorPipeline> color;
     std::unique_ptr<YuvFramePipeline> yuv;
     std::vector<float> layer(static_cast<size_t>(r.width) * r.height * 4);
+    PreparedOverlay overlay(r.width, r.height);
+    auto streamTimeBase = sourceStream->time_base;
     int64_t lastPts = AV_NOPTS_VALUE;
     std::string mastering;
     int sourceFormat = -1, sourceWidth = 0, sourceHeight = 0, matrix = -1, primaries = -1, transfer = -1, range = -1, chroma = -1;
@@ -534,20 +543,35 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
             "Midstream video format/color changes require a new export segment");
         if (decoded->color_trc == AVCOL_TRC_SMPTE2084)
             Need(MasteringOption(decoded.get()) == mastering, "Midstream mastering metadata changes require an explicit export policy");
-        c.performance.Measure(ExportStage::ClearOverlay, [&]() { std::fill(layer.begin(), layer.end(), 0); return 0; });
-        const auto result = c.performance.Measure(ExportStage::Render, [&]()
+        an_export_overlay_info overlayInfo{sizeof(overlayInfo), EXPORT_ABI_VERSION, 0, 0, 0};
+        try
         {
-            return render(user, pts, sourceStream->time_base.num, sourceStream->time_base.den, r.width, r.height, layer.data(), layer.size());
-        });
-        if (result != 0) throw Failure(result == 1 ? 4 : 3, result == 1 ? "Export cancelled" : "Project renderer failed");
-        c.CheckCancel();
+            const auto result = c.performance.Measure(ExportStage::Render, [&]()
+            {
+                return render(user, pts, streamTimeBase.num, streamTimeBase.den,
+                    r.width, r.height, layer.data(), layer.size(), &overlayInfo);
+            });
+            if (result != 0) throw Failure(result == 1 ? 4 : 3, result == 1 ? "Export cancelled" : "Project renderer failed");
+            c.CheckCancel();
+            c.performance.Measure(ExportStage::OverlayCoverage, [&]()
+            {
+                overlay.Accept(overlayInfo, layer, *color, r.reference_white_nits, [&]() { c.CheckCancel(); });
+                return 0;
+            });
+            c.performance.RecordOverlay(overlayInfo.state, overlay);
+        }
+        catch (...)
+        {
+            overlay.Invalidate();
+            throw;
+        }
         Check(c.performance.Measure(ExportStage::Upsample, [&]()
         {
             return yuv->Upsample(decoded.get());
         }), "upsample encoded YUV");
         c.performance.Measure(ExportStage::Composite, [&]()
         {
-            yuv->Composite(decoded.get(), layer, *color, r.reference_white_nits, [&]() { c.CheckCancel(); });
+            yuv->Composite(decoded.get(), overlay, *color, r.reference_white_nits, [&]() { c.CheckCancel(); });
             return 0;
         });
         Check(c.performance.Measure(ExportStage::WritableFrame, [&]() { return av_frame_make_writable(outputFrame.get()); }), "writable encode frame");
@@ -555,27 +579,75 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         {
             return yuv->Downsample(outputFrame.get());
         }), "downsample encoded YUV");
-        outputFrame->pts = pts; outputFrame->duration = decoded->duration; outputFrame->time_base = sourceStream->time_base;
+        outputFrame->pts = pts; outputFrame->duration = decoded->duration; outputFrame->time_base = streamTimeBase;
         outputFrame->color_range = decoded->color_range; outputFrame->colorspace = decoded->colorspace;
         outputFrame->color_primaries = decoded->color_primaries; outputFrame->color_trc = decoded->color_trc;
         outputFrame->chroma_location = AVCHROMA_LOC_LEFT; outputFrame->sample_aspect_ratio = decoded->sample_aspect_ratio;
         Check(c.performance.Measure(ExportStage::SendFrame, [&]() { return avcodec_send_frame(c.encoder, outputFrame.get()); }), "send composited frame");
         WritePackets(c, targetStream); ++frames;
     };
-    while (true)
+    const auto readFrame = [&]() -> ExportDecodedFrame
     {
         c.CheckCancel();
         auto raw = c.performance.Measure(ExportStage::Decode, [&]() { return c.decoderSession->ReadFrame(); });
-        if (!raw) break;
-        sourceStream = c.decoderSession->SourceStream();
-        Need(sourceStream && sourceStream->time_base.num > 0 && sourceStream->time_base.den > 0,
+        if (!raw) return {};
+        const auto *stream = c.decoderSession->SourceStream();
+        Need(stream && stream->time_base.num > 0 && stream->time_base.den > 0,
             "Invalid video stream/time base after decoder selection");
         const auto resolved = aeginext::media::ResolveColor(raw.get(), c.decoderSession->ColorContext());
-        decoded.reset(av_frame_clone(raw.get()));
-        if (!decoded) throw std::bad_alloc();
-        aeginext::media::ApplyColor(decoded.get(), resolved);
+        aeginext::media::FramePointer frame(av_frame_clone(raw.get()));
+        if (!frame) throw std::bad_alloc();
+        aeginext::media::ApplyColor(frame.get(), resolved);
+        return {std::move(frame), stream->time_base, resolved.inferredFields};
+    };
+    auto first = readFrame();
+    if (first.frame)
+    {
+        sourceStream = c.decoderSession->SourceStream();
+        streamTimeBase = first.timeBase;
+        decoded.reset(first.frame.release());
         process();
-        c.resultInfo.inferred_fields |= resolved.inferredFields;
+        c.resultInfo.inferred_fields |= first.inferredFields;
+    }
+    std::shared_ptr<DecodePrefetcher> prefetch;
+    const auto *prefetchOption = std::getenv("AEGINEXT_EXPORT_PREFETCH");
+    const auto hardwareConfirmed = c.decoderSession->Info().hardwareConfirmed;
+    const auto activeBackend = c.decoderSession->Info().activeBackend;
+    const auto prefetchEnabled = prefetchOption ? std::strcmp(prefetchOption, "1") == 0 :
+        hardwareConfirmed && activeBackend == aeginext::media::DecoderBackend::VideoToolbox;
+    if (frames && prefetchEnabled)
+    {
+        prefetch = std::make_shared<DecodePrefetcher>(readFrame, [&]() noexcept
+        {
+            std::scoped_lock lock(c.decoderMutex);
+            if (c.decoderSession) c.decoderSession->Cancel();
+        });
+        std::scoped_lock lock(c.prefetchMutex);
+        c.prefetcher = prefetch;
+    }
+    try
+    {
+        while (frames)
+        {
+            c.CheckCancel();
+            auto item = prefetch ? c.performance.Measure(ExportStage::PrefetchWait, [&]() { return prefetch->Next(); }) : readFrame();
+            if (!item.frame) break;
+            Need(item.timeBase.num == streamTimeBase.num && item.timeBase.den == streamTimeBase.den,
+                "Midstream video time base changes require a new export segment");
+            decoded.reset(item.frame.release());
+            process();
+            c.resultInfo.inferred_fields |= item.inferredFields;
+        }
+        if (prefetch)
+        {
+            prefetch->Stop();
+            c.performance.RecordPrefetch(prefetch->Statistics());
+        }
+    }
+    catch (...)
+    {
+        if (prefetch) prefetch->Stop();
+        throw;
     }
     Need(c.encoder != nullptr && frames > 0, "No decoded video frames");
     Check(c.performance.Measure(ExportStage::SendFrame, [&]() { return avcodec_send_frame(c.encoder, nullptr); }), "drain encoder"); WritePackets(c, targetStream);
@@ -647,8 +719,16 @@ void AN_EXPORT_CALL an_export_cancel(void *context)
     {
         auto *value = Get(context);
         value->cancelled.store(true);
-        std::scoped_lock lock(value->decoderMutex);
-        if (value->decoderSession) value->decoderSession->Cancel();
+        {
+            std::scoped_lock lock(value->decoderMutex);
+            if (value->decoderSession) value->decoderSession->Cancel();
+        }
+        std::shared_ptr<DecodePrefetcher> prefetch;
+        {
+            std::scoped_lock lock(value->prefetchMutex);
+            prefetch = value->prefetcher.lock();
+        }
+        if (prefetch) prefetch->RequestStop();
     }
     catch (...) {}
 }

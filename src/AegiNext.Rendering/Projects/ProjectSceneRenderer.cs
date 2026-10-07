@@ -20,6 +20,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private readonly Dictionary<(string Family, SubtitleFontVariant? Variant, bool Bold, bool Italic, string Grapheme), TextShaper> resolvedTextShapers = [];
     private readonly Lazy<SystemFontResolver> systemFonts;
     private readonly SKColorSpace linear = SKColorSpace.CreateSrgbLinear();
+    private readonly RenderSurfacePool surfacePool;
     private PreparedProjectScene? prepared;
     private bool isDisposed;
     private LinearRenderSurface? previewScene;
@@ -34,12 +35,22 @@ public sealed partial class ProjectSceneRenderer : IDisposable
 
     /// <summary>绑定资源解析器、字体目录和可选 GPU 上下文；不接管借用资源生命周期。GPU 调用和释放须在创建线程的当前上下文中执行。</summary>
     public ProjectSceneRenderer(IProjectAssetResolver assets, SystemFontCatalog? fontCatalog = null, GRContext? graphicsContext = null)
+        : this(assets, fontCatalog, RenderSurfacePool.DEFAULT_RETAINED_BYTES, graphicsContext)
+    {
+    }
+
+    internal ProjectSceneRenderer(IProjectAssetResolver assets, SystemFontCatalog? fontCatalog, long maximumRetainedSurfaceBytes,
+        GRContext? graphicsContext = null)
     {
         ArgumentNullException.ThrowIfNull(assets);
         this.assets = assets;
         this.graphicsContext = graphicsContext;
+        surfacePool = new(maximumRetainedSurfaceBytes, graphicsContext);
         systemFonts = new(() => new(fontCatalog ?? new SystemFontCatalog()));
     }
+
+    /// <summary>返回渲染器拥有的临时表面池计数；不包含交给调用方或单独帧缓存持有的表面。</summary>
+    public RenderSurfacePoolStatistics RenderSurfaceStatistics => surfacePool.Statistics;
 
     /// <summary>在工程精确时间渲染透明的预乘 F16 字幕与图形层，调用方负责释放结果。</summary>
     public LinearRenderSurface Render(ProjectDocument document, MediaTime time)
@@ -260,6 +271,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         ClearLayouts();
         ClearPreview();
         ClearFrameCache();
+        surfacePool.Dispose();
         images.Clear();
         additiveBlend?.Dispose();
         extendedColorShader?.Dispose();
@@ -337,7 +349,9 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private void DrawLayer(ProjectDocument document, SKCanvas parent, EvaluatedLayer layer, int renderWidth = 0, int renderHeight = 0, float blurScale = 1, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var surface = new LinearRenderSurface(new(renderWidth > 0 ? renderWidth : document.Width, renderHeight > 0 ? renderHeight : document.Height, (float)document.ReferenceWhiteNits), graphicsContext);
+        using var lease = surfacePool.Rent(new(renderWidth > 0 ? renderWidth : document.Width,
+            renderHeight > 0 ? renderHeight : document.Height, (float)document.ReferenceWhiteNits));
+        var surface = lease.Surface;
         var canvas = surface.Canvas;
         canvas.SetMatrix(parent.TotalMatrix);
         var saved = canvas.Save();

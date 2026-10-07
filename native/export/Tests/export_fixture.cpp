@@ -2,11 +2,19 @@
 #include <cstdio>
 #include <cstdlib>
 #include <array>
-int32_t AN_EXPORT_CALL Render(void *, int64_t, int32_t, int32_t, uint32_t w, uint32_t h, float *rgba, uint64_t)
+#include <algorithm>
+int32_t AN_EXPORT_CALL Render(void *user, int64_t, int32_t, int32_t, uint32_t w, uint32_t h,
+    float *rgba, uint64_t channels, an_export_overlay_info *info)
 {
+    auto &updated = *static_cast<bool *>(user);
+    info->revision = 1;
+    info->state = updated ? AN_EXPORT_OVERLAY_UNCHANGED : AN_EXPORT_OVERLAY_UPDATED;
+    if (updated) return 0;
+    std::fill_n(rgba, channels, 0);
     for (uint32_t y = 8; y < 16 && y < h; ++y)
         for (uint32_t x = 8; x < 16 && x < w; ++x)
             for (int c = 0; c < 4; ++c) rgba[(y*w+x)*4+c] = 0.5f;
+    updated = true;
     return 0;
 }
 int main(int argc, char **argv)
@@ -22,7 +30,7 @@ int main(int argc, char **argv)
     auto result = an_export_create(&context, error.data(), error.size());
     if (result) { std::fprintf(stderr,"%s\n",error.data()); return result; }
     const auto encodingMode = argc > 3 ? std::atoi(argv[3]) : 0;
-    an_export_request request{sizeof(request),4,0,argc > 10 ? std::atoi(argv[10]) : 0,
+    an_export_request request{sizeof(request),5,0,argc > 10 ? std::atoi(argv[10]) : 0,
         argc > 9 ? std::atoi(argv[9]) : 0,
         argc > 5 ? static_cast<uint32_t>(std::atoi(argv[5])) : 64,
         argc > 6 ? static_cast<uint32_t>(std::atoi(argv[6])) : 48,0,argv[1],argv[2],argc > 11 ? argv[11] : "ultrafast",203,0,
@@ -30,13 +38,14 @@ int main(int argc, char **argv)
         argc > 4 ? static_cast<uint32_t>(std::atoi(argv[4])) : 0,0,
         argc > 7 ? std::atoi(argv[7]) : encodingMode == 0 ? 1 : 2,0};
     uint64_t frames = 0;
-    result = an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size());
+    auto updated = false;
+    result = an_export_run(context, &request, Render, &updated, &frames, error.data(), error.size());
     std::printf("result=%d frames=%llu encoder=%s error=%s\n",result,(unsigned long long)frames,an_export_encoder_name(context),error.data());
     if (!result)
     {
         an_export_result_info info{};
         info.struct_size = sizeof(info);
-        info.abi_version = 4;
+        info.abi_version = 5;
         result = an_export_get_result_info(context, &info, error.data(), error.size());
         std::printf("core=%u capabilities=%u requested=%u decoder=%u hardware=%u generation=%llu delivered=%llu "
             "range=%d matrix=%d primaries=%d transfer=%d inferred=%u rate_control=%d video_bitrate=%d crf=%d fallback=%s error=%s\n",

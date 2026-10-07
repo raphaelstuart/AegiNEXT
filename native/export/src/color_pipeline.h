@@ -1,4 +1,5 @@
 #pragma once
+#include "prepared_foreground.h"
 #include <array>
 extern "C"
 {
@@ -14,6 +15,8 @@ public:
     Color Decode(Color yuv) const;
     Color Encode(Color nits) const;
     Color Composite(Color backgroundYuv, const std::array<float, 4> &premultiplied, double referenceWhite) const;
+    PreparedForeground PrepareForeground(const std::array<float, 4> &premultiplied, double referenceWhite) const;
+    Color CompositePrepared(Color backgroundYuv, const PreparedForeground &foreground, double referenceWhite) const;
 private:
     double kr_;
     double kb_;

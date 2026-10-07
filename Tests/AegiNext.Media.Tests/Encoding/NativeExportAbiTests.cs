@@ -8,7 +8,7 @@ public sealed class NativeExportAbiTests
     [Fact]
     public void CurrentContractUsesTheCompleteHardwareRequestLayout()
     {
-        Assert.Equal(4U, NativeExportAbi.VERSION);
+        Assert.Equal(5U, NativeExportAbi.VERSION);
         Assert.Equal(88, Marshal.SizeOf<NativeExportRequest>());
         Assert.Equal(64, Marshal.OffsetOf<NativeExportRequest>(nameof(NativeExportRequest.EncodingMode)).ToInt32());
         Assert.Equal(68, Marshal.OffsetOf<NativeExportRequest>(nameof(NativeExportRequest.VideoBitrate)).ToInt32());
@@ -22,7 +22,11 @@ public sealed class NativeExportAbiTests
         Assert.Equal(332, Marshal.OffsetOf<NativeExportResultInfo>(nameof(NativeExportResultInfo.VideoBitrate)).ToInt32());
         Assert.Equal(336, Marshal.OffsetOf<NativeExportResultInfo>(nameof(NativeExportResultInfo.Crf)).ToInt32());
         Assert.Equal(340, Marshal.OffsetOf<NativeExportResultInfo>(nameof(NativeExportResultInfo.RateControlReserved)).ToInt32());
-        NativeExportAbi.Validate(4, Path.Combine(Path.GetTempPath(), "aeginext_export.dll"));
+        Assert.Equal(24, Marshal.SizeOf<NativeExportOverlayInfo>());
+        Assert.Equal(8, Marshal.OffsetOf<NativeExportOverlayInfo>(nameof(NativeExportOverlayInfo.State)).ToInt32());
+        Assert.Equal(12, Marshal.OffsetOf<NativeExportOverlayInfo>(nameof(NativeExportOverlayInfo.Reserved)).ToInt32());
+        Assert.Equal(16, Marshal.OffsetOf<NativeExportOverlayInfo>(nameof(NativeExportOverlayInfo.Revision)).ToInt32());
+        NativeExportAbi.Validate(5, Path.Combine(Path.GetTempPath(), "aeginext_export.dll"));
     }
 
     [Theory]
@@ -43,11 +47,12 @@ public sealed class NativeExportAbiTests
     [InlineData(1U)]
     [InlineData(2U)]
     [InlineData(3U)]
+    [InlineData(4U)]
     public void MismatchIdentifiesActualLibraryAndMatchingConfigurationRecovery(uint version)
     {
         var library = Path.Combine(Path.GetTempPath(), "工程 native", "libaeginext_export.dylib");
         var error = Assert.Throws<NotSupportedException>(() => NativeExportAbi.Validate(version, library));
-        Assert.Contains("需要 ABI 4", error.Message, StringComparison.Ordinal);
+        Assert.Contains("需要 ABI 5", error.Message, StringComparison.Ordinal);
         Assert.Contains($"实际 ABI {version}", error.Message, StringComparison.Ordinal);
         Assert.Contains(library, error.Message, StringComparison.Ordinal);
         Assert.Contains("-Target Workbench -Configuration", error.Message, StringComparison.Ordinal);

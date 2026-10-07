@@ -6,8 +6,10 @@ namespace aeginext::encode
 enum class ExportStage : size_t
 {
     Decode,
+    PrefetchWait,
     ClearOverlay,
     Render,
+    OverlayCoverage,
     Upsample,
     Composite,
     WritableFrame,

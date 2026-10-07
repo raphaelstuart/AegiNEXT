@@ -92,4 +92,22 @@ Color ColorPipeline::Composite(Color backgroundYuv, const std::array<float, 4> &
     for (int c = 0; c < 3; ++c) backdrop[c] = backdrop[c]*(1-alpha)+layer[c]*referenceWhite;
     return Encode(backdrop);
 }
+PreparedForeground ColorPipeline::PrepareForeground(const std::array<float, 4> &premultiplied, double referenceWhite) const
+{
+    for (const auto value : premultiplied)
+        if (!std::isfinite(value)) throw std::invalid_argument("Non-finite subtitle sample");
+    const double alpha = premultiplied[3];
+    if (alpha < 0 || alpha > 1 || !std::isfinite(referenceWhite) || referenceWhite <= 0)
+        throw std::invalid_argument("Invalid subtitle opacity or reference white");
+    return {Multiply(layerMatrix_, {premultiplied[0],premultiplied[1],premultiplied[2]}), alpha};
+}
+Color ColorPipeline::CompositePrepared(Color backgroundYuv, const PreparedForeground &foreground, double referenceWhite) const
+{
+    const double alpha = foreground.alpha;
+    if (alpha == 0) return backgroundYuv;
+    auto backdrop = Decode(backgroundYuv);
+    const auto &layer = foreground.linear;
+    for (int c = 0; c < 3; ++c) backdrop[c] = backdrop[c]*(1-alpha)+layer[c]*referenceWhite;
+    return Encode(backdrop);
+}
 }

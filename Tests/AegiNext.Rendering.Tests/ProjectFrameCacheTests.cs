@@ -8,6 +8,117 @@ namespace AegiNext.Rendering.Tests;
 public sealed class ProjectFrameCacheTests
 {
     [Fact]
+    public void RetainedRevisionSkipsCopiesButANewDestinationReceivesCompletePixels()
+    {
+        var document = ShapeDocument();
+        using var renderer = Renderer();
+        var pixels = new float[document.Width * document.Height * 4];
+        var first = renderer.UpdateCachedFramePixels(document, MediaTime.Zero, pixels, 0);
+        Assert.True(first.Updated);
+        Assert.False(first.Empty);
+        Assert.NotEqual(0UL, first.Revision);
+        Assert.Equal(UncachedPixels(document, MediaTime.Zero), pixels);
+
+        pixels.AsSpan().Fill(float.NaN);
+        var hit = renderer.UpdateCachedFramePixels(document, new(1), pixels, first.Revision);
+        Assert.False(hit.Updated);
+        Assert.Equal(first.Revision, hit.Revision);
+        Assert.All(pixels, value => Assert.True(float.IsNaN(value)));
+
+        var copied = renderer.UpdateCachedFramePixels(document, new(1), pixels, 0);
+        Assert.True(copied.Updated);
+        Assert.Equal(first.Revision, copied.Revision);
+        Assert.Equal(UncachedPixels(document, new(1)), pixels);
+        Assert.Equal(1UL, renderer.FrameCacheStatistics.Redraws);
+        Assert.Equal(2UL, renderer.FrameCacheStatistics.Copies);
+    }
+
+    [Fact]
+    public void EmptyTransitionsPublishRevisionsWithoutWritingStaleBuffers()
+    {
+        var document = ShapeDocument();
+        document = document with { Layers = [document.Layers[0] with { Start = new(1), End = new(2) }] };
+        using var renderer = Renderer();
+        var pixels = new float[document.Width * document.Height * 4];
+        pixels.AsSpan().Fill(42);
+        var empty = renderer.UpdateCachedFramePixels(document, MediaTime.Zero, pixels, 0);
+        Assert.True(empty.Updated);
+        Assert.True(empty.Empty);
+        Assert.All(pixels, value => Assert.Equal(42, value));
+        var appeared = renderer.UpdateCachedFramePixels(document, new(1), pixels, empty.Revision);
+        Assert.True(appeared.Updated);
+        Assert.False(appeared.Empty);
+        Assert.True(appeared.Revision > empty.Revision);
+        Assert.Equal(UncachedPixels(document, new(1)), pixels);
+        var disappeared = renderer.UpdateCachedFramePixels(document, new(2), pixels, appeared.Revision);
+        Assert.True(disappeared.Updated);
+        Assert.True(disappeared.Empty);
+        Assert.True(disappeared.Revision > appeared.Revision);
+        var hit = renderer.UpdateCachedFramePixels(document, new(3), pixels, disappeared.Revision);
+        Assert.False(hit.Updated);
+        Assert.True(hit.Empty);
+        Assert.Equal(1UL, renderer.FrameCacheStatistics.Copies);
+    }
+
+    [Fact]
+    public void SnapshotReplacementAndFailedDrawCannotReuseAPublishedRevision()
+    {
+        var document = ResourceTransitionDocument();
+        var resolver = new FailOnceProjectAssetResolver(new DirectoryProjectAssetResolver(AppContext.BaseDirectory));
+        using var renderer = new ProjectSceneRenderer(resolver);
+        var pixels = new float[document.Width * document.Height * 4];
+        var first = renderer.UpdateCachedFramePixels(document, MediaTime.Zero, pixels, 0);
+        resolver.FailNextOpen = true;
+        Assert.Throws<IOException>(() => renderer.UpdateCachedFramePixels(document, new(1), pixels, first.Revision));
+        var recovered = renderer.UpdateCachedFramePixels(document, MediaTime.Zero, pixels, first.Revision);
+        Assert.True(recovered.Updated);
+        Assert.True(recovered.Revision > first.Revision);
+        Assert.Equal(UncachedPixels(document, MediaTime.Zero), pixels);
+        var snapshot = document with { ReferenceWhiteNits = 100 };
+        var replaced = renderer.UpdateCachedFramePixels(snapshot, MediaTime.Zero, pixels, recovered.Revision);
+        Assert.True(replaced.Updated);
+        Assert.True(replaced.Revision > recovered.Revision);
+    }
+
+    [Theory]
+    [InlineData(AnimationProperty.POSITION)]
+    [InlineData(AnimationProperty.OPACITY)]
+    [InlineData(AnimationProperty.FILL)]
+    [InlineData(AnimationProperty.BLUR)]
+    public void ChangedRasterPublishesNewRevisionsAndRepeatedTimesReuseThem(AnimationProperty property)
+    {
+        var document = ShapeDocument();
+        var first = property switch
+        {
+            AnimationProperty.POSITION => AnimationValue.FromVector(new(0, 0)),
+            AnimationProperty.FILL => AnimationValue.FromColor(new(4, 0, 0, 0.5)),
+            AnimationProperty.OPACITY => AnimationValue.FromScalar(1),
+            _ => AnimationValue.FromScalar(0)
+        };
+        var last = property switch
+        {
+            AnimationProperty.POSITION => AnimationValue.FromVector(new(12, 0)),
+            AnimationProperty.FILL => AnimationValue.FromColor(new(0, 0, 4, 0.75)),
+            AnimationProperty.OPACITY => AnimationValue.FromScalar(0.25),
+            _ => AnimationValue.FromScalar(2)
+        };
+        document = document with
+        {
+            Layers = [new() { Children = [document.Layers[0] with { Tracks = [new(property, [new(MediaTime.Zero, first), new(new(2), last)])] }] }]
+        };
+        using var renderer = Renderer();
+        var pixels = new float[document.Width * document.Height * 4];
+        var initial = renderer.UpdateCachedFramePixels(document, MediaTime.Zero, pixels, 0);
+        var animated = renderer.UpdateCachedFramePixels(document, new(1), pixels, initial.Revision);
+        Assert.True(animated.Updated);
+        Assert.True(animated.Revision > initial.Revision);
+        Assert.Equal(UncachedPixels(document, new(1)), pixels);
+        var repeated = renderer.UpdateCachedFramePixels(document, new(1), pixels, animated.Revision);
+        Assert.False(repeated.Updated);
+        Assert.Equal(animated.Revision, repeated.Revision);
+    }
+
+    [Fact]
     public void StaticFrameDrawsOnceButCopiesEveryOutputBuffer()
     {
         var document = ShapeDocument();

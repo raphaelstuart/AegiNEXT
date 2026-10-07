@@ -65,7 +65,7 @@ pwsh -NoProfile -File ./build.ps1 -RunTests -TestProjects 'Desktop.Ui'
 dotnet test Tests/AegiNext.Core.Tests/AegiNext.Core.Tests.csproj -c Release --filter 'FullyQualifiedName~EffectScript'
 ```
 
-Valid project filters: Core, Application, Rendering, Media, Desktop, Desktop.Ui. No tests run without `-RunTests`; Workbench testing also runs its three native CTest suites. Release restores only selected test projects.
+Valid project filters: Core, Application, Rendering, Media, Desktop, Desktop.Ui. No tests run without `-RunTests`; Workbench testing also runs the corresponding native CTest suites. Release restores only selected test projects.
 
 Real media/device tests require matching native output and explicit switches: `AEGINEXT_RUN_DECODER_TESTS=1`, `AEGINEXT_RUN_AUDIO_TESTS=1`, and for the actual system device `AEGINEXT_RUN_SYSTEM_AUDIO_TESTS=1`, plus real tool paths. Otherwise native cases skip. See [Media](media.md).
 
@@ -80,6 +80,12 @@ The first command restores pinned QA tools to project artifacts. Headless UI and
 
 ## Profile video export
 
-Set `AEGINEXT_EXPORT_PROFILE=1` before starting `aegn-exporter` to write one `AEGINEXT_EXPORT_PROFILE` JSON line to stderr after a successful native export. It reports frame count, native elapsed time, decoder/download time, and work time for rendering, YUV resampling, composition, encoding, and muxing. The normal worker protocol remains on stdout. Without the switch, stage clocks are disabled.
+Set `AEGINEXT_EXPORT_PROFILE=1` before starting `aegn-exporter` to write an `AEGINEXT_EXPORT_PROFILE` JSON line to stderr after a successful native export. It reports frame count, native elapsed time, decoder/download time, rendering, overlay coverage, YUV resampling, composition, encoding, and muxing. Overlay counters distinguish updates, retained revisions, active pixels, and bounded foreground color preparation. The accompanying `AEGINEXT_RENDER_PROFILE` line separates evaluation, drawing, and F32 copying, and reports copied bytes and scratch-surface allocations/reuse. The normal worker protocol remains on stdout. Without the switch, stage clocks are disabled.
 
 Capture worker stderr directly when diagnosing performance; the desktop exporter consumes it. Measure complete export wall time separately, including worker startup and final remux. Use the same media, project snapshot, configuration, and build mode when comparing FPS. Internal resampling and composition use at most four threads per stage; GPU encoding can still be limited by CPU composition.
+
+Export ABI 5 explicitly reports updated, unchanged, or empty subtitle foreground. Native export retains its F32 buffer and reuses prepared coverage for stable revisions. Consecutive updates use the scalar composition path without rebuilding coverage; the first subsequent unchanged frame prepares coverage once. Video backgrounds still pass through the same full-frame YUV resampling. Rebuild the application and worker together after an ABI change.
+
+One-frame decode prefetch is automatic after the first frame confirms the VideoToolbox hardware backend. Software and other backends remain serial by default. Set `AEGINEXT_EXPORT_PREFETCH=0` to disable prefetch or `1` to force it for any backend; other explicit values also select serial decoding. The producer owns decoding and snapshots frame color metadata before publication. Rendering and encoding remain on the export thread. `read_ms` measures decoder service time, which may overlap later stages; `prefetch_wait_ms` measures the export thread's actual wait. Compare complete wall time rather than adding overlapping stage durations. The profiler reports the queue capacity and peak queued/in-flight frames.
+
+On macOS, a native build with `BUILD_TESTING=ON` also creates `aeginext_export_metal_tests`. Run it with `--benchmark 8` to measure the experimental SDR Metal compositor, including uploads, synchronization, readback, and the same CPU resampling. This standalone research target does not enable GPU composition in normal exports. It reports numerical differences against the CPU oracle; any difference fails the default bit-exact activation requirement. HDR and decoder/encoder GPU-surface interoperability are outside this prototype.

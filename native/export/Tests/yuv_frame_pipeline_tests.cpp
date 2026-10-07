@@ -1,6 +1,7 @@
 #include "yuv_frame_pipeline.h"
 #include "frame_row_executor.h"
 #include "legacy_yuv_frame_pipeline.h"
+#include "prepared_overlay.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -25,6 +26,7 @@ extern "C"
 using aeginext::encode::ColorPipeline;
 using aeginext::encode::FrameRowExecutor;
 using aeginext::encode::YuvFramePipeline;
+using aeginext::encode::PreparedOverlay;
 using aeginext::encode::tests::LegacyYuvFramePipeline;
 using aeginext::media::CoreError;
 using aeginext::media::ErrorCode;
@@ -281,6 +283,7 @@ size_t LegacyMatrixParity()
                         for (const auto threads : {1, 2, 4})
                         {
                             YuvFramePipeline pipeline(source.get(), WIDTH, HEIGHT, outputFormat, threads);
+                            PreparedOverlay overlay(WIDTH, HEIGHT);
                             auto actual = Allocate(outputFormat, WIDTH, HEIGHT);
                             for (int mode = 0; mode < 5; ++mode)
                             {
@@ -293,9 +296,17 @@ size_t LegacyMatrixParity()
                                     " transfer=" + std::to_string(transfer) + " layout=" + std::to_string(layout) +
                                     " threads=" + std::to_string(threads) + " overlay=" + std::to_string(mode);
                                 EqualSamples(expected.get(), actual.get(), context);
+                                const an_export_overlay_info info{sizeof(info), 5, AN_EXPORT_OVERLAY_UPDATED, 0,
+                                    static_cast<uint64_t>(mode + 1)};
+                                overlay.Invalidate();
+                                overlay.Accept(info, layer, color, referenceWhite, []() {});
+                                Check(pipeline.Upsample(source.get()), "prepared overlay upsample");
+                                pipeline.Composite(source.get(), overlay, color, referenceWhite, []() {});
+                                Check(pipeline.Downsample(actual.get()), "prepared overlay downsample");
+                                EqualSamples(expected.get(), actual.get(), context + " prepared foreground");
                                 Require(originalBuffers == SnapshotBuffers(source.get()), context + ": source samples or padding were modified");
                                 Require(originalFacts == SnapshotFacts(source.get()), context + ": source layout, crop or VFR timestamp facts were modified");
-                                ++comparisons;
+                                comparisons += 2;
                             }
                         }
                     }
@@ -326,6 +337,7 @@ size_t TallCroppedFramesMatchLegacyAcrossSliceBoundaries()
                 for (const auto threads : {1, 4})
                 {
                     YuvFramePipeline pipeline(source.get(), VISIBLE_WIDTH, VISIBLE_HEIGHT, outputFormat, threads);
+                    PreparedOverlay overlay(VISIBLE_WIDTH, VISIBLE_HEIGHT);
                     auto actual = Allocate(outputFormat, VISIBLE_WIDTH, VISIBLE_HEIGHT);
                     for (const auto origin : {std::array<size_t, 2>{1, 1}, std::array<size_t, 2>{2, 0}, std::array<size_t, 2>{0, 2}})
                     {
@@ -345,9 +357,17 @@ size_t TallCroppedFramesMatchLegacyAcrossSliceBoundaries()
                                 " threads=" + std::to_string(threads) + " crop=(" + std::to_string(origin[0]) +
                                 "," + std::to_string(origin[1]) + ") overlay=" + std::to_string(mode);
                             EqualSamples(expected.get(), actual.get(), context);
+                            const an_export_overlay_info info{sizeof(info), 5, AN_EXPORT_OVERLAY_UPDATED, 0,
+                                static_cast<uint64_t>(mode)};
+                            overlay.Invalidate();
+                            overlay.Accept(info, layer, color, 203, []() {});
+                            Check(pipeline.Upsample(source.get()), "prepared tall cropped upsample");
+                            pipeline.Composite(source.get(), overlay, color, 203, []() {});
+                            Check(pipeline.Downsample(actual.get()), "prepared tall cropped downsample");
+                            EqualSamples(expected.get(), actual.get(), context + " prepared foreground");
                             Require(originalBuffers == SnapshotBuffers(source.get()) && originalFacts == SnapshotFacts(source.get()),
                                 context + ": source changed while reusing a pipeline across crop origins");
-                            ++comparisons;
+                            comparisons += 2;
                         }
                     }
                 }
@@ -378,6 +398,162 @@ void ReuseOverwritesPreviouslyCompositedPixels()
         EqualSamples(expected.get(), actual.get(), "multi-frame reused pipeline");
         Require(snapshot == SnapshotBuffers(source.get()) && facts == SnapshotFacts(source.get()), "Reused pipeline changed its source");
     }
+}
+
+void PreparedReuseUpdatesBackgroundAndEmptyIgnoresStalePixels()
+{
+    for (const auto transfer : {AVCOL_TRC_BT709, AVCOL_TRC_SMPTE2084, AVCOL_TRC_ARIB_STD_B67})
+    {
+        auto source = Source(AV_PIX_FMT_P010LE, AVCOL_RANGE_MPEG, transfer, 1);
+        const ColorPipeline color(source->colorspace, source->color_primaries, source->color_trc);
+        LegacyYuvFramePipeline reference(source.get(), WIDTH, HEIGHT, AV_PIX_FMT_P010LE);
+        YuvFramePipeline pipeline(source.get(), WIDTH, HEIGHT, AV_PIX_FMT_P010LE, 4);
+        PreparedOverlay overlay(WIDTH, HEIGHT);
+        auto expected = Allocate(AV_PIX_FMT_P010LE, WIDTH, HEIGHT);
+        auto actual = Allocate(AV_PIX_FMT_P010LE, WIDTH, HEIGHT);
+        auto pixels = Layer(WIDTH, HEIGHT, 2);
+        const std::vector<float> empty(pixels.size());
+        for (int frame = 0; frame < 6; ++frame)
+        {
+            FillSource(source.get(), frame * 3);
+            source->crop_left = frame % 2;
+            source->crop_top = (frame + 1) % 2;
+            source->crop_right = 3 - source->crop_left;
+            source->crop_bottom = 3 - source->crop_top;
+            source->pts += 71 + frame;
+            source->duration = frame % 2 ? 40 : 71;
+            const auto originalBuffers = SnapshotBuffers(source.get());
+            const auto originalFacts = SnapshotFacts(source.get());
+            const auto state = frame == 0 || frame == 4 ? AN_EXPORT_OVERLAY_UPDATED :
+                frame == 2 ? AN_EXPORT_OVERLAY_EMPTY : AN_EXPORT_OVERLAY_UNCHANGED;
+            const auto revision = static_cast<uint64_t>(frame < 2 ? 1 : frame < 4 ? 2 : 3);
+            if (frame == 4)
+            {
+                pixels = Layer(WIDTH, HEIGHT, 3);
+                for (size_t index = 0; index < pixels.size(); index += 4)
+                {
+                    if (pixels[index + 3] == 0)
+                    {
+                        pixels[index] = std::numeric_limits<float>::quiet_NaN();
+                        pixels[index + 1] = std::numeric_limits<float>::infinity();
+                        pixels[index + 3] = -0.0f;
+                    }
+                }
+            }
+            const an_export_overlay_info info{sizeof(info), 5, static_cast<uint32_t>(state), 0, revision};
+            overlay.Accept(info, pixels, color, 406, []() {});
+            Check(reference.Convert(source.get(), frame == 2 || frame == 3 ? empty : pixels,
+                color, 406, expected.get()), "legacy revision reuse");
+            Check(pipeline.Upsample(source.get()), "prepared revision reuse upsample");
+            pipeline.Composite(source.get(), overlay, color, 406, []() {});
+            Check(pipeline.Downsample(actual.get()), "prepared revision reuse downsample");
+            EqualSamples(expected.get(), actual.get(), "prepared revision uses fresh background/crop and handles Empty");
+            Require(originalBuffers == SnapshotBuffers(source.get()) && originalFacts == SnapshotFacts(source.get()),
+                "Prepared overlay modified source facts while retaining its foreground");
+        }
+    }
+}
+
+void AdaptiveUpdatedFramesPreserveScalarValidationAndCancelRecovery()
+{
+    auto source = Source(AV_PIX_FMT_P010LE, AVCOL_RANGE_MPEG, AVCOL_TRC_ARIB_STD_B67, 1);
+    const ColorPipeline color(source->colorspace, source->color_primaries, source->color_trc);
+    LegacyYuvFramePipeline reference(source.get(), WIDTH, HEIGHT, AV_PIX_FMT_P010LE);
+    YuvFramePipeline pipeline(source.get(), WIDTH, HEIGHT, AV_PIX_FMT_P010LE, 4);
+    PreparedOverlay overlay(WIDTH, HEIGHT);
+    auto pixels = Layer(WIDTH, HEIGHT, 2);
+    auto expected = Allocate(AV_PIX_FMT_P010LE, WIDTH, HEIGHT);
+    auto actual = Allocate(AV_PIX_FMT_P010LE, WIDTH, HEIGHT);
+    const auto accept = [&](uint32_t state, uint64_t revision)
+    {
+        const an_export_overlay_info info{sizeof(info), 5, state, 0, revision};
+        overlay.Accept(info, pixels, color, 203, []() {});
+    };
+    for (int frame = 0; frame < 3; ++frame)
+    {
+        FillSource(source.get(), frame);
+        pixels[0] = 0.25f / (frame + 1);
+        accept(AN_EXPORT_OVERLAY_UPDATED, frame + 1);
+        Require(overlay.CoverageKnown() == (frame == 0), "Animated updated frame did not use the adaptive route");
+        Check(reference.Convert(source.get(), pixels, color, 203, expected.get()), "legacy adaptive frame");
+        Check(pipeline.Upsample(source.get()), "adaptive upsample");
+        pipeline.Composite(source.get(), overlay, color, 203, []() {});
+        Check(pipeline.Downsample(actual.get()), "adaptive downsample");
+        EqualSamples(expected.get(), actual.get(), "animated adaptive scalar parity");
+    }
+    accept(AN_EXPORT_OVERLAY_UNCHANGED, 3);
+    Require(overlay.CoverageKnown(), "Stable animation did not prepare retained foreground");
+    for (const auto invalid : {-0.125f, 1.125f, std::numeric_limits<float>::quiet_NaN()})
+    {
+        pixels.back() = 0.5f;
+        overlay.Invalidate();
+        accept(AN_EXPORT_OVERLAY_UPDATED, 4);
+        pixels.back() = invalid;
+        accept(AN_EXPORT_OVERLAY_UPDATED, 5);
+        Check(pipeline.Upsample(source.get()), "adaptive invalid alpha upsample");
+        auto failed = false;
+        try
+        {
+            pipeline.Composite(source.get(), overlay, color, 203, []() {});
+        }
+        catch (const std::invalid_argument &)
+        {
+            failed = true;
+        }
+        Require(failed && !overlay.IsValid() && pipeline.Downsample(actual.get()) == AVERROR(EINVAL),
+            "Adaptive parallel validation accepted an illegal active alpha or retained its revision");
+    }
+    pixels.back() = 0.5f;
+    accept(AN_EXPORT_OVERLAY_UPDATED, 6);
+    accept(AN_EXPORT_OVERLAY_UPDATED, 7);
+    Check(pipeline.Upsample(source.get()), "adaptive cancelled upsample");
+    std::atomic<int> checks{0};
+    auto cancelled = false;
+    try
+    {
+        pipeline.Composite(source.get(), overlay, color, 203, [&]()
+        {
+            if (checks.fetch_add(1) >= 1) throw CoreError(ErrorCode::Cancelled, "adaptive cancel");
+        });
+    }
+    catch (const CoreError &error)
+    {
+        cancelled = error.Code() == ErrorCode::Cancelled;
+    }
+    Require(cancelled && !overlay.IsValid() && pipeline.Downsample(actual.get()) == AVERROR(EINVAL),
+        "Adaptive cancellation published a partial frame or reusable revision");
+    accept(AN_EXPORT_OVERLAY_UPDATED, 8);
+    Check(reference.Convert(source.get(), pixels, color, 203, expected.get()), "legacy adaptive recovery");
+    Check(pipeline.Upsample(source.get()), "adaptive recovery upsample");
+    pipeline.Composite(source.get(), overlay, color, 203, []() {});
+    Check(pipeline.Downsample(actual.get()), "adaptive recovery downsample");
+    EqualSamples(expected.get(), actual.get(), "adaptive cancellation recovery");
+}
+
+void PreparedColorBudgetFallbackMatchesLegacy()
+{
+    constexpr int VISIBLE_WIDTH = 1152;
+    auto source = Source(AV_PIX_FMT_NV12, AVCOL_RANGE_JPEG, AVCOL_TRC_IEC61966_2_1, 2, 0, VISIBLE_WIDTH, HEIGHT);
+    const ColorPipeline color(source->colorspace, source->color_primaries, source->color_trc);
+    auto pixels = Layer(VISIBLE_WIDTH, HEIGHT, 2);
+    for (size_t index = 0; index < pixels.size(); index += 4)
+    {
+        pixels[index] = static_cast<float>(index / 4) / 100000;
+    }
+    PreparedOverlay overlay(VISIBLE_WIDTH, HEIGHT);
+    const an_export_overlay_info info{sizeof(info), 5, AN_EXPORT_OVERLAY_UPDATED, 0, 1};
+    overlay.Accept(info, pixels, color, 203, []() {});
+    Require(!overlay.PreparedPixels() && overlay.ActivePixels() == static_cast<uint64_t>(VISIBLE_WIDTH) * HEIGHT,
+        "Fallback fixture did not exceed its foreground color budget");
+    LegacyYuvFramePipeline reference(source.get(), VISIBLE_WIDTH, HEIGHT, AV_PIX_FMT_NV12);
+    YuvFramePipeline pipeline(source.get(), VISIBLE_WIDTH, HEIGHT, AV_PIX_FMT_NV12, 4);
+    auto expected = Allocate(AV_PIX_FMT_NV12, VISIBLE_WIDTH, HEIGHT);
+    auto actual = Allocate(AV_PIX_FMT_NV12, VISIBLE_WIDTH, HEIGHT);
+    Check(reference.Convert(source.get(), pixels, color, 203, expected.get()), "legacy foreground fallback");
+    Check(pipeline.Upsample(source.get()), "prepared foreground fallback upsample");
+    pipeline.Composite(source.get(), overlay, color, 203, []() {});
+    Check(pipeline.Downsample(actual.get()), "prepared foreground fallback downsample");
+    EqualSamples(expected.get(), actual.get(), "prepared color budget fallback");
 }
 
 void ClampedPipelineBudgetsMatchLegacy()
@@ -617,6 +793,9 @@ int main()
         auto comparisons = LegacyMatrixParity();
         comparisons += TallCroppedFramesMatchLegacyAcrossSliceBoundaries();
         ReuseOverwritesPreviouslyCompositedPixels();
+        PreparedReuseUpdatesBackgroundAndEmptyIgnoresStalePixels();
+        AdaptiveUpdatedFramesPreserveScalarValidationAndCancelRecovery();
+        PreparedColorBudgetFallbackMatchesLegacy();
         ClampedPipelineBudgetsMatchLegacy();
         CancelledAndFailedCompositionRequireFreshUpsample();
         ExecutorVisitsEachRowOnceWithinItsBudget();
