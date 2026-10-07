@@ -68,13 +68,16 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
 
     internal void Apply(string source)
     {
-        if (session.SelectedLayer is not { SubtitleId: not null } layer)
+        var selected = session.TimelineClipIds().ToHashSet();
+        var layerIds = WorkbenchSession.Flatten(session.Editor.Snapshot.Layers)
+            .Where(layer => layer.SubtitleId is not null && selected.Contains(layer.Id)).Select(layer => layer.Id).ToArray();
+        if (layerIds.Length == 0)
         {
             return;
         }
         session.ViewModel.CancelGestures();
         session.ClearKeyframeSelection();
-        session.Editor.ApplyEffectScript(layer.Id, EffectScriptParser.Parse(source));
+        session.Editor.ApplyEffectScript(layerIds, EffectScriptParser.Parse(source));
         session.LogInfo("Effects", Localization.Get("Workbench.ApplyPreset"));
     }
 
