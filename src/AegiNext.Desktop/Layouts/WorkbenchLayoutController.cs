@@ -23,6 +23,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
     private readonly WorkbenchDockFactory factory;
     private readonly WorkbenchDockSnapshotCodec codec;
     private readonly WorkspaceLayoutStore store;
+    private readonly SemaphoreSlim persistenceGate = new(1, 1);
     private readonly DockControl dockHost;
     private readonly DispatcherTimer persistenceTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly List<INotifyPropertyChanged> watchedProperties = [];
@@ -178,7 +179,9 @@ internal sealed class WorkbenchLayoutController : IDisposable
         ScheduleCapture();
     }
 
-    internal async Task<bool> ApplyPresetAsync(string presetId)
+    internal Task<bool> ApplyPresetAsync(string presetId) => RunLayoutOperationAsync(() => ApplyPresetCoreAsync(presetId));
+
+    private async Task<bool> ApplyPresetCoreAsync(string presetId)
     {
         EnsureUsable();
         var preset = Presets.Single(candidate => candidate.Id == presetId);
@@ -193,11 +196,13 @@ internal sealed class WorkbenchLayoutController : IDisposable
         ApplySnapshot(preset.Layout);
         LastError = null;
         Changed?.Invoke(this, EventArgs.Empty);
-        await PersistCurrentAsync();
+        await PersistCurrentCoreAsync();
         return true;
     }
 
-    internal async Task<bool> SaveAsync()
+    internal Task<bool> SaveAsync() => RunLayoutOperationAsync(SaveCoreAsync);
+
+    private async Task<bool> SaveCoreAsync()
     {
         EnsureUsable();
         var index = userPresets.FindIndex(preset => preset.Id == CurrentPresetId);
@@ -210,11 +215,13 @@ internal sealed class WorkbenchLayoutController : IDisposable
         userPresets[index] = userPresets[index] with { Layout = layout };
         IsModified = false;
         Changed?.Invoke(this, EventArgs.Empty);
-        await PersistCurrentAsync();
+        await PersistCurrentCoreAsync();
         return true;
     }
 
-    internal async Task<string?> SaveAsAsync(string name)
+    internal Task<string?> SaveAsAsync(string name) => RunLayoutOperationAsync(() => SaveAsCoreAsync(name));
+
+    private async Task<string?> SaveAsCoreAsync(string name)
     {
         EnsureUsable();
         name = name.Trim();
@@ -229,11 +236,13 @@ internal sealed class WorkbenchLayoutController : IDisposable
         IsModified = false;
         LastError = null;
         Changed?.Invoke(this, EventArgs.Empty);
-        await PersistCurrentAsync();
+        await PersistCurrentCoreAsync();
         return id;
     }
 
-    internal async Task<bool> RenameAsync(string presetId, string name)
+    internal Task<bool> RenameAsync(string presetId, string name) => RunLayoutOperationAsync(() => RenameCoreAsync(presetId, name));
+
+    private async Task<bool> RenameCoreAsync(string presetId, string name)
     {
         EnsureUsable();
         name = name.Trim();
@@ -251,28 +260,52 @@ internal sealed class WorkbenchLayoutController : IDisposable
         userPresets[index] = userPresets[index] with { Name = name };
         LastError = null;
         Changed?.Invoke(this, EventArgs.Empty);
-        await PersistCurrentAsync();
+        await PersistCurrentCoreAsync();
         return true;
     }
 
-    internal async Task<bool> DeleteAsync(string presetId)
+    internal Task<bool> DeleteAsync(string presetId)
+    {
+        return DeleteAsync([presetId]);
+    }
+
+    internal Task<bool> DeleteAsync(IEnumerable<string> presetIds)
     {
         EnsureUsable();
-        var index = userPresets.FindIndex(preset => preset.Id == presetId);
-        if (index < 0)
+        ArgumentNullException.ThrowIfNull(presetIds);
+        var ids = presetIds.ToHashSet(StringComparer.Ordinal);
+        return RunLayoutOperationAsync(() => DeleteCoreAsync(ids));
+    }
+
+    private async Task<bool> DeleteCoreAsync(HashSet<string> ids)
+    {
+        if (ids.Count == 0)
+        {
+            return true;
+        }
+        if (ids.Any(id => !userPresets.Any(preset => preset.Id == id)))
         {
             SetError(Localization.Get("Layout.ReadOnly"));
             return false;
         }
-        userPresets.RemoveAt(index);
-        if (CurrentPresetId == presetId)
+        var remaining = userPresets.Where(preset => !ids.Contains(preset.Id)).ToArray();
+        var currentId = ids.Contains(CurrentPresetId) ? WorkspaceLayoutPresets.STANDARD : CurrentPresetId;
+        persistenceTimer.Stop();
+        await store.SaveAsync(new()
+        {
+            Current = Capture(), CurrentPresetId = currentId, Presets = remaining
+        });
+        userPresets.RemoveAll(preset => ids.Contains(preset.Id));
+        if (ids.Contains(CurrentPresetId))
         {
             CurrentPresetId = WorkspaceLayoutPresets.STANDARD;
-            UpdateModification(Capture());
+            if (!disposed)
+            {
+                UpdateModification(Capture());
+            }
         }
         LastError = null;
         Changed?.Invoke(this, EventArgs.Empty);
-        await PersistCurrentAsync();
         return true;
     }
 
@@ -338,7 +371,9 @@ internal sealed class WorkbenchLayoutController : IDisposable
         }
     }
 
-    internal async Task FlushAsync()
+    internal Task FlushAsync() => RunLayoutOperationAsync(FlushCoreAsync);
+
+    private async Task<bool> FlushCoreAsync()
     {
         EnsureUsable();
         persistenceTimer.Stop();
@@ -346,8 +381,9 @@ internal sealed class WorkbenchLayoutController : IDisposable
         UpdateModification(current);
         lastFingerprint = WorkspaceLayoutStore.Fingerprint(current);
         Changed?.Invoke(this, EventArgs.Empty);
-        await PersistCurrentAsync();
+        await PersistCurrentCoreAsync();
         await store.FlushAsync();
+        return true;
     }
 
     internal WorkspaceLayoutFile CaptureFile()
@@ -639,13 +675,37 @@ internal sealed class WorkbenchLayoutController : IDisposable
             Changed?.Invoke(this, EventArgs.Empty);
             await PersistCurrentAsync();
         }
+        catch (ObjectDisposedException) when (disposed)
+        {
+        }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             SetError(exception.Message);
         }
     }
 
-    private Task PersistCurrentAsync()
+    private Task<bool> PersistCurrentAsync() => RunLayoutOperationAsync(async () =>
+    {
+        await PersistCurrentCoreAsync();
+        return true;
+    });
+
+    private async Task<T> RunLayoutOperationAsync<T>(Func<Task<T>> action)
+    {
+        EnsureUsable();
+        await persistenceGate.WaitAsync();
+        try
+        {
+            EnsureUsable();
+            return await action();
+        }
+        finally
+        {
+            persistenceGate.Release();
+        }
+    }
+
+    private Task PersistCurrentCoreAsync()
     {
         return store.SaveAsync(new()
         {

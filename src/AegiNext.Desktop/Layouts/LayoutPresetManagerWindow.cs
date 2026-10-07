@@ -1,8 +1,11 @@
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Workspace;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Layout;
+using Avalonia.Controls.Selection;
+using System.ComponentModel;
 
 namespace AegiNext.Desktop.Layouts;
 
@@ -10,11 +13,14 @@ internal sealed class LayoutPresetManagerWindow : Window, IDisposable
 {
     private readonly List<IDisposable> localizationBindings = [];
     private readonly LayoutPresetManagerViewModel viewModel;
+    private readonly ListBox list;
+    private bool synchronizingSelection;
     private bool disposed;
 
     internal LayoutPresetManagerWindow(WorkbenchLayoutController controller)
     {
-        viewModel = new(controller);
+        var dialogs = new WindowWorkbenchDialogService(this);
+        viewModel = new(controller, dialogs.ConfirmPresetDeletionAsync);
         DataContext = viewModel;
         localizationBindings.Add(this.Bind(TitleProperty, ObserveTitle().ToBinding()));
         Width = 540;
@@ -22,11 +28,17 @@ internal sealed class LayoutPresetManagerWindow : Window, IDisposable
         MinWidth = 420;
         MinHeight = 340;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        var list = new ListBox { ItemsSource = viewModel.Presets, MinHeight = 120 };
-        list.Bind(ListBox.SelectedItemProperty, new Binding(nameof(viewModel.Selected)) { Mode = BindingMode.TwoWay });
+        list = new() { Name = "LayoutPresetList", ItemsSource = viewModel.Presets, MinHeight = 120, SelectionMode = SelectionMode.Multiple };
+        list.Bind(IsEnabledProperty, new Binding(nameof(viewModel.CanEdit)));
+        list.SelectionChanged += OnSelectionChanged;
+        viewModel.ChoicesRefreshing += OnChoicesRefreshing;
+        viewModel.ChoicesRefreshed += OnChoicesRefreshed;
+        viewModel.PropertyChanged += OnModelPropertyChanged;
+        SynchronizeSelection();
         var name = new TextBox();
         localizationBindings.Add(name.Bind(TextBox.PlaceholderTextProperty, Localization.Observe("Layout.Name").ToBinding()));
         name.Bind(TextBox.TextProperty, new Binding(nameof(viewModel.Name)) { Mode = BindingMode.TwoWay });
+        name.Bind(IsEnabledProperty, new Binding(nameof(viewModel.CanEdit)));
         var error = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
         error.Bind(TextBlock.TextProperty, new Binding(nameof(viewModel.Error)));
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -34,7 +46,7 @@ internal sealed class LayoutPresetManagerWindow : Window, IDisposable
         localizationBindings.Add(apply.Bind(ContentControl.ContentProperty, Localization.Observe("Layout.Apply").ToBinding()));
         var rename = new Button { Command = viewModel.RenameCommand };
         localizationBindings.Add(rename.Bind(ContentControl.ContentProperty, Localization.Observe("Layout.Rename").ToBinding()));
-        var delete = new Button { Command = viewModel.DeleteCommand };
+        var delete = new Button { Name = "LayoutDeleteButton", Command = viewModel.DeleteCommand };
         localizationBindings.Add(delete.Bind(ContentControl.ContentProperty, Localization.Observe("Layout.Delete").ToBinding()));
         buttons.Children.Add(apply);
         buttons.Children.Add(rename);
@@ -65,6 +77,58 @@ internal sealed class LayoutPresetManagerWindow : Window, IDisposable
         return Localization.Observe(() => Localization.Get("Layout.Manage").TrimEnd('…'));
     }
 
+    private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!synchronizingSelection)
+        {
+            var ids = list.SelectedItems?.OfType<LayoutPresetRow>().Select(row => row.Id).ToArray() ?? [];
+            var primary = e.AddedItems.OfType<LayoutPresetRow>().LastOrDefault()?.Id
+                ?? (viewModel.Selected is { } current && ids.Contains(current.Id) ? current.Id : ids.FirstOrDefault());
+            viewModel.SetSelection(primary, ids);
+        }
+    }
+
+    private void OnModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!synchronizingSelection && e.PropertyName == nameof(LayoutPresetManagerViewModel.SelectedIds))
+        {
+            SynchronizeSelection();
+        }
+    }
+
+    private void OnChoicesRefreshing(object? sender, EventArgs e)
+    {
+        synchronizingSelection = true;
+    }
+
+    private void OnChoicesRefreshed(object? sender, EventArgs e)
+    {
+        synchronizingSelection = false;
+        SynchronizeSelection();
+    }
+
+    private void SynchronizeSelection()
+    {
+        if ((list.SelectedItems?.OfType<LayoutPresetRow>().Select(row => row.Id) ?? [])
+            .ToHashSet(StringComparer.Ordinal).SetEquals(viewModel.SelectedIds))
+        {
+            return;
+        }
+        synchronizingSelection = true;
+        try
+        {
+            list.SelectedItems?.Clear();
+            foreach (var row in viewModel.Presets.Where(row => viewModel.SelectedIds.Contains(row.Id)))
+            {
+                list.SelectedItems?.Add(row);
+            }
+        }
+        finally
+        {
+            synchronizingSelection = false;
+        }
+    }
+
     private void OnClosed(object? sender, EventArgs e)
     {
         Closed -= OnClosed;
@@ -80,6 +144,10 @@ internal sealed class LayoutPresetManagerWindow : Window, IDisposable
         }
 
         disposed = true;
+        list.SelectionChanged -= OnSelectionChanged;
+        viewModel.ChoicesRefreshing -= OnChoicesRefreshing;
+        viewModel.ChoicesRefreshed -= OnChoicesRefreshed;
+        viewModel.PropertyChanged -= OnModelPropertyChanged;
         Closed -= OnClosed;
         foreach (var binding in localizationBindings)
         {
