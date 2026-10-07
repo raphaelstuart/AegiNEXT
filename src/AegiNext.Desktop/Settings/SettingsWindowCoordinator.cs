@@ -154,6 +154,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
             active.PreviewDecodeModeChanged += OnSessionPreviewDecodeModeChanged;
             active.AudioClockChanged += OnSessionPreviewDecodeModeChanged;
             active.SelectionChanged += OnSelectionChanged;
+            active.Styles.BusyChanged += OnBusyChanged;
             active.StyleLibraryChanged += OnBusyChanged;
             active.EffectLibraryChanged += OnBusyChanged;
             active.ViewModel.PropertyChanged += OnSessionStateChanged;
@@ -198,6 +199,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
             active.PreviewDecodeModeChanged -= OnSessionPreviewDecodeModeChanged;
             active.AudioClockChanged -= OnSessionPreviewDecodeModeChanged;
             active.SelectionChanged -= OnSelectionChanged;
+            active.Styles.BusyChanged -= OnBusyChanged;
             active.StyleLibraryChanged -= OnBusyChanged;
             active.EffectLibraryChanged -= OnBusyChanged;
             active.ViewModel.PropertyChanged -= OnSessionStateChanged;

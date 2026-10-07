@@ -10,7 +10,8 @@ internal static class TimelineClipPalettes
         StartLine = "#168653",
         EndLine = "#BA3D50",
         SelectedRangeFill = "#5273E818",
-        InactiveRangeFill = "#6B748010"
+        InactiveRangeFill = "#6B748010",
+        MediaRangeFill = "#00000008"
     };
 
     internal static TimelineClipPalette Resolve(TimelineClipPalette value, bool isLightTheme)

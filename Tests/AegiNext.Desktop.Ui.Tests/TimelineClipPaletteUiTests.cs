@@ -8,6 +8,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using SkiaSharp;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
@@ -32,7 +33,7 @@ public sealed class TimelineClipPaletteUiTests
         foreach (var name in new[]
         {
             "TimelineSelectedClipPicker", "TimelineInactiveClipPicker", "TimelineStartLinePicker",
-            "TimelineEndLinePicker", "TimelineSelectedRangeFillPicker", "TimelineInactiveRangeFillPicker"
+            "TimelineEndLinePicker", "TimelineSelectedRangeFillPicker", "TimelineInactiveRangeFillPicker", "TimelineMediaRangeFillPicker"
         })
         {
             var picker = UiTestActions.Find<ColorDraftInput>(settings, name);
@@ -58,11 +59,16 @@ public sealed class TimelineClipPaletteUiTests
     [InlineData("TimelineEndLinePicker", 3)]
     [InlineData("TimelineSelectedRangeFillPicker", 4)]
     [InlineData("TimelineInactiveRangeFillPicker", 5)]
+    [InlineData("TimelineMediaRangeFillPicker", 6)]
     public async Task EachClipColorCommitsRgbaFromActualInputAndPersistsAcrossSettingsReopen(string pickerName, int field)
     {
         await using var context = new MainWindowTestContext();
         var document = context.Session.DocumentSnapshot;
         var original = context.Session.Preferences;
+        var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
+        context.ViewModel.Timeline.MediaDuration = 20;
+        var viewport = timeline.Viewport;
+        var background = MediaRangePixel(timeline);
         var settings = OpenColors(context);
         var picker = UiTestActions.Find<ColorDraftInput>(settings, pickerName);
         var changes = new List<SettingsColorsChangedEventArgs>();
@@ -78,6 +84,11 @@ public sealed class TimelineClipPaletteUiTests
         Assert.Equal(expected, Assert.Single(changes).TimelineClips);
         Assert.Equal(128 / 255d, picker.Draft!.Value.Alpha);
         Assert.False(picker.Draft.IsDirty);
+        Assert.Equal(viewport, timeline.Viewport);
+        if (field == 6)
+        {
+            Assert.NotEqual(background, MediaRangePixel(timeline));
+        }
         Assert.Same(document, context.Session.DocumentSnapshot);
         Assert.False(context.Session.Editor.CanUndo);
         await WaitForPersistence(context);
@@ -146,7 +157,7 @@ public sealed class TimelineClipPaletteUiTests
         var pickerNames = new[]
         {
             "TimelineSelectedClipPicker", "TimelineInactiveClipPicker", "TimelineStartLinePicker",
-            "TimelineEndLinePicker", "TimelineSelectedRangeFillPicker", "TimelineInactiveRangeFillPicker"
+            "TimelineEndLinePicker", "TimelineSelectedRangeFillPicker", "TimelineInactiveRangeFillPicker", "TimelineMediaRangeFillPicker"
         };
         foreach (var name in pickerNames)
         {
@@ -227,7 +238,19 @@ public sealed class TimelineClipPaletteUiTests
             3 => palette with { EndLine = value },
             4 => palette with { SelectedRangeFill = value },
             5 => palette with { InactiveRangeFill = value },
+            6 => palette with { MediaRangeFill = value },
             _ => throw new ArgumentOutOfRangeException(nameof(field))
         };
+    }
+
+    private static SKColor MediaRangePixel(SubtitleTimelineControl timeline)
+    {
+        using var target = new RenderTargetBitmap(new((int)timeline.Bounds.Width, (int)timeline.Bounds.Height), new(96, 96));
+        target.Render(timeline);
+        using var stream = new MemoryStream();
+        target.Save(stream, PngBitmapEncoderOptions.Default);
+        stream.Position = 0;
+        using var pixels = SKBitmap.Decode(stream);
+        return pixels.GetPixel((int)(timeline.HeaderWidth + timeline.Viewport.Width * 0.37), (int)timeline.Bounds.Height - 15);
     }
 }

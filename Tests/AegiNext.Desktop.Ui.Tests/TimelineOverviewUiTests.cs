@@ -7,6 +7,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
+using Avalonia.Styling;
 using SkiaSharp;
 
 namespace AegiNext.Desktop.Ui.Tests;
@@ -109,12 +110,23 @@ public sealed class TimelineOverviewUiTests
     }
 
     [AvaloniaTheory]
-    [InlineData(1d)]
-    [InlineData(1.5d)]
-    [InlineData(2d)]
-    public void TwentyFourPixelOverviewRendersAllSixteenTracksAndStillNavigatesWithoutSeeking(double scaling)
+    [InlineData(1d, 16, false)]
+    [InlineData(1.5d, 16, false)]
+    [InlineData(2d, 16, false)]
+    [InlineData(1d, 16, true)]
+    [InlineData(1.5d, 16, true)]
+    [InlineData(2d, 16, true)]
+    [InlineData(1d, 32, false)]
+    [InlineData(1.5d, 32, false)]
+    [InlineData(2d, 32, false)]
+    [InlineData(1d, 32, true)]
+    [InlineData(1.5d, 32, true)]
+    [InlineData(2d, 32, true)]
+    public void TwentyFourPixelOverviewRendersEveryTrackAtItsTimeAndRowAndStillNavigatesWithoutSeeking(
+        double scaling, int trackCount, bool dark)
     {
-        var tracks = Enumerable.Range(0, 16).Select(index => new SubtitleTrack { Name = $"Track {index}" }).ToArray();
+        var tracks = Enumerable.Range(0, trackCount).Select(index => new SubtitleTrack { Name = $"Track {index}" }).ToArray();
+        var duration = Math.Max(10, trackCount / 2d + 2);
         var empty = new ProjectDocument { SubtitleTracks = [.. tracks] };
         var cues = tracks.Select((track, index) => new SubtitleLine
         {
@@ -133,14 +145,15 @@ public sealed class TimelineOverviewUiTests
         using var timeline = new SubtitleTimelineControl();
         var overview = new TimelineOverviewControl();
         var window = CreateWindow(overview, timeline);
+        window.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
         var seeks = 0;
         var edits = 0;
         timeline.SeekRequested += (_, _) => seeks++;
         timeline.TimingChanged += (_, _) => edits++;
         EventHandler<TimelineViewportEventArgs> navigate = (_, e) =>
         {
-            timeline.SetViewport(e.Viewport, 10);
-            overview.SetScene(document, timeline.Viewport, 10, new(4));
+            timeline.SetViewport(e.Viewport, duration);
+            overview.SetScene(document, timeline.Viewport, duration, new(4));
         };
         overview.ViewportChanged += navigate;
         timeline.SetDocument(empty, null, null);
@@ -150,24 +163,29 @@ public sealed class TimelineOverviewUiTests
         {
             window.SetRenderScaling(scaling);
             Prepare(window);
-            timeline.SetViewport(new(0, 150), 10);
-            overview.SetScene(empty, timeline.Viewport, 10, new(4));
+            timeline.SetViewport(new(0, 150), duration);
+            overview.SetScene(empty, timeline.Viewport, duration, new(4));
             using var baseline = Capture(window);
             Assert.Equal(24, overview.Bounds.Height);
             timeline.SetDocument(document, null, null);
-            overview.SetScene(document, timeline.Viewport, 10, new(4));
+            overview.SetScene(document, timeline.Viewport, duration, new(4));
             using var rendered = Capture(window);
             var origin = overview.TranslatePoint(new(), window)!.Value;
             var top = (int)Math.Round(origin.Y * window.RenderScaling);
             var bottom = (int)Math.Round((origin.Y + overview.Bounds.Height) * window.RenderScaling);
-            foreach (var cue in cues)
+            var band = (overview.Bounds.Height - 6) / (tracks.Length + 1);
+            for (var index = 0; index < cues.Length; index++)
             {
+                var cue = cues[index];
                 var middle = ((double)cue.Start.Numerator / cue.Start.Denominator +
                     (double)cue.End.Numerator / cue.End.Denominator) / 2;
-                var x = (int)Math.Round((origin.X + middle / 10 * overview.Bounds.Width) * window.RenderScaling);
+                var x = (int)Math.Round((origin.X + middle / duration * overview.Bounds.Width) * window.RenderScaling);
                 var changed = Enumerable.Range(top, bottom - top)
                     .Where(y => baseline.GetPixel(x, y) != rendered.GetPixel(x, y)).ToArray();
                 Assert.NotEmpty(changed);
+                var rowTop = (int)Math.Floor((origin.Y + 3 + index * band) * scaling);
+                var rowBottom = (int)Math.Ceiling((origin.Y + 3 + (index + 0.75) * band) * scaling);
+                Assert.Contains(changed, y => y >= rowTop && y < rowBottom);
                 if (cue.Id == cues[^1].Id)
                 {
                     Assert.Contains(changed, y => y >= top + (bottom - top) / 2);
@@ -188,7 +206,7 @@ public sealed class TimelineOverviewUiTests
             window.MouseDown(center, MouseButton.Left);
             window.MouseMove(center + new Vector(20, 0));
             window.MouseUp(center + new Vector(20, 0), MouseButton.Left);
-            Assert.Equal(0.5, timeline.ViewStart, 8);
+            Assert.Equal(20 / overview.Bounds.Width * duration, timeline.ViewStart, 8);
             Assert.Equal(0, seeks);
             Assert.Equal(0, edits);
             Assert.Equal(new MediaTime(4), timeline.Position);

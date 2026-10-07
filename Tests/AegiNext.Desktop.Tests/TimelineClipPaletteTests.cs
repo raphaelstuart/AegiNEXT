@@ -14,6 +14,7 @@ public sealed class TimelineClipPaletteTests
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(5)]
+    [InlineData(6)]
     public void EveryClipColorAcceptsRgbaAndRejectsInvalidOrMissingHex(int field)
     {
         var palette = WithColor(new(), field, "#11223380");
@@ -62,7 +63,7 @@ public sealed class TimelineClipPaletteTests
             AdaptToTheme = false,
             SelectedClip = "#11223380", InactiveClip = "#22334440",
             StartLine = "#33445560", EndLine = "#44556670",
-            SelectedRangeFill = "#55667720", InactiveRangeFill = "#66778810"
+            SelectedRangeFill = "#55667720", InactiveRangeFill = "#66778810", MediaRangeFill = "#77889930"
         };
         var expected = previous with { TimelineClips = palette };
         await store.SaveAsync(expected);
@@ -80,7 +81,7 @@ public sealed class TimelineClipPaletteTests
     public void EveryClipColorAndThemeFlagParticipatesInPreferenceEquality()
     {
         var original = new WorkbenchPreferences();
-        var changes = Enumerable.Range(0, 6)
+        var changes = Enumerable.Range(0, 7)
             .Select(field => WithColor(original.TimelineClips, field, "#11223380"))
             .Append(original.TimelineClips with { AdaptToTheme = false });
         foreach (var palette in changes)
@@ -95,6 +96,25 @@ public sealed class TimelineClipPaletteTests
         Assert.Throws<InvalidDataException>(() => (original with { TimelineClips = null! }).Validate());
     }
 
+    /// <summary>现有配色偏好缺少视频范围字段时补默认值且不重写文件。</summary>
+    [Fact]
+    public async Task ExistingTimelinePaletteReceivesMediaRangeDefaultWithoutLosingCustomColors()
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        using var store = new WorkbenchPreferencesStore(directory.Path);
+        var path = Path.Combine(directory.Path, "preferences.json");
+        var json = """{"Version":1,"TimelineClips":{"AdaptToTheme":false,"SelectedClip":"#11223380"}}""";
+        await File.WriteAllTextAsync(path, json);
+
+        var loaded = store.Load();
+
+        Assert.Null(store.LoadError);
+        Assert.False(loaded.TimelineClips.AdaptToTheme);
+        Assert.Equal("#11223380", loaded.TimelineClips.SelectedClip);
+        Assert.Equal(new TimelineClipPalette().MediaRangeFill, loaded.TimelineClips.MediaRangeFill);
+        Assert.Equal(json, await File.ReadAllTextAsync(path));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -102,6 +122,7 @@ public sealed class TimelineClipPaletteTests
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(5)]
+    [InlineData(6)]
     public void EachDraftCommitsOnlyItsColorOnceAndPreservesAnotherInvalidDraftDuringRefresh(int field)
     {
         var original = new WorkbenchPreferences { AccentColor = "#AABBCC", AudioGraph = AudioGraphPalettes.Get(2) };
@@ -171,7 +192,7 @@ public sealed class TimelineClipPaletteTests
         return
         [
             model.SelectedClipDraft, model.InactiveClipDraft, model.StartLineDraft,
-            model.EndLineDraft, model.SelectedRangeFillDraft, model.InactiveRangeFillDraft
+            model.EndLineDraft, model.SelectedRangeFillDraft, model.InactiveRangeFillDraft, model.MediaRangeFillDraft
         ];
     }
 
@@ -185,6 +206,7 @@ public sealed class TimelineClipPaletteTests
             3 => palette with { EndLine = value },
             4 => palette with { SelectedRangeFill = value },
             5 => palette with { InactiveRangeFill = value },
+            6 => palette with { MediaRangeFill = value },
             _ => throw new ArgumentOutOfRangeException(nameof(field))
         };
     }
@@ -199,6 +221,7 @@ public sealed class TimelineClipPaletteTests
             3 => palette.EndLine,
             4 => palette.SelectedRangeFill,
             5 => palette.InactiveRangeFill,
+            6 => palette.MediaRangeFill,
             _ => throw new ArgumentOutOfRangeException(nameof(field))
         };
     }

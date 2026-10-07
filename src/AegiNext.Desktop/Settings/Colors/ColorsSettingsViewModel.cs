@@ -37,6 +37,7 @@ public sealed class ColorsSettingsViewModel : ObservableObject
         EndLineDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { EndLine = ColorHexCodec.Format(args.Value, true) }, EndLineDraft);
         SelectedRangeFillDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { SelectedRangeFill = ColorHexCodec.Format(args.Value, true) }, SelectedRangeFillDraft);
         InactiveRangeFillDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { InactiveRangeFill = ColorHexCodec.Format(args.Value, true) }, InactiveRangeFillDraft);
+        MediaRangeFillDraft.Committed += (_, args) => CommitTimelinePalette(timelineClips with { MediaRangeFill = ColorHexCodec.Format(args.Value, true) }, MediaRangeFillDraft);
         UpdatePreferences(preferences);
     }
 
@@ -53,6 +54,7 @@ public sealed class ColorsSettingsViewModel : ObservableObject
     public ColorDraft EndLineDraft { get; } = new();
     public ColorDraft SelectedRangeFillDraft { get; } = new();
     public ColorDraft InactiveRangeFillDraft { get; } = new();
+    public ColorDraft MediaRangeFillDraft { get; } = new();
     public string AccentColor => accentColor;
     public AudioGraphPalette AudioGraph => audioGraph;
     public TimelineClipPalette TimelineClips => timelineClips;
@@ -141,7 +143,8 @@ public sealed class ColorsSettingsViewModel : ObservableObject
             foreach (var draft in new[]
                      {
                          AccentDraft, LowDraft, MidDraft, HighDraft, WaveformDraft,
-                         SelectedClipDraft, InactiveClipDraft, StartLineDraft, EndLineDraft, SelectedRangeFillDraft, InactiveRangeFillDraft
+                         SelectedClipDraft, InactiveClipDraft, StartLineDraft, EndLineDraft, SelectedRangeFillDraft, InactiveRangeFillDraft,
+                         MediaRangeFillDraft
                      })
             {
                 draft.RefreshLanguage();
@@ -215,6 +218,7 @@ public sealed class ColorsSettingsViewModel : ObservableObject
         EndLineDraft.Load(Parse(timelineClips.EndLine), discardDrafts);
         SelectedRangeFillDraft.Load(Parse(timelineClips.SelectedRangeFill), discardDrafts);
         InactiveRangeFillDraft.Load(Parse(timelineClips.InactiveRangeFill), discardDrafts);
+        MediaRangeFillDraft.Load(Parse(timelineClips.MediaRangeFill), discardDrafts);
     }
 
     private void NotifyChanged()

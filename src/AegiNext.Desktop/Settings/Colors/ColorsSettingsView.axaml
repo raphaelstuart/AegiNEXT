@@ -46,6 +46,10 @@
         <StackPanel Spacing="12">
           <TextBlock Text="{Loc Key=Settings.TimelineClipColors}" />
           <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.TimelineMediaRangeFill}" VerticalAlignment="Center" />
+            <controls:ColorDraftInput Name="TimelineMediaRangeFillPicker" Draft="{Binding MediaRangeFillDraft}" Grid.Column="1" />
+          </Grid>
+          <Grid ColumnDefinitions="*,280" ColumnSpacing="16">
             <TextBlock Text="{Loc Key=Settings.TimelineSelectedClip}" VerticalAlignment="Center" />
             <controls:ColorDraftInput Name="TimelineSelectedClipPicker" Draft="{Binding SelectedClipDraft}" Grid.Column="1" />
           </Grid>

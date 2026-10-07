@@ -249,6 +249,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             case nameof(viewModel.EffectTarget):
             case nameof(viewModel.Viewport):
             case nameof(viewModel.FullDuration):
+            case nameof(viewModel.MediaDuration):
             case nameof(viewModel.IsSnapEnabled):
             case nameof(viewModel.IsStepEnabled):
             case nameof(viewModel.IsSpectrumVisible):
@@ -331,6 +332,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             timeline.IsSpectrumVisible = viewModel.IsSpectrumVisible;
             timeline.IsWaveformVisible = viewModel.IsWaveformVisible;
             timeline.IsClassicTimingEnabled = viewModel.IsClassicTimingEnabled;
+            timeline.SetMediaDuration(viewModel.MediaDuration);
             timeline.SetTimingPreview(viewModel.TimingPreview);
             timeline.SetDocument(viewModel.Document, viewModel.SelectedCueId, viewModel.SelectedLayer,
                 viewModel.SelectedLayerIds.Count == 0 && viewModel.SelectedLayer is { } selected ? [selected.Id] : viewModel.SelectedLayerIds,

@@ -319,6 +319,17 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         pendingCenterCueId = null;
     }
 
+    internal void AdaptViewportToMedia()
+    {
+        var duration = FullDuration;
+        var current = Viewport;
+        Viewport = (current with
+        {
+            PixelsPerSecond = Math.Max(current.PixelsPerSecond, current.Width / duration)
+        }).Normalize(duration, double.MaxValue);
+        ResumePlaybackFollow();
+    }
+
     internal void SuspendPlaybackFollow()
     {
         IsPlaybackFollowEnabled = false;

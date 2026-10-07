@@ -432,6 +432,8 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
             }
 
             await session.Analysis.StartAsync(path);
+            session.Tick();
+            session.ViewModel.Timeline.AdaptViewportToMedia();
             session.LogInfo("Media", Localization.Get("WorkflowLog.MediaOpened"), path);
         }
         catch (Exception error)

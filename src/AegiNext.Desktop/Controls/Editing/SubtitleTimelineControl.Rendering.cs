@@ -61,6 +61,8 @@ public sealed partial class SubtitleTimelineControl
                 DrawSpectrogram(drawing, body, spectrumOverview, spectrumOverviewBitmap);
                 DrawSpectrogram(drawing, body, spectrum, spectrumBitmap);
             }
+            DrawAnimationRowBackgrounds(drawing, body);
+            DrawMediaRangeFill(drawing, body);
             if (IsWaveformVisible)
             {
                 DrawWaveform(drawing, body);
@@ -164,6 +166,23 @@ public sealed partial class SubtitleTimelineControl
         ? PreviewLayerId is { } id && rowsByLayer.GetValueOrDefault(id)?.Id == row.Id ? [layersById[id]] : []
         : VisibleClipsForRow(row);
 
+    private void DrawAnimationRowBackgrounds(DrawingContext context, Rect body)
+    {
+        foreach (var row in rows)
+        {
+            if (row.CurveHeight <= 0)
+            {
+                continue;
+            }
+
+            var rectangle = new Rect(body.Left, RowY(row), body.Width, row.CurveHeight).Intersect(body);
+            if (rectangle.Width > 0 && rectangle.Height > 0)
+            {
+                context.DrawRectangle(drawingPalette.AnimationSurface, null, rectangle);
+            }
+        }
+    }
+
     private void DrawTimelineRows(DrawingContext context, bool previewOnly)
     {
         var grid = drawingPalette.Grid;
@@ -186,11 +205,6 @@ public sealed partial class SubtitleTimelineControl
                 }
                 if (row.CurveHeight > 0)
                 {
-                    if (!previewOnly)
-                    {
-                        context.DrawRectangle(drawingPalette.AnimationSurface, null,
-                            new(HeaderWidth, y, Math.Max(0, Bounds.Width - HeaderWidth), row.CurveHeight));
-                    }
                     foreach (var clip in RenderingClipsForRow(row, previewOnly))
                     {
                         if ((clip.Id == PreviewLayerId) != previewOnly)

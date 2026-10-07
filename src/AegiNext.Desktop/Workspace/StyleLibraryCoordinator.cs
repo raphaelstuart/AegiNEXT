@@ -7,6 +7,7 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
 {
+    internal event EventHandler? BusyChanged;
     public Task Completion { get; private set; } = Task.CompletedTask;
     private int queuedOperations;
     internal bool IsBusy => queuedOperations > 0 || session.ApplicationContext.StylesBusy;
@@ -20,6 +21,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
     internal void Queue(Func<Task> action)
     {
         queuedOperations++;
+        BusyChanged?.Invoke(this, EventArgs.Empty);
         Completion = RunAsync(Completion, action);
     }
 
@@ -36,6 +38,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         finally
         {
             queuedOperations--;
+            BusyChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 

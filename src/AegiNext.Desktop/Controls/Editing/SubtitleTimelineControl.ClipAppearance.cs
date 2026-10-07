@@ -57,6 +57,7 @@ public sealed partial class SubtitleTimelineControl
         inactiveClipBrush = new(AudioGraphColorRamp.Parse(palette.InactiveClip));
         selectedRangeBrush = new(AudioGraphColorRamp.Parse(palette.SelectedRangeFill));
         inactiveRangeBrush = new(AudioGraphColorRamp.Parse(palette.InactiveRangeFill));
+        mediaRangeBrush = new(AudioGraphColorRamp.Parse(palette.MediaRangeFill));
         selectedStartPen = new(new SolidColorBrush(AudioGraphColorRamp.Parse(palette.StartLine)), CLIP_BOUNDARY_WIDTH);
         selectedEndPen = new(new SolidColorBrush(AudioGraphColorRamp.Parse(palette.EndLine)), CLIP_BOUNDARY_WIDTH);
         inactiveBoundaryPen = new(inactiveClipBrush, 1);
