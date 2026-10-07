@@ -99,11 +99,16 @@ internal sealed class AnalysisCoordinator : IDisposable
     private async Task AnalyzeWindowAsync(AudioAnalysisSession current, WaveformAnalysisRequest request, bool waveform, bool spectrum,
         long requestEpoch, long requestRevision, bool immediate, CancellationToken token)
     {
+        var published = false;
         try
         {
             if (!immediate)
             {
                 await Task.Delay(75, token);
+            }
+            if (!IsCurrent(requestEpoch, token) || requestRevision != revision)
+            {
+                return;
             }
             var result = await current.GetLayersAsync(request, waveform, spectrum, token);
             if (IsCurrent(requestEpoch, token) && requestRevision == revision)
@@ -112,10 +117,15 @@ internal sealed class AnalysisCoordinator : IDisposable
                 timeline.Waveform = result.Waveform;
                 timeline.Spectrogram = result.Spectrogram;
                 timeline.AnalysisStatus = string.Empty;
+                published = true;
             }
         }
         catch (OperationCanceledException)
         {
+            if (IsCurrent(requestEpoch, token) && requestRevision == revision)
+            {
+                session.ViewModel.Timeline.AnalysisStatus = string.Empty;
+            }
         }
         catch (Exception error)
         {
@@ -126,6 +136,10 @@ internal sealed class AnalysisCoordinator : IDisposable
             if (requestEpoch == epoch && requestRevision == revision)
             {
                 isAnalyzing = false;
+                if (!published)
+                {
+                    desired = null;
+                }
             }
         }
     }

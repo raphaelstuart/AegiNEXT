@@ -77,6 +77,10 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(closed, this);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return Task.FromCanceled<AudioAnalysisLayers>(cancellationToken);
+            }
             foreground?.Cancel();
             if (active is { IsOverview: false })
             {
@@ -96,6 +100,10 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(closed, this);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return Task.FromCanceled<AudioAnalysisWindow>(cancellationToken);
+            }
             overview?.Cancel();
             if (active is { IsOverview: true })
             {

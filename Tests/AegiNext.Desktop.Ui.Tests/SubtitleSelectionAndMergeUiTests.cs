@@ -97,6 +97,114 @@ public sealed class SubtitleSelectionAndMergeUiTests
         Assert.Same(merged, context.Session.DocumentSnapshot);
     }
 
+    [AvaloniaTheory]
+    [InlineData(true, 1)]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    [InlineData(false, 2)]
+    [InlineData(true, 3)]
+    [InlineData(false, 3)]
+    public async Task DeleteButtonAndShortcutRemoveSelectedRowsInOneUndoableTransaction(bool useButton, int selectionCount)
+    {
+        await using var context = new MainWindowTestContext();
+        var original = Prepare(context);
+        var ids = original.Subtitles.Select(line => line.Id).ToArray();
+        var window = context.Window;
+        Click(window, RowHeader(window, ids[0]));
+        if (selectionCount > 1)
+        {
+            Click(window, RowHeader(window, ids[2]), selectionCount == 3 ? RawInputModifiers.Shift : ToggleModifier());
+        }
+        var selectedIds = selectionCount switch
+        {
+            1 => ids[..1],
+            2 => [ids[0], ids[2]],
+            _ => ids
+        };
+        AssertSelection(context, selectedIds);
+
+        if (useButton)
+        {
+            UiTestActions.Click(window, "DeleteCueButton");
+        }
+        else
+        {
+            UiTestActions.Press(window, Key.Delete);
+        }
+        Flush(window);
+
+        var deleted = context.Session.DocumentSnapshot;
+        Assert.Equal(original.Subtitles.Where(line => !selectedIds.Contains(line.Id)), deleted.Subtitles);
+        Assert.Equal(original.Layers.Where(layer => !selectedIds.Contains(layer.SubtitleId!.Value)), deleted.Layers);
+        Assert.Null(context.Session.LastError);
+        if (selectionCount == 3)
+        {
+            AssertSelection(context, []);
+            Assert.False(UiTestActions.Find<Button>(window, "DeleteCueButton").IsEffectivelyEnabled);
+        }
+        window.GetCommand(WorkbenchCommand.UNDO).Execute(null);
+        Flush(window);
+        Assert.Same(original, context.Session.DocumentSnapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+        window.GetCommand(WorkbenchCommand.REDO).Execute(null);
+        Flush(window);
+        Assert.Same(deleted, context.Session.DocumentSnapshot);
+    }
+
+    [AvaloniaFact]
+    public async Task DeleteButtonUsesTheWholeSelectionAfterAnInputChangesThePrimaryRow()
+    {
+        await using var context = new MainWindowTestContext();
+        var original = Prepare(context);
+        var ids = original.Subtitles.Select(line => line.Id).ToArray();
+        var window = context.Window;
+        Click(window, RowHeader(window, ids[0]));
+        Click(window, RowHeader(window, ids[2]), RawInputModifiers.Shift);
+        Click(window, RowInput(window, ids[1], 4));
+        Assert.Equal(ids[1], context.Session.SelectedCueId);
+        AssertSelection(context, ids);
+
+        UiTestActions.Click(window, "DeleteCueButton");
+        Flush(window);
+
+        Assert.Empty(context.Session.DocumentSnapshot.Subtitles);
+        Assert.Empty(context.Session.DocumentSnapshot.Layers);
+        Assert.True(context.Session.Editor.Undo());
+        Assert.Same(original, context.Session.DocumentSnapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+    }
+
+    [AvaloniaFact]
+    public async Task InvalidTimeDraftBlocksBatchDeletionWithoutPartialChanges()
+    {
+        await using var context = new MainWindowTestContext();
+        var original = Prepare(context);
+        var ids = original.Subtitles.Select(line => line.Id).ToArray();
+        var window = context.Window;
+        Click(window, RowHeader(window, ids[0]));
+        Click(window, RowHeader(window, ids[2]), RawInputModifiers.Shift);
+        var input = RowInput(window, ids[1], 1);
+        Click(window, input);
+        input.SelectAll();
+        window.KeyTextInput("invalid");
+        Flush(window);
+        try
+        {
+            UiTestActions.Click(window, "DeleteCueButton");
+            Flush(window);
+
+            Assert.Same(original, context.Session.DocumentSnapshot);
+            Assert.False(context.Session.Editor.CanUndo);
+            AssertSelection(context, ids);
+            Assert.Equal("invalid", RowInput(window, ids[1], 1).Text);
+            Assert.True(RowInput(window, ids[1], 1).IsFocused);
+        }
+        finally
+        {
+            context.ViewModel.Subtitles.Rows[1].Accept(original.Subtitles[1]);
+        }
+    }
+
     [AvaloniaFact]
     public async Task InvalidTimeDraftRejectsActualSelectionChangeAndPreservesInputFocus()
     {
@@ -162,7 +270,7 @@ public sealed class SubtitleSelectionAndMergeUiTests
             Subtitles = lines,
             Layers = lines.Select(line => new ProjectLayer
             {
-                Id = line.Id, Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End
+                Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End
             }).ToImmutableArray()
         };
         context.Session.Editor.Reset(document);

@@ -201,9 +201,13 @@ internal sealed partial class WorkbenchSession
                     }
                     break;
                 case WorkbenchCommand.DELETE_SUBTITLE:
-                    if (TryCommitDrafts() && SelectedCue is { } cue)
+                    if (TryCommitDrafts() && SelectedCue is not null)
                     {
-                        editor.RemoveSubtitle(cue.Id);
+                        var subtitleIds = SelectedSubtitleIds.ToHashSet();
+                        var layerIds = Flatten(editor.Snapshot.Layers)
+                            .Where(layer => layer.SubtitleId is { } subtitleId && subtitleIds.Contains(subtitleId))
+                            .Select(layer => layer.Id).ToArray();
+                        editor.RemoveClips(layerIds);
                         ResetTiming();
                     }
                     break;

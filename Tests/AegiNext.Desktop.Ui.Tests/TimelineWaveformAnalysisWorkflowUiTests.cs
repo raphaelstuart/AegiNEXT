@@ -31,8 +31,8 @@ public sealed class TimelineWaveformAnalysisWorkflowUiTests
                     VideoWidth: 1, VideoHeight: 1)));
             var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
             var model = context.ViewModel.Timeline;
-            model.PixelsPerSecond = 10;
             await context.Window.OpenMediaAsync(path, false);
+            model.PixelsPerSecond = 10;
             await context.Session.Analysis.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             Assert.NotNull(model.Waveform);
             Assert.Null(model.WaveformOverview);
@@ -47,6 +47,7 @@ public sealed class TimelineWaveformAnalysisWorkflowUiTests
             var previousOverview = model.WaveformOverview;
             var previousSpectrumOverview = model.SpectrogramOverview;
             var previousSpectrumStep = model.Spectrogram.ColumnDuration;
+            Assert.True(previousSpectrumStep > new MediaTime(SpectrogramAnalyzer.HOP_SIZE, SpectrogramAnalyzer.SAMPLE_RATE));
             var pointer = new Point(timeline.HeaderWidth + (10 - timeline.ViewStart) * timeline.PixelsPerSecond,
                 timeline.RulerHeight + timeline.Viewport.Height * 0.75);
             var windowPointer = timeline.TranslatePoint(pointer, context.Window)!.Value;

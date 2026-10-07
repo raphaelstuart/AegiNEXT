@@ -5,6 +5,8 @@
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/avstring.h>
+#include <libavutil/buffer.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/version.h>
 #include <libswresample/swresample.h>
@@ -73,6 +75,8 @@ struct Decoder
     bool sent_end = false;
     bool resampler_end = false;
     bool packet_pending = false;
+    bool uses_matroska_blocks = false;
+    int64_t last_block_position = -1;
     int64_t next_sample = AV_NOPTS_VALUE;
     int64_t minimum_sample = std::numeric_limits<int64_t>::min();
     int64_t pending_start = 0;
@@ -106,12 +110,18 @@ struct Decoder
         require(index >= 0 && static_cast<unsigned>(index) < format->nb_streams &&
             format->streams[index]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO, "Requested stream is not audio");
         stream = index;
+        uses_matroska_blocks = av_match_name("matroska", format->iformat->name) ||
+            av_match_name("webm", format->iformat->name);
         const auto *decoder = avcodec_find_decoder(format->streams[stream]->codecpar->codec_id);
         require(decoder != nullptr, "Audio codec unavailable");
         codec = avcodec_alloc_context3(decoder);
         require(codec != nullptr, "Audio codec allocation failed");
         check(avcodec_parameters_to_context(codec, format->streams[stream]->codecpar), "Audio codec parameters");
         codec->thread_count = 1;
+        if (uses_matroska_blocks)
+        {
+            codec->flags |= AV_CODEC_FLAG_COPY_OPAQUE;
+        }
         check(avcodec_open2(codec, decoder, nullptr), "Open audio codec");
         require(codec->sample_rate > 0 && codec->ch_layout.nb_channels > 0, "Audio format is incomplete");
         AVChannelLayout layout{};
@@ -153,7 +163,18 @@ struct Decoder
                 const auto read = av_read_frame(format, packet);
                 if (read == AVERROR_EOF) { input_end = true; break; }
                 check(read, "Read audio packet");
-                if (packet->stream_index == stream) { packet_pending = true; break; }
+                if (packet->stream_index == stream)
+                {
+                    if (uses_matroska_blocks)
+                    {
+                        av_buffer_unref(&packet->opaque_ref);
+                        packet->opaque_ref = av_buffer_alloc(sizeof(packet->pos));
+                        require(packet->opaque_ref != nullptr, "Audio packet timing allocation failed");
+                        std::memcpy(packet->opaque_ref->data, &packet->pos, sizeof(packet->pos));
+                    }
+                    packet_pending = true;
+                    break;
+                }
                 av_packet_unref(packet);
             }
         }
@@ -165,11 +186,20 @@ struct Decoder
         const auto has_frame = receive();
         if (cancelled.load()) { return false; }
         int output_capacity = 4096;
+        int input_samples = 0;
         if (has_frame)
         {
             require(frame->sample_rate == codec->sample_rate && frame->format == codec->sample_fmt &&
                 av_channel_layout_compare(&frame->ch_layout, &codec->ch_layout) == 0,
                 "Midstream audio format changes are unsupported");
+            int64_t block_position = -1;
+            if (uses_matroska_blocks && frame->opaque_ref && frame->opaque_ref->size == sizeof(block_position))
+            {
+                std::memcpy(&block_position, frame->opaque_ref->data, sizeof(block_position));
+            }
+            // Laces share a physical block; only its first frame anchors the PCM clock.
+            const auto block_continuation = block_position >= 0 && block_position == last_block_position;
+            last_block_position = block_position;
             const auto timestamp = frame->best_effort_timestamp;
             if (timestamp != AV_NOPTS_VALUE)
             {
@@ -178,7 +208,8 @@ struct Decoder
                 const auto timestamp_resolution = av_rescale_q_rnd(1, format->streams[stream]->time_base,
                     AVRational{1, rate}, AV_ROUND_UP);
                 if (next_sample == AV_NOPTS_VALUE) { next_sample = sample; }
-                else if (std::llabs(sample - (next_sample + delay)) > std::max<int64_t>(2, timestamp_resolution + 1))
+                else if (!block_continuation &&
+                    std::llabs(sample - (next_sample + delay)) > std::max<int64_t>(2, timestamp_resolution + 1))
                 {
                     swr_close(resampler);
                     check(swr_init(resampler), "Reset discontinuous audio resampler");
@@ -186,14 +217,22 @@ struct Decoder
                 }
             }
             require(next_sample != AV_NOPTS_VALUE, "Audio frame has no usable timestamp");
-            output_capacity = swr_get_out_samples(resampler, frame->nb_samples);
+            input_samples = frame->nb_samples;
+            const auto time_base = format->streams[stream]->time_base;
+            if (frame->duration > 0 && av_cmp_q(time_base, AVRational{1, frame->sample_rate}) <= 0)
+            {
+                const auto duration_samples = av_rescale_q_rnd(frame->duration, time_base,
+                    AVRational{1, frame->sample_rate}, AV_ROUND_DOWN);
+                input_samples = static_cast<int>(std::min<int64_t>(input_samples, duration_samples));
+            }
+            output_capacity = swr_get_out_samples(resampler, input_samples);
         }
         else if (next_sample == AV_NOPTS_VALUE) { resampler_end = true; return false; }
         require(output_capacity >= 0 && output_capacity <= MAX_CONVERTED_FRAMES, "Decoded audio block exceeds capacity");
         pending.resize(static_cast<size_t>(output_capacity) * channels);
         auto *destination = reinterpret_cast<uint8_t *>(pending.data());
         const auto count = swr_convert(resampler, &destination, output_capacity,
-            has_frame ? const_cast<const uint8_t **>(frame->extended_data) : nullptr, has_frame ? frame->nb_samples : 0);
+            has_frame ? const_cast<const uint8_t **>(frame->extended_data) : nullptr, input_samples);
         check(count, "Resample audio");
         pending.resize(static_cast<size_t>(count) * channels);
         pending_start = next_sample;
@@ -252,6 +291,7 @@ struct Decoder
         check(swr_init(resampler), "Reset audio resampler");
         input_end = sent_end = resampler_end = packet_pending = false;
         next_sample = AV_NOPTS_VALUE;
+        last_block_position = -1;
         minimum_sample = sample;
         pending.clear();
         pending_offset = 0;
