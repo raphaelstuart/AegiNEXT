@@ -252,10 +252,11 @@ public sealed partial class EffectCanvasControl
         Focusable = true;
         Focus();
         var point = e.GetPosition(this);
-        maskCursorModifiers = e.KeyModifiers;
-        UpdateMaskCursor();
+        bezierCursorModifiers = e.KeyModifiers;
+        UpdateBezierCursor();
         var existingMask = EvaluatedMask();
-        if ((e.KeyModifiers & KeyModifiers.Control) != 0)
+        var action = BezierEditingModifiers.GetAction(e.KeyModifiers);
+        if (action == BezierEditAction.DELETE)
         {
             e.Handled = true;
             if (!openContour.IsEmpty || existingMask is not VectorClipMask || ClipMaskAnimation.IsTopologyLocked(selected))
@@ -273,7 +274,7 @@ public sealed partial class EffectCanvasControl
             capturedPointer = e.Pointer;
             return;
         }
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        if (action == BezierEditAction.INSERT)
         {
             if (EditMode is CanvasEditMode.MASK_VECTOR or CanvasEditMode.MASK_DRAW_VECTOR)
             {
@@ -379,8 +380,8 @@ public sealed partial class EffectCanvasControl
 
     private void MaskPointerMoved(PointerEventArgs e)
     {
-        maskCursorModifiers = e.KeyModifiers;
-        UpdateMaskCursor();
+        bezierCursorModifiers = e.KeyModifiers;
+        UpdateBezierCursor();
         if ((!maskDragging && !creatingNodeHandle) || !Fit().TryInvert(out var inverseFit))
         {
             return;
@@ -457,8 +458,8 @@ public sealed partial class EffectCanvasControl
         ignoreMaskCaptureLoss = true;
         pointer?.Capture(null);
         ignoreMaskCaptureLoss = false;
-        maskCursorModifiers = e.KeyModifiers;
-        UpdateMaskCursor();
+        bezierCursorModifiers = e.KeyModifiers;
+        UpdateBezierCursor();
         if (maskInsertionHandle is { } insertion)
         {
             maskInsertionHandle = null;
@@ -586,7 +587,7 @@ public sealed partial class EffectCanvasControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         CancelDrag();
-        DetachMaskCursorHost();
+        DetachBezierCursorHost();
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -594,7 +595,7 @@ public sealed partial class EffectCanvasControl
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (IsMaskMode && e.Key == Key.Escape)
+        if ((IsMaskMode || EditMode == CanvasEditMode.PATH) && e.Key == Key.Escape)
         {
             CancelDrag();
             e.Handled = true;

@@ -275,8 +275,8 @@ public sealed class ClipMaskBezierAffordanceUiTests
     {
         var directory = Path.GetFullPath("artifacts/verification/clip-mask/bezier-affordances", FindRoot());
         Directory.CreateDirectory(directory);
-        using var insertion = MaskCanvasCursors.CreateBitmap(true);
-        using var deletion = MaskCanvasCursors.CreateBitmap(false);
+        using var insertion = BezierCanvasCursors.CreateBitmap(true);
+        using var deletion = BezierCanvasCursors.CreateBitmap(false);
         insertion.Save(Path.Combine(directory, "insert-cursor.png"), PngBitmapEncoderOptions.Default);
         deletion.Save(Path.Combine(directory, "delete-cursor.png"), PngBitmapEncoderOptions.Default);
         using var insertPixels = SKBitmap.Decode(Path.Combine(directory, "insert-cursor.png"));

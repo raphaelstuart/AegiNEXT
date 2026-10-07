@@ -40,7 +40,7 @@ Assign a style preset from a track context menu. On a nonempty track, choose whe
 
 Settings → Subtitle Styles renders editable sample text. Cmd/Ctrl + wheel zooms around the pointer; left drag pans the preview. These gestures change only the preview view. Style, script, export, and layout libraries support selecting multiple personal presets and confirming their deletion.
 
-Select a clip to edit Effects, or a keyframe to seek and edit its value/interpolation. Drag Preview text, motion-path nodes, or mask handles for visual editing. Node morph animation locks mask topology until those tracks are cleared. See [Subtitle editing](subtitle-editing.md) and [Effect scripts](effect-dsl.md).
+Select a clip to edit Effects, or a keyframe to seek and edit its value/interpolation. Drag Preview text, motion-path nodes, or mask handles for visual editing. Motion-path curves and handles also remain visible and draggable in the preview letterbox. In motion-path and vector-mask editing, Shift + left-click a curve to insert a node, or Ctrl + left-click an anchor to delete it; motion paths retain at least two endpoints. Insertion preserves the curve shape, while motion-path playback continues to use its existing progress mapping across segments. Node morph animation locks mask topology until those tracks are cleared. See [Subtitle editing](subtitle-editing.md) and [Effect scripts](effect-dsl.md).
 
 The clip context menu clears all animation tracks from selected clips. Right-click a keyframe or curve to clear that clip's animation of the clicked type; right-click the property heading or empty property row to clear that type across the whole track. Clearing preserves static styles, base placement, masks, motion paths, and karaoke, and forms one undo operation.
 

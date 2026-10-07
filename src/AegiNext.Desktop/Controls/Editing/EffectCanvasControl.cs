@@ -85,13 +85,13 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             {
                 CancelDrag();
                 editMode = value;
-                UpdateMaskCursor();
+                UpdateBezierCursor();
                 InvalidateVisual();
             }
         }
     }
 
-    internal bool HasActiveDrag => dragging || maskDragging || !openContour.IsEmpty || maskDeletionHandle is not null || maskInsertionHandle is not null;
+    internal bool HasActiveDrag => dragging || pathTopologyEdit is not null || maskDragging || !openContour.IsEmpty || maskDeletionHandle is not null || maskInsertionHandle is not null;
     internal long PreviewSequence => previewSequence;
     internal long PresentedPreviewSequence => presentedPreviewSequence;
     internal Task PreviewCompletion => previewScheduler?.Completion ?? previewDrain;
@@ -131,7 +131,9 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             return;
         }
 
-        if (!ReferenceEquals(document, value) || selected?.Id != layer?.Id)
+        if (!ReferenceEquals(document, value) || selected?.Id != layer?.Id ||
+            pathTopologyEdit is not null && (!ReferenceEquals(selected, layer) || position != time ||
+                pathTopologyEdit.EditingEndpoint != (editorPose && layer is not null && time == layer.End)))
         {
             CancelDrag();
         }
@@ -207,16 +209,19 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             context.DrawImage(bitmap, new Rect(bitmap.Size), board);
         }
 
-        using var overlayClip = context.PushClip(board);
         if (selected is not null && (IsMaskMode || selected.Mask is not null))
         {
-            DrawClipMask(context);
+            using (context.PushClip(board))
+            {
+                DrawClipMask(context);
+            }
             if (IsMaskMode)
             {
                 return;
             }
         }
 
+        using var overlayClip = context.PushClip(EditMode == CanvasEditMode.PATH ? new Rect(Bounds.Size) : board);
         if (selected is null || !RefreshGeometry(sceneDocument))
         {
             return;
@@ -294,6 +299,8 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             return;
         }
 
+        bezierCursorModifiers = e.KeyModifiers;
+        UpdateBezierCursor();
         var point = e.GetPosition(this);
         if (!RefreshGeometry(EditorDocument()))
         {
@@ -310,6 +317,10 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             }
 
             var matrix = PathOrigin(selected) * parentMatrix * fit;
+            if (PathTopologyPointerPressed(e, point, matrix))
+            {
+                return;
+            }
             var points = Points(path);
             handle = Array.FindIndex(points, value => DistanceSquared(ToPoint(value) * matrix, point) <= 100);
             if (handle < 0)
@@ -358,6 +369,8 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             MaskPointerMoved(e);
             return;
         }
+        bezierCursorModifiers = e.KeyModifiers;
+        UpdateBezierCursor();
         if (!dragging || selected is null)
         {
             return;
@@ -401,6 +414,13 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
         if (IsMaskMode)
         {
             MaskPointerReleased(e);
+            return;
+        }
+        bezierCursorModifiers = e.KeyModifiers;
+        UpdateBezierCursor();
+        if (pathTopologyEdit is not null)
+        {
+            PathTopologyPointerReleased(e);
             return;
         }
         var result = draft;
@@ -464,12 +484,13 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
     private void CancelDrag(bool notifyCancellation = true)
     {
         CancelMaskGesture();
-        var cancelled = dragging;
+        var cancelled = dragging || pathTopologyEdit is not null;
         if (draft is not null)
         {
             sceneRevision++;
         }
         dragging = false;
+        pathTopologyEdit = null;
         draft = null;
         handle = -1;
         if (cancelled && notifyCancellation)
@@ -665,9 +686,9 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             disposed = true;
             CancelDrag();
             video = null;
-            DetachMaskCursorHost();
-            maskCursors?.Dispose();
-            maskCursors = null;
+            DetachBezierCursorHost();
+            bezierCursors?.Dispose();
+            bezierCursors = null;
             compositeFrame = null;
             compositeDocument = null;
             renderedVideo = null;

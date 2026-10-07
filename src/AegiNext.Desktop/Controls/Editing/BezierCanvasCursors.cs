@@ -5,7 +5,7 @@ using SkiaSharp;
 
 namespace AegiNext.Desktop.Controls;
 
-internal sealed class MaskCanvasCursors : IDisposable
+internal sealed class BezierCanvasCursors : IDisposable
 {
     private readonly Bitmap insertionBitmap = CreateBitmap(true);
     private readonly Bitmap deletionBitmap = CreateBitmap(false);
@@ -13,7 +13,7 @@ internal sealed class MaskCanvasCursors : IDisposable
     internal Cursor Insert { get; }
     internal Cursor Delete { get; }
 
-    internal MaskCanvasCursors()
+    internal BezierCanvasCursors()
     {
         Insert = new(insertionBitmap, new PixelPoint(9, 9));
         Delete = new(deletionBitmap, new PixelPoint(9, 9));
