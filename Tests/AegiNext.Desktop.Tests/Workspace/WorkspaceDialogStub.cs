@@ -48,6 +48,10 @@ internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
     internal string? UnavailableMediaPath { get; private set; }
     internal string? UnavailableMediaReason { get; private set; }
     internal TaskCompletionSource<bool>? PendingMediaConfirmation { get; set; }
+    internal int? IntegerInputChoice { get; set; }
+    internal int IntegerInputRequests { get; private set; }
+    internal IntegerInputRequest? LastIntegerInputRequest { get; private set; }
+    internal TaskCompletionSource<int?>? PendingIntegerInput { get; set; }
 
     internal string[]? OpenPaths { get; set; }
     internal int OpenFilesRequests { get; private set; }
@@ -122,5 +126,13 @@ internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
         DeletedTrackName = trackName;
         DeletedTrackSubtitleCount = subtitleCount;
         return PendingTrackDeletion?.Task.WaitAsync(cancellationToken) ?? Task.FromResult(TrackDeletionChoice);
+    }
+
+    public Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IntegerInputRequests++;
+        LastIntegerInputRequest = request;
+        return PendingIntegerInput?.Task.WaitAsync(cancellationToken) ?? Task.FromResult(IntegerInputChoice);
     }
 }

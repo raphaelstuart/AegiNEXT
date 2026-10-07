@@ -12,6 +12,12 @@ internal sealed class ControlledExportDialogService : IWorkbenchDialogService
     /// <summary>本上下文不选择输入资源。</summary>
     public Task<IReadOnlyList<string>> OpenFilesAsync(string title, string typeName, string[] patterns) => Task.FromResult<IReadOnlyList<string>>([]);
     public Task<string?> OpenFolderAsync(string title) => Task.FromResult<string?>(null);
+    public Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<int?>(null);
+    }
+
     public Task<int> ConfirmPresetChangesAsync(bool effects) => Task.FromResult(2);
 
     public Task<string?> OpenFileAsync(string title, string typeName, string[] patterns) => Task.FromResult<string?>(null);

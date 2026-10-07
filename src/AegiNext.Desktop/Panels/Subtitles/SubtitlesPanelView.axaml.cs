@@ -20,6 +20,8 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     private readonly SubtitlesPanelViewModel viewModel;
     private readonly HashSet<TextBox> caretInputs = [];
     private readonly Avalonia.Data.BindingExpressionBase detailMenuBinding;
+    private readonly Avalonia.Data.BindingExpressionBase moveMenuBinding;
+    private readonly ContextMenu contextMenu;
     private bool suppressFocusCommit;
     private bool synchronizingSelection;
     private bool disposed;
@@ -45,7 +47,12 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         var detailItem = new MenuItem { Command = viewModel.DetailsCommand };
         detailMenuBinding = detailItem.Bind(MenuItem.HeaderProperty,
             AegiNext.Desktop.I18n.Localization.Observe("Workbench.SubtitleDetails").ToBinding());
-        list.ContextMenu = new() { Items = { detailItem } };
+        var moveItem = new MenuItem { Name = "MoveSubtitleRowsMenuItem", Command = viewModel.MoveCommand };
+        moveMenuBinding = moveItem.Bind(MenuItem.HeaderProperty,
+            AegiNext.Desktop.I18n.Localization.Observe("Workbench.Move").ToBinding());
+        contextMenu = new() { Items = { detailItem, moveItem } };
+        contextMenu.Opening += OnContextMenuOpening;
+        list.ContextMenu = contextMenu;
         list.AddHandler(PointerPressedEvent, (_, e) =>
         {
             if (e.GetCurrentPoint(list).Properties.IsRightButtonPressed && e.Source is Visual source)
@@ -104,6 +111,8 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     }
 
     public string PanelId => "subtitles";
+
+    private void OnContextMenuOpening(object? sender, EventArgs e) => viewModel.SetMoveContext();
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -244,6 +253,9 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         ReleaseKeyboardRoot();
         list.RemoveHandler(KeyDownEvent, OnSubtitleKeyDown);
         detailMenuBinding.Dispose();
+        moveMenuBinding.Dispose();
+        contextMenu.Opening -= OnContextMenuOpening;
+        contextMenu.Close();
         list.SelectionChanged -= OnSelectionChanged;
         session.SubtitleScrollRequested -= OnScrollRequested;
         session.SelectionChanged -= OnSessionSelectionChanged;

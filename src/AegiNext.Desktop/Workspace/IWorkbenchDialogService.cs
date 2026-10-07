@@ -7,6 +7,7 @@ internal interface IWorkbenchDialogService
     Task<string?> OpenFileAsync(string title, string typeName, string[] patterns);
     Task<IReadOnlyList<string>> OpenFilesAsync(string title, string typeName, string[] patterns);
     Task<string?> OpenFolderAsync(string title);
+    Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default);
     Task<int> ConfirmPresetChangesAsync(bool effects);
     Task<int> ConfirmExportPresetChangesAsync() => ConfirmPresetChangesAsync(false);
     Task<bool> ConfirmSettingsRestartAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);

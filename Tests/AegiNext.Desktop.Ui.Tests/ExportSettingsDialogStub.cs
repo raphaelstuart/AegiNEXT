@@ -39,6 +39,12 @@ internal sealed class ExportSettingsDialogStub : IWorkbenchDialogService
     }
 
     /// <inheritdoc />
+    public Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default)
+    {
+        return Inner.ShowIntegerInputAsync(request, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension,
         string suggestedName)
     {

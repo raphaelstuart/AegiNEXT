@@ -10,6 +10,8 @@ Extending a clip to the left preserves existing effect keyframes at their origin
 
 With a clip selected, press **Shift+Q** to seek to its start or **Shift+W** to seek to its end. Multiple selection uses the primary clip. Seeking preserves playback state and zoom, and brings an offscreen target into the visible timeline. Text inputs retain uppercase Q/W entry. Rebind or disable these commands in **Settings → Shortcuts → Playback and audition**.
 
+Select multiple rows in the subtitle list or clips in the timeline, right-click **Move**, enter an integer number of milliseconds, and click **Confirm**. Positive values move later; negative values move earlier. The same offset shifts both boundaries of every target, preserving duration, spacing, and internal animation time. The subtitle list moves selected subtitles; the timeline moves the entire selected clip set. Cancel or 0 leaves timing unchanged. Moving any target before zero or creating overlapping subtitles on the same track rejects the whole batch. One Undo restores the batch.
+
 ## Rich text and karaoke
 
 Select a subtitle and open **Subtitle Details** from View or the subtitle row. The panel can dock or float and offers rich-text, highlight-timing, and advanced-code views of the same cue.

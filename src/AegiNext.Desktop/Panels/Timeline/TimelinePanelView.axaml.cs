@@ -91,6 +91,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         ClipMenu.Items.Add(new Separator());
         ClipMenu.Items.Add(CreateMenuItem("CopyTimelineClipsMenuItem", "CopyTimelineClips", viewModel.CopyClipsCommand));
         ClipMenu.Items.Add(CreateMenuItem("PasteTimelineClipsMenuItem", "PasteTimelineClips", viewModel.PasteClipsCommand));
+        ClipMenu.Items.Add(CreateMenuItem("MoveTimelineClipsMenuItem", "Move", viewModel.MoveClipsCommand));
         ClipMenu.Items.Add(CreateMenuItem("DeleteTimelineClipsMenuItem", "DeleteTimelineClips", viewModel.DeleteClipsCommand));
         timeline.TrackContextRequested += OnTrackContextRequested;
         timeline.ClipContextRequested += OnClipContextRequested;

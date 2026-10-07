@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Editing;
 using AegiNext.Core.Projects;
@@ -17,10 +18,15 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
     private Guid? invalidRowId;
     private ImmutableArray<SubtitleTrack> tracks = [];
     private SubtitleTrack? selectedTrack;
+    private ProjectDocument? moveContextDocument;
+    private Guid[] moveContextIds = [];
 
     internal SubtitlesPanelViewModel(WorkbenchSession session)
     {
         this.session = session;
+        MoveCommand = new(() => session.MoveSubtitleSelectionAsync(moveContextIds, moveContextDocument),
+            () => moveContextIds.Length > 0 && ReferenceEquals(moveContextDocument, session.DocumentSnapshot) &&
+                !session.IsClosing && !session.IsProjectBusy && !session.IsUpdating);
     }
 
     public SubtitleRow[] Rows
@@ -42,6 +48,17 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
     }
 
     public IReadOnlyList<Guid> SelectedIds => session.SelectedSubtitleIds;
+
+    public AsyncRelayCommand MoveCommand { get; }
+
+    internal void SetMoveContext()
+    {
+        moveContextDocument = session.DocumentSnapshot;
+        moveContextIds = SelectedIds.ToArray();
+        RefreshMoveCommand();
+    }
+
+    internal void RefreshMoveCommand() => MoveCommand.NotifyCanExecuteChanged();
 
     internal void NotifySelectionChanged() => OnPropertyChanged(nameof(SelectedIds));
 

@@ -43,6 +43,12 @@ internal sealed class StartupTestDialogService : IWorkbenchDialogService
         return Task.FromResult(FolderPath);
     }
 
+    public Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<int?>(null);
+    }
+
     public Task<int> ConfirmPresetChangesAsync(bool effects)
     {
         PresetConfirmationRequests++;

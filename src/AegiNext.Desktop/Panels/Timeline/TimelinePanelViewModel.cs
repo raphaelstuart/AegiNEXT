@@ -66,6 +66,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         CopyClipsCommand = new(CopyContextClipsAsync, () => IsClipContextCurrent && clipContextIds.Length > 0);
         PasteClipsCommand = new(PasteContextClipsAsync, () => IsClipContextCurrent && session.CanPasteTimelineClips);
         DeleteClipsCommand = new(DeleteContextClipsAsync, () => IsClipContextCurrent && clipContextIds.Length > 0);
+        MoveClipsCommand = new(MoveContextClipsAsync, () => IsClipContextCurrent && clipContextIds.Length > 0);
         CreateSubtitleCommand = new(CreateContextSubtitleAsync, () => IsClipContextCurrent && clipContext?.TrackId is not null);
     }
 
@@ -122,6 +123,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     public AsyncRelayCommand CopyClipsCommand { get; }
     public AsyncRelayCommand PasteClipsCommand { get; }
     public AsyncRelayCommand DeleteClipsCommand { get; }
+    public AsyncRelayCommand MoveClipsCommand { get; }
     public AsyncRelayCommand CreateSubtitleCommand { get; }
     /// <summary>使用共享命令对实际选中的字幕片段执行关联的时间后续处理。</summary>
     public ICommand ApplyTimingPostProcessorCommand => session.ViewModel.GetCommand(
@@ -545,6 +547,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     private Task PasteContextClipsAsync() => clipContext is { } context
         ? session.PasteTimelineClipsAtTargetAsync(context, clipContextDocument) : Task.CompletedTask;
     private Task DeleteContextClipsAsync() => session.DeleteTimelineClipsAsync(clipContextIds, clipContextDocument);
+    private Task MoveContextClipsAsync() => session.MoveTimelineClipsAsync(clipContextIds, clipContextDocument);
     private Task CreateContextSubtitleAsync() => clipContext?.TrackId is { } trackId && clipContextDocument is { } source
         ? session.CreateTimelineSubtitleAsync(trackId, clipContext.Time, source) : Task.CompletedTask;
 
@@ -553,8 +556,11 @@ internal sealed class TimelinePanelViewModel : ObservableObject
         CopyClipsCommand.NotifyCanExecuteChanged();
         PasteClipsCommand.NotifyCanExecuteChanged();
         DeleteClipsCommand.NotifyCanExecuteChanged();
+        RefreshMoveCommand();
         CreateSubtitleCommand.NotifyCanExecuteChanged();
     }
+
+    internal void RefreshMoveCommand() => MoveClipsCommand.NotifyCanExecuteChanged();
     /// <summary>视口尺寸改变后重新计算滚动范围。</summary>
     public void RefreshViewport() => session.Tick();
 

@@ -59,6 +59,18 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
             throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
     }
 
+    /// <summary>输入并确认指定范围的整数；取消请求会关闭窗口。</summary>
+    public async Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var model = new IntegerInputDialogViewModel(request);
+        var dialog = new IntegerInputDialog(model);
+        registerWindow?.Invoke(dialog);
+        var answer = dialog.ShowDialog<int?>(ownerProvider());
+        using var registration = cancellationToken.Register(() => Dispatcher.UIThread.Post(() => dialog.Close(null)));
+        return await answer;
+    }
+
     /// <summary>询问个人样式或脚本草稿：保存、恢复或取消切换。</summary>
     public async Task<int> ConfirmPresetChangesAsync(bool effects)
     {

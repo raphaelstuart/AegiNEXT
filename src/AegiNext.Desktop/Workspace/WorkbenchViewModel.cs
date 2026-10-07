@@ -109,6 +109,8 @@ internal sealed class WorkbenchViewModel : ObservableObject
     internal void FocusDraftError() => DraftErrorFocusRequested?.Invoke(this, EventArgs.Empty);
     internal void RefreshCommands()
     {
+        Subtitles.RefreshMoveCommand();
+        Timeline.RefreshMoveCommand();
         foreach (var command in commands.Values)
         {
             command.NotifyCanExecuteChanged();
