@@ -11,7 +11,7 @@
 | [快速开始](quick-start.md) | 完成第一个字幕工程与视频 |
 | [工作台](workbench.md) | 轨道、播放、样式、布局与备份 |
 | [字幕编辑](subtitle-editing.md) | 富文本、卡拉 OK、试听、ASS 与 SRT |
-| [时间后处理](timing-post-processor.md) | 为样式预设保存打轴参数 |
+| [时间后处理](timing-post-processor.md) | 保存样式关联并处理时间线选中片段 |
 | [特效脚本](effect-dsl.md) | 应用与编写 `.aegifx` 特效 |
 | [视频导出](export.md) | CPU/GPU 编码、音频与 HDR |
 

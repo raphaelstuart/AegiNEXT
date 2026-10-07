@@ -123,6 +123,9 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     public AsyncRelayCommand PasteClipsCommand { get; }
     public AsyncRelayCommand DeleteClipsCommand { get; }
     public AsyncRelayCommand CreateSubtitleCommand { get; }
+    /// <summary>使用共享命令对实际选中的字幕片段执行关联的时间后续处理。</summary>
+    public ICommand ApplyTimingPostProcessorCommand => session.ViewModel.GetCommand(
+        AegiNext.Desktop.Shortcuts.WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR);
     public bool CanCopyClips => session.CanCopyTimelineClips;
     public bool CanPasteClips => session.CanPasteTimelineClips;
     private bool IsClipContextCurrent => clipContext is not null && ReferenceEquals(Document, clipContextDocument) &&

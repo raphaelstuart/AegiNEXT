@@ -93,6 +93,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         analysis = new(this);
         export = new(this, dialogs, exportService ?? new VideoWorkbenchExportService(new AegiNext.Media.Encoding.VideoExporter()));
         styles = new(this, dialogs);
+        styles.BusyChanged += OnTimingLibrariesBusyChanged;
         effectScripts = new(this, dialogs);
         layerEditing = new(this, dialogs);
         MaskEditing = new(this);
@@ -103,6 +104,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         persistence.UpdatePreferences(preferences.Projects);
         this.applicationContext.PreferencesChanged += OnApplicationPreferencesChanged;
         this.applicationContext.StylesChanged += OnApplicationStylesChanged;
+        this.applicationContext.BusyChanged += OnTimingLibrariesBusyChanged;
         this.applicationContext.EffectsChanged += OnApplicationEffectsChanged;
         this.applicationContext.ErrorChanged += OnApplicationErrorChanged;
         this.editor.StateChanged += OnEditorStateChanged;
@@ -402,6 +404,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         await persistence.DisposeAsync();
         applicationContext.PreferencesChanged -= OnApplicationPreferencesChanged;
         applicationContext.StylesChanged -= OnApplicationStylesChanged;
+        applicationContext.BusyChanged -= OnTimingLibrariesBusyChanged;
+        styles.BusyChanged -= OnTimingLibrariesBusyChanged;
         applicationContext.EffectsChanged -= OnApplicationEffectsChanged;
         applicationContext.ErrorChanged -= OnApplicationErrorChanged;
         Localization.LanguageChanged -= OnLanguageChanged;

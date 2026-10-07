@@ -104,9 +104,9 @@ public static class ProjectStore
             if (parsed.RootElement.ValueKind != JsonValueKind.Object ||
                 !parsed.RootElement.TryGetProperty("version", out var version) ||
                 version.ValueKind != JsonValueKind.Number ||
-                !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or ProjectDocument.CURRENT_VERSION))
+                !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or 6 or ProjectDocument.CURRENT_VERSION))
             {
-                throw new InvalidDataException($"只支持项目版本 3、4、5 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
+                throw new InvalidDataException($"只支持项目版本 3、4、5、6 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
             }
 
             var content = JsonNode.Parse(parsed.RootElement.GetRawText(), documentOptions: new() { MaxDepth = 128 })!.AsObject();
@@ -123,6 +123,7 @@ public static class ProjectStore
             }
 
             PlaybackOriginJsonMigration.Upgrade(content, number);
+            content["version"] = ProjectDocument.CURRENT_VERSION;
             var document = content.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
             return SubtitleKaraokeNormalization.Normalize(document);
         }
@@ -149,7 +150,7 @@ public static class ProjectStore
                         !(info.Type == typeof(Keyframe) && property.Name is "componentCurves" or "exponent") &&
                         !(info.Type == typeof(AnimationCurve) && property.Name == "exponent") &&
                         !(info.Type == typeof(AnimationTrack) && property.Name is "initialValue" or "transforms") &&
-                        !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "inactiveKaraoke" or "styleName") &&
+                        !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "inactiveKaraoke" or "styleName" or "stylePresetId") &&
                         !(info.Type == typeof(SubtitleTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName" or "autoApplyStyle");
                     if (info.Type == typeof(SubtitleLine) && property.Name == "inactiveKaraoke")
                     {

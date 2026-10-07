@@ -61,7 +61,7 @@ public sealed class SubtitleAuditionShortcutPreferencesTests
 
         Assert.Null(store.LoadError);
         Assert.Equal(previous.AsEnumerable(), upgraded.ShortcutBindings.Take(previous.Length));
-        Assert.Equal(6, upgraded.ShortcutBindings.Length - previous.Length);
+        Assert.Equal(7, upgraded.ShortcutBindings.Length - previous.Length);
         Assert.Equal(original.Language, upgraded.Language);
         Assert.Equal(original.Volume, upgraded.Volume);
         foreach (var addition in upgraded.ShortcutBindings.Skip(previous.Length))

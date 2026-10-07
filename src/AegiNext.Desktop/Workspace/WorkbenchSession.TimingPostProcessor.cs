@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using AegiNext.Application.Timing;
 using AegiNext.Core.Media;
+using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.I18n;
 using AegiNext.Media.Probing;
@@ -13,15 +14,39 @@ internal sealed partial class WorkbenchSession
     private Task timingProcessingCompletion = Task.CompletedTask;
     private VideoTimingCacheEntry? videoTimingCache;
 
+    private void OnTimingLibrariesBusyChanged(object? sender, EventArgs e)
+    {
+        if (!closing)
+        {
+            ViewModel.RefreshCommands();
+        }
+    }
+
+    internal bool HasApplicableSelectedTimingPostProcessor => !closing && !projectBusy && !styles.IsBusy &&
+        SubtitleTimingAssociationResolver.Resolve(editor.Snapshot, SelectedTimelineSubtitleIds(editor.Snapshot),
+            styleLibrary.Snapshot.Presets).Values.Any(preset =>
+                preset.TimingPostProcessor is { } options && HasTimingStages(options));
+
+    internal Task<int> ApplySelectedTimingPostProcessorAsync(CancellationToken cancellationToken = default)
+    {
+        return StartTimingProcessing(ApplySelectedTimingPostProcessorCoreAsync, cancellationToken);
+    }
+
     internal Task<int> ApplyTimingPostProcessorAsync(TimingPostProcessorOptions options,
         IReadOnlySet<string> styleNames, bool onlySelected, CancellationToken cancellationToken = default)
     {
-        if (!timingProcessingCompletion.IsCompleted || projectBusy || closing || updatingWorkbench)
+        return StartTimingProcessing(token => ApplyTimingPostProcessorCoreAsync(options, styleNames, onlySelected, token),
+            cancellationToken);
+    }
+
+    private Task<int> StartTimingProcessing(Func<CancellationToken, Task<int>> process, CancellationToken cancellationToken)
+    {
+        if (!timingProcessingCompletion.IsCompleted || projectBusy || closing || updatingWorkbench || styles.IsBusy)
         {
             return Task.FromResult(0);
         }
 
-        var operation = ApplyTimingPostProcessorCoreAsync(options, styleNames, onlySelected, cancellationToken);
+        var operation = process(cancellationToken);
         timingProcessingCompletion = operation;
         return operation;
     }
@@ -32,6 +57,53 @@ internal sealed partial class WorkbenchSession
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(styleNames);
         options.Validate();
+        PrepareTimingProcessing(cancellationToken);
+        var source = editor.Snapshot;
+        var selected = onlySelected ? SelectedSubtitleIds.ToImmutableHashSet() : null;
+        var stylesFilter = styleNames.ToImmutableHashSet(StringComparer.Ordinal);
+        return await ProcessTimingSnapshotAsync(source, options.KeyframeSnapEnabled,
+            (keyframesAvailable, index) => AegiNext.Application.Timing.TimingPostProcessor.Process(source,
+                options with { KeyframeSnapEnabled = keyframesAvailable }, stylesFilter, selected, index), cancellationToken);
+    }
+
+    private async Task<int> ApplySelectedTimingPostProcessorCoreAsync(CancellationToken cancellationToken)
+    {
+        PrepareTimingProcessing(cancellationToken);
+        var source = editor.Snapshot;
+        var selected = SelectedTimelineSubtitleIds(source);
+        var associations = SubtitleTimingAssociationResolver.Resolve(source, selected, styleLibrary.Snapshot.Presets)
+            .Where(pair => HasTimingStages(pair.Value.TimingPostProcessor!)).ToDictionary();
+        var skipped = selected.Count - associations.Count;
+        if (associations.Count == 0)
+        {
+            LogInfo("Timing", Localization.Format("WorkflowLog.TimingPostProcessorCompleted", 0, 0, skipped));
+            return 0;
+        }
+
+        var requestedKeyframes = associations.Values.Any(preset => preset.TimingPostProcessor!.KeyframeSnapEnabled);
+        var skippedKeyframes = 0;
+        var count = await ProcessTimingSnapshotAsync(source, requestedKeyframes, (keyframesAvailable, index) =>
+        {
+            keyframesAvailable = keyframesAvailable && index is { Keyframes.IsEmpty: false };
+            skippedKeyframes = keyframesAvailable ? 0 : associations.Values.Count(preset =>
+                preset.TimingPostProcessor!.KeyframeSnapEnabled);
+            var options = associations.ToDictionary(pair => pair.Key, pair => pair.Value.TimingPostProcessor!);
+            var result = AegiNext.Application.Timing.TimingPostProcessor.Process(source, options, index,
+                skipUnavailableKeyframes: !keyframesAvailable);
+            var subtitles = result.Subtitles.Select(line => associations.TryGetValue(line.Id, out var preset) &&
+                line.StylePresetId != preset.Id ? line with { StylePresetId = preset.Id } : line).ToImmutableArray();
+            return subtitles.SequenceEqual(result.Subtitles) ? result : result with { Subtitles = subtitles };
+        }, cancellationToken);
+        LogInfo("Timing", Localization.Format("WorkflowLog.TimingPostProcessorCompleted", count, associations.Count, skipped));
+        if (skippedKeyframes > 0)
+        {
+            LogInfo("Timing", Localization.Format("WorkflowLog.TimingPostProcessorKeyframesSkipped", skippedKeyframes));
+        }
+        return count;
+    }
+
+    private void PrepareTimingProcessing(CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         if (!TryCommitDrafts())
         {
@@ -39,24 +111,36 @@ internal sealed partial class WorkbenchSession
         }
 
         InvalidateTimingSession();
-        var source = editor.Snapshot;
+        ViewModel.CancelGestures();
+    }
+
+    private HashSet<Guid> SelectedTimelineSubtitleIds(ProjectDocument source)
+    {
+        var clips = TimelineClipIds().ToHashSet();
+        return Flatten(source.Layers).Where(layer => layer.Kind == LayerKind.SUBTITLE && clips.Contains(layer.Id) &&
+            layer.SubtitleId.HasValue).Select(layer => layer.SubtitleId!.Value).ToHashSet();
+    }
+
+    private static bool HasTimingStages(TimingPostProcessorOptions options)
+    {
+        return options.LeadInEnabled || options.LeadOutEnabled || options.AdjacencyEnabled || options.KeyframeSnapEnabled;
+    }
+
+    private async Task<int> ProcessTimingSnapshotAsync(ProjectDocument source, bool requestKeyframes,
+        Func<bool, VideoTimingIndex?, ProjectDocument> process, CancellationToken cancellationToken)
+    {
         var generation = projectGeneration;
-        var selected = onlySelected ? SelectedSubtitleIds.ToImmutableHashSet() : null;
-        var stylesFilter = styleNames.ToImmutableHashSet(StringComparer.Ordinal);
         var mediaSnapshot = controller.Snapshot;
         var media = controller.MediaInfo;
-        var effectiveOptions = options with
-        {
-            KeyframeSnapEnabled = options.KeyframeSnapEnabled && mediaSnapshot.FilePath is not null &&
-                !mediaSnapshot.IsOpening && mediaSnapshot.Error is null && media is not null
-        };
+        var keyframesAvailable = requestKeyframes && mediaSnapshot.FilePath is not null &&
+            !mediaSnapshot.IsOpening && mediaSnapshot.Error is null && media is not null;
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, ProjectOperationsToken);
         SetProjectBusy(true);
         try
         {
             VideoTimingIndex? index = null;
             VideoTimingCacheEntry? indexIdentity = null;
-            if (effectiveOptions.KeyframeSnapEnabled)
+            if (keyframesAvailable)
             {
                 var path = mediaSnapshot.FilePath!;
                 var streamIndex = media!.VideoStreamIndex;
@@ -89,12 +173,10 @@ internal sealed partial class WorkbenchSession
                 }
             }
 
-            var result = await Task.Run(() =>
-                AegiNext.Application.Timing.TimingPostProcessor.Process(source, effectiveOptions, stylesFilter, selected, index),
-                lifetime.Token);
+            var result = await Task.Run(() => process(keyframesAvailable, index), lifetime.Token);
             lifetime.Token.ThrowIfCancellationRequested();
             if (closing || generation != projectGeneration || !ReferenceEquals(source, editor.Snapshot) ||
-                effectiveOptions.KeyframeSnapEnabled && (controller.Snapshot.Epoch != mediaSnapshot.Epoch ||
+                keyframesAvailable && (controller.Snapshot.Epoch != mediaSnapshot.Epoch ||
                     controller.Snapshot.FilePath != mediaSnapshot.FilePath))
             {
                 throw new OperationCanceledException(Localization.Get("Settings.TimingContextChanged"), lifetime.Token);

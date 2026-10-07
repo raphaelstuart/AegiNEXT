@@ -56,7 +56,8 @@ public static class ShortcutDefaults
             new(WorkbenchCommand.AUDITION_SUBTITLE_BEGIN, "E"),
             new(WorkbenchCommand.AUDITION_SUBTITLE, "R"),
             new(WorkbenchCommand.ADVANCE_SUBTITLE_ROW, "Enter"),
-            new(WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK, "Shift+Enter")
+            new(WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK, "Shift+Enter"),
+            new(WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR, "")
         ];
     }
 }

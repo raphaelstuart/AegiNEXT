@@ -85,7 +85,9 @@ public sealed class SubtitleStyleIdentityTests
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "对白 Dialogue 01", new());
         var prepared = await SubtitleStylePresetService.PrepareAsync(preset, editor.Snapshot, directory.Path);
         Assert.Equal(preset.Name, prepared.StyleName);
+        Assert.Equal(preset.Id, prepared.StylePresetId);
         var result = await SubtitleStylePresetService.ApplyAsync(preset, editor.Snapshot, directory.Path, [id]);
         Assert.Equal(preset.Name, result.Subtitles[0].StyleName);
+        Assert.Equal(preset.Id, result.Subtitles[0].StylePresetId);
     }
 }

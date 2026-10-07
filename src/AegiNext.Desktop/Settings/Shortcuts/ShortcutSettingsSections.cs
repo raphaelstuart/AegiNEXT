@@ -26,7 +26,7 @@ internal static class ShortcutSettingsSections
             WorkbenchCommand.ADD_SUBTITLE, WorkbenchCommand.DELETE_SUBTITLE, WorkbenchCommand.SPLIT_SUBTITLE,
             WorkbenchCommand.MERGE_SUBTITLE, WorkbenchCommand.OPEN_SUBTITLE_DETAILS,
             WorkbenchCommand.ADVANCE_SUBTITLE_ROW, WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK,
-            WorkbenchCommand.TIMING_ENTER, WorkbenchCommand.TIMING_EXIT
+            WorkbenchCommand.TIMING_ENTER, WorkbenchCommand.TIMING_EXIT, WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR
         ]);
         AddSection("Settings.ShortcutSectionPlaybackAudition",
         [

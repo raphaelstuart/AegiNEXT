@@ -1,14 +1,15 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using AegiNext.Core.Projects;
 
 namespace AegiNext.Application;
 
 internal static class PlaybackOriginJsonMigration
 {
+    private const int PLAYBACK_ORIGIN_VERSION = 6;
+
     internal static void Upgrade(JsonObject document, int sourceVersion)
     {
-        if (sourceVersion >= ProjectDocument.CURRENT_VERSION)
+        if (sourceVersion >= PLAYBACK_ORIGIN_VERSION)
         {
             return;
         }
@@ -20,6 +21,5 @@ internal static class PlaybackOriginJsonMigration
             }
             media.Add("playbackOrigin", null);
         }
-        document["version"] = ProjectDocument.CURRENT_VERSION;
     }
 }

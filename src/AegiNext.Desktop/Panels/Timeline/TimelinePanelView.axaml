@@ -35,12 +35,20 @@
           </controlsCommon:ToolbarToggleButton>
         </StackPanel>
         </ScrollViewer>
-        <controlsCommon:ToolbarToggleButton Name="TimelineClassicTimingButton" Grid.Row="1" Margin="2,4"
+        <StackPanel Grid.Row="1" Margin="2,4" Spacing="4">
+        <controlsCommon:ToolbarToggleButton Name="TimelineClassicTimingButton"
                         ToolTip.Tip="{Loc Key=Workbench.TimelineClassicTimingHint}"
                         AutomationProperties.Name="{Loc Key=Workbench.TimelineClassicTiming}"
                         IsChecked="{Binding IsClassicTimingEnabled, Mode=TwoWay}">
           <materialIcons:MaterialIcon Kind="Mouse" Width="18" Height="18" />
         </controlsCommon:ToolbarToggleButton>
+        <Button Name="TimelineTimingPostProcessorButton" Classes="icon-button"
+                Command="{Binding ApplyTimingPostProcessorCommand}"
+                ToolTip.Tip="{Loc Key=Workbench.TimelineTimingPostProcessor}"
+                AutomationProperties.Name="{Loc Key=Workbench.TimelineTimingPostProcessor}">
+          <materialIcons:MaterialIcon Kind="ClockCheckOutline" Width="18" Height="18" />
+        </Button>
+        </StackPanel>
         </Grid>
       </Border>
       <controls:TimelineOverviewControl Name="TimelineMinimap" Grid.Column="1" Margin="4,2" />

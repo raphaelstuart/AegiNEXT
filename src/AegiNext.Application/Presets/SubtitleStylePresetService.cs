@@ -67,7 +67,7 @@ public static class SubtitleStylePresetService
         var result = prepared.Project with
         {
             Subtitles = prepared.Project.Subtitles.Select(line => selection.Contains(line.Id)
-                ? line with { Style = prepared.Style, StyleName = preset.Name, InlineSpans = [] } : line).ToImmutableArray()
+                ? line with { Style = prepared.Style, StyleName = preset.Name, StylePresetId = preset.Id, InlineSpans = [] } : line).ToImmutableArray()
         };
         ProjectValidator.Validate(result);
         return result;
@@ -114,7 +114,7 @@ public static class SubtitleStylePresetService
         var result = assets == project.Assets ? project : project with { Assets = assets };
         ProjectValidator.Validate(result);
         ProjectValidator.ValidateSubtitleStyle(style);
-        return new(result, style, preset.Name);
+        return new(result, style, preset.Name, preset.Id);
     }
 
     private static async Task<ProjectAsset> ImportFontAsync(EmbeddedSubtitleFont font, string projectDirectory,

@@ -9,7 +9,13 @@
 3. Check the target presets and choose **Save association** to apply that configuration to all of them.
 4. Use **Unlink** to remove associations from checked presets.
 
-Styles come from the personal library, so no project or video is needed. This page saves configuration; automatic execution and style-application triggers are not connected to project editing yet.
+Styles come from the personal library, so no project or video is needed. This page saves configuration.
+
+## Process selected clips
+
+Select subtitle clips in the timeline and click the clock icon at the bottom of the left toolbar. Each subtitle uses its style's saved association. Lead-in/out, adjacency, and keyframe snapping run in that order, with one Undo for the complete batch. Tracks are processed independently; adjacency only joins directly adjacent selected subtitles with identical options. Unselected subtitles and graphics clips remain unchanged.
+
+Subtitles without an association are skipped; the log reports changed and skipped counts. Without video, keyframe snapping is skipped. Probe failures, invalid durations, or final collisions reject the complete batch. Each click is a new processing operation; F8/F9, style application, and export do not run the processor automatically.
 
 ## Default options
 
@@ -26,5 +32,7 @@ Enter or blur commits valid integers; invalid drafts stay editable, and Esc rest
 ## Persistence and processing
 
 Associations follow stable style IDs: rename preserves them, copy duplicates them, deletion removes them, and `.aegistyles` carries them. Style library v4 reads v1–v3; older applications cannot read v4.
+
+Project v7 stores style preset IDs on subtitle clips and reads v3–v6; older applications cannot read newly saved v7 projects. Legacy subtitles without IDs first resolve a track preset with the same saved style name, then an exact personal-library style name. Successful processing saves the resolved ID. A missing preset referenced by an existing ID never falls back to a newly created preset with the same name.
 
 The engine uses rational time and per-track adjacency. Invalid durations or final collisions reject the whole result; crop semantics preserve animation phase. Frame indexing uses actual PTS, supports VFR/nonzero origins, and rejects broken timing or changed media/tool identities.

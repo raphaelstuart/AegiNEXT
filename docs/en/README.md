@@ -11,7 +11,7 @@ Start with [Quickstart](quick-start.md): create a project, time a subtitle, and 
 | [Quickstart](quick-start.md) | Your first project and subtitled video |
 | [Workbench](workbench.md) | Tracks, playback, styles, layouts, and backups |
 | [Subtitle editing](subtitle-editing.md) | Rich text, karaoke, audition, ASS, and SRT |
-| [Timing post-processor](timing-post-processor.md) | Save timing settings with style presets |
+| [Timing post-processor](timing-post-processor.md) | Associate timing options with styles and process selected timeline clips |
 | [Effect scripts](effect-dsl.md) | Apply and write `.aegifx` effects |
 | [Video export](export.md) | CPU/GPU encoding, audio, and HDR |
 

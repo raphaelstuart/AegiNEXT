@@ -38,6 +38,7 @@ public sealed class TimingPostProcessorWorkflowTests
 
         var created = Assert.Single(context.Editor.Snapshot.Subtitles);
         Assert.Equal(preset.Name, created.StyleName);
+        Assert.Equal(preset.Id, created.StylePresetId);
         Assert.Equal(41, created.Style.FontSize);
         var changed = await session.ApplyTimingPostProcessorAsync(LeadOptions() with
         {
@@ -53,13 +54,13 @@ public sealed class TimingPostProcessorWorkflowTests
     [Fact]
     public async Task ActiveTimingPreviewFreezesBeforeTheProcessingSnapshotIsCaptured()
     {
-        await using var context = new WorkspaceSessionTestContext(controllerFactory: update => new(
+        await using var context = new WorkspaceSessionTestContext(controllerFactory: _ => new(
             (_, token) =>
             {
                 token.ThrowIfCancellationRequested();
                 return Task.FromResult(new VideoPreviewMedia(0, MediaTime.Zero, new(7)));
             }, (_, _) => new(_ => new PreviewTestSource(7, 0, 1000, 2000, 3000, 4000, 5000, 6000)),
-            () => new PreviewTestConverter(), Dispatch, update));
+            () => new PreviewTestConverter(), Dispatch, static _ => { }));
         await context.InitializeAsync();
         var session = context.Session;
         await session.Controller.OpenAsync("controlled.mkv");
@@ -410,14 +411,14 @@ public sealed class TimingPostProcessorWorkflowTests
         Func<string, int, MediaTime, CancellationToken, Task<VideoTimingIndex>>? probe = null)
     {
         return new(new WorkspaceDialogStub(),
-            update => new VideoPreviewController((_, token) =>
+            _ => new VideoPreviewController((_, token) =>
             {
                 token.ThrowIfCancellationRequested();
                 var binding = editor.Snapshot.Media;
                 return Task.FromResult(new VideoPreviewMedia(binding?.VideoStreamIndex ?? 0,
                     binding?.MediaOrigin ?? MediaTime.Zero, new(7)));
             }, (_, _) => new(_ => new PreviewTestSource(7, 0, 100, 200)),
-                () => new PreviewTestConverter(), Dispatch, update),
+                () => new PreviewTestConverter(), Dispatch, static _ => { }),
             Dispatch, editor, new WorkbenchPreferencesStore(directory), videoTimingProbe: probe);
     }
 

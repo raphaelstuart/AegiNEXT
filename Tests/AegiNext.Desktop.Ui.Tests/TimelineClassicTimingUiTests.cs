@@ -24,6 +24,7 @@ public sealed class TimelineClassicTimingUiTests
         var timeline = Prepare(context);
         var panel = Panel(timeline);
         var button = UiTestActions.Find<ToolbarToggleButton>(context.Window, "TimelineClassicTimingButton");
+        var processor = UiTestActions.Find<Button>(context.Window, "TimelineTimingPostProcessorButton");
         var step = UiTestActions.Find<ToolbarToggleButton>(context.Window, "TimelineStepButton");
         var scroller = UiTestActions.Find<ScrollViewer>(context.Window, "TimelineToolbarScroller");
         Assert.False(context.Session.Preferences.TimelineClassicTimingEnabled);
@@ -33,7 +34,9 @@ public sealed class TimelineClassicTimingUiTests
         var position = button.TranslatePoint(new(), panel)!.Value;
         var timelinePosition = timeline.TranslatePoint(new(), panel)!.Value;
         Assert.True(position.X + button.Bounds.Width <= timelinePosition.X);
-        Assert.InRange(panel.Bounds.Height - position.Y - button.Bounds.Height, 0, 12);
+        var processorPosition = processor.TranslatePoint(new(), panel)!.Value;
+        Assert.True(position.Y + button.Bounds.Height < processorPosition.Y);
+        Assert.InRange(panel.Bounds.Height - processorPosition.Y - processor.Bounds.Height, 0, 12);
         var buttonPoint = button.TranslatePoint(new(button.Bounds.Width / 2, button.Bounds.Height / 2), context.Window)!.Value;
         var buttonHit = context.Window.InputHitTest(buttonPoint);
         Assert.True(ReferenceEquals(buttonHit, button) ||
@@ -44,6 +47,7 @@ public sealed class TimelineClassicTimingUiTests
         Flush(context.Window);
         Assert.True(scroller.Offset.Y > 0);
         Assert.Equal(position, button.TranslatePoint(new(), panel)!.Value);
+        Assert.Equal(processorPosition, processor.TranslatePoint(new(), panel)!.Value);
         var scrollerPosition = scroller.TranslatePoint(new(), panel)!.Value;
         var stepPosition = step.TranslatePoint(new(), panel)!.Value;
         Assert.True(stepPosition.Y >= scrollerPosition.Y);

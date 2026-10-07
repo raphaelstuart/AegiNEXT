@@ -38,6 +38,35 @@ public sealed class PlaybackOriginMigrationTests
         Assert.Throws<InvalidDataException>(() => ProjectStore.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString())));
     }
 
+    /// <summary>播放零点在版本 6 引入，后续版本升级不得再次执行旧字段迁移。</summary>
+    [Fact]
+    public void VersionSixPreservesConfirmedRationalPlaybackOriginDuringIdentityUpgrade()
+    {
+        var original = Document();
+        original = original with { Media = original.Media! with { PlaybackOrigin = new(-1001, 30000) } };
+        var json = JsonNode.Parse(ProjectStore.Serialize(original))!.AsObject();
+        json["version"] = 6;
+        json["subtitles"]![0]!.AsObject().Remove("stylePresetId");
+
+        var restored = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString()));
+
+        Assert.Equal(7, restored.Version);
+        Assert.Equal(original.Media, restored.Media);
+        Assert.Equal(original.Subtitles[0].Start, restored.Subtitles[0].Start);
+        Assert.Equal(original.Subtitles[0].End, restored.Subtitles[0].End);
+    }
+
+    /// <summary>版本 6 已要求显式播放零点字段，缺失不得被升级默认为未知。</summary>
+    [Fact]
+    public void VersionSixStillRejectsMissingRequiredPlaybackOrigin()
+    {
+        var json = JsonNode.Parse(ProjectStore.Serialize(Document()))!.AsObject();
+        json["version"] = 6;
+        json["media"]!.AsObject().Remove("playbackOrigin");
+
+        Assert.Throws<InvalidDataException>(() => ProjectStore.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString())));
+    }
+
     private static ProjectDocument Document()
     {
         var asset = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.MEDIA, string.Empty, ExternalPath: "/media/source.mkv");

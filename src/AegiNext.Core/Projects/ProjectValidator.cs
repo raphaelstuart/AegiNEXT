@@ -81,6 +81,7 @@ public static class ProjectValidator
                 !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
             ValidateText(line.Text);
             ValidateSubtitleStyleName(line.StyleName);
+            Require(line.StylePresetId is null || line.StylePresetId != Guid.Empty, "字幕样式预设标识无效。");
             totalText += line.Text.Length;
             Require(totalText <= 8 * 1024 * 1024, "项目文本总量超过预算。");
             Style(line.Style, assets);

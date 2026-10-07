@@ -17,6 +17,7 @@ internal sealed partial class WorkbenchSession
 
         return command switch
         {
+            WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR => HasApplicableSelectedTimingPostProcessor,
             WorkbenchCommand.COPY_CLIPS => CanCopyTimelineClips,
             WorkbenchCommand.PASTE_CLIPS => CanPasteTimelineClips,
             WorkbenchCommand.UNDO => editor.CanUndo,
@@ -102,6 +103,9 @@ internal sealed partial class WorkbenchSession
             LogInfo("Command", command.ToString());
             switch (command)
             {
+                case WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR:
+                    await ApplySelectedTimingPostProcessorAsync();
+                    break;
                 case WorkbenchCommand.NEW_PROJECT: await workflow.NewProjectAsync(); break;
                 case WorkbenchCommand.OPEN_PROJECT: await workflow.OpenProjectAsync(); break;
                 case WorkbenchCommand.SAVE_PROJECT: await workflow.SaveProjectAsync(false); break;

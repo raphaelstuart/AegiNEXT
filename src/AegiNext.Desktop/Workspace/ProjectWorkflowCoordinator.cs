@@ -598,7 +598,10 @@ internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWork
                 lines = SubtitleTimelineExchange.ToProjectTime(lines, mapping ?? default);
                 var creation = await session.Styles.PrepareCreationAsync(trackId, presetId);
                 prepared = WithCurrentPlaybackOrigin(creation.Project);
-                lines = lines.Select(line => line with { Style = creation.Style }).ToImmutableArray();
+                lines = lines.Select(line => line with
+                {
+                    Style = creation.Style, StyleName = creation.StyleName, StylePresetId = creation.StylePresetId
+                }).ToImmutableArray();
             }
             if (session.IsClosing || !ReferenceEquals(captured, session.Editor.Snapshot))
             {

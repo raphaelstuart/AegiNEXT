@@ -16,7 +16,11 @@ internal sealed partial class WorkbenchSession
         var text = SelectedCue?.Text ?? Localization.Get("Workbench.SubtitlePreviewText");
         return Rendering.SubtitleStylePositionMeasurer.Measure(preset, document.Width, document.Height, text, Fonts.Catalog);
     }
-    internal void NotifyStyleLibraryChanged() => StyleLibraryChanged?.Invoke(this, EventArgs.Empty);
+    internal void NotifyStyleLibraryChanged()
+    {
+        StyleLibraryChanged?.Invoke(this, EventArgs.Empty);
+        ViewModel.RefreshCommands();
+    }
     internal Task ApplySelectedStyleAsync()
     {
         return ViewModel.Styles.SelectedPreset is { } selected
