@@ -10,7 +10,8 @@ internal sealed class WorkbenchMenuCatalog(Func<WorkbenchCommand, ICommand> comm
 {
     internal static readonly WorkbenchMenuGroup[] Groups =
     [
-        new("File", [WorkbenchCommand.NEW_PROJECT, WorkbenchCommand.OPEN_PROJECT, WorkbenchCommand.OPEN_MEDIA, null,
+        new("File", [WorkbenchCommand.NEW_PROJECT, WorkbenchCommand.OPEN_PROJECT, WorkbenchCommand.MERGE_PROJECT,
+            WorkbenchCommand.OPEN_MEDIA, null,
             WorkbenchCommand.SAVE_PROJECT, WorkbenchCommand.SAVE_PROJECT_AS, null,
             WorkbenchCommand.EXPORT_VIDEO, null,
             WorkbenchCommand.CLOSE_PROJECT, WorkbenchCommand.EXIT]),

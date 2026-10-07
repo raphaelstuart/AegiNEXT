@@ -10,7 +10,7 @@ using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Workspace;
 
-internal sealed class ProjectWorkflowCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
+internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
 {
     private const int MAX_SUBTITLE_FILE_BYTES = 16 * 1024 * 1024;
     private UnavailableProjectMediaBinding? unavailableMediaBinding;

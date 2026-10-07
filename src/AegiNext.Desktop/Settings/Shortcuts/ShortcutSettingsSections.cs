@@ -11,7 +11,8 @@ internal static class ShortcutSettingsSections
         var items = new List<ShortcutSettingsListItem>();
         AddSection("Settings.ShortcutSectionProjectFiles",
         [
-            WorkbenchCommand.NEW_PROJECT, WorkbenchCommand.OPEN_PROJECT, WorkbenchCommand.CLOSE_PROJECT,
+            WorkbenchCommand.NEW_PROJECT, WorkbenchCommand.OPEN_PROJECT, WorkbenchCommand.MERGE_PROJECT,
+            WorkbenchCommand.CLOSE_PROJECT,
             WorkbenchCommand.SAVE_PROJECT, WorkbenchCommand.SAVE_PROJECT_AS, WorkbenchCommand.OPEN_MEDIA,
             WorkbenchCommand.IMPORT_SUBTITLES, WorkbenchCommand.IMPORT_ASS,
             WorkbenchCommand.EXPORT_SUBTITLES, WorkbenchCommand.EXPORT_ASS, WorkbenchCommand.EXPORT_VIDEO

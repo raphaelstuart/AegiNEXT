@@ -74,7 +74,7 @@ internal static class WorkbenchIcon
             "Enter" or "SetStart" or "TIMING_ENTER" => MaterialIconKind.SkipPrevious,
             "ExitTiming" or "SetEnd" or "TIMING_EXIT" => MaterialIconKind.SkipNext,
             "Split" or "SPLIT_SUBTITLE" => MaterialIconKind.CallSplit,
-            "Merge" or "MERGE_SUBTITLE" => MaterialIconKind.CallMerge,
+            "Merge" or "MERGE_SUBTITLE" or "MERGE_PROJECT" => MaterialIconKind.CallMerge,
             "Style" or "VIEW_STYLES" => MaterialIconKind.FormatText,
             "ApplyStyle" or "ApplySelectionStyle" => MaterialIconKind.FormatPaint,
             "Effects" or "VIEW_EFFECTS" or "ApplyPreset" or "Fade" or "Pop" or "Slide" => MaterialIconKind.Creation,

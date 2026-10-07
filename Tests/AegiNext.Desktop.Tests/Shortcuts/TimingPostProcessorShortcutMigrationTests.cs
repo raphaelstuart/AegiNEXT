@@ -14,7 +14,7 @@ public sealed class TimingPostProcessorShortcutMigrationTests
         {
             Language = "zh-CN",
             ShortcutBindings = ShortcutDefaults.CreateBindings()
-                .Where(binding => binding.Command != WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR)
+                .Where(binding => binding.Command < WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR)
                 .Select(binding => binding.Command == WorkbenchCommand.TIMING_ENTER
                     ? binding with { Gesture = "F6" } : binding)
                 .ToImmutableArray()
@@ -32,7 +32,7 @@ public sealed class TimingPostProcessorShortcutMigrationTests
         Assert.Equal(string.Empty, loaded.ShortcutBindings.Single(binding =>
             binding.Command == WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR).Gesture);
         Assert.Equal(previous.ShortcutBindings.AsEnumerable(), loaded.ShortcutBindings.Where(binding =>
-            binding.Command != WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR));
+            binding.Command < WorkbenchCommand.APPLY_TIMING_POST_PROCESSOR));
         loaded.Validate();
     }
 }

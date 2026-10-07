@@ -21,6 +21,7 @@ public sealed class WorkbenchLibraryIconUiTests
     [AvaloniaTheory]
     [InlineData("Import", MaterialIconKind.Import)]
     [InlineData("IMPORT_ASS", MaterialIconKind.Import)]
+    [InlineData("MERGE_PROJECT", MaterialIconKind.CallMerge)]
     [InlineData("Export", MaterialIconKind.Export)]
     [InlineData("EXPORT_VIDEO", MaterialIconKind.Export)]
     [InlineData("ValidateScript", MaterialIconKind.FileCheckOutline)]
@@ -46,6 +47,7 @@ public sealed class WorkbenchLibraryIconUiTests
     [InlineData("Export", MaterialIconKind.Export)]
     [InlineData("Play", MaterialIconKind.Play)]
     [InlineData("Settings", MaterialIconKind.Cog)]
+    [InlineData("MERGE_PROJECT", MaterialIconKind.CallMerge)]
     public void NativeMenuBitmapMatchesTheSameLibrarySilhouette(string key, MaterialIconKind kind)
     {
         var geometry = new MaterialIcon { Kind = kind }.Drawing.Geometry!;

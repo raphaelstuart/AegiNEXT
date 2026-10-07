@@ -108,6 +108,7 @@ internal sealed partial class WorkbenchSession
                     break;
                 case WorkbenchCommand.NEW_PROJECT: await workflow.NewProjectAsync(); break;
                 case WorkbenchCommand.OPEN_PROJECT: await workflow.OpenProjectAsync(); break;
+                case WorkbenchCommand.MERGE_PROJECT: await workflow.MergeProjectsAsync(); break;
                 case WorkbenchCommand.SAVE_PROJECT: await workflow.SaveProjectAsync(false); break;
                 case WorkbenchCommand.SAVE_PROJECT_AS: await workflow.SaveProjectAsync(true); break;
                 case WorkbenchCommand.OPEN_MEDIA:

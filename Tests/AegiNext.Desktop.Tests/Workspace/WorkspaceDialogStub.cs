@@ -50,6 +50,9 @@ internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
     internal TaskCompletionSource<bool>? PendingMediaConfirmation { get; set; }
 
     internal string[]? OpenPaths { get; set; }
+    internal int OpenFilesRequests { get; private set; }
+    internal TaskCompletionSource OpenFilesShown { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal TaskCompletionSource<IReadOnlyList<string>>? PendingOpenFiles { get; set; }
     internal string? FolderPath { get; set; }
     internal int FolderRequests { get; private set; }
     internal int PresetChoice { get; set; } = 2;
@@ -57,7 +60,9 @@ internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
 
     public Task<IReadOnlyList<string>> OpenFilesAsync(string title, string typeName, string[] patterns)
     {
-        return Task.FromResult<IReadOnlyList<string>>(OpenPaths ?? (OpenPath is null ? [] : [OpenPath]));
+        OpenFilesRequests++;
+        OpenFilesShown.TrySetResult();
+        return PendingOpenFiles?.Task ?? Task.FromResult<IReadOnlyList<string>>(OpenPaths ?? (OpenPath is null ? [] : [OpenPath]));
     }
 
     public Task<string?> OpenFolderAsync(string title)
