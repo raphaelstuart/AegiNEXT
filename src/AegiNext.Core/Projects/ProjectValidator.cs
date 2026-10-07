@@ -392,7 +392,8 @@ public static class ProjectValidator
 
             var dimension = AnimationPropertyMetadata.GetComponentCount(track.Property);
             Require(!track.Keyframes.IsDefault && !track.Transforms.IsDefault &&
-                track.Keyframes.Length <= 10000 * dimension && track.Transforms.Length <= 10000 * dimension,
+                track.Keyframes.Length <= AnimationPropertyMetadata.GetMaximumTrackEntries(track.Property) &&
+                track.Transforms.Length <= AnimationPropertyMetadata.GetMaximumTrackEntries(track.Property),
                 "属性轨道超出分量时间并集预算。");
             if (track.IsOrdered)
             {

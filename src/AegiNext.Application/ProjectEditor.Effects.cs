@@ -1,11 +1,10 @@
-using System.Collections.Immutable;
 using AegiNext.Core.Effects;
 
 namespace AegiNext.Application;
 
 public sealed partial class ProjectEditor
 {
-    /// <summary>按目标片段编译并原子应用脚本；保留内容身份、路径和未涉及的属性轨道。</summary>
+    /// <summary>按目标片段编译并原子组合脚本；保留未声明区间的既有动画、内容身份和路径。</summary>
     public void ApplyEffectScript(Guid layerId, EffectScript script)
     {
         ApplyEffectScript([layerId], script);
@@ -34,17 +33,8 @@ public sealed partial class ProjectEditor
                 }
 
                 var style = layer.SubtitleId is { } id ? styles[id] : null;
-                var tracks = EffectScriptCompiler.Compile(script, layer, style);
-                if (layer.Tracks.Any(track => track.IsOrdered && tracks.Any(added => added.Target == track.Target)))
-                {
-                    throw new EffectScriptException("目标轨道采用有序变换；请显式清除该轨道后再应用关键帧脚本。");
-                }
-
-                return layer with
-                {
-                    Tracks = layer.Tracks.Where(track => !tracks.Any(added => added.Target == track.Target)).Concat(tracks)
-                        .OrderBy(track => track.Target.Property).ThenBy(track => track.Target.NodeId).ToImmutableArray()
-                };
+                var tracks = EffectScriptComposer.Compose(script, layer, style);
+                return tracks == layer.Tracks ? layer : layer with { Tracks = tracks };
             });
             if (remaining.Count > 0)
             {

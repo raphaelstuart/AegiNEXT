@@ -5,6 +5,8 @@ namespace AegiNext.Core.Projects;
 /// <summary>动画属性的稳定维度、分量名称及数值范围；不包含界面或本地化依赖。</summary>
 public static class AnimationPropertyMetadata
 {
+    private const int MAXIMUM_TRACK_ENTRIES_PER_COMPONENT = 10000;
+
     /// <summary>返回面板及脚本可使用的完整属性顺序，不包含旧分量。</summary>
     public static ImmutableArray<AnimationProperty> CurrentProperties { get; } =
     [
@@ -35,6 +37,12 @@ public static class AnimationPropertyMetadata
         AnimationValueKind.COLOR => 4,
         _ => 1
     };
+
+    /// <summary>获取完整属性轨道的关键帧或有序变换操作数量上限。</summary>
+    public static int GetMaximumTrackEntries(AnimationProperty property)
+    {
+        return MAXIMUM_TRACK_ENTRIES_PER_COMPONENT * GetComponentCount(property);
+    }
 
     /// <summary>获取分量稳定名称，标量属性返回空名称。</summary>
     public static string GetComponentName(AnimationProperty property, int component = 0)

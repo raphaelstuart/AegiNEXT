@@ -10,6 +10,32 @@
 
 Completion opens while typing or with Cmd/Ctrl + Space. Arrows select, Enter/Tab insert, and Esc dismisses. Templates are personal settings; applying recompiles for the current Clip and creates one Undo transaction.
 
+## Combining presets
+
+Apply presets successively to combine them. Each preset replaces only the intervals in which it explicitly declares a complete animation target. Undeclared intervals preserve existing animation and its interpolation curves. With no existing target track, empty intervals retain the script's base or preceding value. Segment names such as `stay` and `hold` have no special meaning, and a `flex` segment may contain animation.
+
+For a 4 s Clip, applying builtin fade-in followed by fade-out preserves the first 300 ms entrance and the middle animation, then adds the last 300 ms exit. Reversing the order produces the same result. A batch application creates one Undo transaction. Composition also works after saving and reopening the project.
+
+An empty stay declares no properties:
+
+```text
+segment stay flex 1
+end
+```
+
+This stay explicitly fixes opacity at its base value, replacing existing opacity animation:
+
+```text
+segment stay flex 1
+    at 0 opacity base hold
+    at 1 opacity base
+end
+```
+
+`hold` is keyframe interpolation, not a request to skip an interval. `base` always reads the static layer property or subtitle style, not the old animation value at the join. Values must agree where new animation meets retained animation; otherwise the entire application fails without changing the project or Undo/Redo. Adjust the preset endpoints or clear the corresponding track first.
+
+Independent presets allocate their timing separately and do not jointly compress fixed segments. Two 300 ms transitions join on a 600 ms Clip. On a 400 ms Clip they overlap, and builtin fade-in followed by fade-out fails because the join values differ. On Clips of 300 ms or less, each preset covers the entire Clip, so the last preset replaces the first. To retain both transitions with joint compression on short Clips, use one preset containing both segments, such as builtin fade-in-out.
+
 ## A first script
 
 ```text
@@ -57,7 +83,7 @@ Easing is `hold`, `linear`, `ease-in`, `ease-out`, `ease-in-out`, or `power(posi
 
 ## Masks and validation
 
-Create mask geometry before applying mask scripts. Node selectors are one-based and resolve to stable IDs. Node/handle animation locks topology; clear those tracks before adding/removing/reordering nodes. Scripts replace only matching complete targets, preserve other tracks, and never create geometry. Clear an ordered ASS transform target before replacing it with script keyframes.
+Create mask geometry before applying mask scripts. Node selectors are one-based and resolve to stable IDs. Node/handle animation locks topology; clear those tracks before adding/removing/reordering nodes. Scripts combine declared intervals for matching complete targets, preserve other tracks, and never create geometry. Clear an ordered ASS transform target before replacing it with script keyframes.
 
 IDs/segment names use lowercase ASCII letters, digits, `.` and `-`, begin with a letter, and have at most 64 characters. Limits: 128 segments, 4,096 points, 262,144 characters, fixed durations up to 24 h, and flex weights in (0, 1,000]. Invalid input or conflicting endpoints leave the project and Undo unchanged.
 

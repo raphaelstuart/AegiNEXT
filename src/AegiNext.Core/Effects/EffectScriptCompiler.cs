@@ -11,11 +11,17 @@ public static class EffectScriptCompiler
     /// <summary>以目标内容时钟编译脚本；使用应用前基础值，共享端点冲突或越界值整体失败。</summary>
     public static ImmutableArray<AnimationTrack> Compile(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle = null)
     {
+        return CompileWithCoverage(script, target, subtitleStyle, false).Tracks;
+    }
+
+    internal static EffectScriptCompilation CompileWithCoverage(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle,
+        bool preserveExistingAnimation)
+    {
         EffectScriptValidator.Validate(script);
         ArgumentNullException.ThrowIfNull(target);
         try
         {
-            return CompileCore(script, target, subtitleStyle);
+            return CompileCore(script, target, subtitleStyle, preserveExistingAnimation);
         }
         catch (OverflowException error)
         {
@@ -23,7 +29,8 @@ public static class EffectScriptCompiler
         }
     }
 
-    private static ImmutableArray<AnimationTrack> CompileCore(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle)
+    private static EffectScriptCompilation CompileCore(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle,
+        bool preserveExistingAnimation)
     {
         if (target.SubtitleId.HasValue && subtitleStyle is null &&
             script.Segments.Any(segment => segment.Keyframes.Any(frame => frame.Property is EffectScriptProperty.STROKE_WIDTH or EffectScriptProperty.FILL or EffectScriptProperty.STROKE)))
@@ -47,6 +54,8 @@ public static class EffectScriptCompiler
 
         var remaining = compress ? MediaTime.Zero : duration - fixedTotal;
         var tracks = new Dictionary<AnimationTrackTarget, List<Keyframe>>();
+        var intervals = ImmutableArray.CreateBuilder<EffectScriptInterval>();
+        var existingTargets = preserveExistingAnimation ? target.Tracks.Select(track => track.Target).ToHashSet() : [];
         var cursor = origin;
         foreach (var segment in script.Segments)
         {
@@ -57,13 +66,18 @@ public static class EffectScriptCompiler
             {
                 var time = cursor + EffectScriptTiming.Scale(length, frame.Progress);
                 var animationTarget = ResolveTarget(frame, target);
-                Add(tracks, animationTarget, frame, time, ResolveBaseValue(frame, animationTarget, target, subtitleStyle), origin);
+                Add(tracks, animationTarget, frame, time, ResolveBaseValue(frame, animationTarget, target, subtitleStyle), origin,
+                    existingTargets.Contains(animationTarget));
+                if (frame.Progress == 0)
+                {
+                    intervals.Add(new(animationTarget, cursor, cursor + length, frame.Line, frame.Column));
+                }
             }
 
             cursor += length;
         }
 
-        return tracks.OrderBy(pair => pair.Key.Property).ThenBy(pair => pair.Key.NodeId).Select(pair =>
+        var compiled = tracks.OrderBy(pair => pair.Key.Property).ThenBy(pair => pair.Key.NodeId).Select(pair =>
         {
             var frames = pair.Value;
             if (frames[^1].Time < end)
@@ -74,6 +88,7 @@ public static class EffectScriptCompiler
 
             return new AnimationTrack(pair.Key, frames.ToImmutableArray());
         }).ToImmutableArray();
+        return new(compiled, intervals.ToImmutable());
     }
 
     private static AnimationTrackTarget ResolveTarget(EffectScriptKeyframe frame, ProjectLayer layer)
@@ -141,7 +156,7 @@ public static class EffectScriptCompiler
     }
 
     private static void Add(Dictionary<AnimationTrackTarget, List<Keyframe>> tracks, AnimationTrackTarget target,
-        EffectScriptKeyframe source, MediaTime time, AnimationValue baseValue, MediaTime origin)
+        EffectScriptKeyframe source, MediaTime time, AnimationValue baseValue, MediaTime origin, bool preserveUnmentionedTime)
     {
         var value = baseValue;
         if (source.Value.Kind != EffectScriptValueKind.BASE)
@@ -187,7 +202,7 @@ public static class EffectScriptCompiler
         {
             if (source.Progress == 0 && frames.Count > 0)
             {
-                if (!frames[^1].Value.Equals(value))
+                if (!preserveUnmentionedTime && !frames[^1].Value.Equals(value))
                 {
                     throw new EffectScriptException($"{source.Property} 在未声明区间后发生跳变，请显式声明连续关键帧。", source.Line, source.Column);
                 }

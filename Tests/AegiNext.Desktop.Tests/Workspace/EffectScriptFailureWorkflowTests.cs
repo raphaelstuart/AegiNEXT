@@ -19,8 +19,8 @@ public sealed class EffectScriptFailureWorkflowTests
         var session = context.Session;
         await session.EffectScripts.Completion;
         var model = new EffectSettingsViewModel();
-        model.AddCommand.Execute(null);
-        var preset = new EffectScriptPreset(model.SelectedEffect!.Id, model.Name, model.Source);
+        await model.AddCommand.ExecuteAsync(null);
+        var preset = Assert.IsType<EffectScriptPreset>(model.Draft);
         if (operation == "delete")
         {
             await session.EffectScripts.UpsertAsync(preset);

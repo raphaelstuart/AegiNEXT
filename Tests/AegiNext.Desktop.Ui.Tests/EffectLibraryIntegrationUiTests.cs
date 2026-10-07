@@ -24,6 +24,7 @@ public sealed class EffectLibraryIntegrationUiTests
         settings.ViewModel.Effects.Name = "Personal timing script";
         var source = settings.ViewModel.Effects.Source;
         UiTestActions.Click(settings, "SaveEffectScriptButton");
+        await settings.ViewModel.Effects.SaveCommand.ExecutionTask!;
         await context.Session.EffectScripts.Completion;
         Dispatcher.UIThread.RunJobs();
         var preset = Assert.Single(context.Session.EffectScriptLibrary.Snapshot.Presets);
@@ -62,12 +63,14 @@ public sealed class EffectLibraryIntegrationUiTests
         var original = context.Session.DocumentSnapshot;
         settings.ViewModel.Effects.Source = "effect broken";
         UiTestActions.Click(settings, "SaveEffectScriptButton");
+        await settings.ViewModel.Effects.SaveCommand.ExecutionTask!;
         await context.Session.EffectScripts.Completion;
         Assert.NotNull(settings.ViewModel.Effects.Error);
         Assert.Empty(context.Session.EffectScriptLibrary.Snapshot.Presets);
         Assert.Same(original, context.Session.DocumentSnapshot);
         settings.ViewModel.Effects.Source = valid;
         UiTestActions.Click(settings, "SaveEffectScriptButton");
+        await settings.ViewModel.Effects.SaveCommand.ExecutionTask!;
         await context.Session.EffectScripts.Completion;
         Assert.Same(original, context.Session.DocumentSnapshot);
         var preset = Assert.Single(context.Session.EffectScriptLibrary.Snapshot.Presets);
