@@ -36,11 +36,13 @@ internal sealed class TimelineDrawingCache : IDisposable
             size = requestedSize;
             scaling = requestedScaling;
             var pixels = new PixelSize((int)Math.Ceiling(size.Width * scaling), (int)Math.Ceiling(size.Height * scaling));
-            var next = new RenderTargetBitmap(pixels, new(96 * scaling, 96 * scaling));
+            var next = new RenderTargetBitmap(pixels);
             try
             {
                 using (var drawing = next.CreateDrawingContext())
                 {
+                    // 显式应用缩放，避免裁剪恢复后底层再次叠加位图的隐式 DPI 矩阵。
+                    using var transform = drawing.PushTransform(Matrix.CreateScale(scaling, scaling));
                     draw(drawing);
                 }
                 bitmap = next;
@@ -52,7 +54,8 @@ internal sealed class TimelineDrawingCache : IDisposable
                 throw;
             }
         }
-        context.DrawImage(bitmap, new Rect(requestedSize));
+        context.DrawImage(bitmap, new Rect(0, 0, requestedSize.Width * requestedScaling, requestedSize.Height * requestedScaling),
+            new Rect(requestedSize));
     }
 
     public void Dispose()

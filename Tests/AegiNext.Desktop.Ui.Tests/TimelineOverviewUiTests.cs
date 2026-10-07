@@ -108,8 +108,11 @@ public sealed class TimelineOverviewUiTests
         }
     }
 
-    [AvaloniaFact]
-    public void TwentyFourPixelOverviewRendersAllSixteenTracksAndStillNavigatesWithoutSeeking()
+    [AvaloniaTheory]
+    [InlineData(1d)]
+    [InlineData(1.5d)]
+    [InlineData(2d)]
+    public void TwentyFourPixelOverviewRendersAllSixteenTracksAndStillNavigatesWithoutSeeking(double scaling)
     {
         var tracks = Enumerable.Range(0, 16).Select(index => new SubtitleTrack { Name = $"Track {index}" }).ToArray();
         var empty = new ProjectDocument { SubtitleTracks = [.. tracks] };
@@ -145,6 +148,7 @@ public sealed class TimelineOverviewUiTests
         window.Show();
         try
         {
+            window.SetRenderScaling(scaling);
             Prepare(window);
             timeline.SetViewport(new(0, 150), 10);
             overview.SetScene(empty, timeline.Viewport, 10, new(4));
