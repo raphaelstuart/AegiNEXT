@@ -11,6 +11,8 @@ using AegiNext.Rendering.Projects;
 var source = Path.GetFullPath(args[0]);
 var reportPath = Path.GetFullPath(args[1]);
 var interactive = args.Contains("interactive", StringComparer.Ordinal);
+var high = args.Contains("high", StringComparer.Ordinal);
+var empty = args.Contains("empty", StringComparer.Ordinal);
 var scrub = args.Contains("scrub", StringComparer.Ordinal);
 var modeArgument = args.FirstOrDefault(value => value.StartsWith("decode=", StringComparison.OrdinalIgnoreCase));
 var mode = modeArgument is null ? VideoDecodeMode.Software : Enum.Parse<VideoDecodeMode>(modeArgument[7..], true);
@@ -24,7 +26,7 @@ var document = new ProjectDocument { Width = 3840, Height = 2160 };
 var subtitles = ImmutableArray.CreateBuilder<SubtitleLine>();
 var layers = ImmutableArray.CreateBuilder<ProjectLayer>();
 var tracks = ImmutableArray.CreateBuilder<SubtitleTrack>();
-for (var index = 0; index < 4; index++)
+for (var index = 0; index < (empty ? 0 : 4); index++)
 {
     var track = new SubtitleTrack { Name = "Track " + index };
     var cue = new SubtitleLine
@@ -44,7 +46,7 @@ document = document with { SubtitleTracks = tracks.ToImmutable(), Subtitles = su
 var observations = new List<PreviewBenchmarkSample>();
 var initialization = new List<double>();
 var sessions = new List<VideoDecodeSessionInfo>();
-using var converter = new SdrVideoConverter(interactive ? new(960, 540) : new());
+using var converter = new SdrVideoConverter(interactive ? new(960, 540) : high ? new(1920, 1080) : new());
 using var renderer = new ProjectSceneRenderer(new DirectoryProjectAssetResolver(Path.GetDirectoryName(source)!));
 for (var round = 0; round < rounds; round++)
 {
@@ -87,9 +89,9 @@ var warm = observations.Where(sample => sample.Index > 0).ToArray();
 var report = new
 {
     Source = source, DecodeMode = mode.ToString(), Rounds = rounds, Sessions = sessions, Initialization = Percentiles(initialization), ProjectWidth = document.Width, ProjectHeight = document.Height, TrackCount = tracks.Count,
-    Strategy = interactive ? "interactive-960x540" : "precise-1280x720",
+    Strategy = interactive ? "interactive-960x540" : high ? "precise-1920x1080" : "precise-1280x720",
     Navigation = scrub ? "alternating seeks within 4-7 seconds" : "consecutive seeks within 4-5 seconds",
-    Includes = "real native decode, SDR conversion, four animated subtitle tracks and CPU scene composition; excludes UI upload. Codec/download are accumulated API stage durations; GPU work may finish during download.",
+    Includes = $"real native decode, SDR conversion, {tracks.Count} animated subtitle tracks and CPU scene composition; excludes UI upload. Codec/download are accumulated API stage durations; GPU work may finish during download.",
     Decode = Percentiles(warm.Select(sample => sample.DecodeMilliseconds)),
     Codec = Percentiles(warm.Select(sample => sample.CodecMilliseconds)),
     Download = Percentiles(warm.Select(sample => sample.DownloadMilliseconds)),

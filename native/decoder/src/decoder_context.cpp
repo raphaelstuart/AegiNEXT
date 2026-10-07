@@ -12,4 +12,10 @@ an_decode_ratio DecoderContext::StreamTimeBase() const
     const auto value = session_.StreamTimeBase();
     return {value.num, value.den};
 }
+std::unique_ptr<FrameOwner> DecoderContext::ReadForSeek(int64_t timestamp)
+{
+    auto frame = session_.ReadFrameForSeek(timestamp);
+    if (!frame) { return nullptr; }
+    return std::make_unique<FrameOwner>(std::move(frame), session_.StreamTimeBase(), session_.ColorContext());
+}
 }

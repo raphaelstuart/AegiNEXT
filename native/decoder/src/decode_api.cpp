@@ -115,7 +115,7 @@ void ValidateInfo(T *info)
 }
 
 uint32_t AN_DECODE_CALL an_decode_abi_version(void) { return AN_DECODE_ABI_VERSION; }
-uint32_t AN_DECODE_CALL an_decode_features(void) { return AN_DECODE_FEATURE_SEEK | AN_DECODE_FEATURE_SDR_PREVIEW | AN_DECODE_FEATURE_MEDIA_CORE; }
+uint32_t AN_DECODE_CALL an_decode_features(void) { return AN_DECODE_FEATURE_SEEK | AN_DECODE_FEATURE_SDR_PREVIEW | AN_DECODE_FEATURE_MEDIA_CORE | AN_DECODE_FEATURE_SEEK_SELECTION; }
 uint32_t AN_DECODE_CALL an_decode_live_decoders(void) { return decoderCount.load(); }
 uint32_t AN_DECODE_CALL an_decode_live_frames(void) { return frameCount.load(); }
 uint32_t AN_DECODE_CALL an_preview_live_converters(void) { return previewCount.load(); }
@@ -246,6 +246,24 @@ int32_t AN_DECODE_CALL an_decoder_read_next(void *decoder, void **frame, char *e
             ++frameCount;
         }
 
+        *frame = value.release();
+        return AN_DECODE_OK;
+    });
+}
+
+int32_t AN_DECODE_CALL an_decoder_read_for_seek(void *decoder, int64_t timestamp, void **frame, char *error, uint32_t capacity)
+{
+    if (frame) { *frame = nullptr; }
+    return Boundary(error, capacity, [&]() -> int32_t
+    {
+        if (!frame) { throw Error(AN_DECODE_INVALID_ARGUMENT, "Frame output pointer is required."); }
+        auto value = Decoder(decoder)->ReadForSeek(timestamp);
+        if (!value) { return AN_DECODE_EOF; }
+        {
+            const std::lock_guard lock(registryMutex);
+            frames.insert(value.get());
+            ++frameCount;
+        }
         *frame = value.release();
         return AN_DECODE_OK;
     });

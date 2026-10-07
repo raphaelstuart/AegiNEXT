@@ -211,7 +211,7 @@ public sealed class VideoFrameNavigator : IVideoFrameSource
                     atFileStart = false;
                     reachedEnd = false;
                     lastRawTime = null;
-                    candidate = ReadGroup(linked.Token, isSuperseded);
+                    candidate = ReadGroup(linked.Token, isSuperseded, target);
                 }
 
                 if (candidate is null || candidate.Time > target)
@@ -291,7 +291,8 @@ public sealed class VideoFrameNavigator : IVideoFrameSource
         }
     }
 
-    private PositionedVideoFrame? ReadGroup(CancellationToken cancellationToken, Func<bool>? isSuperseded = null)
+    private PositionedVideoFrame? ReadGroup(CancellationToken cancellationToken, Func<bool>? isSuperseded = null,
+        MediaTime? seekTarget = null)
     {
         if (reachedEnd)
         {
@@ -304,7 +305,9 @@ public sealed class VideoFrameNavigator : IVideoFrameSource
         try
         {
             ThrowIfSuperseded(isSuperseded);
-            current ??= decoder!.ReadFrame(cancellationToken);
+            current ??= seekTarget is { } target && decoder is FfmpegVideoDecoder native
+                ? native.ReadFrameForSeek(target, cancellationToken)
+                : decoder!.ReadFrame(cancellationToken);
             if (current is null)
             {
                 reachedEnd = true;

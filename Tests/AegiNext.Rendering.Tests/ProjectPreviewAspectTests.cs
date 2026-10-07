@@ -50,6 +50,45 @@ public sealed class ProjectPreviewAspectTests
         AssertPixel(pixels, 4, 0, 7, 0, 0, 0);
     }
 
+    [Fact]
+    public void InactiveLayersBypassCompositionWithoutCopyingRowPaddingOrLosingPixels()
+    {
+        var document = new ProjectDocument
+        {
+            Width = 2, Height = 2,
+            Layers = [new() { Kind = LayerKind.SHAPE, Start = new(1), End = new(2), Shape = new(ShapeKind.RECTANGLE, 2, 2) }]
+        };
+        byte[] background = [7, 19, 83, 255, 21, 75, 127, 255, 99, 99, 99, 99,
+            135, 163, 201, 255, 215, 239, 253, 255, 99, 99, 99, 99];
+        using var renderer = new ProjectSceneRenderer(new DirectoryProjectAssetResolver(AppContext.BaseDirectory));
+        Assert.False(renderer.HasPreviewLayers(document, MediaTime.Zero));
+        Assert.True(renderer.HasPreviewLayers(document, new(1)));
+        Assert.False(renderer.HasPreviewLayers(document, new(2)));
+        var pixels = renderer.ComposePreview(document, MediaTime.Zero, background, 2, 2, 12, 2, 2);
+        Assert.Equal(background[..8].Concat(background[12..20]), pixels);
+        var visibleDocument = document with
+        {
+            Layers = [document.Layers[0] with { Start = MediaTime.Zero, Fill = new(1, 0, 0) }]
+        };
+        Assert.True(renderer.HasPreviewLayers(visibleDocument, MediaTime.Zero));
+        AssertPixel(renderer.ComposePreview(visibleDocument, MediaTime.Zero, background, 2, 2, 12, 2, 2),
+            2, 0, 0, 0, 0, 255);
+        Assert.False(renderer.HasPreviewLayers(document, MediaTime.Zero));
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Assert.Throws<OperationCanceledException>(() =>
+            renderer.ComposePreview(document, MediaTime.Zero, background, 2, 2, 12, 2, 2, cancellation.Token));
+    }
+
+    [Fact]
+    public void NonOpaqueBackgroundRetainsTheLinearCompositionPath()
+    {
+        using var renderer = new ProjectSceneRenderer(new DirectoryProjectAssetResolver(AppContext.BaseDirectory));
+        var pixels = renderer.ComposePreview(new() { Width = 1, Height = 1 }, MediaTime.Zero,
+            [0, 255, 0, 0], 1, 1, 4, 1, 1);
+        Assert.Equal(new byte[] { 0, 0, 0, 0 }, pixels);
+    }
+
     [Theory]
     [InlineData(0, 4)]
     [InlineData(32769, 1)]

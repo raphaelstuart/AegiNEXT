@@ -38,7 +38,8 @@ enum { AN_DECODE_ABI_VERSION = 1, AN_DECODE_NAME_CAPACITY = 64 };
 enum an_decode_feature_flags
 {
     AN_DECODE_FEATURE_SEEK = 1,
-    AN_DECODE_FEATURE_SDR_PREVIEW = 2
+    AN_DECODE_FEATURE_SDR_PREVIEW = 2,
+    AN_DECODE_FEATURE_SEEK_SELECTION = 8
 };
 
 enum an_frame_flags
@@ -218,6 +219,12 @@ AN_DECODE_API int32_t AN_DECODE_CALL an_decode_get_backend_info(an_decode_backen
 AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_create(void **decoder, char *error, uint32_t capacity);
 AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_open(void *decoder, const char *path_utf8, int32_t stream_index, char *error, uint32_t capacity);
 AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_read_next(void *decoder, void **frame, char *error, uint32_t capacity);
+/* Optional SEEK_SELECTION capability. From the current cursor, select the last
+ * original PTS <= timestamp (or the first frame if already after the target).
+ * Intermediate hardware frames stay on the GPU. The first frame after the
+ * target is retained for read_next; duplicates select the last frame. Missing
+ * or decreasing PTS during selection is a terminal error. No implicit seek. */
+AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_read_for_seek(void *decoder, int64_t timestamp, void **frame, char *error, uint32_t capacity);
 /* Returns the selected stream's positive time base after a successful open.
  * This query neither reads packets nor changes the current decoder position. */
 AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_get_time_base(void *decoder, an_decode_ratio *time_base, char *error, uint32_t capacity);

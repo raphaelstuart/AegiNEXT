@@ -57,6 +57,7 @@ public:
     DecoderSession &operator=(const DecoderSession &) = delete;
     void Open(const char *path, int32_t streamIndex);
     FramePointer ReadFrame();
+    FramePointer ReadFrameForSeek(int64_t timestamp);
     void Seek(int64_t timestamp);
     void Cancel() noexcept;
     AVRational StreamTimeBase() const;
@@ -72,6 +73,8 @@ private:
     void OpenAttempt(bool hardware);
     void CloseAttempt() noexcept;
     FramePointer ReadInternal();
+    FramePointer ReadOutput(int64_t timestamp);
+    FramePointer ReadSelected(int64_t timestamp);
     FramePointer Download(FramePointer frame);
     void Fallback(const std::string &reason);
     DecodeOptions options_;
@@ -93,5 +96,6 @@ private:
     AVBufferRef *device_ = nullptr;
     void *videoToolbox_ = nullptr;
     FramePointer scratch_;
+    FramePointer pendingFrame_;
 };
 }

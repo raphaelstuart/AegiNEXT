@@ -267,37 +267,48 @@ void PreviewConverter::Convert(const FrameOwner &owner, const an_preview_request
         av_frame_remove_side_data(source.get(), AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
     }
     source->crop_left = source->crop_top = source->crop_right = source->crop_bottom = 0;
-    auto converted = MakeBgraFrame(source->width, source->height);
-    CheckAv(sws_frame_setup(cms_, converted.get(), source.get()), AN_DECODE_UNSUPPORTED, "sws_frame_setup(preview CMS)");
-    CheckAv(sws_scale_frame(cms_, converted.get(), source.get()), AN_DECODE_NATIVE_FAILURE, "sws_scale_frame(preview CMS)");
+    if (!converted_ || converted_->width != source->width || converted_->height != source->height)
+    {
+        converted_ = MakeBgraFrame(source->width, source->height);
+    }
+    CheckAv(av_frame_make_writable(converted_.get()), AN_DECODE_NATIVE_FAILURE, "av_frame_make_writable(preview CMS)");
+    CheckAv(sws_frame_setup(cms_, converted_.get(), source.get()), AN_DECODE_UNSUPPORTED, "sws_frame_setup(preview CMS)");
+    CheckAv(sws_scale_frame(cms_, converted_.get(), source.get()), AN_DECODE_NATIVE_FAILURE, "sws_scale_frame(preview CMS)");
     const auto visibleWidth = original->width - static_cast<int>(original->crop_left + original->crop_right);
     const auto visibleHeight = original->height - static_cast<int>(original->crop_top + original->crop_bottom);
-    auto cropped = MakeBgraFrame(visibleWidth, visibleHeight);
-    for (int row = 0; row < visibleHeight; ++row)
+    const uint8_t *croppedData[4]{converted_->data[0] + original->crop_top * converted_->linesize[0] + original->crop_left * 4};
+    const int croppedStride[4]{converted_->linesize[0]};
+    if (request.width == static_cast<uint32_t>(visibleWidth) && request.height == static_cast<uint32_t>(visibleHeight))
     {
-        const auto *input = converted->data[0] + (row + original->crop_top) * converted->linesize[0] + original->crop_left * 4;
-        std::memcpy(cropped->data[0] + static_cast<ptrdiff_t>(row) * cropped->linesize[0], input,
-            static_cast<size_t>(visibleWidth) * 4);
+        const auto rowBytes = static_cast<size_t>(visibleWidth) * 4;
+        for (int row = 0; row < visibleHeight; ++row)
+        {
+            std::memcpy(destination + row * rowBytes, croppedData[0] + static_cast<ptrdiff_t>(row) * croppedStride[0], rowBytes);
+        }
+        return;
     }
-    auto output = MakeBgraFrame(static_cast<int>(request.width), static_cast<int>(request.height));
+    if (!output_ || output_->width != static_cast<int>(request.width) || output_->height != static_cast<int>(request.height))
+    {
+        output_ = MakeBgraFrame(static_cast<int>(request.width), static_cast<int>(request.height));
+    }
     resampler_ = sws_getCachedContext(resampler_, visibleWidth, visibleHeight, AV_PIX_FMT_BGRA,
-        output->width, output->height, AV_PIX_FMT_BGRA, SWS_BILINEAR | SWS_ACCURATE_RND | SWS_BITEXACT,
+        output_->width, output_->height, AV_PIX_FMT_BGRA, SWS_BILINEAR | SWS_ACCURATE_RND | SWS_BITEXACT,
         nullptr, nullptr, nullptr);
     if (!resampler_)
     {
         throw Error(AN_DECODE_NATIVE_FAILURE, "Cannot initialize the BGRA display resampler.");
     }
-    const auto rows = sws_scale(resampler_, cropped->data, cropped->linesize, 0, visibleHeight,
-        output->data, output->linesize);
+    const auto rows = sws_scale(resampler_, croppedData, croppedStride, 0, visibleHeight,
+        output_->data, output_->linesize);
     CheckAv(rows, AN_DECODE_NATIVE_FAILURE, "sws_scale(preview display resampler)");
-    if (rows != output->height)
+    if (rows != output_->height)
     {
         throw Error(AN_DECODE_NATIVE_FAILURE, "Preview resampling returned an incomplete image.");
     }
     const auto rowBytes = static_cast<size_t>(request.width) * 4;
     for (uint32_t row = 0; row < request.height; ++row)
     {
-        std::memcpy(destination + row * rowBytes, output->data[0] + static_cast<ptrdiff_t>(row) * output->linesize[0], rowBytes);
+        std::memcpy(destination + row * rowBytes, output_->data[0] + static_cast<ptrdiff_t>(row) * output_->linesize[0], rowBytes);
     }
 }
 }

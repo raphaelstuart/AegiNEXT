@@ -16,6 +16,12 @@ struct DecoderSessionTestAccess
         session.packetPending_ = true;
     }
     static bool NegotiationFailed(const DecoderSession &session) { return session.negotiationFailed_; }
+    static void InjectPendingTimestamp(DecoderSession &session, int64_t timestamp)
+    {
+        session.pendingFrame_.reset(av_frame_alloc());
+        if (!session.pendingFrame_) { throw std::bad_alloc(); }
+        session.pendingFrame_->pts = timestamp;
+    }
 };
 }
 using namespace aeginext::media;
@@ -102,6 +108,46 @@ void HardwareRequiresFailureAndNeverSwitchesAfterDelivery(const char *path)
         "Hardware failure after delivery silently switched backend or delivered a mixed frame.");
     std::cout << "Executed actual hardware post-delivery refusal: backend=" << static_cast<uint32_t>(backend) << ", hardwareConfirmed=" << autoSession.Info().hardwareConfirmed << '\n';
 }
+
+void SeekSelectionPreservesTimestampContracts(const char *path)
+{
+    DecoderSession baseline({DecodeMode::Software, DecodeWorkload::Interactive});
+    baseline.Open(path, 0);
+    auto first = baseline.ReadFrame();
+    auto second = baseline.ReadFrame();
+    Require(first && second && first->pts != AV_NOPTS_VALUE && second->pts > first->pts, "Fixture needs increasing original PTS.");
+
+    DecoderSession duplicate({DecodeMode::Software, DecodeWorkload::Interactive});
+    duplicate.Open(path, 0);
+    DecoderSessionTestAccess::InjectPendingTimestamp(duplicate, first->pts);
+    auto selected = duplicate.ReadFrameForSeek(first->pts);
+    Require(selected && selected->pts == first->pts && selected->data[0], "Selection did not retain the last duplicate frame.");
+    auto next = duplicate.ReadFrame();
+    Require(next && next->pts == second->pts && duplicate.Info().deliveredFrames == 2, "Selection lost or counted the pending next frame twice.");
+
+    for (const auto timestamp : {AV_NOPTS_VALUE, first->pts + 1})
+    {
+        DecoderSession invalid({DecodeMode::Software, DecodeWorkload::Interactive});
+        invalid.Open(path, 0);
+        DecoderSessionTestAccess::InjectPendingTimestamp(invalid, timestamp);
+        bool rejected = false;
+        try { invalid.ReadFrameForSeek(first->pts + 1); }
+        catch (const CoreError &error)
+        { rejected = error.Code() == ErrorCode::Decode && !error.IsHardwareFailure(); }
+        Require(rejected && invalid.Info().deliveredFrames == 0, "Missing or decreasing PTS was accepted during selection.");
+        rejected = false;
+        try { invalid.ReadFrame(); }
+        catch (const CoreError &error) { rejected = error.Code() == ErrorCode::InvalidState; }
+        Require(rejected, "Selection error did not make the decoder terminal.");
+    }
+
+    DecoderSession sentinel({DecodeMode::Software, DecodeWorkload::Interactive});
+    sentinel.Open(path, 0);
+    bool rejected = false;
+    try { sentinel.ReadFrameForSeek(AV_NOPTS_VALUE); }
+    catch (const CoreError &error) { rejected = error.Code() == ErrorCode::InvalidArgument; }
+    Require(rejected && sentinel.ReadFrame() != nullptr, "Invalid selection argument consumed or faulted the decoder.");
+}
 }
 int main()
 {
@@ -115,6 +161,7 @@ int main()
         CancellationNeverFallsBack(path);
         NegotiationFailureFallsBackBeforeDelivery(path);
         HardwareRequiresFailureAndNeverSwitchesAfterDelivery(path);
+        SeekSelectionPreservesTimestampContracts(path);
         std::cout << "PASS controlled negotiation failure, required hardware refusal, post-delivery failure, source corruption and sticky cancellation\n";
         return 0;
     }

@@ -172,6 +172,8 @@ public sealed class VideoPreviewDecodeModeTests
         try
         {
             await controller.OpenAsync("closing.mp4");
+            // Open may finish before the initial conversion worker creates its converter.
+            await Eventually(() => controller.Snapshot.PresentedGeneration is not null);
             var switching = controller.SwitchDecodeModeAsync(VideoDecodeMode.Hardware);
             await blocked.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             var closing = controller.CloseAsync();

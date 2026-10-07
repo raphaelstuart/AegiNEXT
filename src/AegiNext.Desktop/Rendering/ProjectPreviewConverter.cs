@@ -60,6 +60,11 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
         try
         {
             var size = GetPreviewSize(document, background.Width, background.Height);
+            if (size.Width == background.Width && size.Height == background.Height && !renderer.HasPreviewLayers(document, time))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return CompleteFrame(background, background, state, time);
+            }
             var pixels = renderer.ComposePreview(document, time, background.Pixels.Span,
                 background.Width, background.Height, background.Width * 4, size.Width, size.Height, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();

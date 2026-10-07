@@ -24,6 +24,7 @@ internal sealed class VideoPreviewRun : IDisposable
     internal long Epoch { get; }
     internal string Path { get; }
     internal TaskCompletionSource<bool> FirstPresentation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal TaskCompletionSource PresentationChanged { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal CancellationToken Token { get; }
     internal VideoPreviewMedia? Media { get; set; }
     internal Exception? Error { get; set; }

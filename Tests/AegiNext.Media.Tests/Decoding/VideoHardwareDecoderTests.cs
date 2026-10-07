@@ -37,6 +37,38 @@ public sealed class VideoHardwareDecoderTests
         Assert.Equal(initialFrames, FfmpegVideoDecoder.GetLiveFrameCount());
     }
 
+    [DecoderTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "DecoderIntegration")]
+    public async Task SeekSelectionDownloadsOnlyTheChosenFrameAndPreservesTheNextFrame(bool hevcTenBit)
+    {
+        using var fixture = await HardwareDecoderFixture.CreateAsync(hevcTenBit);
+        using var software = FfmpegVideoDecoder.Open(fixture.MediaPath, 0, new VideoDecoderOptions { Mode = VideoDecodeMode.Software });
+        using var auto = FfmpegVideoDecoder.Open(fixture.MediaPath, 0);
+        for (var index = 0; index < 3; index++)
+        {
+            software.ReadFrame()!.Dispose();
+        }
+        using var expected = software.ReadFrame()!;
+        using var following = software.ReadFrame()!;
+        var target = (expected.Info.PresentationTimestamp!.ToMediaTime() + following.Info.PresentationTimestamp!.ToMediaTime()) / 2;
+        using var actual = auto.ReadFrameForSeek(target, default)!;
+        AssertFrameFactsEqual(expected, actual);
+        AssertSamplesEqual(expected, actual);
+        Assert.Equal(1UL, auto.SessionInfo.DeliveredFrames);
+        using var next = auto.ReadFrame()!;
+        AssertFrameFactsEqual(following, next);
+        AssertSamplesEqual(following, next);
+        Assert.Equal(2UL, auto.SessionInfo.DeliveredFrames);
+        auto.SeekToKeyFrame(MediaTime.Zero);
+        software.SeekToKeyFrame(MediaTime.Zero);
+        using var restarted = auto.ReadFrame()!;
+        using var restartedExpected = software.ReadFrame()!;
+        AssertFrameFactsEqual(restartedExpected, restarted);
+        AssertSamplesEqual(restartedExpected, restarted);
+    }
+
     private static async Task AssertAutoParityAsync(bool hevcTenBit, bool cropped)
     {
         using var fixture = await HardwareDecoderFixture.CreateAsync(hevcTenBit, cropped: cropped);

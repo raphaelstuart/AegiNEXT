@@ -24,6 +24,8 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private LinearRenderSurface? previewScene;
     private LinearRenderSurface? previewTarget;
     private ImmutableArray<EvaluatedLayer> previewLayers = [];
+    private ImmutableArray<EvaluatedLayer> evaluatedPreviewLayers = [];
+    private MediaTime? evaluatedPreviewTime;
     private bool previewSceneValid;
     private SKBlender? additiveBlend;
     private SKColorFilter? previewWhiteFilter;
@@ -123,6 +125,15 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         return ComposePreviewCore(document, time, bgra, width, height, rowBytes, outputWidth, outputHeight, true, cancellationToken);
     }
 
+    /// <summary>查询已验证快照在给定时间是否包含叠层，供视频预览直接复用匹配尺寸的背景。</summary>
+    public bool HasPreviewLayers(ProjectDocument document, MediaTime time)
+    {
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+        ArgumentNullException.ThrowIfNull(document);
+        Prepare(document);
+        return !EvaluatePreview(time).IsEmpty;
+    }
+
     private byte[] ComposePreviewCore(ProjectDocument document, MediaTime time, ReadOnlySpan<byte> bgra,
         int width, int height, int rowBytes, int outputWidth, int outputHeight, bool projectViewport, CancellationToken cancellationToken = default)
     {
@@ -140,6 +151,17 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         }
 
         Prepare(document);
+        cancellationToken.ThrowIfCancellationRequested();
+        var layers = EvaluatePreview(time);
+        if (layers.IsEmpty && width == outputWidth && height == outputHeight && IsOpaqueBackground(bgra, width, height, rowBytes))
+        {
+            var pixels = new byte[checked(outputWidth * outputHeight * 4)];
+            for (var row = 0; row < height; row++)
+            {
+                bgra.Slice(row * rowBytes, width * 4).CopyTo(pixels.AsSpan(row * width * 4, width * 4));
+            }
+            return pixels;
+        }
         var scale = Math.Min(1, Math.Min((double)outputWidth / document.Width, (double)outputHeight / document.Height));
         var sceneWidth = Math.Max(1, (int)Math.Round(document.Width * scale));
         var sceneHeight = Math.Max(1, (int)Math.Round(document.Height * scale));
@@ -155,7 +177,6 @@ public sealed partial class ProjectSceneRenderer : IDisposable
             previewTarget = new(new(outputWidth, outputHeight, PREVIEW_REFERENCE_WHITE_NITS));
         }
 
-        var layers = SceneEvaluator.Evaluate(prepared!, time);
         if (!previewSceneValid || !Equivalent(previewLayers, layers))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -205,6 +226,21 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         return new(left, top, left + fittedWidth, top + fittedHeight);
     }
 
+    private static bool IsOpaqueBackground(ReadOnlySpan<byte> bgra, int width, int height, int rowBytes)
+    {
+        for (var row = 0; row < height; row++)
+        {
+            for (var column = 0; column < width; column++)
+            {
+                if (bgra[row * rowBytes + column * 4 + 3] != byte.MaxValue)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -252,7 +288,20 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         previewScene = null;
         previewTarget = null;
         previewLayers = [];
+        evaluatedPreviewLayers = [];
+        evaluatedPreviewTime = null;
         previewSceneValid = false;
+    }
+
+    private ImmutableArray<EvaluatedLayer> EvaluatePreview(MediaTime time)
+    {
+        if (evaluatedPreviewTime != time)
+        {
+            var layers = SceneEvaluator.Evaluate(prepared!, time);
+            evaluatedPreviewLayers = layers;
+            evaluatedPreviewTime = time;
+        }
+        return evaluatedPreviewLayers;
     }
 
     private static bool Equivalent(ImmutableArray<EvaluatedLayer> previous, ImmutableArray<EvaluatedLayer> current)

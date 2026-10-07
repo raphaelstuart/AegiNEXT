@@ -9,6 +9,7 @@ public:
     explicit DecoderContext(aeginext::media::DecodeOptions options = {}) : session_(options) {}
     void Open(const char *path, int32_t streamIndex) { session_.Open(path, streamIndex); }
     std::unique_ptr<FrameOwner> ReadNext();
+    std::unique_ptr<FrameOwner> ReadForSeek(int64_t timestamp);
     an_decode_ratio StreamTimeBase() const;
     void Seek(int64_t timestamp) { session_.Seek(timestamp); }
     void Cancel() noexcept { session_.Cancel(); }

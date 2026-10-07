@@ -149,7 +149,17 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
     /// <summary>
     /// 顺序取得独立帧，正常 EOF 返回 null；估算时间戳不会替代原始 PTS。
     /// </summary>
-    public unsafe DecodedVideoFrame? ReadFrame(CancellationToken cancellationToken = default)
+    public DecodedVideoFrame? ReadFrame(CancellationToken cancellationToken = default)
+    {
+        return ReadFrameCore(null, cancellationToken);
+    }
+
+    internal DecodedVideoFrame? ReadFrameForSeek(MediaTime target, CancellationToken cancellationToken)
+    {
+        return ReadFrameCore(target, cancellationToken);
+    }
+
+    private unsafe DecodedVideoFrame? ReadFrameCore(MediaTime? target, CancellationToken cancellationToken)
     {
         lock (gate)
         {
@@ -160,7 +170,10 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
             error.Clear();
             fixed (byte* errorPointer = error)
             {
-                var code = NativeDecodeMethods.ReadNext(handle, out var pointer, errorPointer, (uint)error.Length);
+                var code = target is { } time && (NativeDecodeMethods.Features() & NativeDecodeMethods.SEEK_SELECTION_FEATURE) != 0
+                    ? NativeDecodeMethods.ReadForSeek(handle, time.ToTimestamp(StreamTimeBase, MediaTimeRounding.FLOOR).Value,
+                        out var pointer, errorPointer, (uint)error.Length)
+                    : NativeDecodeMethods.ReadNext(handle, out pointer, errorPointer, (uint)error.Length);
                 var frameHandle = new DecodedFrameHandle(pointer);
                 try
                 {

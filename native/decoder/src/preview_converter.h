@@ -25,5 +25,7 @@ public:
 private:
     SwsContext *cms_ = nullptr;
     SwsContext *resampler_ = nullptr;
+    FramePointer converted_;
+    FramePointer output_;
 };
 }

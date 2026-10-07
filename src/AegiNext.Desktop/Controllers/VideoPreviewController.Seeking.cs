@@ -14,7 +14,13 @@ public sealed partial class VideoPreviewController
         return SeekCoreAsync(target, resumePlayback);
     }
 
-    private Task SeekCoreAsync(MediaTime target, bool resumePlayback)
+    /// <summary>交互定位先交付暂停帧再恢复播放，让下一轮拖动不会取消尚未完成的转换。</summary>
+    internal Task SeekForInteractivePlaybackAsync(MediaTime target, bool resumePlayback)
+    {
+        return SeekCoreAsync(target, resumePlayback, true);
+    }
+
+    private Task SeekCoreAsync(MediaTime target, bool resumePlayback, bool waitForPresentation = false)
     {
         lock (gate)
         {
@@ -28,6 +34,7 @@ public sealed partial class VideoPreviewController
 
             pendingSeek = ExecuteAsync(async (run, session, operationRevision) =>
             {
+                var presentationRevision = revision;
                 await ClearMediaRangeAsync(run, session, operationRevision).ConfigureAwait(false);
                 await SubmitAudioCommandAsync(run, operationRevision, audio => audio.PauseAsync()).ConfigureAwait(false);
                 Task seek;
@@ -39,6 +46,11 @@ public sealed partial class VideoPreviewController
                 await seek.ConfigureAwait(false);
                 await SubmitAudioCommandAsync(run, operationRevision,
                     audio => audio.SeekAsync(session.Snapshot.Position)).ConfigureAwait(false);
+
+                if (waitForPresentation)
+                {
+                    await WaitForSeekPresentationAsync(run, session, operationRevision, presentationRevision).ConfigureAwait(false);
+                }
 
                 lock (gate)
                 {
@@ -64,6 +76,37 @@ public sealed partial class VideoPreviewController
             pendingSeekPresentationRevision = revision;
             return pendingSeek;
         }
+    }
+
+    private async Task WaitForSeekPresentationAsync(VideoPreviewRun run, VideoPlaybackSession session, long operationRevision,
+        long presentationRevision)
+    {
+        while (true)
+        {
+            Task changed;
+            lock (gate)
+            {
+                ThrowIfCommandObsoleteUnderLock(run, operationRevision);
+                if (run.Error is { } error)
+                {
+                    throw new InvalidOperationException("视频预览转换失败。", error);
+                }
+                var snapshot = session.Snapshot;
+                if (presentationRevision != revision || snapshot.DisplayTime is null || run.PresentedGeneration == snapshot.Generation)
+                {
+                    return;
+                }
+                changed = run.PresentationChanged.Task;
+            }
+            await changed.WaitAsync(run.Token).ConfigureAwait(false);
+        }
+    }
+
+    private static void PulsePresentationUnderLock(VideoPreviewRun run)
+    {
+        var changed = run.PresentationChanged;
+        run.PresentationChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        changed.TrySetResult();
     }
 
     private async Task RefreshAfterPendingSeekAsync(VideoPreviewRun run, long requestedRevision, Task seek)

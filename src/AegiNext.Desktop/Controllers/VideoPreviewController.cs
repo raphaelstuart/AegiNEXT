@@ -170,6 +170,10 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                 revision++;
                 current?.ConversionCancellation?.Cancel();
                 ClearPreparedFramesUnderLock(current);
+                if (current is { } run)
+                {
+                    PulsePresentationUnderLock(run);
+                }
             }
         }
     }
@@ -725,6 +729,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
 
             presentationRevision = revision;
             operationRevision = ++commandSequence;
+            PulsePresentationUnderLock(run);
             result = command(run, session, operationRevision);
             BeginOperationUnderLock();
             PulseResumeUnderLock(run);
@@ -779,6 +784,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
 
                 run.Error = error;
                 run.FirstPresentation.TrySetException(error);
+                PulsePresentationUnderLock(run);
             }
 
             try
@@ -905,6 +911,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                         run.PresentedAtPosition = snapshot.PresentedAtPosition;
                         run.PresentedGeneration = snapshot.PresentedGeneration;
                         run.FirstPresentation.TrySetResult(true);
+                        PulsePresentationUnderLock(run);
                     }
                     else if (clear && IsCurrentUnderLock(run))
                     {
@@ -996,6 +1003,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         run.PresentedFrameEnd = null;
         run.PresentedAtPosition = null;
         run.PresentedGeneration = null;
+        PulsePresentationUnderLock(run);
     }
 
     private bool IsCurrentUnderLock(VideoPreviewRun run)

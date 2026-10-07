@@ -69,6 +69,7 @@ DecoderSession::DecoderSession(DecodeOptions options) : options_(options)
 DecoderSession::~DecoderSession() { CloseAttempt(); }
 void DecoderSession::CloseAttempt() noexcept
 {
+    pendingFrame_.reset();
     scratch_.reset();
     av_packet_free(&packet_);
     avcodec_free_context(&codec_);
@@ -251,6 +252,7 @@ void DecoderSession::Seek(int64_t timestamp)
         avcodec_flush_buffers(codec_);
         av_packet_unref(packet_);
         av_frame_unref(scratch_.get());
+        pendingFrame_.reset();
         packetPending_ = demuxEof_ = drainSent_ = decoderEof_ = false;
         seekTarget_ = timestamp;
         ++info_.generation;
@@ -259,17 +261,55 @@ void DecoderSession::Seek(int64_t timestamp)
 }
 FramePointer DecoderSession::ReadFrame()
 {
+    return ReadOutput(AV_NOPTS_VALUE);
+}
+FramePointer DecoderSession::ReadFrameForSeek(int64_t timestamp)
+{
+    if (timestamp == AV_NOPTS_VALUE)
+    { throw CoreError(ErrorCode::InvalidArgument, "Missing timestamp sentinel is not a seek target."); }
+    return ReadOutput(timestamp);
+}
+FramePointer DecoderSession::ReadSelected(int64_t timestamp)
+{
+    auto frame = pendingFrame_ ? std::move(pendingFrame_) : ReadInternal();
+    if (timestamp == AV_NOPTS_VALUE || !frame) { return frame; }
+    if (frame->pts == AV_NOPTS_VALUE)
+    { throw CoreError(ErrorCode::Decode, "Seek frame is missing its original PTS."); }
+    if (frame->pts > timestamp) { return frame; }
+    colorContext_.hdrEvidence |= HasHdrEvidence(frame.get());
+    while (true)
+    {
+        CheckCancelled();
+        auto next = ReadInternal();
+        if (!next) { return frame; }
+        if (next->pts == AV_NOPTS_VALUE || next->pts < frame->pts)
+        { throw CoreError(ErrorCode::Decode, "Seek frames have missing or decreasing original PTS."); }
+        if (next->pts > timestamp)
+        {
+            pendingFrame_ = std::move(next);
+            return frame;
+        }
+        colorContext_.hdrEvidence |= HasHdrEvidence(next.get());
+        frame = std::move(next);
+    }
+}
+FramePointer DecoderSession::ReadOutput(int64_t timestamp)
+{
     CheckReady();
-    if (decoderEof_) { return nullptr; }
+    if (decoderEof_ && !pendingFrame_) { return nullptr; }
     try
     {
         FramePointer frame;
-        try { frame = ReadInternal(); }
+        try
+        {
+            frame = ReadSelected(timestamp);
+            if (frame && hardwareAttempt_) { frame = Download(std::move(frame)); }
+        }
         catch (const CoreError &failure)
         {
             if (hardwareAttempt_ && options_.mode == DecodeMode::Auto && info_.deliveredFrames == 0 &&
                 failure.IsHardwareFailure())
-            { Fallback(failure.what()); frame = ReadInternal(); }
+            { Fallback(failure.what()); frame = ReadSelected(timestamp); }
             else { throw; }
         }
         CheckCancelled();
@@ -355,7 +395,13 @@ FramePointer DecoderSession::ReadInternal()
             FramePointer frame(av_frame_alloc());
             if (!frame) { throw std::bad_alloc(); }
             av_frame_move_ref(frame.get(), scratch_.get());
-            if (hardwareAttempt_) { frame = Download(std::move(frame)); }
+            if (hardwareAttempt_)
+            {
+                if ((frame->flags & AV_FRAME_FLAG_CORRUPT) || frame->decode_error_flags)
+                { throw CoreError(ErrorCode::Decode, "Hardware output contains source corruption."); }
+                if (frame->format != hardwareFormat_)
+                { throw CoreError(ErrorCode::Decode, "Hardware silently changed to software.", true); }
+            }
             return frame;
         }
         if (received == AVERROR_EOF)

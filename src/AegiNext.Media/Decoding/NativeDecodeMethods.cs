@@ -12,6 +12,7 @@ internal static partial class NativeDecodeMethods
 
     internal const uint ABI_VERSION = 1;
     internal const uint SEEK_FEATURE = 1;
+    internal const uint SEEK_SELECTION_FEATURE = 8;
     internal const int EOF = 1;
     internal const int INVALID_ARGUMENT = 2;
     internal const int UNSUPPORTED = 3;
@@ -76,6 +77,10 @@ internal static partial class NativeDecodeMethods
     [LibraryImport(LIBRARY, EntryPoint = "an_decoder_read_next")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe partial int ReadNext(VideoDecoderHandle decoder, out nint frame, byte* error, uint capacity);
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_decoder_read_for_seek")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static unsafe partial int ReadForSeek(VideoDecoderHandle decoder, long timestamp, out nint frame, byte* error, uint capacity);
 
     [LibraryImport(LIBRARY, EntryPoint = "an_decoder_get_time_base")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

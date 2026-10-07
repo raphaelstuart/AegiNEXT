@@ -1,5 +1,6 @@
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Panels.Preview;
 using AegiNext.Desktop.Settings;
 using AegiNext.Media.Playback;
 using Avalonia;
@@ -77,6 +78,122 @@ public sealed class PreviewScrubbingLiveUiTests
         Assert.Equal(quality, context.Session.Preferences.PreviewQuality);
         await DrainAsync(() => context.Controller.Snapshot.PresentedAtPosition is { } final && final <= new MediaTime(1, 10));
         Assert.Equal(playing ? VideoPlaybackState.PLAYING : VideoPlaybackState.PAUSED, context.Controller.Snapshot.State);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ContinuousMovesWaitForTheIntermediateConversionToPresentBeforeSeekingTheLatestTarget(bool playing)
+    {
+        using var converter = new CatchupPreviewConverter();
+        var source = new PreviewTestSource(1, 0, 5000, 10000, 15000, 20000);
+        await using var context = new MainWindowTestContext(videoSourceFactory: () => source, videoConverterFactory: () => converter);
+        await context.OpenMediaAsync();
+        await DrainAsync(() => context.Controller.Snapshot.PresentedGeneration is not null);
+        if (playing)
+        {
+            await context.Controller.PlayAsync();
+        }
+        converter.Block(2);
+        var delivered = new List<MediaTime>();
+        context.Session.PreviewUpdated += (_, update) =>
+        {
+            if (update.Frame is not null && update.Snapshot.PresentedFrameTime is { } time)
+            {
+                delivered.Add(time);
+            }
+        };
+        var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
+        context.Window.UpdateLayout();
+        var first = timeline.TranslatePoint(new(timeline.HeaderWidth + timeline.PixelsPerSecond * 5, 8), context.Window)!.Value;
+        var last = first + new Vector(timeline.PixelsPerSecond * 5, 0);
+        var seeks = source.SeekCount;
+        context.Window.MouseDown(first, MouseButton.Left);
+        try
+        {
+            await DrainAsync(() => converter.Entered.Task.IsCompleted);
+            for (var index = 1; index <= 20; index++)
+            {
+                context.Window.MouseMove(first + (last - first) * (index / 20d));
+                await Task.Delay(5, TestContext.Current.CancellationToken);
+                Dispatcher.UIThread.RunJobs();
+            }
+            Assert.Equal(new MediaTime(10), context.Session.ProjectPosition);
+            Assert.Equal(seeks + 1, source.SeekCount);
+            Assert.True(timeline.IsSeeking);
+            converter.Release();
+            await DrainAsync(() => delivered.Contains(new(10)));
+            Assert.Contains(new MediaTime(5), delivered);
+            Assert.Equal(seeks + 2, source.SeekCount);
+        }
+        finally
+        {
+            converter.Release();
+            context.Window.MouseUp(last, MouseButton.Left);
+        }
+        await DrainAsync(() => !timeline.IsSeeking && context.Controller.Snapshot.Position == new MediaTime(10));
+        Assert.Equal(playing ? VideoPlaybackState.PLAYING : VideoPlaybackState.PAUSED, context.Controller.Snapshot.State);
+    }
+
+    [AvaloniaFact]
+    public async Task QualityChangeDuringBlockedInteractiveConversionAllowsTheLatestTargetToPresent()
+    {
+        using var converter = new CatchupPreviewConverter();
+        await using var context = new MainWindowTestContext(videoConverterFactory: () => converter);
+        await context.OpenMediaAsync();
+        await DrainAsync(() => context.Controller.Snapshot.PresentedGeneration is not null);
+        converter.Block(2);
+        var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
+        context.Window.UpdateLayout();
+        var first = timeline.TranslatePoint(new(timeline.HeaderWidth + timeline.PixelsPerSecond * 5, 8), context.Window)!.Value;
+        var last = first + new Vector(timeline.PixelsPerSecond * 5, 0);
+        context.Window.MouseDown(first, MouseButton.Left);
+        try
+        {
+            await DrainAsync(() => converter.Entered.Task.IsCompleted);
+            context.Window.MouseMove(last);
+            var selector = UiTestActions.Find<ComboBox>(context.Window, "QualityCombo");
+            selector.SelectedItem = selector.Items.OfType<PreviewQualityChoice>().Single(choice => choice.Id == PreviewQuality.HIGH);
+            await DrainAsync(() => context.Controller.Snapshot.PresentedFrameTime == new MediaTime(10));
+            Assert.True(timeline.IsSeeking);
+            Assert.True(context.ViewModel.Preview.Scene.IsInteractive);
+            Assert.Equal(PreviewQuality.HIGH, context.Session.Preferences.PreviewQuality);
+        }
+        finally
+        {
+            converter.Release();
+            context.Window.MouseUp(last, MouseButton.Left);
+        }
+        await DrainAsync(() => !timeline.IsSeeking && context.Controller.Snapshot.Position == new MediaTime(10));
+        Assert.False(context.ViewModel.Preview.Scene.IsInteractive);
+    }
+
+    [AvaloniaFact]
+    public async Task ReleasingDuringBlockedConversionSupersedesTheWaitAndPresentsTheExactFinalTarget()
+    {
+        using var converter = new CatchupPreviewConverter();
+        await using var context = new MainWindowTestContext(videoConverterFactory: () => converter);
+        await context.OpenMediaAsync();
+        await DrainAsync(() => context.Controller.Snapshot.PresentedGeneration is not null);
+        converter.Block(2);
+        var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
+        context.Window.UpdateLayout();
+        var first = timeline.TranslatePoint(new(timeline.HeaderWidth + timeline.PixelsPerSecond * 5, 8), context.Window)!.Value;
+        var last = first + new Vector(timeline.PixelsPerSecond * 5, 0);
+        context.Window.MouseDown(first, MouseButton.Left);
+        try
+        {
+            await DrainAsync(() => converter.Entered.Task.IsCompleted);
+            context.Window.MouseMove(last);
+        }
+        finally
+        {
+            context.Window.MouseUp(last, MouseButton.Left);
+        }
+        await DrainAsync(() => context.Controller.Snapshot.PresentedFrameTime == new MediaTime(10));
+        Assert.False(context.ViewModel.Preview.Scene.IsInteractive);
+        Assert.False(timeline.IsSeeking);
+        Assert.Equal(new MediaTime(10), context.Session.ProjectPosition);
     }
 
     [AvaloniaFact]

@@ -129,7 +129,14 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         {
             if (resumePlayback is { } resume)
             {
-                await controller.SeekForPlaybackAsync(target, resume);
+                if (IsInteractive)
+                {
+                    await controller.SeekForInteractivePlaybackAsync(target, resume);
+                }
+                else
+                {
+                    await controller.SeekForPlaybackAsync(target, resume);
+                }
             }
             else
             {

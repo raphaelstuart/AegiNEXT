@@ -36,6 +36,8 @@ public sealed class ProjectPreviewCompositionIdentityTests
             Assert.False(normalIdentity.Interactive);
             Assert.Equal(state.QualityRevision, normalIdentity.QualityRevision);
             Assert.Same(normalIdentity.Background, catalog.FindBackground(normal));
+            Assert.Same(normal, normalIdentity.Background);
+            Assert.Equal((long)normal.Pixels.Length, converter.GetRetainedBytes(normal));
 
             state = state with { IsInteractive = true, QualityRevision = revision++ };
             var interactive = converter.Convert(frame);
@@ -44,6 +46,7 @@ public sealed class ProjectPreviewCompositionIdentityTests
             Assert.Same(document, interactiveIdentity.Document);
             Assert.Equal(target, interactiveIdentity.Time);
             Assert.True(interactiveIdentity.Interactive);
+            Assert.Same(interactive, interactiveIdentity.Background);
             Assert.Equal(state.QualityRevision, interactiveIdentity.QualityRevision);
             Assert.Equal(sourceTime - origin, catalog.FindIdentity(normal)!.Time);
             Assert.False(catalog.FindIdentity(normal)!.Interactive);
