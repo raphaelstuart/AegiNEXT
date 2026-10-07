@@ -8,6 +8,8 @@ Move subtitle clips and trim either edge in 1 ms increments by default; trimming
 
 Extending a clip to the left preserves existing effect keyframes at their original project times. You can move or add keyframes throughout the expanded clip. Each completed drag commits once and can be undone.
 
+With a clip selected, press **Shift+Q** to seek to its start or **Shift+W** to seek to its end. Multiple selection uses the primary clip. Seeking preserves playback state and zoom, and brings an offscreen target into the visible timeline. Text inputs retain uppercase Q/W entry. Rebind or disable these commands in **Settings → Shortcuts → Playback and audition**.
+
 ## Rich text and karaoke
 
 Select a subtitle and open **Subtitle Details** from View or the subtitle row. The panel can dock or float and offers rich-text, highlight-timing, and advanced-code views of the same cue.

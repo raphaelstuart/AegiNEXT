@@ -15,6 +15,26 @@ internal sealed partial class WorkbenchSession
     internal Task SeekRelativeAsync(long seconds) => playback.SeekRelativeAsync(seconds);
     internal Task SeekProjectTimeAsync(MediaTime relative) => playback.SeekProjectTimeAsync(relative);
 
+    private async Task SeekSelectedClipBoundaryAsync(bool end)
+    {
+        if (SelectedLayer is not { } layer)
+        {
+            return;
+        }
+
+        var target = end ? layer.End : layer.Start;
+        ViewModel.CancelGestures();
+        await SeekProjectTimeAsync(target);
+
+        var timeline = ViewModel.Timeline;
+        var seconds = ToSeconds(ProjectPosition);
+        if (timeline.VisibleDuration > 0 &&
+            (seconds < timeline.ViewStart || seconds >= timeline.ViewStart + timeline.VisibleDuration))
+        {
+            timeline.ViewStart = Math.Max(0, seconds - timeline.VisibleDuration / 5);
+        }
+    }
+
     private void OnPreviewPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (updatingWorkbench)

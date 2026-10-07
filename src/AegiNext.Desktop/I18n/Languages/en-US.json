@@ -393,6 +393,8 @@
     "Settings.PLAY_PAUSE": "Play / pause",
     "Settings.SEEK_BACKWARD": "Back five seconds",
     "Settings.SEEK_FORWARD": "Forward five seconds",
+    "Settings.SEEK_CLIP_START": "Seek to current clip start",
+    "Settings.SEEK_CLIP_END": "Seek to current clip end",
     "Settings.TIMING_ENTER": "Set subtitle start",
     "Settings.TIMING_EXIT": "Set subtitle end",
     "Settings.ADD_SUBTITLE": "Add subtitle",

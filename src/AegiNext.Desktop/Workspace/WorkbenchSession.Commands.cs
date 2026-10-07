@@ -25,6 +25,8 @@ internal sealed partial class WorkbenchSession
             WorkbenchCommand.AUDITION_BEFORE_SUBTITLE or WorkbenchCommand.AUDITION_AFTER_SUBTITLE or
                 WorkbenchCommand.AUDITION_SUBTITLE_BEGIN or WorkbenchCommand.AUDITION_SUBTITLE => CanAuditionSubtitle,
             WorkbenchCommand.ADVANCE_SUBTITLE_ROW or WorkbenchCommand.INSERT_SUBTITLE_LINE_BREAK => false,
+            WorkbenchCommand.SEEK_CLIP_START or WorkbenchCommand.SEEK_CLIP_END => SelectedLayer is not null &&
+                controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
             WorkbenchCommand.PLAY_PAUSE or WorkbenchCommand.SEEK_BACKWARD or WorkbenchCommand.SEEK_FORWARD =>
                 controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
             WorkbenchCommand.TIMING_ENTER => IsTimingClockAvailable && CurrentTrackId.HasValue && playback.PendingPosition is null && controller.Snapshot.Error is null && controller.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED,
@@ -152,6 +154,12 @@ internal sealed partial class WorkbenchSession
                     break;
                 case WorkbenchCommand.SEEK_BACKWARD: await SeekRelativeAsync(-5); break;
                 case WorkbenchCommand.SEEK_FORWARD: await SeekRelativeAsync(5); break;
+                case WorkbenchCommand.SEEK_CLIP_START:
+                    await SeekSelectedClipBoundaryAsync(false);
+                    break;
+                case WorkbenchCommand.SEEK_CLIP_END:
+                    await SeekSelectedClipBoundaryAsync(true);
+                    break;
                 case WorkbenchCommand.AUDITION_BEFORE_SUBTITLE:
                 case WorkbenchCommand.AUDITION_AFTER_SUBTITLE:
                 case WorkbenchCommand.AUDITION_SUBTITLE_BEGIN:

@@ -20,7 +20,10 @@ public sealed class SubtitleAuditionShortcutPreferencesTests
 
         Assert.True(router.TryResolve(key, KeyModifiers.None, false, out var resolved));
         Assert.Equal(command, resolved);
-        Assert.False(router.TryResolve(key, KeyModifiers.Shift, false, out _));
+        if (router.TryResolve(key, KeyModifiers.Shift, false, out var shifted))
+        {
+            Assert.NotEqual(command, shifted);
+        }
         Assert.False(router.TryResolve(key, KeyModifiers.None, true, out _));
     }
 

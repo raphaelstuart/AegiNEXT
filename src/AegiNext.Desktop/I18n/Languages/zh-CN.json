@@ -393,6 +393,8 @@
     "Settings.PLAY_PAUSE": "播放 / 暂停",
     "Settings.SEEK_BACKWARD": "后退五秒",
     "Settings.SEEK_FORWARD": "前进五秒",
+    "Settings.SEEK_CLIP_START": "定位到当前 Clip 开始",
+    "Settings.SEEK_CLIP_END": "定位到当前 Clip 结束",
     "Settings.TIMING_ENTER": "打轴进入",
     "Settings.TIMING_EXIT": "打轴退出",
     "Settings.ADD_SUBTITLE": "新增字幕",
