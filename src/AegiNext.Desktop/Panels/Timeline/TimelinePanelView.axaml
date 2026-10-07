@@ -33,6 +33,18 @@
                   Width="18" Height="18" Stretch="Uniform" Stroke="{Binding $parent[ToggleButton].Foreground}"
                   StrokeThickness="1.7" />
           </controlsCommon:ToolbarToggleButton>
+          <Button Name="TimelineExpandAllTracksButton" Classes="icon-button" Focusable="False"
+                  Command="{Binding ExpandAllTracksCommand}"
+                  ToolTip.Tip="{Loc Key=Workbench.TimelineExpandAllTracks}"
+                  AutomationProperties.Name="{Loc Key=Workbench.TimelineExpandAllTracks}">
+            <materialIcons:MaterialIcon Kind="UnfoldMoreHorizontal" Width="18" Height="18" />
+          </Button>
+          <Button Name="TimelineCollapseAllTracksButton" Classes="icon-button" Focusable="False"
+                  Command="{Binding CollapseAllTracksCommand}"
+                  ToolTip.Tip="{Loc Key=Workbench.TimelineCollapseAllTracks}"
+                  AutomationProperties.Name="{Loc Key=Workbench.TimelineCollapseAllTracks}">
+            <materialIcons:MaterialIcon Kind="UnfoldLessHorizontal" Width="18" Height="18" />
+          </Button>
         </StackPanel>
         </ScrollViewer>
         <StackPanel Grid.Row="1" Margin="2,4" Spacing="4">

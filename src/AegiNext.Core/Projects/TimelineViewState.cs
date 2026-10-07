@@ -8,10 +8,26 @@ public sealed record TimelineViewState
     private const int MAXIMUM_COLLAPSED_ROWS = 100000;
 
     public ImmutableArray<TimelineAnimationRowId> CollapsedAnimationRows { get; init; } = [];
+    /// <summary>整体折叠的字幕轨道、场景层及组身份；暂时不存在的身份允许保留。</summary>
+    public ImmutableArray<Guid> CollapsedTrackIds { get; init; } = [];
 
     /// <summary>验证行身份与集合预算；暂时不存在的所属实体或属性允许保留。</summary>
     public void Validate()
     {
+        if (CollapsedTrackIds.IsDefault || CollapsedTrackIds.Length > MAXIMUM_COLLAPSED_ROWS)
+        {
+            throw new InvalidDataException("时间轴整体折叠轨道集合无效或过大。");
+        }
+
+        var trackIdentities = new HashSet<Guid>();
+        foreach (var id in CollapsedTrackIds)
+        {
+            if (id == Guid.Empty || !trackIdentities.Add(id))
+            {
+                throw new InvalidDataException("时间轴整体折叠轨道身份无效或重复。");
+            }
+        }
+
         if (CollapsedAnimationRows.IsDefault || CollapsedAnimationRows.Length > MAXIMUM_COLLAPSED_ROWS)
         {
             throw new InvalidDataException("时间轴折叠行集合无效或过大。");

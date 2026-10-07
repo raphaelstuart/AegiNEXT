@@ -9,7 +9,7 @@ internal sealed partial class WorkbenchSession
 
     internal TimelineViewState TimelineViewState => timelineViewState;
     internal bool HasUnsavedChanges => editor.HasUnsavedChanges ||
-        !timelineViewState.CollapsedAnimationRows.SequenceEqual(savedTimelineViewState.CollapsedAnimationRows);
+        !TimelineViewStatesEqual(timelineViewState, savedTimelineViewState);
 
     internal void SetTimelineAnimationRowCollapsed(TimelineAnimationRowId id, bool isCollapsed)
     {
@@ -25,10 +25,72 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
-        var next = NormalizeTimelineViewState(new()
+        ApplyTimelineViewState(timelineViewState with
         {
             CollapsedAnimationRows = isCollapsed ? rows.Add(id) : rows.Remove(id)
         });
+    }
+
+    internal void SetTimelineTrackCollapsed(Guid id, bool isCollapsed)
+    {
+        if (closing || projectBusy || id == Guid.Empty || !GetTimelineTrackIds().Contains(id))
+        {
+            return;
+        }
+
+        var ids = timelineViewState.CollapsedTrackIds;
+        if (ids.Contains(id) == isCollapsed)
+        {
+            return;
+        }
+
+        ApplyTimelineViewState(timelineViewState with
+        {
+            CollapsedTrackIds = isCollapsed ? ids.Add(id) : ids.Remove(id)
+        });
+    }
+
+    internal void SetAllTimelineTracksCollapsed(bool isCollapsed)
+    {
+        if (closing || projectBusy)
+        {
+            return;
+        }
+
+        ApplyTimelineViewState(timelineViewState with
+        {
+            CollapsedTrackIds = isCollapsed
+                ? [.. timelineViewState.CollapsedTrackIds.Union(GetTimelineTrackIds())] : []
+        });
+    }
+
+    internal IEnumerable<Guid> GetTimelineTrackIds() => DocumentSnapshot.SubtitleTracks.Select(track => track.Id)
+        .Concat(EnumerateTimelineSceneTrackIds(DocumentSnapshot.Layers)).Distinct();
+
+    private static IEnumerable<Guid> EnumerateTimelineSceneTrackIds(IEnumerable<ProjectLayer> layers)
+    {
+        foreach (var layer in layers)
+        {
+            if (layer.Kind != LayerKind.SUBTITLE)
+            {
+                yield return layer.Id;
+            }
+
+            foreach (var id in EnumerateTimelineSceneTrackIds(layer.Children))
+            {
+                yield return id;
+            }
+        }
+    }
+
+    private void ApplyTimelineViewState(TimelineViewState state)
+    {
+        var next = NormalizeTimelineViewState(state);
+        if (TimelineViewStatesEqual(timelineViewState, next))
+        {
+            return;
+        }
+
         timelineViewState = next;
         ViewModel.Timeline.TimelineViewState = next;
         RefreshTitle();
@@ -45,7 +107,7 @@ internal sealed partial class WorkbenchSession
 
     internal ProjectDocument CreatePersistenceSnapshot(ProjectDocument contentSnapshot)
     {
-        return contentSnapshot.TimelineViewState.CollapsedAnimationRows.SequenceEqual(timelineViewState.CollapsedAnimationRows)
+        return TimelineViewStatesEqual(contentSnapshot.TimelineViewState, timelineViewState)
             ? contentSnapshot : contentSnapshot with { TimelineViewState = timelineViewState };
     }
 
@@ -77,7 +139,12 @@ internal sealed partial class WorkbenchSession
         state.Validate();
         var sorted = state.CollapsedAnimationRows.OrderBy(row => row.Scope).ThenBy(row => row.OwnerId)
             .ThenBy(row => row.Property).ToArray();
-        return state.CollapsedAnimationRows.SequenceEqual(sorted)
-            ? state : state with { CollapsedAnimationRows = [.. sorted] };
+        var sortedTracks = state.CollapsedTrackIds.Order().ToArray();
+        return state.CollapsedAnimationRows.SequenceEqual(sorted) && state.CollapsedTrackIds.SequenceEqual(sortedTracks)
+            ? state : state with { CollapsedAnimationRows = [.. sorted], CollapsedTrackIds = [.. sortedTracks] };
     }
+
+    private static bool TimelineViewStatesEqual(TimelineViewState first, TimelineViewState second) =>
+        first.CollapsedAnimationRows.SequenceEqual(second.CollapsedAnimationRows) &&
+        first.CollapsedTrackIds.SequenceEqual(second.CollapsedTrackIds);
 }

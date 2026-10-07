@@ -26,6 +26,7 @@ public sealed class TimelineClassicTimingUiTests
         var button = UiTestActions.Find<ToolbarToggleButton>(context.Window, "TimelineClassicTimingButton");
         var processor = UiTestActions.Find<Button>(context.Window, "TimelineTimingPostProcessorButton");
         var step = UiTestActions.Find<ToolbarToggleButton>(context.Window, "TimelineStepButton");
+        var collapseAll = UiTestActions.Find<Button>(context.Window, "TimelineCollapseAllTracksButton");
         var scroller = UiTestActions.Find<ScrollViewer>(context.Window, "TimelineToolbarScroller");
         Assert.False(context.Session.Preferences.TimelineClassicTimingEnabled);
         Assert.False(context.ViewModel.Timeline.IsClassicTimingEnabled);
@@ -49,6 +50,12 @@ public sealed class TimelineClassicTimingUiTests
         Assert.Equal(position, button.TranslatePoint(new(), panel)!.Value);
         Assert.Equal(processorPosition, processor.TranslatePoint(new(), panel)!.Value);
         var scrollerPosition = scroller.TranslatePoint(new(), panel)!.Value;
+        var lastPosition = collapseAll.TranslatePoint(new(), panel)!.Value;
+        Assert.True(lastPosition.Y >= scrollerPosition.Y);
+        Assert.True(lastPosition.Y + collapseAll.Bounds.Height <= scrollerPosition.Y + scroller.Viewport.Height);
+        Assert.True(lastPosition.Y + collapseAll.Bounds.Height < position.Y);
+        step.BringIntoView();
+        Flush(context.Window);
         var stepPosition = step.TranslatePoint(new(), panel)!.Value;
         Assert.True(stepPosition.Y >= scrollerPosition.Y);
         Assert.True(stepPosition.Y + step.Bounds.Height <= scrollerPosition.Y + scroller.Viewport.Height);

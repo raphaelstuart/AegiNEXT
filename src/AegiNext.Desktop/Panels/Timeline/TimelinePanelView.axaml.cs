@@ -104,6 +104,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         timeline.ClipContextRequested += OnClipContextRequested;
         timeline.AnimationRowContextRequested += OnAnimationRowContextRequested;
         timeline.TrackSoloRequested += OnTrackSoloRequested;
+        timeline.TrackCollapseRequested += OnTrackCollapseRequested;
         timeline.SeekRequested += async (_, e) =>
         {
             if (timeline.IsSeeking && !viewModel.IsSeeking)
@@ -303,7 +304,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         }
 
         if (ReferenceEquals(e.Source, timeline) && e.GetCurrentPoint(timeline).Properties.IsLeftButtonPressed &&
-            (timeline.TryRequestTrackSolo(e.GetPosition(timeline)) ||
+            (timeline.TryRequestTrackSolo(e.GetPosition(timeline)) || timeline.TryRequestTrackCollapse(e.GetPosition(timeline)) ||
                 timeline.TryRequestAnimationRowCollapse(e.GetPosition(timeline))))
         {
             animationRowCollapsePointer = e.Pointer;
@@ -409,6 +410,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         viewModel.ToggleTrackSolo(e.TrackId);
     }
 
+    private void OnTrackCollapseRequested(object? sender, TimelineTrackCollapseEventArgs e) => viewModel.SetTrackCollapsed(e);
     private void OnClipContextRequested(object? sender, TimelineClipContextEventArgs e)
     {
         AnimationMenu.Close();
@@ -546,6 +548,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             timeline.ClipContextRequested -= OnClipContextRequested;
             timeline.AnimationRowContextRequested -= OnAnimationRowContextRequested;
             timeline.TrackSoloRequested -= OnTrackSoloRequested;
+            timeline.TrackCollapseRequested -= OnTrackCollapseRequested;
             timeline.AnimationRowCollapseRequested -= OnAnimationRowCollapseRequested;
             RemoveHandler(PointerPressedEvent, OnPreviewPointerPressed);
             RemoveHandler(PointerReleasedEvent, OnPreviewPointerReleased);

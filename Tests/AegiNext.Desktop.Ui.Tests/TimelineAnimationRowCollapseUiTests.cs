@@ -469,7 +469,7 @@ public sealed class TimelineAnimationRowCollapseUiTests
         {
             requests.Add(e);
             var current = timeline.TimelineViewState.CollapsedAnimationRows;
-            timeline.TimelineViewState = new()
+            timeline.TimelineViewState = timeline.TimelineViewState with
             {
                 CollapsedAnimationRows = e.IsCollapsed ? current.Add(e.Id) : current.Remove(e.Id)
             };

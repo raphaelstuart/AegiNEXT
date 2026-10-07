@@ -794,6 +794,8 @@
     "Workbench.SoloSubtitleTrack": "只显示此轨道",
     "Workbench.ClearClipAnimationPropertyTracks": "清除此片段的该类型特效",
     "Workbench.LineHeight": "行高",
-    "Settings.StylePreviewNavigationHint": "Cmd/Ctrl＋滚轮缩放，左键拖动平移"
+    "Settings.StylePreviewNavigationHint": "Cmd/Ctrl＋滚轮缩放，左键拖动平移",
+    "Workbench.TimelineExpandAllTracks": "展开全部轨道",
+    "Workbench.TimelineCollapseAllTracks": "折叠全部轨道"
   }
 }

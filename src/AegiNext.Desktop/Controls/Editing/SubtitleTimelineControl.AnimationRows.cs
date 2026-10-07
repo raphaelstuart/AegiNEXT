@@ -43,7 +43,7 @@ public sealed partial class SubtitleTimelineControl
 
         var state = TimelineViewState;
         state.Validate();
-        if (collapsedAnimationRows.SetEquals(state.CollapsedAnimationRows))
+        if (collapsedAnimationRows.SetEquals(state.CollapsedAnimationRows) && collapsedTrackIds.SetEquals(state.CollapsedTrackIds))
         {
             return;
         }
@@ -51,6 +51,8 @@ public sealed partial class SubtitleTimelineControl
         CancelDrag();
         collapsedAnimationRows.Clear();
         collapsedAnimationRows.UnionWith(state.CollapsedAnimationRows);
+        collapsedTrackIds.Clear();
+        collapsedTrackIds.UnionWith(state.CollapsedTrackIds);
         RebuildRows();
         PublishViewport(viewport, false);
         InvalidateVisual();

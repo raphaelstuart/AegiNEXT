@@ -57,6 +57,8 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
     internal TimelinePanelViewModel(WorkbenchSession session)
     {
         this.session = session;
+        ExpandAllTracksCommand = new(() => session.SetAllTimelineTracksCollapsed(false), () => CanExpandAllTracks);
+        CollapseAllTracksCommand = new(() => session.SetAllTimelineTracksCollapsed(true), () => CanCollapseAllTracks);
         AddTrackCommand = new(() => session.RunCommandAsync(() => session.EditAsync(session.AddSubtitleTrack)));
         RenameTrackCommand = new(BeginRenameTrack, () => SelectedTrackId.HasValue);
         DeleteTrackCommand = new(session.RemoveSubtitleTrackAsync, () => CanDeleteTrack);
@@ -98,7 +100,13 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
     public TimelineViewState TimelineViewState
     {
         get => timelineViewState;
-        internal set => SetProperty(ref timelineViewState, value);
+        internal set
+        {
+            if (SetProperty(ref timelineViewState, value))
+            {
+                RefreshTrackCollapseCommands();
+            }
+        }
     }
 
     public Guid? SelectedMaskNodeId
@@ -205,6 +213,7 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
 
     private void RefreshTrackCommands()
     {
+        RefreshTrackCollapseCommands();
         RenameTrackCommand.NotifyCanExecuteChanged();
         DeleteTrackCommand.NotifyCanExecuteChanged();
         MoveTrackUpCommand.NotifyCanExecuteChanged();
@@ -592,7 +601,11 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
         CreateSubtitleCommand.NotifyCanExecuteChanged();
     }
 
-    internal void RefreshMoveCommand() => MoveClipsCommand.NotifyCanExecuteChanged();
+    internal void RefreshMoveCommand()
+    {
+        MoveClipsCommand.NotifyCanExecuteChanged();
+        RefreshTrackCollapseCommands();
+    }
 
     private bool HasAnimationTracks(IReadOnlyCollection<Guid> ids, AnimationProperty? property = null)
     {

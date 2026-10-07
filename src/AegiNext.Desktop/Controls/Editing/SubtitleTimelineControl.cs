@@ -45,8 +45,6 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private MediaTime position;
     private TimelineViewport viewport = new();
     private readonly HashSet<Guid> selectedIds = [];
-    private readonly HashSet<Guid> collapsedTracks = [];
-    private readonly HashSet<Guid> collapsedGroups = [];
     private IReadOnlyList<MediaTime> snapBoundaries = [];
     private MediaTime? snapTarget;
     private AnimationValue originalAnimationValue;
@@ -433,7 +431,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
         var point = e.GetPosition(this);
         var row = RowAt(point.Y);
-        if (TryRequestTrackSolo(point))
+        if (TryRequestTrackSolo(point) || TryRequestTrackCollapse(point))
         {
             e.Handled = true;
             return;
@@ -450,13 +448,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             if (row is not null)
             {
                 CancelDrag();
-                if (row.ExpanderRectangle(RowY(row)).Contains(point))
-                {
-                    Toggle(row.TrackId.HasValue ? collapsedTracks : collapsedGroups, row.Id);
-                    RebuildRows();
-                    PublishViewport(viewport, false);
-                }
-                else if (row.TrackId is { } trackId)
+                if (row.TrackId is { } trackId)
                 {
                     TrackSelected?.Invoke(this, new(trackId));
                 }
@@ -1428,7 +1420,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     }
 
     /// <summary>取得字幕轨道的紧凑显示状态。</summary>
-    public bool IsTrackCollapsed(Guid trackId) => collapsedTracks.Contains(trackId);
+    public bool IsTrackCollapsed(Guid trackId) => collapsedTrackIds.Contains(trackId);
 
     /// <summary>切换轨道的紧凑显示，不修改字幕或动画数据。</summary>
     public void ToggleTrackCollapse(Guid trackId)
@@ -1438,11 +1430,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             return;
         }
 
-        CancelDrag();
-        Toggle(collapsedTracks, trackId);
-        RebuildRows();
-        PublishViewport(viewport, false);
-        InvalidateVisual();
+        RequestTrackCollapse(trackId);
     }
 
     private Rect? CurveRectangle(Guid layerId, AnimationTrackTarget target)
@@ -1474,7 +1462,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             }
             var clips = document.Subtitles.Where(cue => cue.TrackId == track.Id).OrderBy(cue => cue.Start)
                 .Select(cue => byCue[cue.Id]).ToArray();
-            var collapsed = collapsedTracks.Contains(track.Id);
+            var collapsed = collapsedTrackIds.Contains(track.Id);
             var displayedClips = clips.Where(clip => IsBatchMove || dragMode != TimelineDragMode.MOVE ||
                 clip.Id != dragId || pendingTrackId == track.Id).ToList();
             if (!IsBatchMove && dragMode == TimelineDragMode.MOVE && originalTrackId.HasValue &&
@@ -1518,7 +1506,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             }
 
             var group = layer.Kind == LayerKind.GROUP;
-            var collapsed = collapsedGroups.Contains(layer.Id);
+            var collapsed = collapsedTrackIds.Contains(layer.Id);
             var animations = !collapsed
                 ? CreateAnimationRows([layer], TimelineRowScope.SCENE_LAYER, layer.Id) : [];
             var curve = animations.Sum(animation => animation.Height);
