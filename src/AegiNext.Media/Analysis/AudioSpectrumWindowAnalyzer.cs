@@ -1,5 +1,4 @@
 using AegiNext.Core.Timing;
-using AegiNext.Media.Audio;
 
 namespace AegiNext.Media.Analysis;
 
@@ -9,28 +8,36 @@ internal static class AudioSpectrumWindowAnalyzer
     private static readonly double[] filter = CreateFilter();
     private static readonly int[] rows = CreateRows();
 
-    internal static SpectrogramData Analyze(IAudioSampleSource source, MediaTime origin, long firstCenter,
-        int samplesPerColumn, int columns, Action checkRequest, CancellationToken lifetime)
+    internal static SpectrogramData Analyze(Func<long, float> readSample, Action<long> prepareCenter,
+        MediaTime origin, long firstCenter, int samplesPerColumn, int columns, long mediaStart, Func<long> mediaEnd,
+        Action checkRequest)
     {
         var halfColumn = samplesPerColumn / 2;
         var firstWindow = firstCenter;
         var lastWindow = firstCenter + (long)columns * samplesPerColumn;
-        var rawStart = checked((firstWindow - SpectrogramAnalyzer.FFT_SIZE / 2) * 3 - FIR_HALF);
-        source.Seek(new(rawStart, WaveformAnalyzer.SAMPLE_RATE), lifetime);
         checkRequest();
-        var reader = new AudioAnalysisPcmReader(source, checkRequest, lifetime);
         var raw = new float[SpectrogramAnalyzer.FFT_SIZE * 3 + FIR_HALF * 2];
         var samples = new float[SpectrogramAnalyzer.FFT_SIZE];
         var power = new double[SpectrogramAnalyzer.FFT_SIZE / 2 + 1];
         var transform = new SpectrumTransform(SpectrogramAnalyzer.FFT_SIZE);
         var levels = new byte[checked(columns * SpectrogramAnalyzer.FREQUENCY_BINS)];
-        for (var index = 0; index < raw.Length; index++)
-        {
-            raw[index] = reader.Read(rawStart + index);
-        }
         for (var center = firstWindow; center < lastWindow; center += samplesPerColumn)
         {
             checkRequest();
+            if (center * 3 < mediaStart || center * 3 >= mediaEnd())
+            {
+                continue;
+            }
+            prepareCenter(center * 3);
+            if (center * 3 >= mediaEnd())
+            {
+                continue;
+            }
+            var rawStart = checked((center - SpectrogramAnalyzer.FFT_SIZE / 2) * 3 - FIR_HALF);
+            for (var index = 0; index < raw.Length; index++)
+            {
+                raw[index] = readSample(rawStart + index);
+            }
             for (var index = 0; index < samples.Length; index++)
             {
                 double value = 0;
@@ -48,30 +55,6 @@ internal static class AudioSpectrumWindowAnalyzer
                 var intensity = (byte)Math.Clamp((decibels + 80) * 255 / 80, 0, 255);
                 var offset = rows[bin] * columns + column;
                 levels[offset] = Math.Max(levels[offset], intensity);
-            }
-            if (center + samplesPerColumn >= lastWindow)
-            {
-                break;
-            }
-            var step = samplesPerColumn * 3;
-            rawStart += step;
-            if (step >= raw.Length)
-            {
-                source.Seek(new(rawStart, WaveformAnalyzer.SAMPLE_RATE), lifetime);
-                checkRequest();
-                reader = new(source, checkRequest, lifetime);
-                for (var index = 0; index < raw.Length; index++)
-                {
-                    raw[index] = reader.Read(rawStart + index);
-                }
-            }
-            else
-            {
-                Array.Copy(raw, step, raw, 0, raw.Length - step);
-                for (var index = raw.Length - step; index < raw.Length; index++)
-                {
-                    raw[index] = reader.Read(rawStart + index);
-                }
             }
         }
         checkRequest();

@@ -26,6 +26,7 @@ public sealed partial class SubtitleTimelineControl
         var step = Seconds(data.ColumnDuration);
         var left = (start - Seconds(data.Start)) / step;
         var columns = (end - start) / step;
+        using var interpolation = context.PushRenderOptions(new() { BitmapInterpolationMode = BitmapInterpolationMode.None });
         context.DrawImage(bitmap, new Rect(left, 0, columns, data.Height),
             new Rect(X(start), body.Top, (end - start) * PixelsPerSecond, body.Height));
     }

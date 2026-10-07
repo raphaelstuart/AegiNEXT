@@ -14,6 +14,8 @@ public sealed partial class VideoPreviewController
     private bool rangeLoop;
     private bool audioOnlyRangeInstalled;
     private CancellationToken rangeOwnerToken;
+    private MediaTimeRange? playbackScopeRange;
+    private bool rangeInterruptedByAudioFailure;
 
     /// <summary>当前媒体是否仍由字幕范围播放任务拥有；主窗口定位和暂停会立即撤销。</summary>
     public bool IsRangePlaybackActive
@@ -73,10 +75,13 @@ public sealed partial class VideoPreviewController
             var range = new MediaTimeRange(start, end);
             CancelPlaybackRangeUnderLock();
             revision++;
+            commandSequence++;
             pendingSeek = null;
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, run.Token);
             rangeCancellation = cancellation;
             rangeOwnerToken = cancellationToken;
+            playbackScopeRange = range;
+            rangeInterruptedByAudioFailure = false;
             rangeLoop = loop;
             var owner = ++rangeRevision;
             rangeWorker = RunPlaybackRangeAsync(run, range, owner, cancellation, started, audioOnly);
@@ -184,14 +189,18 @@ public sealed partial class VideoPreviewController
     }
 
     private async Task RunPlaybackRangeAsync(VideoPreviewRun run, MediaTimeRange range, long owner,
-        CancellationTokenSource cancellation, TaskCompletionSource started, bool audioOnly)
+        CancellationTokenSource cancellation, TaskCompletionSource started, bool audioOnly, bool alreadyStarted = false)
     {
         var token = cancellation.Token;
         try
         {
             while (true)
             {
-                if (audioOnly)
+                if (alreadyStarted)
+                {
+                    alreadyStarted = false;
+                }
+                else if (audioOnly)
                 {
                     await StartAudioRangeAsync(run, range, owner, token).ConfigureAwait(false);
                 }
@@ -269,7 +278,7 @@ public sealed partial class VideoPreviewController
                 RequireRangeOwnerUnderLock(run, owner, token);
                 if (run.Audio is { } finishedAudio)
                 {
-                    finish = TryAudioAsync(run, finishedAudio.PauseAsync);
+                    finish = TryAudioAsync(run, finishedAudio, finishedAudio.PauseAsync);
                 }
             }
             await finish.ConfigureAwait(false);
@@ -292,6 +301,7 @@ public sealed partial class VideoPreviewController
                     if (audioOnly)
                     {
                         run.AudioError = error;
+                        rangeInterruptedByAudioFailure = true;
                     }
                     else
                     {
@@ -308,7 +318,7 @@ public sealed partial class VideoPreviewController
             {
                 if (!closed && owner == rangeRevision && IsCurrentUnderLock(run) && !run.Token.IsCancellationRequested && run.Session is { } session)
                 {
-                    stop = Task.WhenAll(run.Audio is { } audio ? TryAudioAsync(run, audio.PauseAsync) : Task.CompletedTask,
+                    stop = Task.WhenAll(run.Audio is { } audio ? TryAudioAsync(run, audio, audio.PauseAsync) : Task.CompletedTask,
                         session.Snapshot.State == VideoPlaybackState.PLAYING ? PauseRangeSessionAsync(session) : Task.CompletedTask);
                 }
                 if (ReferenceEquals(rangeCancellation, cancellation))
@@ -387,15 +397,17 @@ public sealed partial class VideoPreviewController
         {
             return;
         }
+        rangeInterruptedByAudioFailure = false;
         rangeCancellation?.Cancel();
         rangeCancellation = null;
         rangeRevision++;
         revision++;
+        commandSequence++;
         pendingSeek = null;
         if (current is { Token.IsCancellationRequested: false, Session: { } session } run &&
             session.Snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED)
         {
-            rangeStop = Task.WhenAll(run.Audio is { } audio ? TryAudioAsync(run, audio.PauseAsync) : Task.CompletedTask,
+            rangeStop = Task.WhenAll(run.Audio is { } audio ? TryAudioAsync(run, audio, audio.PauseAsync) : Task.CompletedTask,
                 session.Snapshot.State == VideoPlaybackState.PAUSED ? Task.CompletedTask : PauseRangeSessionAsync(session));
         }
     }
@@ -415,6 +427,8 @@ public sealed partial class VideoPreviewController
             restoreAudioPosition = audioOnlyRangeInstalled;
             audioOnlyRangeInstalled = false;
             rangeOwnerToken = default;
+            playbackScopeRange = null;
+            rangeInterruptedByAudioFailure = false;
             session.SetPlaybackRange(null);
             clearAudio = SubmitAudioCommandAsync(run, operationRevision, audio => audio.SetPlaybackRangeAsync(null));
         }
@@ -432,7 +446,7 @@ public sealed partial class VideoPreviewController
         {
             ThrowIfCommandObsoleteUnderLock(run, operationRevision);
             return run.AudioError is null && run.Audio is { Error: null } audio
-                ? TryAudioAsync(run, () => command(audio)) : Task.CompletedTask;
+                ? TryAudioAsync(run, audio, () => command(audio)) : Task.CompletedTask;
         }
     }
 

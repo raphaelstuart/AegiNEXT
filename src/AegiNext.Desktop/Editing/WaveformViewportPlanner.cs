@@ -31,7 +31,7 @@ internal static class WaveformViewportPlanner
         var mediaEnd = duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
         var visibleStart = (long)Math.Floor(startSeconds * WaveformAnalyzer.SAMPLE_RATE);
         var visibleEnd = Math.Min(mediaEnd, (long)Math.Ceiling(endSeconds * WaveformAnalyzer.SAMPLE_RATE));
-        var padding = Math.Max(1, (visibleEnd - visibleStart) / 2);
+        var padding = Math.Min(2L * WaveformAnalyzer.SAMPLE_RATE, Math.Max(1, (visibleEnd - visibleStart) / 2));
         var analysisStart = Math.Max(0, visibleStart - padding);
         var analysisEnd = Math.Min(mediaEnd, visibleEnd + padding);
         while (BucketCount(analysisStart, analysisEnd, samplesPerBucket) > WaveformAnalysisRequest.MAX_BUCKET_COUNT)

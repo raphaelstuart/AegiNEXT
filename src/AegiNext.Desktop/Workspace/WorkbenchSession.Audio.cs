@@ -3,7 +3,6 @@ using AegiNext.Core.Timing;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Media;
 using AegiNext.Media.Audio;
-using AegiNext.Media.Playback;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -58,9 +57,6 @@ internal sealed partial class WorkbenchSession
             AudioClockChanged?.Invoke(this, EventArgs.Empty);
             return;
         }
-        var snapshot = controller.Snapshot;
-        var resume = snapshot.State == VideoPlaybackState.PLAYING || snapshot.AudioAuditionActive;
-        var target = snapshot.Position;
         switchingAudioDevice = true;
         playback.Invalidate();
         ViewModel.CancelGestures();
@@ -68,22 +64,15 @@ internal sealed partial class WorkbenchSession
         AudioClockChanged?.Invoke(this, EventArgs.Empty);
         try
         {
-            await controller.PauseAsync();
-            SetAppliedAudioCalibrations(profiles);
-            if (controller.Snapshot.FilePath == snapshot.FilePath && !closing)
+            if (AudioClock?.Quality == AudioClockQuality.UNAVAILABLE)
             {
-                if (AudioClock?.Quality == AudioClockQuality.UNAVAILABLE)
-                {
-                    await controller.ReopenAudioOutputAsync(projectOperationsCancellation.Token);
-                }
-                else
-                {
-                    await controller.SeekAsync(target);
-                }
-                if (resume)
-                {
-                    await controller.PlayAsync();
-                }
+                SetAppliedAudioCalibrations(profiles);
+                await controller.ReopenAudioOutputAsync(projectOperationsCancellation.Token);
+            }
+            else
+            {
+                await controller.ApplyAudioCalibrationAsync(() => SetAppliedAudioCalibrations(profiles),
+                    projectOperationsCancellation.Token);
             }
         }
         finally
@@ -132,8 +121,7 @@ internal sealed partial class WorkbenchSession
 
     private async Task RebuildAudioDeviceAsync()
     {
-        var snapshot = controller.Snapshot;
-        var resume = snapshot.State == VideoPlaybackState.PLAYING;
+        var previousError = controller.Snapshot.AudioError;
         switchingAudioDevice = true;
         playback.Invalidate();
         ViewModel.CancelGestures();
@@ -142,9 +130,9 @@ internal sealed partial class WorkbenchSession
         try
         {
             await controller.ReopenAudioOutputAsync(projectOperationsCancellation.Token);
-            if (resume && !closing)
+            if (previousError is not null && controller.Snapshot.AudioError is null)
             {
-                await controller.PlayAsync();
+                DismissError(previousError);
             }
         }
         finally

@@ -7,7 +7,8 @@ using AegiNext.Media.Preview;
 namespace AegiNext.Desktop.Controllers;
 
 /// <summary>
-/// 连接媒体会话与 UI；转换和交付均串行，文件身份与播放代数共同拒绝过时画面。
+/// 连接媒体会话与 UI；串行转换提前准备画面，独立交付按主时钟验证真实帧区间。
+/// 文件身份、播放代数和预览修订共同拒绝过时画面。
 /// </summary>
 public sealed partial class VideoPreviewController : IAsyncDisposable
 {
@@ -28,8 +29,10 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
     private long commandSequence;
     private Task? pendingSeek;
     private MediaTime pendingSeekTarget;
+    private bool pendingSeekResumePlayback;
     private long pendingSeekEpoch;
     private long pendingSeekSequence;
+    private long pendingSeekPresentationRevision;
     private bool opening;
     private bool closed;
     private Task? closeTask;
@@ -165,7 +168,6 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             if (!closed)
             {
                 revision++;
-                pendingSeek = null;
                 current?.ConversionCancellation?.Cancel();
                 ClearPreparedFramesUnderLock(current);
             }
@@ -176,12 +178,19 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
     {
         lock (gate)
         {
-            if (closed || opening || current is not { Error: null, Session: { } session } ||
-                session.Snapshot.State != VideoPlaybackState.PAUSED)
+            if (closed || opening || current is not { Error: null, Session: { } session } run)
             {
                 return Task.CompletedTask;
             }
 
+            if (pendingSeek is { IsCompleted: false } seek)
+            {
+                return RefreshAfterPendingSeekAsync(run, revision, seek);
+            }
+            if (session.Snapshot.State != VideoPlaybackState.PAUSED)
+            {
+                return Task.CompletedTask;
+            }
             return SeekAsync(session.Snapshot.Position);
         }
     }
@@ -306,7 +315,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             }
             if (run.Audio is { } openedAudio)
             {
-                await TryAudioAsync(run, () => openedAudio.SeekAsync(session.Snapshot.Position)).ConfigureAwait(false);
+                await TryAudioAsync(run, openedAudio, () => openedAudio.SeekAsync(session.Snapshot.Position)).ConfigureAwait(false);
             }
             lock (gate)
             {
@@ -547,13 +556,16 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             {
                 await dispatch(() =>
                 {
+                    VideoPreviewSnapshot snapshot;
                     lock (gate)
                     {
-                        if (!closed && epoch == requestedEpoch && current is null)
+                        if (closed || epoch != requestedEpoch || current is not null)
                         {
-                            present(new(GetSnapshotUnderLock(), null, true));
+                            return;
                         }
+                        snapshot = GetSnapshotUnderLock();
                     }
+                    present(new(snapshot, null, true));
                 }, CancellationToken.None).ConfigureAwait(false);
             }
             finally
@@ -622,42 +634,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
     /// </summary>
     public Task SeekAsync(MediaTime target)
     {
-        lock (gate)
-        {
-            CancelPlaybackRangeUnderLock();
-            if (!closed && pendingSeek is { IsCompleted: false } && pendingSeekTarget == target &&
-                pendingSeekEpoch == epoch && pendingSeekSequence == commandSequence)
-            {
-                return pendingSeek;
-            }
-
-            pendingSeek = ExecuteAsync(async (run, session, operationRevision) =>
-            {
-                await ClearMediaRangeAsync(run, session, operationRevision).ConfigureAwait(false);
-                await SubmitAudioCommandAsync(run, operationRevision, audio => audio.PauseAsync()).ConfigureAwait(false);
-                Task seek;
-                lock (gate)
-                {
-                    ThrowIfCommandObsoleteUnderLock(run, operationRevision);
-                    seek = session.SeekAsync(target);
-                }
-                await seek.ConfigureAwait(false);
-                Task audioSeek;
-                lock (gate)
-                {
-                    ThrowIfCommandObsoleteUnderLock(run, operationRevision);
-                    audioSeek = run.AudioError is null && run.Audio is { Error: null } readyAudio
-                        ? TryAudioAsync(run, () => readyAudio.SeekAsync(session.Snapshot.Position))
-                        : Task.CompletedTask;
-                }
-
-                await audioSeek.ConfigureAwait(false);
-            }, true);
-            pendingSeekTarget = target;
-            pendingSeekEpoch = epoch;
-            pendingSeekSequence = commandSequence;
-            return pendingSeek;
-        }
+        return SeekCoreAsync(target, false);
     }
 
     /// <summary>设置预览音量，范围为零到一。</summary>
@@ -729,6 +706,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         VideoPreviewRun run;
         Task result;
         long operationRevision;
+        long presentationRevision;
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(closed, this);
@@ -745,8 +723,8 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                 ClearPresentationMeasurementUnderLock(run);
             }
 
-            operationRevision = revision;
-            commandSequence++;
+            presentationRevision = revision;
+            operationRevision = ++commandSequence;
             result = command(run, session, operationRevision);
             BeginOperationUnderLock();
             PulseResumeUnderLock(run);
@@ -755,7 +733,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         try
         {
             await result.ConfigureAwait(false);
-            await DispatchAsync(run, null, null, false, run.Token, operationRevision).ConfigureAwait(false);
+            await DispatchAsync(run, null, null, false, run.Token, presentationRevision).ConfigureAwait(false);
         }
         finally
         {
@@ -771,13 +749,21 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
     {
         try
         {
-            using var converter = converterFactory();
-            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(run.Token);
-            var preparation = Task.Run(() => CancelCompanionOnExitAsync(
-                () => PrepareFramesAsync(run, session, converter, cancellation.Token), cancellation), CancellationToken.None);
-            var presentation = Task.Run(() => CancelCompanionOnExitAsync(
-                () => PresentPreparedFramesAsync(run, session, cancellation.Token), cancellation), CancellationToken.None);
-            await Task.WhenAll(preparation, presentation).ConfigureAwait(false);
+            await using var conversionWorker = new SynchronousMediaWorker("AegiNext preview conversion");
+            var converter = await conversionWorker.ExecuteAsync(converterFactory, run.Token).ConfigureAwait(false);
+            try
+            {
+                using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(run.Token);
+                var preparation = Task.Run(() => CancelCompanionOnExitAsync(
+                    () => PrepareFramesAsync(run, session, converter, conversionWorker, cancellation.Token), cancellation), CancellationToken.None);
+                var presentation = Task.Run(() => CancelCompanionOnExitAsync(
+                    () => PresentPreparedFramesAsync(run, session, cancellation.Token), cancellation), CancellationToken.None);
+                await Task.WhenAll(preparation, presentation).ConfigureAwait(false);
+            }
+            finally
+            {
+                await conversionWorker.ExecuteAsync(converter.Dispose).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (run.Token.IsCancellationRequested)
         {
@@ -816,42 +802,81 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         }
     }
 
-    private async Task DispatchAsync(VideoPreviewRun run,
+    private async Task<VideoPreviewDispatchStatus> DispatchAsync(VideoPreviewRun run,
         VideoPreviewDelivery? identity,
-        SdrVideoFrame? frame, bool clear, CancellationToken cancellationToken, long? commandRevision = null)
+        SdrVideoFrame? frame, bool clear, CancellationToken cancellationToken, long? commandRevision = null,
+        PreparedVideoPreviewDelivery? preparedDelivery = null)
     {
         lock (gate)
         {
             if (!IsCurrentUnderLock(run) || commandRevision is { } beforeQueue && beforeQueue != revision)
             {
-                return;
+                return VideoPreviewDispatchStatus.DISCARDED;
             }
         }
 
         var dispatchStarted = identity?.Session.TimeProvider.GetTimestamp();
+        var dispatchWasQueued = false;
         await dispatchGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             lock (gate)
             {
-                if (!CanPresentUnderLock(run, identity) || commandRevision is { } beforeDispatch && beforeDispatch != revision)
+                if (preparedDelivery is not null)
                 {
-                    return;
+                    SelectPreparedFrameUnderLock(run, preparedDelivery, preparedDelivery.Prepared.Identity.Session.Snapshot.Position);
+                    identity = preparedDelivery.Prepared.Identity;
+                    frame = preparedDelivery.Prepared.Frame;
+                }
+                if (!CanDispatchUnderLock(run, identity) || commandRevision is { } beforeDispatch && beforeDispatch != revision)
+                {
+                    if (identity is { } expired && IsDeliveryIdentityCurrentUnderLock(run, expired))
+                    {
+                        run.Diagnostics.ExpiredBeforeDispatch++;
+                        run.Diagnostics.Record(new("expired-before-dispatch", expired.Time, expired.NextTime, expired.Session.Snapshot.Position, MediaTime.Zero));
+                    }
+                    return VideoPreviewDispatchStatus.DISCARDED;
+                }
+                if (preparedDelivery is not null && identity is { } queuedDelivery)
+                {
+                    run.ActivePreparedDispatch = queuedDelivery;
+                    run.ActivePreparedDispatchStarted = queuedDelivery.Session.TimeProvider.GetTimestamp();
+                    RefreshPreparationLeadUnderLock(run, queuedDelivery.Session);
                 }
             }
 
-            await dispatch(() =>
+            var result = VideoPreviewDispatchStatus.DISCARDED;
+            dispatchWasQueued = true;
+            var dispatched = dispatch(() =>
             {
+                VideoPreviewSnapshot snapshot;
                 lock (gate)
                 {
-                    if (!CanPresentUnderLock(run, identity) || commandRevision is { } beforePresent && beforePresent != revision)
+                    snapshot = GetSnapshotUnderLock();
+                    if (preparedDelivery is not null)
                     {
+                        SelectPreparedFrameUnderLock(run, preparedDelivery, snapshot.Position);
+                        identity = preparedDelivery.Prepared.Identity;
+                        frame = preparedDelivery.Prepared.Frame;
+                    }
+                    if (!CanDispatchUnderLock(run, identity) || commandRevision is { } beforePresent && beforePresent != revision)
+                    {
+                        if (identity is { } expired && IsDeliveryIdentityCurrentUnderLock(run, expired))
+                        {
+                            run.Diagnostics.ExpiredInCallback++;
+                            run.Diagnostics.Record(new("expired-in-callback", expired.Time, expired.NextTime, expired.Session.Snapshot.Position, MediaTime.Zero));
+                        }
                         return;
                     }
 
-                    var snapshot = GetSnapshotUnderLock();
-                    if (identity is { } finalDelivery &&
-                        (finalDelivery.Time > snapshot.Position || finalDelivery.NextTime is { } end && snapshot.Position >= end))
+                    if (identity is { } earlyDelivery && earlyDelivery.Time > snapshot.Position)
+                    {
+                        run.Diagnostics.Early++;
+                        run.Diagnostics.Record(new("early", earlyDelivery.Time, earlyDelivery.NextTime, snapshot.Position, MediaTime.Zero));
+                        result = VideoPreviewDispatchStatus.EARLY;
+                        return;
+                    }
+                    if (identity is { NextTime: { } end } && snapshot.Position >= end)
                     {
                         return;
                     }
@@ -865,10 +890,16 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                             PresentedGeneration = delivery.Generation
                         };
                     }
+                }
 
-                    present(new(snapshot, frame, clear));
+                present(new(snapshot, frame, clear));
+                result = VideoPreviewDispatchStatus.PRESENTED;
+                lock (gate)
+                {
                     if (identity is { } completed && frame is not null && IsDeliveryIdentityCurrentUnderLock(run, completed))
                     {
+                        run.Diagnostics.Presented++;
+                        run.Diagnostics.Record(new("presented", completed.Time, completed.NextTime, snapshot.Position, MediaTime.Zero));
                         run.PresentedFrameTime = snapshot.PresentedFrameTime;
                         run.PresentedFrameEnd = snapshot.PresentedFrameEnd;
                         run.PresentedAtPosition = snapshot.PresentedAtPosition;
@@ -880,17 +911,25 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
                         ClearPresentationMeasurementUnderLock(run);
                     }
                 }
-            }, cancellationToken).ConfigureAwait(false);
+            }, cancellationToken);
+            preparedDelivery?.Prepared.Submitted.TrySetResult();
+            await dispatched.ConfigureAwait(false);
+            return result;
         }
         finally
         {
-            if (identity is { } measured && dispatchStarted is { } started)
+            if (dispatchWasQueued && identity is { } measured && dispatchStarted is { } started)
             {
                 var elapsed = MediaTime.FromTimeSpan(measured.Session.TimeProvider.GetElapsedTime(started));
                 lock (gate)
                 {
+                    if (preparedDelivery is not null)
+                    {
+                        run.ActivePreparedDispatch = null;
+                    }
                     if (IsCurrentUnderLock(run))
                     {
+                        run.Diagnostics.LastDispatchCost = elapsed;
                         ObservePreparationCostUnderLock(run, measured.Session, elapsed, true);
                     }
                 }
@@ -899,7 +938,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         }
     }
 
-    private bool CanPresentUnderLock(VideoPreviewRun run, VideoPreviewDelivery? identity)
+    private bool CanDispatchUnderLock(VideoPreviewRun run, VideoPreviewDelivery? identity)
     {
         if (!IsCurrentUnderLock(run) || identity is { } value && !IsPresentationCurrentUnderLock(run, value))
         {
@@ -910,11 +949,10 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
             return true;
         }
         var playback = delivery.Session.Snapshot;
-        return delivery.Time <= playback.Position &&
-            (delivery.NextTime is not { } next || playback.Position < next);
+        return delivery.NextTime is not { } next || playback.Position < next;
     }
 
-    private async Task TryAudioAsync(VideoPreviewRun run, Func<Task> action)
+    private async Task TryAudioAsync(VideoPreviewRun run, AudioPlaybackSession audio, Func<Task> action)
     {
         try
         {
@@ -924,7 +962,10 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
         {
             lock (gate)
             {
-                run.AudioError = exception;
+                if (IsCurrentUnderLock(run) && ReferenceEquals(run.Audio, audio))
+                {
+                    run.AudioError = exception;
+                }
             }
         }
     }
@@ -964,7 +1005,7 @@ public sealed partial class VideoPreviewController : IAsyncDisposable
 
     private void ThrowIfCommandObsoleteUnderLock(VideoPreviewRun run, long operationRevision)
     {
-        if (!IsCurrentUnderLock(run) || revision != operationRevision)
+        if (!IsCurrentUnderLock(run) || commandSequence != operationRevision)
         {
             throw new OperationCanceledException("影音控制请求已被替换或关闭。");
         }

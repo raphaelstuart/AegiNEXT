@@ -699,7 +699,7 @@
     "Preview.CatchingUp": "Catching up",
     "Settings.AudioTiming": "Audio timing",
     "Settings.AudioNoDevice": "Open media with an audio track to calibrate the output device.",
-    "Settings.AudioClockUnavailable": "The audio device clock is unavailable. Playback is paused while the output is rebuilt.",
+    "Settings.AudioClockUnavailable": "The audio device clock is unavailable. Playback is paused; timing shortcuts require a working output clock.",
     "Settings.AudioSystemClock": "{0} system playback clock · {1} Hz · {2} channels",
     "Settings.AudioEstimatedClock": "{0} estimated playback clock · {1} Hz · {2} channels",
     "Settings.AudioExtraDelay": "Extra output delay (ms)",

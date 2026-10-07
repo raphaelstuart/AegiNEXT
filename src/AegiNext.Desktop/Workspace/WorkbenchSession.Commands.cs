@@ -61,6 +61,12 @@ internal sealed partial class WorkbenchSession
             return;
         }
 
+        var pausePlayback = command == WorkbenchCommand.PLAY_PAUSE && IsTransportPlaybackRequested;
+        if (command == WorkbenchCommand.PLAY_PAUSE)
+        {
+            CancelInteractiveSeeking();
+        }
+
         MediaTime? timingPosition = null;
         if (command is WorkbenchCommand.TIMING_ENTER or WorkbenchCommand.TIMING_EXIT)
         {
@@ -122,7 +128,7 @@ internal sealed partial class WorkbenchSession
                     {
                         await controller.ClearPlaybackRangeAsync();
                     }
-                    else if (playbackSnapshot.State == VideoPlaybackState.PLAYING)
+                    else if (pausePlayback)
                     {
                         await controller.PauseAsync();
                     }

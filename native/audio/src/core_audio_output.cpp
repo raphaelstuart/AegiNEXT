@@ -1,5 +1,6 @@
 #include "audio_output.h"
 #include "audio_output_timeline.h"
+#include "core_audio_clock_continuity.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -9,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -16,6 +18,24 @@
 
 namespace
 {
+enum class CoreAudioFailure
+{
+    NONE,
+    DEFAULT_ROUTE,
+    DEVICE_OFFLINE,
+    DEVICE_IDENTITY,
+    OUTPUT_RATE,
+    OUTPUT_CHANNELS,
+    ROUTE_QUERY,
+    CLOCK_STATUS,
+    CLOCK_TIMESTAMP,
+    CLOCK_REGRESSION,
+    UNKNOWN_BUFFER,
+    CALLBACK,
+    QUEUE_CREATION,
+    QUEUE_PAUSE
+};
+
 void check_audio(OSStatus status, const char *operation)
 {
     if (status != noErr)
@@ -84,6 +104,7 @@ public:
         std::scoped_lock state(gate);
         require_valid();
         update_clock();
+        require_valid();
         if (submitted - played + frames > CAPACITY) { throw std::runtime_error("CoreAudio PCM queue capacity exceeded"); }
         for (int index = 0; index < frames; ++index)
         {
@@ -101,16 +122,24 @@ public:
         if (value)
         {
             if (paused.exchange(true)) { return; }
-            check_audio(AudioQueuePause(queue), "Pause CoreAudio output");
+            const auto status = AudioQueuePause(queue);
             std::scoped_lock state(gate);
             update_clock(true);
+            if (status != noErr && !invalidated.load())
+            {
+                invalidate(CoreAudioFailure::QUEUE_PAUSE, status);
+                require_valid();
+            }
         }
         else
         {
-            require_valid();
-            if (!paused.exchange(false)) { return; }
             {
                 std::scoped_lock state(gate);
+                require_valid();
+                if (!paused.load()) { return; }
+                clock_continuity.begin_run();
+                clock_start_host_time = AudioGetCurrentHostTime();
+                paused.store(false);
                 for (size_t index = 0; index < output_buffers.size(); ++index)
                 {
                     if (!buffer_queued[index]) { enqueue(index); }
@@ -132,12 +161,13 @@ public:
         }
         catch (...)
         {
-            invalidated.store(true);
+            invalidate(CoreAudioFailure::QUEUE_CREATION);
             throw;
         }
         std::scoped_lock state(gate);
         buffer_queued.fill(false);
         timeline.reset();
+        clock_continuity.reset();
         ring_start = ring_count = 0;
         submitted = rendered = played = 0;
         ++epoch;
@@ -147,6 +177,15 @@ public:
     {
         std::scoped_lock operation(api_gate);
         check_audio(AudioQueueSetParameter(queue, kAudioQueueParam_Volume, value), "Set CoreAudio output gain");
+        output_gain = value;
+    }
+
+    float gain() override
+    {
+        std::scoped_lock operation(api_gate);
+        AudioQueueParameterValue value = 0;
+        check_audio(AudioQueueGetParameter(queue, kAudioQueueParam_Volume, &value), "Read CoreAudio output gain");
+        return value;
     }
 
     int latency() const override { return 0; }
@@ -184,12 +223,17 @@ private:
     std::array<bool, 3> buffer_queued{};
     std::array<float, CAPACITY * 2> pcm{};
     AudioOutputTimeline timeline;
+    CoreAudioClockContinuity clock_continuity;
     std::mutex api_gate;
     std::mutex gate;
     std::atomic_bool paused{true};
     std::atomic_bool invalidated{false};
+    std::atomic_bool route_notification{false};
+    std::atomic<CoreAudioFailure> failure{CoreAudioFailure::NONE};
+    std::atomic<OSStatus> clock_status{noErr};
     int output_rate = 0;
     int output_channels = 0;
+    float output_gain = 1.0F;
     int ring_start = 0;
     int ring_count = 0;
     int64_t submitted = 0;
@@ -197,36 +241,37 @@ private:
     int64_t played = 0;
     uint64_t epoch = 0;
     uint64_t clock_host_time = AudioGetCurrentHostTime();
+    uint64_t clock_start_host_time = 0;
 
     void create_queue()
     {
-    AudioStreamBasicDescription format{};
-    format.mSampleRate = 48000;
-    format.mFormatID = kAudioFormatLinearPCM;
-    format.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
-    format.mBytesPerPacket = format.mBytesPerFrame = 8;
-    format.mFramesPerPacket = 1;
-    format.mChannelsPerFrame = 2;
-    format.mBitsPerChannel = 32;
-    check_audio(AudioQueueNewOutput(&format, callback, this, nullptr, nullptr, 0, &queue), "Create CoreAudio output queue");
-    auto device_uid = CFStringCreateWithCString(nullptr, device_id.data(), kCFStringEncodingUTF8);
-    const auto bound = AudioQueueSetProperty(queue, kAudioQueueProperty_CurrentDevice, &device_uid, sizeof(device_uid));
-    CFRelease(device_uid);
-    check_audio(bound, "Bind CoreAudio output device");
-    check_audio(AudioQueueCreateTimeline(queue, &queue_timeline), "Create CoreAudio timeline");
-    for (auto &buffer : output_buffers)
-    {
-        check_audio(AudioQueueAllocateBuffer(queue, BUFFER_FRAMES * 8, &buffer), "Allocate CoreAudio output buffer");
-    }
+        AudioStreamBasicDescription format{};
+        format.mSampleRate = 48000;
+        format.mFormatID = kAudioFormatLinearPCM;
+        format.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+        format.mBytesPerPacket = format.mBytesPerFrame = 8;
+        format.mFramesPerPacket = 1;
+        format.mChannelsPerFrame = 2;
+        format.mBitsPerChannel = 32;
+        check_audio(AudioQueueNewOutput(&format, callback, this, nullptr, nullptr, 0, &queue), "Create CoreAudio output queue");
+        auto device_uid = CFStringCreateWithCString(nullptr, device_id.data(), kCFStringEncodingUTF8);
+        const auto bound = AudioQueueSetProperty(queue, kAudioQueueProperty_CurrentDevice, &device_uid, sizeof(device_uid));
+        CFRelease(device_uid);
+        check_audio(bound, "Bind CoreAudio output device");
+        check_audio(AudioQueueSetParameter(queue, kAudioQueueParam_Volume, output_gain), "Restore CoreAudio output gain");
+        check_audio(AudioQueueCreateTimeline(queue, &queue_timeline), "Create CoreAudio timeline");
+        for (auto &buffer : output_buffers)
+        {
+            check_audio(AudioQueueAllocateBuffer(queue, BUFFER_FRAMES * 8, &buffer), "Allocate CoreAudio output buffer");
+        }
     }
 
     void dispose_queue()
     {
         if (queue)
         {
-            if (queue_timeline)
             {
-                AudioQueueDisposeTimeline(queue, queue_timeline);
+                std::scoped_lock state(gate);
                 queue_timeline = nullptr;
             }
             AudioQueueDispose(queue, true);
@@ -234,27 +279,134 @@ private:
         }
     }
 
-    void require_valid() const
+    void invalidate(CoreAudioFailure reason, OSStatus status = noErr)
     {
-        if (invalidated.load()) { throw std::runtime_error("CoreAudio output route or timeline changed; reopen the device"); }
+        if (!invalidated.load())
+        {
+            failure.store(reason);
+            clock_status.store(status);
+            invalidated.store(true);
+        }
+    }
+
+    bool route_query(OSStatus status)
+    {
+        if (status != noErr)
+        {
+            invalidate(CoreAudioFailure::ROUTE_QUERY, status);
+            return false;
+        }
+        return true;
+    }
+
+    void confirm_route()
+    {
+        try
+        {
+            AudioObjectPropertyAddress address{kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+            AudioDeviceID current = kAudioObjectUnknown;
+            UInt32 size = sizeof(current);
+            if (!route_query(AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &size, &current))) { return; }
+            if (current != device) { invalidate(CoreAudioFailure::DEFAULT_ROUTE); return; }
+            address.mSelector = kAudioDevicePropertyDeviceIsAlive;
+            UInt32 alive = 0;
+            size = sizeof(alive);
+            if (!route_query(AudioObjectGetPropertyData(device, &address, 0, nullptr, &size, &alive))) { return; }
+            if (!alive) { invalidate(CoreAudioFailure::DEVICE_OFFLINE); return; }
+            address.mSelector = kAudioDevicePropertyDeviceUID;
+            CFStringRef uid = nullptr;
+            size = sizeof(uid);
+            if (!route_query(AudioObjectGetPropertyData(device, &address, 0, nullptr, &size, &uid))) { return; }
+            std::array<char, 512> current_id{};
+            const auto encoded = uid && CFStringGetCString(uid, current_id.data(), current_id.size(), kCFStringEncodingUTF8);
+            if (uid) { CFRelease(uid); }
+            if (!encoded || current_id != device_id) { invalidate(CoreAudioFailure::DEVICE_IDENTITY); return; }
+            address.mSelector = kAudioDevicePropertyNominalSampleRate;
+            Float64 rate = 0;
+            size = sizeof(rate);
+            if (!route_query(AudioObjectGetPropertyData(device, &address, 0, nullptr, &size, &rate))) { return; }
+            if (!std::isfinite(rate) || std::llround(rate) != output_rate) { invalidate(CoreAudioFailure::OUTPUT_RATE); return; }
+            address = {kAudioDevicePropertyStreamConfiguration, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMain};
+            if (!route_query(AudioObjectGetPropertyDataSize(device, &address, 0, nullptr, &size))) { return; }
+            std::vector<uint8_t> layout(size);
+            if (!route_query(AudioObjectGetPropertyData(device, &address, 0, nullptr, &size, layout.data()))) { return; }
+            const auto *buffers = reinterpret_cast<const AudioBufferList *>(layout.data());
+            int channels = 0;
+            for (UInt32 index = 0; index < buffers->mNumberBuffers; ++index)
+            {
+                channels += buffers->mBuffers[index].mNumberChannels;
+            }
+            if (channels != output_channels) { invalidate(CoreAudioFailure::OUTPUT_CHANNELS); }
+        }
+        catch (...)
+        {
+            invalidate(CoreAudioFailure::ROUTE_QUERY);
+        }
+    }
+
+    void require_valid()
+    {
+        if (route_notification.exchange(false)) { confirm_route(); }
+        if (!invalidated.load()) { return; }
+        const char *reason = "output failed";
+        switch (failure.load())
+        {
+            case CoreAudioFailure::DEFAULT_ROUTE: reason = "default output route changed"; break;
+            case CoreAudioFailure::DEVICE_OFFLINE: reason = "output device is no longer alive"; break;
+            case CoreAudioFailure::DEVICE_IDENTITY: reason = "output device UID changed"; break;
+            case CoreAudioFailure::OUTPUT_RATE: reason = "output device sample rate changed"; break;
+            case CoreAudioFailure::OUTPUT_CHANNELS: reason = "output device channel layout changed"; break;
+            case CoreAudioFailure::ROUTE_QUERY: reason = "output device property query failed"; break;
+            case CoreAudioFailure::CLOCK_STATUS: reason = "queue clock query failed"; break;
+            case CoreAudioFailure::CLOCK_TIMESTAMP: reason = "queue clock has no valid sample timestamp"; break;
+            case CoreAudioFailure::CLOCK_REGRESSION: reason = "queue sample timestamp moved backwards"; break;
+            case CoreAudioFailure::UNKNOWN_BUFFER: reason = "queue returned an unknown buffer"; break;
+            case CoreAudioFailure::CALLBACK: reason = "queue PCM callback failed"; break;
+            case CoreAudioFailure::QUEUE_CREATION: reason = "queue recreation failed"; break;
+            case CoreAudioFailure::QUEUE_PAUSE: reason = "queue pause failed"; break;
+            case CoreAudioFailure::NONE: break;
+        }
+        throw std::runtime_error(std::string("CoreAudio ") + reason + " (" + std::to_string(clock_status.load()) + "); reopen the device");
     }
 
     void update_clock(bool force = false)
     {
+        if (route_notification.exchange(false)) { confirm_route(); }
+        if (invalidated.load()) { return; }
         if (paused.load() && !force) { return; }
         AudioTimeStamp time{};
         Boolean discontinuity = false;
         const auto status = AudioQueueGetCurrentTime(queue, queue_timeline, &time, &discontinuity);
-        if (status != noErr || discontinuity)
+        if (status != noErr)
         {
-            invalidated.store(true);
+            if (clock_continuity.can_wait_for_timestamp(status == kAudioQueueErr_InvalidRunState, paused.load()) &&
+                (paused.load() || AudioGetCurrentHostTime() - clock_start_host_time < AudioConvertNanosToHostTime(1'000'000'000)))
+            {
+                return;
+            }
+            invalidate(CoreAudioFailure::CLOCK_STATUS, status);
             return;
         }
-        if ((time.mFlags & kAudioTimeStampSampleTimeValid) != 0)
+        if (discontinuity)
         {
-            played = timeline.read(static_cast<int64_t>(std::floor(time.mSampleTime)));
-            clock_host_time = (time.mFlags & kAudioTimeStampHostTimeValid) != 0 ? time.mHostTime : AudioGetCurrentHostTime();
+            confirm_route();
+            if (invalidated.load()) { return; }
         }
+        if ((time.mFlags & kAudioTimeStampSampleTimeValid) == 0 || !std::isfinite(time.mSampleTime) ||
+            time.mSampleTime < static_cast<double>(std::numeric_limits<int64_t>::min()) ||
+            time.mSampleTime >= static_cast<double>(std::numeric_limits<int64_t>::max()))
+        {
+            invalidate(CoreAudioFailure::CLOCK_TIMESTAMP);
+            return;
+        }
+        const auto sample_frame = static_cast<int64_t>(std::floor(time.mSampleTime));
+        if (!clock_continuity.observe(sample_frame, discontinuity, true))
+        {
+            invalidate(CoreAudioFailure::CLOCK_REGRESSION);
+            return;
+        }
+        played = timeline.read(sample_frame);
+        clock_host_time = (time.mFlags & kAudioTimeStampHostTimeValid) != 0 ? time.mHostTime : AudioGetCurrentHostTime();
     }
 
     void enqueue(size_t index)
@@ -288,7 +440,7 @@ private:
         auto &output = *static_cast<CoreAudioOutput *>(context);
         std::scoped_lock state(output.gate);
         const auto iterator = std::find(output.output_buffers.begin(), output.output_buffers.end(), buffer);
-        if (iterator == output.output_buffers.end()) { output.invalidated.store(true); return; }
+        if (iterator == output.output_buffers.end()) { output.invalidate(CoreAudioFailure::UNKNOWN_BUFFER); return; }
         const auto index = static_cast<size_t>(iterator - output.output_buffers.begin());
         output.buffer_queued[index] = false;
         if (output.paused.load() || output.invalidated.load()) { return; }
@@ -297,12 +449,12 @@ private:
             output.update_clock();
             if (!output.invalidated.load()) { output.enqueue(index); }
         }
-        catch (...) { output.invalidated.store(true); }
+        catch (...) { output.invalidate(CoreAudioFailure::CALLBACK); }
     }
 
     static OSStatus changed(AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *context)
     {
-        static_cast<CoreAudioOutput *>(context)->invalidated.store(true);
+        static_cast<CoreAudioOutput *>(context)->route_notification.store(true);
         return noErr;
     }
 

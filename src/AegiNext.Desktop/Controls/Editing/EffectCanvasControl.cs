@@ -29,6 +29,8 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
     private long presentedPreviewSequence;
     private long sceneRevision;
     private MediaTime? compositeTime;
+    private MediaTime? compositePresentationTime;
+    private MediaTime? compositePresentationEnd;
     private MediaTime? videoTime;
     private ProjectLayer? scheduledDraft;
     private ClipMask? scheduledMaskDraft;
@@ -36,6 +38,7 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
     private Guid? scheduledEditingLayerId;
     private bool scheduledInteractive;
     private bool interactivePreview;
+    private bool playbackActive;
     private PixelSize maximumPreviewSize = new(960, 540);
     private string directory = Path.GetTempPath();
     private SdrVideoFrame? video;
@@ -517,10 +520,14 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
         }
     }
 
-    /// <summary>复用播放会话合成帧；原始帧仅供暂存手势或编辑端点重绘。</summary>
-    public void PresentComposite(SdrVideoFrame frame, SdrVideoFrame background, MediaTime? evaluationTime = null, ProjectDocument? evaluationDocument = null, bool interactive = false)
+    /// <summary>复用播放会话合成帧及已校验的工程相对半开帧区间；原始帧供暂存手势或编辑端点重绘。</summary>
+    public void PresentComposite(SdrVideoFrame frame, SdrVideoFrame background, MediaTime? evaluationTime = null,
+        ProjectDocument? evaluationDocument = null, bool interactive = false, MediaTime? presentationTime = null,
+        MediaTime? presentationEnd = null)
     {
         compositeTime = videoTime = evaluationTime ?? position;
+        compositePresentationTime = presentationTime;
+        compositePresentationEnd = presentationEnd;
         compositeFrame = frame;
         compositeDocument = evaluationDocument;
         compositeInteractive = interactive;
@@ -574,6 +581,18 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
 
     internal bool HasVideo => video is not null;
     internal bool HasPresentation => sceneSurface.Bitmap is not null;
+    internal bool PlaybackActive
+    {
+        get => playbackActive;
+        set
+        {
+            if (playbackActive != value)
+            {
+                playbackActive = value;
+                InvalidateVisual();
+            }
+        }
+    }
 
     /// <summary>接收同一播放会话提供的原始 SDR 帧；同步复制到呈现资源，无新增解码器。</summary>
     public void PresentVideo(SdrVideoFrame frame)
@@ -630,6 +649,8 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
         previewSequence++;
         compositeFrame = null;
         compositeDocument = null;
+        compositePresentationTime = null;
+        compositePresentationEnd = null;
         renderedVideo = null;
         renderedDocument = null;
         sceneSurface.Clear();
@@ -742,7 +763,7 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
 
     private void PresentScene(ProjectDocument sceneDocument)
     {
-        if (draft is null && maskDraft is null && !editingPose && !interactivePreview && !compositeInteractive && ReferenceEquals(compositeDocument, sceneDocument) && compositeTime == position && compositeFrame is { } presentedFrame)
+        if (CanReuseComposite(sceneDocument) && compositeFrame is { } presentedFrame)
         {
             if (!ReferenceEquals(renderedVideo, presentedFrame))
             {
@@ -802,6 +823,24 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
         }, DispatcherPriority.Render));
         previewScheduler.Submit(new(++previewSequence, sceneRevision, sceneDocument, position, videoTime, video,
             size.Width, size.Height, directory, interactive));
+    }
+
+    private bool CanReuseComposite(ProjectDocument sceneDocument)
+    {
+        if (draft is not null || maskDraft is not null || editingPose ||
+            interactivePreview != compositeInteractive || !ReferenceEquals(compositeDocument, sceneDocument))
+        {
+            return false;
+        }
+
+        if (compositeInteractive && !playbackActive)
+        {
+            return compositeTime == position;
+        }
+
+        return compositePresentationTime is { } start && compositePresentationEnd is { } end
+            ? start <= position && position < end
+            : compositeTime == position;
     }
 
     private void ReportRenderingFailure(Exception error)

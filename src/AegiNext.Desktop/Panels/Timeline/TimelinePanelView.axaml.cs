@@ -42,6 +42,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private IPointer? animationRowCollapsePointer;
     private bool disposed;
     private bool applying;
+    private bool releasingTransportSeek;
     internal TimelinePanelView(TimelinePanelViewModel viewModel, WorkbenchSession session)
     {
         this.session = session;
@@ -93,7 +94,14 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         ClipMenu.Items.Add(CreateMenuItem("DeleteTimelineClipsMenuItem", "DeleteTimelineClips", viewModel.DeleteClipsCommand));
         timeline.TrackContextRequested += OnTrackContextRequested;
         timeline.ClipContextRequested += OnClipContextRequested;
-        timeline.SeekRequested += async (_, e) => await viewModel.SeekAsync(e.Time);
+        timeline.SeekRequested += async (_, e) =>
+        {
+            if (timeline.IsSeeking && !viewModel.IsSeeking)
+            {
+                viewModel.IsSeeking = true;
+            }
+            await viewModel.SeekAsync(e.Time);
+        };
         timeline.ClipSelectionChanged += (_, e) => e.SelectionAccepted = viewModel.SelectLayers(e);
         timeline.TrackSelected += (_, e) => viewModel.SelectTrack(e.Id);
         timeline.ViewportChanged += OnViewportChanged;
@@ -107,8 +115,21 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         AddHandler(PointerPressedEvent, OnPreviewPointerPressed, RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent, OnPreviewPointerReleased, RoutingStrategies.Tunnel);
         timeline.AddHandler(PointerPressedEvent, (_, _) => viewModel.IsSeeking = timeline.IsSeeking, RoutingStrategies.Bubble, true);
-        timeline.AddHandler(PointerReleasedEvent, (_, _) => viewModel.IsSeeking = false, RoutingStrategies.Bubble, true);
-        timeline.AddHandler(PointerCaptureLostEvent, (_, _) => viewModel.IsSeeking = false, RoutingStrategies.Bubble, true);
+        timeline.AddHandler(PointerReleasedEvent, (_, _) => releasingTransportSeek = timeline.IsSeeking,
+            RoutingStrategies.Tunnel, true);
+        timeline.AddHandler(PointerReleasedEvent, (_, _) =>
+        {
+            viewModel.IsSeeking = false;
+            releasingTransportSeek = false;
+        }, RoutingStrategies.Bubble, true);
+        timeline.AddHandler(PointerCaptureLostEvent, (_, _) =>
+        {
+            if (!releasingTransportSeek && viewModel.IsSeeking)
+            {
+                session.CancelInteractiveSeeking();
+                viewModel.IsSeeking = false;
+            }
+        }, RoutingStrategies.Bubble, true);
         timeline.SizeChanged += (_, _) =>
         {
             viewModel.RefreshViewport();
@@ -192,6 +213,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     }
     public void CancelGestures()
     {
+        session.CancelInteractiveSeeking();
+        releasingTransportSeek = false;
         timeline.CancelGesture();
         overview.CancelGesture();
         viewModel.IsSeeking = false;

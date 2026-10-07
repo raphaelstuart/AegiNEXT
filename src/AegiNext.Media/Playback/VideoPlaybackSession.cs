@@ -19,6 +19,7 @@ public sealed partial class VideoPlaybackSession : IAsyncDisposable
     private readonly Queue<VideoPresentation> presentations = new();
     private readonly CancellationTokenSource lifetime = new();
     private readonly Task worker;
+    private readonly SynchronousMediaWorker decodeWorker;
     private TaskCompletionSource<bool> commandChanged = CreateSignal();
     private TaskCompletionSource<bool> presentationChanged = CreateSignal();
     private VideoPlaybackSnapshot snapshot = new(VideoPlaybackState.CREATED, 0, MediaTime.Zero, null, null);
@@ -50,6 +51,7 @@ public sealed partial class VideoPlaybackSession : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(timestampFrequency);
         this.presentationCapacity = presentationCapacity;
         this.externalPosition = externalPosition;
+        decodeWorker = new("AegiNext video decode");
         worker = Task.Run(RunWorkerAsync);
     }
 
@@ -356,7 +358,8 @@ public sealed partial class VideoPlaybackSession : IAsyncDisposable
                     {
                         if (activeRequest.TryStart())
                         {
-                            ExecuteRequest(activeRequest);
+                            var request = activeRequest;
+                            await decodeWorker.ExecuteAsync(() => ExecuteRequest(request), lifetime.Token).ConfigureAwait(false);
                         }
                         else if (activeRequest.Operation == PlaybackOperation.OPEN)
                         {
@@ -378,11 +381,13 @@ public sealed partial class VideoPlaybackSession : IAsyncDisposable
                             {
                                 if (preparationOptions is null)
                                 {
-                                    AdvancePlayback(activeRequest.Generation);
+                                    var restoreGeneration = activeRequest.Generation;
+                                    await decodeWorker.ExecuteAsync(() => AdvancePlayback(restoreGeneration), lifetime.Token).ConfigureAwait(false);
                                 }
                                 else
                                 {
-                                    AdvancePreparation(activeRequest.Generation);
+                                    var restoreGeneration = activeRequest.Generation;
+                                    await decodeWorker.ExecuteAsync(() => AdvancePreparation(restoreGeneration), lifetime.Token).ConfigureAwait(false);
                                 }
                             }
                         }
@@ -396,12 +401,12 @@ public sealed partial class VideoPlaybackSession : IAsyncDisposable
                 {
                     if (preparationOptions is not null && prepareAdvance)
                     {
-                        AdvancePreparation(generation);
+                        await decodeWorker.ExecuteAsync(() => AdvancePreparation(generation), lifetime.Token).ConfigureAwait(false);
                         continue;
                     }
                     if (preparationOptions is null && (needsResynchronization || remaining <= MediaTime.Zero))
                     {
-                        AdvancePlayback(generation);
+                        await decodeWorker.ExecuteAsync(() => AdvancePlayback(generation), lifetime.Token).ConfigureAwait(false);
                         continue;
                     }
                     if (remaining <= MediaTime.Zero)
@@ -438,11 +443,18 @@ public sealed partial class VideoPlaybackSession : IAsyncDisposable
 
             try
             {
-                ownedSource?.Dispose();
+                if (ownedSource is not null)
+                {
+                    await decodeWorker.ExecuteAsync(ownedSource.Dispose).ConfigureAwait(false);
+                }
             }
             catch (Exception error)
             {
                 SetFault(error);
+            }
+            finally
+            {
+                await decodeWorker.DisposeAsync().ConfigureAwait(false);
             }
 
             lock (gate)

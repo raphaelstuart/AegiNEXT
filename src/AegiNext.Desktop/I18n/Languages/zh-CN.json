@@ -699,7 +699,7 @@
     "Preview.CatchingUp": "同步画面中",
     "Settings.AudioTiming": "音频同步",
     "Settings.AudioNoDevice": "打开带音轨的媒体后可校准输出设备。",
-    "Settings.AudioClockUnavailable": "音频设备时钟不可用，正在暂停并重新打开输出设备。",
+    "Settings.AudioClockUnavailable": "音频设备时钟不可用，播放已暂停；输出恢复后才能继续打轴。",
     "Settings.AudioSystemClock": "{0} 系统播放时钟 · {1} Hz · {2} 声道",
     "Settings.AudioEstimatedClock": "{0} 播放位置估计 · {1} Hz · {2} 声道",
     "Settings.AudioExtraDelay": "额外出声延迟（毫秒）",

@@ -139,6 +139,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal ProjectEditor Editor => editor;
     internal SubtitleDetailsCoordinator Details { get; }
     internal VideoPreviewController Controller => controller;
+    internal PreviewFrameCatalog PreviewFrames => previewFrames;
     internal DesktopApplicationContext ApplicationContext => applicationContext;
     internal WorkbenchPreferences Preferences => applicationContext.Preferences;
     internal WorkbenchPreferencesStore PreferencesStore => preferencesStore;
@@ -533,8 +534,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     internal void Tick()
     {
-        var snapshot = controller.Snapshot;
         RefreshAudioClockStatus();
+        var snapshot = controller.Snapshot;
         RefreshPreviewDecodeSessionInfo(snapshot.DecodeSessionInfo);
         var preview = ViewModel.Preview;
         var relative = ProjectPosition;
@@ -543,7 +544,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         preview.IsOpening = snapshot.IsOpening || switchingPreviewDecodeMode || switchingAudioDevice;
         preview.CanPlay = !closing && !switchingPreviewDecodeMode && !switchingAudioDevice && snapshot.Error is null && snapshot.State is VideoPlaybackState.PAUSED or VideoPlaybackState.PLAYING or VideoPlaybackState.ENDED;
         preview.IsPlaying = snapshot.State == VideoPlaybackState.PLAYING || snapshot.AudioAuditionActive;
-        preview.IsCatchingUp = snapshot.State == VideoPlaybackState.PLAYING && preview.HasFrame && !snapshot.IsPresentedFrameCurrent;
+        preview.IsCatchingUp = snapshot.State == VideoPlaybackState.PLAYING && preview.HasFrame &&
+            snapshot.PresentationLateness is { } lateness && lateness >= new MediaTime(1, 4);
         preview.PlayLabel = Localization.Get("Preview." + (preview.IsPlaying ? "Pause" : "Play"));
         preview.MuteLabel = Localization.Get("Preview." + (preview.IsMuted ? "Unmute" : "Mute"));
         preview.VolumeLabel = Localization.Get("Preview.Volume");
@@ -574,11 +576,12 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             timeline.ViewStart = Math.Max(0, ToSeconds(relative) - timeline.VisibleDuration / 5);
         }
 
+        var diagnostics = controller.Snapshot;
         var renderError = Volatile.Read(ref previewRenderError);
-        SetDiagnosticError("Video playback", snapshot.Error);
-        SetDiagnosticError("Audio playback", snapshot.AudioError);
+        SetDiagnosticError("Video playback", diagnostics.Error);
+        SetDiagnosticError("Audio playback", diagnostics.AudioError);
         SetDiagnosticError("Preview rendering", renderError);
-        if ((snapshot.Error ?? snapshot.AudioError ?? renderError) is { } error)
+        if ((diagnostics.Error ?? diagnostics.AudioError ?? renderError) is { } error)
         {
             ShowError(error, false);
         }

@@ -6,13 +6,41 @@ namespace AegiNext.Media.Playback;
 public sealed partial class VideoPlaybackSession
 {
     private readonly Queue<PreparedVideoTiming> preparedTimings = new();
+    private readonly Queue<VideoPreparationCostObservation> decodeCosts = new();
     private VideoPreparationOptions? preparationOptions;
+    private MediaTime downstreamPreparationLead;
+    private MediaTime minimumPreparationLead;
     private MediaTime preparationLead;
     private int preparationPendingCount;
     private long preparationPendingBytes;
 
     /// <summary>取得会话用于调度和处理耗时测量的同一个单调时间提供者。</summary>
     public TimeProvider TimeProvider => timeProvider;
+
+    /// <summary>取得调度正在使用的提前量；该值已限制在配置的最大提前范围内。</summary>
+    public MediaTime PreparationLead
+    {
+        get
+        {
+            lock (gate)
+            {
+                RefreshDecodePreparationLeadUnderLock();
+                return preparationLead;
+            }
+        }
+    }
+
+    /// <summary>取得允许的最大准备提前范围，供成本估计及交付调度保持同一边界。</summary>
+    public MediaTime MaximumPreparationAhead
+    {
+        get
+        {
+            lock (gate)
+            {
+                return (preparationOptions ?? throw new InvalidOperationException("会话没有启用提前准备。")).MaximumAhead;
+            }
+        }
+    }
 
     /// <summary>在打开前选择提前准备模式；原始帧和解码游标仍由本会话独占。</summary>
     public void ConfigurePreparation(VideoPreparationOptions options)
@@ -29,14 +57,18 @@ public sealed partial class VideoPlaybackSession
         }
     }
 
-    /// <summary>根据已测得的转换和交付成本调整准备目标，始终限制在配置的提前范围内。</summary>
-    public void SetPreparationLead(MediaTime lead)
+    /// <summary>结合已测得的解码、转换和交付成本调整准备范围；最小提前量允许保留交付管线仍可使用的帧。</summary>
+    public void SetPreparationLead(MediaTime lead, MediaTime? minimumLead = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(lead, MediaTime.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(minimumLead ?? lead, MediaTime.Zero);
         lock (gate)
         {
             var options = preparationOptions ?? throw new InvalidOperationException("会话没有启用提前准备。");
-            preparationLead = lead < options.MaximumAhead ? lead : options.MaximumAhead;
+            downstreamPreparationLead = lead < options.MaximumAhead ? lead : options.MaximumAhead;
+            var minimum = minimumLead ?? lead;
+            minimumPreparationLead = minimum < downstreamPreparationLead ? minimum : downstreamPreparationLead;
+            RefreshDecodePreparationLeadUnderLock();
             PulseCommandUnderLock();
         }
     }
@@ -80,6 +112,7 @@ public sealed partial class VideoPlaybackSession
     private MediaTime? GetPreparationDueUnderLock(out bool advance)
     {
         advance = false;
+        RefreshDecodePreparationLeadUnderLock();
         UpdatePreparedTimingUnderLock();
         if (snapshot.State != VideoPlaybackState.PLAYING)
         {
@@ -140,14 +173,15 @@ public sealed partial class VideoPlaybackSession
             MediaTime target;
             lock (gate)
             {
-                target = GetPositionUnderLock() + preparationLead;
+                RefreshDecodePreparationLeadUnderLock();
+                target = GetPositionUnderLock() + (needsResynchronization ? preparationLead : minimumPreparationLead);
             }
-            frame = needsResynchronization
-                ? source!.SeekFrame(target, () => IsSuperseded(generation), lifetime.Token)
-                : source!.ReadFrame(lifetime.Token);
+            var resynchronized = needsResynchronization;
+            frame = ReadPreparationFrame(generation, target, resynchronized, out var readCost);
             while (true)
             {
                 ValidateFrame(frame);
+                var resynchronize = false;
                 lock (gate)
                 {
                     if (closeRequested || generation != snapshot.Generation)
@@ -172,15 +206,24 @@ public sealed partial class VideoPlaybackSession
                         needsResynchronization = false;
                         return;
                     }
-                    target = position + preparationLead;
                     if (playbackRange is { } bounded && target >= bounded.End)
                     {
                         target = position;
                     }
-                    if (frame.NextFrameTime is null || frame.NextFrameTime > target)
+                    var behindClock = frame.NextFrameTime is { } end && end <= position;
+                    if (!resynchronized && behindClock && frame.NextFrameTime is { } next && readCost >= next - frame.Time)
+                    {
+                        target = position + downstreamPreparationLead;
+                        if (playbackRange is { } seekBounded && target >= seekBounded.End)
+                        {
+                            target = position;
+                        }
+                        resynchronize = true;
+                    }
+                    else if (resynchronized || frame.NextFrameTime is null || frame.NextFrameTime > target)
                     {
                         nextFrameTime = frame.NextFrameTime;
-                        needsResynchronization = false;
+                        needsResynchronization = behindClock;
                         preparedTimings.Enqueue(new(frame.Time, frame.NextFrameTime, frame.ReachedEnd));
                         PublishUnderLock(frame, generation);
                         frame = null;
@@ -189,7 +232,8 @@ public sealed partial class VideoPlaybackSession
                     }
                 }
                 frame.Dispose();
-                frame = source!.ReadFrame(lifetime.Token);
+                resynchronized |= resynchronize;
+                frame = ReadPreparationFrame(generation, target, resynchronize, out readCost);
             }
         }
         catch (OperationCanceledException) when (IsSuperseded(generation))
@@ -200,6 +244,47 @@ public sealed partial class VideoPlaybackSession
         {
             frame?.Dispose();
         }
+    }
+
+    private PositionedVideoFrame? ReadPreparationFrame(long generation, MediaTime target, bool seek, out MediaTime elapsed)
+    {
+        var started = timeProvider.GetTimestamp();
+        try
+        {
+            return seek
+                ? source!.SeekFrame(target, () => IsSuperseded(generation), lifetime.Token)
+                : source!.ReadFrame(lifetime.Token);
+        }
+        finally
+        {
+            elapsed = MediaTime.FromTimeSpan(timeProvider.GetElapsedTime(started));
+            lock (gate)
+            {
+                decodeCosts.Enqueue(new(elapsed, timeProvider.GetTimestamp()));
+                while (decodeCosts.Count > 16)
+                {
+                    decodeCosts.Dequeue();
+                }
+                RefreshDecodePreparationLeadUnderLock();
+            }
+        }
+    }
+
+    private void RefreshDecodePreparationLeadUnderLock()
+    {
+        if (preparationOptions is not { } options)
+        {
+            return;
+        }
+        var timestamp = timeProvider.GetTimestamp();
+        var maximumAge = options.MaximumAhead.ToTimeSpan(MediaTimeRounding.CEILING);
+        while (decodeCosts.TryPeek(out var cost) && timeProvider.GetElapsedTime(cost.Timestamp, timestamp) >= maximumAge)
+        {
+            decodeCosts.Dequeue();
+        }
+        var decodeLead = decodeCosts.Count == 0 ? MediaTime.Zero : decodeCosts.Max(cost => cost.Cost);
+        var lead = downstreamPreparationLead + decodeLead;
+        preparationLead = lead < options.MaximumAhead ? lead : options.MaximumAhead;
     }
 
     private long GetPreparationFrameBytes(IVideoFrame frame)

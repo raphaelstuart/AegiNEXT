@@ -10,12 +10,14 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed class AnalysisCoordinator : IDisposable
 {
     private readonly WorkbenchSession session;
+    private readonly Func<string, int, MediaTimelineMapping, MediaTime, AudioAnalysisSession> createSession;
     private readonly Lock jobsGate = new();
     private readonly HashSet<Task> jobs = [];
     private AudioAnalysisSession? analysis;
     private CancellationTokenSource? cancellation;
     private CancellationTokenSource? windowCancellation;
     private WaveformViewportPlan? desired;
+    private bool desiredWaveform;
     private bool desiredSpectrum;
     private bool isAnalyzing;
     private long epoch;
@@ -23,9 +25,11 @@ internal sealed class AnalysisCoordinator : IDisposable
 
     public Task Completion => DrainAsync();
 
-    internal AnalysisCoordinator(WorkbenchSession session)
+    internal AnalysisCoordinator(WorkbenchSession session,
+        Func<string, int, MediaTimelineMapping, MediaTime, AudioAnalysisSession>? createSession = null)
     {
         this.session = session;
+        this.createSession = createSession ?? AudioAnalysisSession.Open;
         session.ViewModel.Timeline.PropertyChanged += OnTimelineChanged;
     }
 
@@ -57,28 +61,42 @@ internal sealed class AnalysisCoordinator : IDisposable
             return;
         }
         var timeline = session.ViewModel.Timeline;
+        if (!timeline.IsWaveformVisible)
+        {
+            timeline.Waveform = null;
+        }
+        if (!timeline.IsSpectrumVisible)
+        {
+            timeline.Spectrogram = null;
+        }
         var plan = timeline.IsWaveformVisible || timeline.IsSpectrumVisible
             ? WaveformViewportPlanner.Create(timeline.Viewport, timeline.RenderScaling, current.Duration) : null;
-        if (!immediate && plan == desired && desiredSpectrum == timeline.IsSpectrumVisible)
+        if (!immediate && plan == desired && desiredWaveform == timeline.IsWaveformVisible &&
+            desiredSpectrum == timeline.IsSpectrumVisible)
         {
             return;
         }
         desired = plan;
+        desiredWaveform = timeline.IsWaveformVisible;
         desiredSpectrum = timeline.IsSpectrumVisible;
         revision++;
         windowCancellation?.Cancel();
         windowCancellation?.Dispose();
         windowCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+        isAnalyzing = plan is not null;
         if (plan is null)
         {
             timeline.Waveform = null;
             timeline.Spectrogram = null;
+            timeline.AnalysisStatus = string.Empty;
             return;
         }
-        Track(AnalyzeWindowAsync(current, plan.Analysis, desiredSpectrum, epoch, revision, immediate, windowCancellation.Token));
+        RefreshLanguage();
+        Track(AnalyzeWindowAsync(current, plan.Analysis, desiredWaveform, desiredSpectrum, epoch, revision, immediate,
+            windowCancellation.Token));
     }
 
-    private async Task AnalyzeWindowAsync(AudioAnalysisSession current, WaveformAnalysisRequest request, bool spectrum,
+    private async Task AnalyzeWindowAsync(AudioAnalysisSession current, WaveformAnalysisRequest request, bool waveform, bool spectrum,
         long requestEpoch, long requestRevision, bool immediate, CancellationToken token)
     {
         try
@@ -87,12 +105,13 @@ internal sealed class AnalysisCoordinator : IDisposable
             {
                 await Task.Delay(75, token);
             }
-            var result = await current.GetWindowAsync(request, spectrum, token);
+            var result = await current.GetLayersAsync(request, waveform, spectrum, token);
             if (IsCurrent(requestEpoch, token) && requestRevision == revision)
             {
                 var timeline = session.ViewModel.Timeline;
                 timeline.Waveform = result.Waveform;
                 timeline.Spectrogram = result.Spectrogram;
+                timeline.AnalysisStatus = string.Empty;
             }
         }
         catch (OperationCanceledException)
@@ -101,6 +120,13 @@ internal sealed class AnalysisCoordinator : IDisposable
         catch (Exception error)
         {
             ReportFailure(error, requestEpoch, token);
+        }
+        finally
+        {
+            if (requestEpoch == epoch && requestRevision == revision)
+            {
+                isAnalyzing = false;
+            }
         }
     }
 
@@ -141,43 +167,10 @@ internal sealed class AnalysisCoordinator : IDisposable
             return;
         }
         cancellation = new();
-        var current = AudioAnalysisSession.Open(path, index, new(media.Start ?? MediaTime.Zero), duration);
+        var current = createSession(path, index, new(media.Start ?? MediaTime.Zero), duration);
         analysis = current;
         session.ViewModel.Timeline.AudioDuration = duration;
-        isAnalyzing = true;
-        RefreshLanguage();
         RefreshWindow(true);
-        Track(AnalyzeOverviewAsync(current, path, epoch, cancellation.Token));
-    }
-
-    private async Task AnalyzeOverviewAsync(AudioAnalysisSession current, string path, long requestEpoch, CancellationToken token)
-    {
-        try
-        {
-            var result = await current.GetOverviewAsync(WaveformViewportPlanner.CreateOverview(current.Duration), true, token);
-            if (IsCurrent(requestEpoch, token))
-            {
-                var timeline = session.ViewModel.Timeline;
-                timeline.WaveformOverview = result.Waveform;
-                timeline.SpectrogramOverview = result.Spectrogram;
-                timeline.AnalysisStatus = string.Empty;
-                session.LogInfo("Analysis", Localization.Get("WorkflowLog.AudioAnalysisCompleted"), path);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception error)
-        {
-            ReportFailure(error, requestEpoch, token);
-        }
-        finally
-        {
-            if (requestEpoch == epoch)
-            {
-                isAnalyzing = false;
-            }
-        }
     }
 
     private bool IsCurrent(long requestEpoch, CancellationToken token) =>

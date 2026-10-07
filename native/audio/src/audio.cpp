@@ -309,6 +309,12 @@ public:
     {
         require(SDL_SetAudioStreamGain(stream, value), SDL_GetError());
     }
+    float gain() override
+    {
+        const auto value = SDL_GetAudioStreamGain(stream);
+        require(value >= 0, SDL_GetError());
+        return value;
+    }
     int latency() const override
     {
         SDL_AudioSpec spec{};

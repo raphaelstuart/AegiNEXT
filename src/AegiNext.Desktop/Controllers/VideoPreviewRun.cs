@@ -36,10 +36,14 @@ internal sealed class VideoPreviewRun : IDisposable
     internal SemaphoreSlim PreparedSlots { get; } = new(2, 2);
     internal Queue<PreparedVideoPreview> PreparedFrames { get; } = new();
     internal TaskCompletionSource PreparedChanged { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    internal Queue<MediaTime> ConversionCosts { get; } = new();
-    internal Queue<MediaTime> DispatchCosts { get; } = new();
+    internal Queue<ObservedVideoPreparationCost> ConversionCosts { get; } = new();
+    internal Queue<ObservedVideoPreparationCost> DispatchCosts { get; } = new();
+    internal Queue<ObservedVideoPreparationCost> DispatchWaitCosts { get; } = new();
     internal MediaTime ConversionLead { get; set; }
     internal MediaTime DispatchLead { get; set; }
+    internal VideoPreviewDelivery? ActivePreparedDispatch { get; set; }
+    internal long ActivePreparedDispatchStarted { get; set; }
+    internal VideoPreviewPipelineDiagnostics Diagnostics { get; } = new();
     internal int PreparedFrameCount { get; set; }
     internal long PreparedBytes { get; set; }
     internal MediaTime? PresentedFrameEnd { get; set; }
@@ -72,6 +76,10 @@ internal sealed class VideoPreviewRun : IDisposable
     {
         lock (gate)
         {
+            if (stopTask is not null)
+            {
+                throw new OperationCanceledException("预览运行已开始关闭。", Token);
+            }
             Token.ThrowIfCancellationRequested();
             audio = value;
         }
@@ -81,6 +89,10 @@ internal sealed class VideoPreviewRun : IDisposable
     {
         lock (gate)
         {
+            if (stopTask is not null)
+            {
+                throw new OperationCanceledException("预览运行已开始关闭。", Token);
+            }
             Token.ThrowIfCancellationRequested();
             session = value;
         }
@@ -88,6 +100,9 @@ internal sealed class VideoPreviewRun : IDisposable
 
     internal Task Stop()
     {
+        TaskCompletionSource completion;
+        VideoPlaybackSession? stoppingSession;
+        AudioPlaybackSession? stoppingAudio;
         lock (gate)
         {
             if (stopTask is not null)
@@ -95,10 +110,44 @@ internal sealed class VideoPreviewRun : IDisposable
                 return stopTask;
             }
 
+            completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            stopTask = completion.Task;
+            stoppingSession = session;
+            stoppingAudio = audio;
+        }
+        _ = CompleteStopAsync(stoppingSession, stoppingAudio, completion);
+        return completion.Task;
+    }
+
+    private async Task CompleteStopAsync(VideoPlaybackSession? stoppingSession, AudioPlaybackSession? stoppingAudio,
+        TaskCompletionSource completion)
+    {
+        var failures = new List<Exception>();
+        try
+        {
             cancellation.Cancel();
-            FirstPresentation.TrySetCanceled(Token);
-            stopTask = Task.WhenAll(session?.CloseAsync() ?? Task.CompletedTask, audio?.CloseAsync() ?? Task.CompletedTask);
-            return stopTask;
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+        FirstPresentation.TrySetCanceled(Token);
+        try
+        {
+            await Task.WhenAll(stoppingSession?.CloseAsync() ?? Task.CompletedTask,
+                stoppingAudio?.CloseAsync() ?? Task.CompletedTask).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+        if (failures.Count == 0)
+        {
+            completion.TrySetResult();
+        }
+        else
+        {
+            completion.TrySetException(failures);
         }
     }
 

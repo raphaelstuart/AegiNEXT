@@ -10,6 +10,7 @@ public:
     virtual void pause(bool paused) = 0;
     virtual void clear() = 0;
     virtual void gain(float gain) = 0;
+    virtual float gain() = 0;
     virtual an_audio_clock_snapshot snapshot() = 0;
     virtual int latency() const = 0;
 };

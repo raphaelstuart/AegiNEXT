@@ -6,10 +6,12 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed partial class WorkbenchSession
 {
     internal void SetInteractiveSeeking(bool value) => playback.SetInteractive(value);
+    internal void CancelInteractiveSeeking() => playback.Invalidate();
+    internal bool IsTransportPlaybackRequested => playback.IsPlaybackRequested;
 
-    internal Task SeekForEditingAsync(MediaTime time) => playback.SeekAsync((controller.Snapshot.Start ?? MediaTime.Zero) + time, false);
+    internal Task SeekForEditingAsync(MediaTime time) => playback.SeekForEditingAsync((controller.Snapshot.Start ?? MediaTime.Zero) + time);
 
-    internal Task SeekFromUserAsync(MediaTime position) => playback.SeekAsync(position);
+    internal Task SeekFromUserAsync(MediaTime position) => playback.SeekFromUserAsync(position);
     internal Task SeekRelativeAsync(long seconds) => playback.SeekRelativeAsync(seconds);
     internal Task SeekProjectTimeAsync(MediaTime relative) => playback.SeekProjectTimeAsync(relative);
 

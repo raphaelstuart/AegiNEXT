@@ -1,5 +1,6 @@
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controllers;
+using AegiNext.Media.Playback;
 using Avalonia.Threading;
 
 namespace AegiNext.Desktop.Workspace;
@@ -9,8 +10,13 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
     private long revision;
     private readonly DispatcherTimer interactiveTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
     private MediaTime? queuedTarget;
+    private MediaTime? interactiveTarget;
+    private bool interactiveResumePlayback;
+    private bool? transportResumePlayback;
     private bool seeking;
     internal bool IsInteractive { get; private set; }
+    internal bool IsPlaybackRequested => IsInteractive ? interactiveResumePlayback :
+        transportResumePlayback ?? controller.Snapshot.State == VideoPlaybackState.PLAYING;
 
     internal void SetInteractive(bool value)
     {
@@ -18,25 +24,31 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         {
             return;
         }
-        IsInteractive = value;
         if (value)
         {
+            interactiveResumePlayback = IsPlaybackRequested;
+            interactiveTarget = null;
+            IsInteractive = true;
             session.ViewModel.Timeline.ResumePlaybackFollow();
             session.TryCommitDrafts(false);
             session.CancelSceneGesture();
             session.ClearKeyframeSelection();
-            _ = session.RunCommandAsync(session.PauseForSceneEditAsync);
             interactiveTimer.Tick += OnInteractiveTick;
             interactiveTimer.Start();
         }
         else
         {
+            var finalTarget = interactiveTarget ?? queuedTarget ?? PendingPosition;
+            var resumePlayback = interactiveResumePlayback;
+            IsInteractive = false;
             interactiveTimer.Stop();
             interactiveTimer.Tick -= OnInteractiveTick;
-            if ((queuedTarget ?? PendingPosition) is { } finalTarget)
+            interactiveTarget = null;
+            queuedTarget = null;
+            if (finalTarget is { } target)
             {
-                queuedTarget = null;
-                _ = session.RunCommandAsync(() => SeekAsync(finalTarget, false));
+                controller.InvalidatePreview();
+                _ = session.RunCommandAsync(() => SeekCoreAsync(target, false, resumePlayback));
             }
         }
         session.Tick();
@@ -52,7 +64,7 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         seeking = true;
         try
         {
-            await SeekAsync(target, false);
+            await SeekCoreAsync(target, false, interactiveResumePlayback);
         }
         finally
         {
@@ -66,12 +78,26 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         revision++;
         PendingPosition = null;
         queuedTarget = null;
+        interactiveTarget = null;
+        transportResumePlayback = null;
+        interactiveResumePlayback = false;
         interactiveTimer.Stop();
         interactiveTimer.Tick -= OnInteractiveTick;
         IsInteractive = false;
     }
 
-    internal async Task SeekAsync(MediaTime position, bool clearEditingTarget = true)
+    internal Task SeekForEditingAsync(MediaTime position)
+    {
+        Invalidate();
+        return SeekCoreAsync(position, false, null);
+    }
+
+    internal Task SeekFromUserAsync(MediaTime position)
+    {
+        return SeekCoreAsync(position, true, IsPlaybackRequested);
+    }
+
+    private async Task SeekCoreAsync(MediaTime position, bool clearEditingTarget, bool? resumePlayback)
     {
         session.InvalidateTimingSession();
         if (clearEditingTarget)
@@ -90,12 +116,25 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         }
 
         var requestRevision = ++revision;
+        transportResumePlayback = resumePlayback;
+        if (IsInteractive && resumePlayback is not null)
+        {
+            interactiveTarget = target;
+            queuedTarget = null;
+        }
         PendingPosition = target;
         session.ViewModel.Error = null;
         session.Tick();
         try
         {
-            await controller.SeekAsync(target);
+            if (resumePlayback is { } resume)
+            {
+                await controller.SeekForPlaybackAsync(target, resume);
+            }
+            else
+            {
+                await controller.SeekAsync(target);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -111,6 +150,7 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         {
             if (requestRevision == revision)
             {
+                transportResumePlayback = null;
                 PendingPosition = queuedTarget;
                 if (!session.IsClosing)
                 {
@@ -125,7 +165,7 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         var snapshot = controller.Snapshot;
         var start = snapshot.Start ?? MediaTime.Zero;
         var target = (PendingPosition ?? snapshot.Position) + new MediaTime(seconds);
-        return SeekAsync(target < start ? start : target);
+        return SeekFromUserAsync(target < start ? start : target);
     }
 
     internal Task SeekProjectTimeAsync(MediaTime time)
@@ -134,9 +174,9 @@ internal sealed class PlaybackSeekingCoordinator(WorkbenchSession session, Video
         var target = (controller.Snapshot.Start ?? MediaTime.Zero) + time;
         if (!IsInteractive)
         {
-            return SeekAsync(target);
+            return SeekFromUserAsync(target);
         }
-        queuedTarget = PendingPosition = target;
+        interactiveTarget = queuedTarget = PendingPosition = target;
         session.Tick();
         return Task.CompletedTask;
     }

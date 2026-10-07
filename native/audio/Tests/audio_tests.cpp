@@ -1,6 +1,9 @@
 #include "aeginext_audio.h"
 #include "audio_output_timeline.h"
+#include "audio_output.h"
+#include "core_audio_clock_continuity.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -16,6 +19,11 @@ static void require(bool condition, const char *message)
 static void put(std::ofstream &file, uint32_t value, int bytes)
 {
     for (int index = 0; index < bytes; ++index) { file.put(static_cast<char>((value >> (index * 8)) & 255)); }
+}
+static void require_gain(void *output, float expected, const char *message)
+{
+    const auto actual = static_cast<AudioOutput *>(output)->gain();
+    require(std::abs(actual - expected) < 0.000001F, message);
 }
 int main()
 {
@@ -44,6 +52,24 @@ int main()
         require(timeline.read(330) == 130 && timeline.read(400) == 160, "Device position maps to real PCM after underflow");
         timeline.reset();
         require(timeline.read(10000) == 0, "Seek clears device-to-media mapping");
+        CoreAudioClockContinuity queue_clock;
+        require(queue_clock.can_wait_for_timestamp(true, false), "A newly started queue may not yet have a hardware timestamp");
+        require(queue_clock.observe(100, false, true), "Initial observed CoreAudio sample frame");
+        require(queue_clock.observe(150, true, true), "An overload discontinuity with an unchanged route and monotonic sample time must retain the system clock");
+        require(!queue_clock.can_wait_for_timestamp(true, false), "A running observed clock cannot hide a missing timestamp");
+        require(queue_clock.can_wait_for_timestamp(true, true), "A paused queue may lack a running timestamp without changing the device");
+        queue_clock.begin_run();
+        require(queue_clock.can_wait_for_timestamp(true, false), "Resume waits for the queue to restart without resetting its media sample mapping");
+        require(queue_clock.observe(150, false, true), "Resume retains the previous sample origin");
+        require(!queue_clock.observe(149, true, true), "A backwards queue timestamp must fail closed");
+        require(!queue_clock.observe(160, true, false), "A real route change must fail closed despite a monotonic timestamp");
+        require(!queue_clock.observe(160, false, false), "A real route change must fail closed without a discontinuity flag");
+        queue_clock.reset();
+        require(queue_clock.observe(0, false, true), "Clear begins a new queue sample timeline");
+        timeline.append(0, 0, 100, 200);
+        require(queue_clock.observe(150, true, true) && timeline.read(150) == 100, "Overload and underflow silence do not invent media PCM");
+        timeline.append(300, 100, 60, 100);
+        require(queue_clock.observe(330, true, true) && timeline.read(330) == 130, "Real PCM after a discontinuity retains exact queue-to-media mapping");
         require(an_audio_decoder_create(&decoder, error, sizeof(error)) == 0, error);
         require(an_audio_decoder_open(decoder, path.string().c_str(), 0, 16000, 1, error, sizeof(error)) == 0, error);
         std::vector<float> samples(4096);
@@ -86,6 +112,7 @@ int main()
         wrong_size.size = 1;
         require(an_audio_output_snapshot(output, &wrong_size, error, sizeof(error)) != 0, "Clock ABI size is checked");
         require(an_audio_output_gain(output, 0.5F, error, sizeof(error)) == 0, error);
+        require_gain(output, 0.5F, "SDL stream applies the requested gain");
         require(an_audio_output_pause(output, 0, error, sizeof(error)) == 0, error);
         SDL_Delay(100);
         require(an_audio_output_queued(output) < 12000, "Device consumes PCM");
@@ -94,10 +121,25 @@ int main()
         SDL_Delay(50);
         require(an_audio_output_queued(output) == paused, "Paused device freezes consumption");
         require(an_audio_output_clear(output, error, sizeof(error)) == 0 && an_audio_output_queued(output) == 0, "Seek clears device queue");
+        require_gain(output, 0.5F, "SDL clear retains the stream gain");
         an_audio_output_destroy(output); output = nullptr;
         if (std::getenv("AEGINEXT_RUN_SYSTEM_AUDIO_TESTS"))
         {
             require(an_audio_output_create_system(&output, 48000, 2, error, sizeof(error)) == 0, error);
+            std::fill(stereo.begin(), stereo.end(), 0.0F);
+            for (const auto expected_gain : {0.0F, 0.35F})
+            {
+                require(an_audio_output_gain(output, expected_gain, error, sizeof(error)) == 0, error);
+                require_gain(output, expected_gain, "System output applies mute and ordinary volume to the real queue");
+                require(an_audio_output_clear(output, error, sizeof(error)) == 0, error);
+                require_gain(output, expected_gain, "System seek preserves mute and ordinary volume on the real queue");
+                require(an_audio_output_write(output, stereo.data(), 1200, error, sizeof(error)) == 0, error);
+                require(an_audio_output_pause(output, 0, error, sizeof(error)) == 0, error);
+                require_gain(output, expected_gain, "System resume preserves mute and ordinary volume on the real queue");
+                SDL_Delay(20);
+                require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
+            }
+            std::cout << "PASS system mute and ordinary volume survive seek and resume (real backend gain)\n";
             require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
             require(an_audio_output_clear(output, error, sizeof(error)) == 0, error);
             std::fill(stereo.begin(), stereo.end(), 0.0F);
@@ -122,8 +164,49 @@ int main()
             SDL_Delay(180);
             require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 && clock.played_frames == 6000, "PCM resumes after underflow without absorbing the silent device gap");
             require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
+            uint64_t previous_epoch = clock.epoch;
+            int64_t previous_played = clock.played_frames;
+            for (int index = 0; index < 500; ++index)
+            {
+                if (index % 50 == 0)
+                {
+                    require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
+                    require(an_audio_output_clear(output, error, sizeof(error)) == 0, error);
+                    require_gain(output, 0.35F, "Repeated queue recreation retains ordinary volume");
+                    require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 &&
+                        clock.played_frames == 0 && clock.epoch > previous_epoch, "Repeated seek retains the real system clock in a new queue epoch");
+                    previous_epoch = clock.epoch;
+                    previous_played = 0;
+                    require(an_audio_output_write(output, stereo.data(), 1200, error, sizeof(error)) == 0, error);
+                    require(an_audio_output_pause(output, 0, error, sizeof(error)) == 0, error);
+                }
+                require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2, "Repeated queue restart does not confuse discontinuity with a device change");
+                require(clock.played_frames >= previous_played, "Observed hardware PCM position stays monotonic within each queue epoch");
+                previous_played = clock.played_frames;
+                if (index % 50 >= 5)
+                {
+                    const auto refill = std::min(4096, 9600 - clock.queued_frames);
+                    if (refill > 0)
+                    {
+                        require(an_audio_output_write(output, stereo.data(), refill, error, sizeof(error)) == 0, error);
+                    }
+                }
+                SDL_Delay(20);
+            }
+            require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
             an_audio_output_destroy(output); output = nullptr;
-            std::cout << "PASS system output clock, pause, seek and device identity (silent PCM)\n";
+            std::cout << "PASS system output clock, pause, seek, ten-second restart and underflow stress (silent PCM)\n";
+            for (int index = 0; index < 8; ++index)
+            {
+                require(an_audio_output_create_system(&output, 48000, 2, error, sizeof(error)) == 0, error);
+                require(an_audio_output_write(output, stereo.data(), 12000, error, sizeof(error)) == 0, error);
+                require(an_audio_output_pause(output, 0, error, sizeof(error)) == 0, error);
+                SDL_Delay(80 + index * 5);
+                require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 &&
+                    clock.played_frames > 0 && clock.queued_frames > 0, "Direct close begins while real PCM is playing and queued");
+                an_audio_output_destroy(output); output = nullptr;
+            }
+            std::cout << "PASS direct system output destruction while PCM is playing (silent PCM)\n";
         }
         std::filesystem::remove(path);
         std::cout << "PASS bounded SDL output, pause, clear, gain, resource release\n";

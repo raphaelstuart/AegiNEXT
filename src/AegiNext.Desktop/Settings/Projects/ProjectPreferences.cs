@@ -3,13 +3,21 @@ namespace AegiNext.Desktop.Settings.Projects;
 /// <summary>项目的默认位置及独立的自动保存、历史备份策略。</summary>
 public sealed record ProjectPreferences
 {
-    public string WorkspaceRoot { get; init; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AegiNext", "Workspace");
+    public string WorkspaceRoot { get; init; } = ResolveDefaultWorkspaceRoot(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Path.GetTempPath());
     public bool AutoSaveEnabled { get; init; } = true;
     public int AutoSaveIntervalMinutes { get; init; } = 2;
     public bool BackupEnabled { get; init; } = true;
     public int BackupIntervalMinutes { get; init; } = 5;
     public int MaximumBackupCount { get; init; } = 20;
+
+    internal static string ResolveDefaultWorkspaceRoot(string documents, string profile, string temporary)
+    {
+        var root = Path.IsPathFullyQualified(documents) ? documents :
+            Path.IsPathFullyQualified(profile) ? profile : temporary;
+        return Path.Combine(root, "AegiNext", "Workspace");
+    }
 
     /// <summary>验证路径语法及保护策略，不创建或探测目录可写性。</summary>
     public void Validate()

@@ -19,6 +19,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
     private readonly PreviewPanelViewModel viewModel;
     private readonly EffectCanvasControl canvas;
     private readonly Slider positionSlider;
+    private double synchronizedPosition;
     private bool disposed;
     internal PreviewPanelView(PreviewPanelViewModel viewModel, WorkbenchSession session)
     {
@@ -44,22 +45,35 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         session.SceneGestureCancellationRequested += OnSceneGestureCancelled;
         ApplyScene();
         positionSlider = this.FindControl<Slider>("PositionSlider")!;
+        synchronizedPosition = viewModel.Position;
         positionSlider.AddHandler(PointerPressedEvent, (_, e) =>
         {
             viewModel.IsScrubbing = positionSlider.IsEnabled && e.GetCurrentPoint(positionSlider).Properties.IsLeftButtonPressed;
         }, RoutingStrategies.Tunnel);
-        positionSlider.AddHandler(PointerReleasedEvent, async (_, _) =>
+        positionSlider.AddHandler(PointerReleasedEvent, (_, _) =>
         {
             if (viewModel.IsScrubbing)
             {
                 var target = MediaTime.FromTimeSpan(TimeSpan.FromSeconds(positionSlider.Value));
+                _ = viewModel.SeekAsync(target);
                 viewModel.IsScrubbing = false;
-                await viewModel.SeekAsync(target);
             }
         }, RoutingStrategies.Tunnel);
-        positionSlider.PointerCaptureLost += (_, _) => viewModel.IsScrubbing = false;
+        positionSlider.PointerCaptureLost += (_, _) =>
+        {
+            if (viewModel.IsScrubbing)
+            {
+                session.CancelInteractiveSeeking();
+                viewModel.IsScrubbing = false;
+            }
+        };
         positionSlider.ValueChanged += async (_, e) =>
         {
+            if (Math.Abs(viewModel.Position - synchronizedPosition) > 0.000001)
+            {
+                synchronizedPosition = viewModel.Position;
+                return;
+            }
             if (positionSlider.IsEnabled && (viewModel.IsScrubbing || Math.Abs(e.NewValue - viewModel.Position) > 0.000001))
             {
                 await viewModel.SeekAsync(MediaTime.FromTimeSpan(TimeSpan.FromSeconds(e.NewValue)));
@@ -72,6 +86,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
     public string PanelId => "preview";
     public void CancelGestures()
     {
+        session.CancelInteractiveSeeking();
         viewModel.IsScrubbing = false;
         canvas.CancelGesture();
         viewModel.CancelCanvasGesture();
@@ -85,9 +100,14 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         }
         if (update.Frame is { } frame)
         {
-            canvas.PresentComposite(frame, update.BackgroundFrame ?? frame, update.CompositionTime ?? (update.Snapshot.PresentedFrameTime is { } time ? time - (viewModel.Scene.Document.Media?.MediaOrigin ?? MediaTime.Zero) : null), update.CompositionDocument, update.IsInteractiveComposition);
             ApplyScene();
+            var origin = update.CompositionDocument?.Media?.MediaOrigin ?? viewModel.Scene.Document.Media?.MediaOrigin ?? MediaTime.Zero;
+            var start = update.Snapshot.PresentedFrameTime is { } time ? time - origin : (MediaTime?)null;
+            var end = update.Snapshot.PresentedFrameEnd is { } next ? next - origin : (MediaTime?)null;
+            canvas.PresentComposite(frame, update.BackgroundFrame ?? frame, update.CompositionTime ?? start,
+                update.CompositionDocument, update.IsInteractiveComposition, start, end);
         }
+        canvas.PlaybackActive = update.Snapshot.State == AegiNext.Media.Playback.VideoPlaybackState.PLAYING;
     }
     private void OnSceneChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -111,6 +131,7 @@ internal sealed partial class PreviewPanelView : UserControl, IWorkbenchPanelVie
         var quality = PreviewQualityOptions.Get(scene.Quality);
         canvas.MaximumPreviewSize = new PixelSize(quality.MaximumWidth, quality.MaximumHeight);
         canvas.InteractivePreview = scene.IsInteractive;
+        canvas.PlaybackActive = viewModel.IsPlaying;
         canvas.EditMode = scene.Mode;
         canvas.MaskSelectedNodeId = session.SceneEditing.MaskNodeId;
         canvas.SetScene(scene.Document, scene.SelectedLayer, scene.Position, scene.AssetDirectory, scene.IsEditingPose);

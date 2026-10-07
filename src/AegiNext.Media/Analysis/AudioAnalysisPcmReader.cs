@@ -8,7 +8,9 @@ internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action c
     private AudioSampleBlock? block;
     private long blockStart;
     private MediaTime? expected;
+    private long? lastBlockEnd;
     private bool eof;
+    internal long? EndSample { get; private set; }
 
     internal float Read(long sample)
     {
@@ -24,6 +26,7 @@ internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action c
             if (block is null)
             {
                 eof = true;
+                EndSample = lastBlockEnd ?? sample;
                 return 0;
             }
             if (block.Format != source.Format || expected is { } previous && block.Start < previous)
@@ -31,6 +34,7 @@ internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action c
                 throw new InvalidDataException("PCM 格式不一致或时间戳发生重叠、回退。");
             }
             blockStart = block.Start.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.FLOOR).Value;
+            lastBlockEnd = blockStart + block.FrameCount;
             expected = block.Start + new MediaTime(block.FrameCount, WaveformAnalyzer.SAMPLE_RATE);
         }
         if (sample < blockStart)

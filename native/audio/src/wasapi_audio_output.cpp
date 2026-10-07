@@ -262,7 +262,7 @@ private:
     }
 };
 
-enum class WasapiCommand { NONE, PAUSE, RESUME, CLEAR, GAIN, SNAPSHOT, STOP };
+enum class WasapiCommand { NONE, PAUSE, RESUME, CLEAR, GAIN, READ_GAIN, SNAPSHOT, STOP };
 
 class WasapiAudioOutput final : public AudioOutput
 {
@@ -342,6 +342,14 @@ public:
         execute(WasapiCommand::GAIN);
     }
 
+    float gain() override
+    {
+        std::scoped_lock operation(api_gate);
+        execute(WasapiCommand::READ_GAIN);
+        std::scoped_lock state(gate);
+        return measured_gain;
+    }
+
     an_audio_clock_snapshot snapshot() override
     {
         std::scoped_lock operation(api_gate);
@@ -377,6 +385,7 @@ private:
     bool worker_exited = false;
     bool paused = true;
     float output_gain = 1.0F;
+    float measured_gain = 1.0F;
     int ring_start = 0;
     int ring_count = 0;
     int64_t submitted = 0;
@@ -539,6 +548,15 @@ private:
                 require_valid();
                 const std::array<float, SOURCE_CHANNELS> levels{output_gain, output_gain};
                 check_wasapi(stream.volume->SetAllVolumes(SOURCE_CHANNELS, levels.data()), "Set WASAPI output gain");
+            }
+            else if (value == WasapiCommand::READ_GAIN)
+            {
+                std::scoped_lock state(gate);
+                require_valid();
+                std::array<float, SOURCE_CHANNELS> levels{};
+                check_wasapi(stream.volume->GetAllVolumes(SOURCE_CHANNELS, levels.data()), "Read WASAPI output gain");
+                if (levels[0] != levels[1]) { throw std::runtime_error("WASAPI stereo output gain differs between channels"); }
+                measured_gain = levels[0];
             }
         }
         catch (...)
