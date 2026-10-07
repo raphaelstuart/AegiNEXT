@@ -188,6 +188,13 @@ public sealed partial class ProjectSceneRenderer
         var style = subtitle.Style;
         var horizontal = (int)style.Alignment % 3;
         var vertical = (int)style.Alignment / 3;
+        var blockWidth = style.TextAlign.HasValue ? MeasureTextBlockWidth(lines) : 0;
+        var blockLeft = horizontal switch
+        {
+            0 => (float)style.Margin,
+            1 => (document.Width - blockWidth) / 2,
+            _ => document.Width - (float)style.Margin - blockWidth
+        };
         var blockHeight = lines[^1].FontSize;
         for (var index = 0; index < lines.Count - 1; index++)
         {
@@ -230,6 +237,16 @@ public sealed partial class ProjectSceneRenderer
                 1 => (document.Width - width) / 2 - left,
                 _ => document.Width - (float)style.Margin - width - left
             };
+            if (style.TextAlign is { } textAlign && (int)textAlign != horizontal)
+            {
+                var rowOffset = textAlign switch
+                {
+                    SubtitleTextAlignment.LEFT => 0,
+                    SubtitleTextAlignment.CENTER => (blockWidth - width) / 2,
+                    _ => blockWidth - width
+                };
+                x = blockLeft + rowOffset - left;
+            }
             var baseline = new SKPoint(x, rowTop + line.FontSize);
             for (var runIndex = 0; runIndex < positioned.Count; runIndex++)
             {
@@ -285,6 +302,29 @@ public sealed partial class ProjectSceneRenderer
         var snapshot = new SubtitleTextLayout(subtitle.Text, ink, basePosition, pivot, hasInk,
             geometries.ToImmutable(), orderedGraphemes, emptyCaret);
         return new(lines, ink, basePosition, pivot, hasInk, snapshot);
+    }
+
+    private static float MeasureTextBlockWidth(List<SubtitleLayoutLine> lines)
+    {
+        var width = 0f;
+        foreach (var line in lines)
+        {
+            var ink = SKRect.Empty;
+            var advance = 0f;
+            var rtl = !line.Runs.IsEmpty && line.Runs[0].Direction == TextDirection.RIGHT_TO_LEFT;
+            foreach (var run in line.Runs)
+            {
+                var bounds = RunInkBounds(run);
+                if (!bounds.IsEmpty)
+                {
+                    bounds.Offset(rtl ? line.AdvanceWidth - advance - run.Shape.AdvanceWidth : advance, 0);
+                    ink = ink.IsEmpty ? bounds : SKRect.Union(ink, bounds);
+                }
+                advance += run.Shape.AdvanceWidth;
+            }
+            width = Math.Max(width, ink.Width);
+        }
+        return width > 0 ? width : Math.Max(1, lines.Max(line => line.AdvanceWidth));
     }
 
     private static ImmutableArray<SubtitleGraphemeGeometry> MeasureGraphemes(SubtitleLayoutRun run, SKPoint position,

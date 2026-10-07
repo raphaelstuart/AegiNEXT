@@ -46,7 +46,8 @@ public sealed class SubtitleTextLayout
         {
             var dx = Math.Max(Math.Max(grapheme.Bounds.Left - point.X, 0), point.X - grapheme.Bounds.Right);
             var dy = Math.Max(Math.Max(grapheme.Bounds.Top - point.Y, 0), point.Y - grapheme.Bounds.Bottom);
-            var next = dx * dx + dy * dy;
+            var next = Math.Min(dx * dx + dy * dy,
+                Math.Min(CaretDistance(point, grapheme.LeadingCaret), CaretDistance(point, grapheme.TrailingCaret)));
             if (next < distance)
             {
                 nearest = grapheme;

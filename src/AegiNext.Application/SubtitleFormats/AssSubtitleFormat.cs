@@ -217,6 +217,10 @@ public static class AssSubtitleFormat
             {
                 diagnostics.Add(new("Ass.FontResource", "ASS 文件不包含项目嵌入字体，请在播放环境安装对应字体。", SubtitleId: line.Id));
             }
+            if (line.Style.TextAlign is { } textAlign && (int)textAlign != (int)line.Style.Alignment % 3)
+            {
+                diagnostics.Add(new("Ass.TextAlign", "ASS 九宫格定位不能独立保留项目文字对齐，导出时采用定位对应的文字对齐。", SubtitleId: line.Id));
+            }
             if (!line.Style.LineHeight.Equals(1.2))
             {
                 diagnostics.Add(new("Ass.LineHeight", "ASS 不支持项目自定义行高。", SubtitleId: line.Id));

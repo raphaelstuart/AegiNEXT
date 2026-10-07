@@ -59,6 +59,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private readonly List<Control> bodyOnlyFields = [];
     private readonly List<Button> selectionActions = [];
     private readonly Dictionary<string, ToolbarToggleButton> toggles = [];
+    private readonly Dictionary<SubtitleTextAlignment, ToolbarToggleButton> alignmentToggles = [];
     private bool synchronizing;
     private bool disposed;
     private bool completingInput;
@@ -130,7 +131,14 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
                 clipPopup.ShowAt(axis);
             }
         };
-        clipPopup.Closing += (_, e) => e.Cancel = !coordinator.TryCommit();
+        clipPopup.Closing += (sender, e) =>
+        {
+            e.Cancel = !coordinator.TryPrepare(session.Editor.Snapshot, out _);
+            if (!e.Cancel)
+            {
+                QueueStyleFocusCommit();
+            }
+        };
         code.PropertyChanged += (_, e) =>
         {
             if (!synchronizing && activeTab == 1 && e.Property is { } property &&
@@ -159,7 +167,14 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         {
             if (!completingInput)
             {
-                coordinator.TryCommit();
+                if (formattingPointerActive)
+                {
+                    formattingFocusPending = true;
+                }
+                else
+                {
+                    QueueStyleFocusCommit();
+                }
             }
         };
         kind.SelectionChanged += (_, _) =>
@@ -343,7 +358,8 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel, true);
         AddHandler(PointerPressedEvent, (_, e) =>
         {
-            if (e.Source is Control source && source.GetSelfAndVisualAncestors().Any(value => value is ToolbarToggleButton button && toggles.ContainsValue(button)))
+            if (e.Source is Control source && source.GetSelfAndVisualAncestors().Any(value => value is ToolbarToggleButton button &&
+                (toggles.ContainsValue(button) || alignmentToggles.ContainsValue(button))))
             {
                 formattingPointerActive = true;
                 formattingFocusPending = false;
@@ -386,6 +402,25 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             }
             return Task.CompletedTask;
         }));
+        styleToolbar.Children.Add(ToolbarSeparator("TextAlignmentSeparator"));
+        foreach (var (alignment, key) in new[]
+        {
+            (SubtitleTextAlignment.LEFT, "AlignLeft"),
+            (SubtitleTextAlignment.CENTER, "AlignCenter"),
+            (SubtitleTextAlignment.RIGHT, "AlignRight")
+        })
+        {
+            var button = new ToolbarToggleButton { Name = key + "Button" };
+            ConfigureToggle(button, "Workbench." + key, WorkbenchIcon.Create(key));
+            button.Click += (_, _) =>
+            {
+                coordinator.ApplyTextAlignment(alignment);
+                Refresh();
+            };
+            button.PointerCaptureLost += (_, _) => EndFormattingPointer();
+            alignmentToggles.Add(alignment, button);
+            styleToolbar.Children.Add(button);
+        }
         var font = selectionFont;
         font.RefreshFontCandidates(session.Fonts.Candidates);
         font.SetCurrentFont(SubtitleFontSelectionService.FromStyle(coordinator.SelectionStyle()));
@@ -676,12 +711,19 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         var revision = ++styleFocusRevision;
         var draft = styleFields.DataContext;
         var document = session.DocumentSnapshot;
+        var root = hostWindow;
         Dispatcher.UIThread.Post(() =>
         {
             if (!disposed && revision == styleFocusRevision && ReferenceEquals(draft, styleFields.DataContext) &&
+                root is not null && ReferenceEquals(root, hostWindow) &&
                 ReferenceEquals(document, session.DocumentSnapshot) &&
                 !styleFields.GetVisualDescendants().OfType<Button>().Any(button => button.Flyout?.IsOpen == true))
             {
+                if (formattingPointerActive)
+                {
+                    formattingFocusPending = true;
+                    return;
+                }
                 coordinator.TryCommit();
             }
         }, DispatcherPriority.Background);
@@ -854,6 +896,13 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             foreach (var action in selectionActions)
             {
                 action.IsEnabled = styleFields.IsEnabled;
+            }
+            var textAlignment = line is null ? (SubtitleTextAlignment?)null :
+                line.Style.TextAlign ?? (SubtitleTextAlignment)((int)line.Style.Alignment % 3);
+            foreach (var pair in alignmentToggles)
+            {
+                pair.Value.IsEnabled = line is not null && !editingHighlight;
+                pair.Value.IsChecked = pair.Key == textAlignment;
             }
             if (editingHighlight)
             {
@@ -1102,6 +1151,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         ++focusRevision;
+        ++styleFocusRevision;
         if (hostWindow is not null)
         {
             hostWindow.Activated -= OnHostActivated;

@@ -321,6 +321,7 @@ public static class ProjectValidator
     public static void ValidateSubtitleStyle([NotNull] SubtitleStyle? style)
     {
         Require(style is not null && style.FontFamily is { Length: > 0 and <= 512 } && Enum.IsDefined(style.Alignment), "字幕样式无效。");
+        Require(style.TextAlign is null || Enum.IsDefined(style.TextAlign.Value), "字幕文字对齐无效。");
         ValidateText(style.FontFamily);
         if (style.FontVariant is { } variant)
         {

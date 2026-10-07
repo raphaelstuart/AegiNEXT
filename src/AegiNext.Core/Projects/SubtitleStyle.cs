@@ -18,6 +18,8 @@ public sealed record SubtitleStyle
     public bool Underline { get; init; }
     public bool Strikethrough { get; init; }
     public TextAlignment Alignment { get; init; } = TextAlignment.BOTTOM_CENTER;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SubtitleTextAlignment? TextAlign { get; init; }
     public double Margin { get; init; } = 40;
     public SubtitlePosition? Position { get; init; }
     public double LineHeight { get; init; } = 1.2;

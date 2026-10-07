@@ -207,26 +207,39 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         var style = inline?.Style.ApplyTo(line.Style) ?? line.Style;
         prepared = ProjectEditingOperations.ApplySubtitleInlineStyle(prepared, id, start, length, createEdit(style));
         ProjectValidator.Validate(prepared);
-        committing = true;
-        try
+        CommitPreparedDetails(document, prepared, id, "Format subtitle selection");
+    }
+
+    internal bool ApplyTextAlignment(SubtitleTextAlignment alignment)
+    {
+        if (!Enum.IsDefined(alignment))
         {
-            if (prepared != document)
-            {
-                session.Editor.Apply("Format subtitle selection", _ => prepared);
-            }
-            original = draft = session.Editor.Snapshot.Subtitles.Single(line => line.Id == id);
-            sourceDirty = durationDirty = leadingDelayDirty = false;
-            sourceEdit = null;
-            LoadSelectionStyle();
-            LoadHighlightStyle();
-            RefreshSource();
-            RefreshDuration();
+            throw new ArgumentOutOfRangeException(nameof(alignment));
         }
-        finally
+        if (draft is null || committing || disposed)
         {
-            committing = false;
+            return false;
         }
-        Changed?.Invoke(this, EventArgs.Empty);
+        var current = draft.Style.TextAlign ?? (SubtitleTextAlignment)((int)draft.Style.Alignment % 3);
+        if (current == alignment)
+        {
+            return true;
+        }
+        var id = draft.Id;
+        var document = session.Editor.Snapshot;
+        if (!TryPrepare(document, out var prepared))
+        {
+            return false;
+        }
+        prepared = prepared with
+        {
+            Subtitles = prepared.Subtitles.Select(line => line.Id == id
+                ? line with { Style = line.Style with { TextAlign = alignment } }
+                : line).ToImmutableArray()
+        };
+        ProjectValidator.Validate(prepared);
+        CommitPreparedDetails(document, prepared, id, "Align subtitle text");
+        return true;
     }
 
     internal void ClearSelectionStyle(int start, int length)
@@ -786,14 +799,20 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             return false;
         }
+        CommitPreparedDetails(document, prepared, draft.Id, "Edit subtitle details");
+        return true;
+    }
+
+    private void CommitPreparedDetails(ProjectDocument document, ProjectDocument prepared, Guid id, string description)
+    {
         committing = true;
         try
         {
             if (prepared != document)
             {
-                session.Editor.Apply("Edit subtitle details", _ => prepared);
+                session.Editor.Apply(description, _ => prepared);
             }
-            original = draft = session.Editor.Snapshot.Subtitles.Single(line => line.Id == draft.Id);
+            original = draft = session.Editor.Snapshot.Subtitles.Single(line => line.Id == id);
             sourceDirty = durationDirty = leadingDelayDirty = false;
             sourceEdit = null;
             LoadSelectionStyle();
@@ -806,7 +825,6 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             committing = false;
         }
         Changed?.Invoke(this, EventArgs.Empty);
-        return true;
     }
 
     internal void Restore(string field)

@@ -111,7 +111,7 @@ public static class SubtitleStylePresetStore
                 foreach (var property in info.Properties)
                 {
                     property.IsRequired = !(info.Type == typeof(SubtitleStylePreset) && property.Name == "timingPostProcessor") &&
-                        !(info.Type == typeof(SubtitleStyle) && property.Name == "fontVariant") &&
+                        !(info.Type == typeof(SubtitleStyle) && property.Name is "fontVariant" or "textAlign") &&
                         !(info.Type == typeof(SubtitleFontVariant) && property.Name == "postScriptName") &&
                         !(info.Type == typeof(SubtitleInlineStyleOverride) && property.Name is "fontVariant" or "clearFontVariant");
                 }
