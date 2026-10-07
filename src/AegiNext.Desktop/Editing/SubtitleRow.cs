@@ -12,14 +12,16 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
     private string endText;
     private string text;
     private SubtitleLine original;
+    private string originalStartText;
+    private string originalEndText;
 
     internal SubtitleRow(SubtitleLine line, int number)
     {
         Id = line.Id;
         original = line;
         Number = number;
-        startText = TimelineTimeText.Format(line.Start);
-        endText = TimelineTimeText.Format(line.End);
+        startText = originalStartText = TimelineTimeText.Format(line.Start);
+        endText = originalEndText = TimelineTimeText.Format(line.End);
         text = line.Text;
     }
 
@@ -35,17 +37,31 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
 
     internal SubtitleLine Original => original;
 
-    internal bool IsDirty => Text != original.Text || StartText != TimelineTimeText.Format(original.Start) ||
-                             EndText != TimelineTimeText.Format(original.End);
+    internal bool IsDirty => Text != original.Text || StartText != originalStartText || EndText != originalEndText;
 
     internal void Accept(SubtitleLine line)
     {
+        if (ReferenceEquals(original, line) && !IsDirty)
+        {
+            return;
+        }
+
+        var durationChanged = original.End - original.Start != line.End - line.Start;
+        var contentTypeChanged = original.ContentKind != line.ContentKind;
         original = line;
-        StartText = TimelineTimeText.Format(line.Start);
-        EndText = TimelineTimeText.Format(line.End);
+        originalStartText = TimelineTimeText.Format(line.Start);
+        originalEndText = TimelineTimeText.Format(line.End);
+        StartText = originalStartText;
+        EndText = originalEndText;
         Text = line.Text;
-        PropertyChanged?.Invoke(this, new(nameof(Duration)));
-        PropertyChanged?.Invoke(this, new(nameof(ContentType)));
+        if (durationChanged)
+        {
+            PropertyChanged?.Invoke(this, new(nameof(Duration)));
+        }
+        if (contentTypeChanged)
+        {
+            PropertyChanged?.Invoke(this, new(nameof(ContentType)));
+        }
     }
 
     public string StartText

@@ -10,8 +10,17 @@ using Avalonia.Styling;
 namespace AegiNext.Desktop.Controls;
 
 /// <summary>完整工程概览；拖动视窗平移，拖动两边缩放，始终不发出播放定位。</summary>
-public sealed class TimelineOverviewControl : Control
+public sealed class TimelineOverviewControl : Control, IDisposable
 {
+    private readonly TimelineDrawingCache clipDrawing = new();
+    private readonly Dictionary<Guid, int[]> clipsByCue = [];
+    private IBrush surfaceBrush = Brushes.Transparent;
+    private IBrush subtitleBrush = Brushes.Transparent;
+    private IBrush layerBrush = Brushes.Transparent;
+    private IBrush viewportBrush = new SolidColorBrush(Color.Parse("#304778D8"));
+    private readonly Pen viewportBorder = new(Brushes.RoyalBlue, 2);
+    private readonly Pen viewportEdge = new(Brushes.RoyalBlue, 3);
+    private Pen playheadPen = new(Brushes.Transparent, 2);
     private ProjectDocument document = new();
     private TimelineViewport viewport = new();
     private double duration = 1;
@@ -28,10 +37,26 @@ public sealed class TimelineOverviewControl : Control
     {
         Focusable = true;
         ClipToBounds = true;
-        ActualThemeVariantChanged += (_, _) => InvalidateVisual();
+        ActualThemeVariantChanged += (_, _) => RefreshDrawingPalette();
+        RefreshDrawingPalette();
     }
 
     public event EventHandler<TimelineViewportEventArgs>? ViewportChanged;
+    internal long StaticDrawingBuildCount { get; private set; }
+    internal long CachedDrawingBytes => clipDrawing.AllocatedBytes;
+
+    public MediaTime Position
+    {
+        get => position;
+        set
+        {
+            if (position != value)
+            {
+                position = value;
+                InvalidateVisual();
+            }
+        }
+    }
 
     internal Rect ViewportRectangle
     {
@@ -52,19 +77,37 @@ public sealed class TimelineOverviewControl : Control
     public void SetScene(ProjectDocument value, TimelineViewport visible, double totalDuration, MediaTime playhead,
         TimelineTimingPreview? preview = null)
     {
+        var nextDuration = Math.Max(0.001, totalDuration);
+        if (ReferenceEquals(document, value) && viewport == visible && duration.Equals(nextDuration) &&
+            position == playhead && timingPreview == preview)
+        {
+            return;
+        }
+
         if (!ReferenceEquals(document, value))
         {
             CancelGesture();
+            clipDrawing.Dispose();
             var indices = value.SubtitleTracks.Select((track, index) => (track.Id, index)).ToDictionary(item => item.Id, item => item.index);
             var cues = value.Subtitles.ToDictionary(cue => cue.Id);
             clips = Flatten(value.Layers).Select(layer => (Seconds(layer.Start), Seconds(layer.End),
                 layer.SubtitleId is { } cueId ? indices[cues[cueId].TrackId] : value.SubtitleTracks.Length,
                 layer.Kind == LayerKind.SUBTITLE, layer.SubtitleId)).ToArray();
+            clipsByCue.Clear();
+            foreach (var group in clips.Select((clip, index) => (clip.CueId, Index: index))
+                         .Where(item => item.CueId.HasValue).GroupBy(item => item.CueId!.Value))
+            {
+                clipsByCue.Add(group.Key, group.Select(item => item.Index).ToArray());
+            }
         }
 
+        if (!duration.Equals(nextDuration) || timingPreview?.CueId != preview?.CueId)
+        {
+            clipDrawing.Dispose();
+        }
         document = value;
         viewport = visible;
-        duration = Math.Max(0.001, totalDuration);
+        duration = nextDuration;
         position = playhead;
         timingPreview = preview;
         InvalidateVisual();
@@ -74,28 +117,67 @@ public sealed class TimelineOverviewControl : Control
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        var dark = ActualThemeVariant == ThemeVariant.Dark;
-        context.DrawRectangle(new SolidColorBrush(Color.Parse(dark ? "#182233" : "#DEE6F0")), null, new(Bounds.Size));
-        var tracks = document.SubtitleTracks;
-        var band = Math.Max(0, Bounds.Height - 6) / Math.Max(1, tracks.Length + 1);
-        foreach (var clip in clips)
+        var scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+        clipDrawing.Draw(context, Bounds.Size, scaling, TimelineDrawingCache.CanCache(Bounds.Size, scaling, 1), drawing =>
         {
-            var start = timingPreview is { } preview && clip.CueId == preview.CueId ? Seconds(preview.Start) : clip.Start;
-            var end = timingPreview is { } timing && clip.CueId == timing.CueId ? Seconds(timing.End) : clip.End;
-            var x = start / duration * Bounds.Width;
-            var width = Math.Max(1, (end - start) / duration * Bounds.Width);
-            context.DrawRectangle(new SolidColorBrush(Color.Parse(clip.Subtitle
-                    ? dark ? "#7396D9" : "#557EB9" : dark ? "#62B6B2" : "#378B85")),
-                null, new(x, 3 + clip.Row * band, width, band * 0.75));
+            StaticDrawingBuildCount++;
+            drawing.DrawRectangle(surfaceBrush, null, new(Bounds.Size));
+            foreach (var clip in clips)
+            {
+                if (clip.CueId != timingPreview?.CueId || !clip.CueId.HasValue)
+                {
+                    DrawClip(drawing, clip.Start, clip.End, clip.Row, clip.Subtitle);
+                }
+            }
+        });
+        if (timingPreview is { } preview && clipsByCue.TryGetValue(preview.CueId, out var previewClips))
+        {
+            foreach (var index in previewClips)
+            {
+                var clip = clips[index];
+                DrawClip(context, Seconds(preview.Start), Seconds(preview.End), clip.Row, clip.Subtitle);
+            }
         }
-
         var rectangle = ViewportRectangle;
-        context.DrawRectangle(new SolidColorBrush(Color.Parse("#304778D8")), new Pen(Brushes.RoyalBlue, 2), rectangle);
-        context.DrawLine(new Pen(Brushes.RoyalBlue, 3), rectangle.TopLeft, rectangle.BottomLeft);
-        context.DrawLine(new Pen(Brushes.RoyalBlue, 3), rectangle.TopRight, rectangle.BottomRight);
+        context.DrawRectangle(viewportBrush, viewportBorder, rectangle);
+        context.DrawLine(viewportEdge, rectangle.TopLeft, rectangle.BottomLeft);
+        context.DrawLine(viewportEdge, rectangle.TopRight, rectangle.BottomRight);
         var playhead = Seconds(position) / duration * Bounds.Width;
-        context.DrawLine(new Pen(new SolidColorBrush(Color.Parse(dark ? "#FF6B7A" : "#B52542")), 2),
-            new(playhead, 0), new(playhead, Bounds.Height));
+        context.DrawLine(playheadPen, new(playhead, 0), new(playhead, Bounds.Height));
+    }
+
+    private void DrawClip(DrawingContext context, double start, double end, int row, bool subtitle)
+    {
+        var band = Math.Max(0, Bounds.Height - 6) / Math.Max(1, document.SubtitleTracks.Length + 1);
+        var x = start / duration * Bounds.Width;
+        var width = Math.Max(1, (end - start) / duration * Bounds.Width);
+        context.DrawRectangle(subtitle ? subtitleBrush : layerBrush, null, new(x, 3 + row * band, width, band * 0.75));
+    }
+
+    private void RefreshDrawingPalette()
+    {
+        var dark = ActualThemeVariant == ThemeVariant.Dark;
+        surfaceBrush = new SolidColorBrush(Color.Parse(dark ? "#182233" : "#DEE6F0"));
+        subtitleBrush = new SolidColorBrush(Color.Parse(dark ? "#7396D9" : "#557EB9"));
+        layerBrush = new SolidColorBrush(Color.Parse(dark ? "#62B6B2" : "#378B85"));
+        playheadPen = new(new SolidColorBrush(Color.Parse(dark ? "#FF6B7A" : "#B52542")), 2);
+        clipDrawing.Dispose();
+        InvalidateVisual();
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        CancelGesture();
+        clipDrawing.Dispose();
+    }
+
+    /// <inheritdoc />
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        CancelGesture();
+        clipDrawing.Dispose();
+        base.OnDetachedFromVisualTree(e);
     }
 
     /// <inheritdoc />

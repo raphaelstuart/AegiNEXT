@@ -9,7 +9,7 @@ public sealed class ClipMaskPersistenceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void VersionFiveRoundTripPreservesMaskGeometryIdentityAndIndependentTransform(bool vector)
+    public void CurrentVersionRoundTripPreservesMaskGeometryIdentityAndIndependentTransform(bool vector)
     {
         var editor = new ProjectEditor();
         var id = editor.AddSubtitle(new(0), new(2), "mask");
@@ -39,7 +39,7 @@ public sealed class ClipMaskPersistenceTests
         editor.SetKeyframe(id, AnimationProperty.POSITION, new(new(3, 2), new ScenePoint(60, 80)));
         var bytes = ProjectStore.Serialize(editor.Snapshot);
         var root = JsonNode.Parse(bytes)!;
-        Assert.Equal(5, root["version"]!.GetValue<int>());
+        Assert.Equal(ProjectDocument.CURRENT_VERSION, root["version"]!.GetValue<int>());
         Assert.Equal(vector ? "VECTOR" : "RECTANGLE", root["layers"]![0]!["mask"]!["kind"]!.GetValue<string>());
         var track = root["layers"]![0]!["tracks"]![0]!.AsObject();
         Assert.False(track.ContainsKey("property"));

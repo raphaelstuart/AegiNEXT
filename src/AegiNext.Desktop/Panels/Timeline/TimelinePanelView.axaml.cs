@@ -222,7 +222,46 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     public void FocusInvalidField(string? fieldKey) => timeline.Focus();
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        ApplyState();
+        if (disposed || applying)
+        {
+            return;
+        }
+
+        switch (e.PropertyName)
+        {
+            case nameof(viewModel.Position):
+                timeline.Position = viewModel.Position;
+                overview.Position = viewModel.Position;
+                break;
+            case nameof(viewModel.TimingPreview):
+                timeline.SetTimingPreview(viewModel.TimingPreview);
+                overview.SetScene(viewModel.Document, viewModel.Viewport, viewModel.FullDuration, viewModel.Position, viewModel.TimingPreview);
+                break;
+            case null:
+            case "":
+            case nameof(viewModel.Document):
+            case nameof(viewModel.TimelineViewState):
+            case nameof(viewModel.SelectedCueId):
+            case nameof(viewModel.SelectedLayer):
+            case nameof(viewModel.SelectedLayerIds):
+            case nameof(viewModel.SelectedTrackId):
+            case nameof(viewModel.SelectedMaskNodeId):
+            case nameof(viewModel.EffectTarget):
+            case nameof(viewModel.Viewport):
+            case nameof(viewModel.FullDuration):
+            case nameof(viewModel.IsSnapEnabled):
+            case nameof(viewModel.IsStepEnabled):
+            case nameof(viewModel.IsSpectrumVisible):
+            case nameof(viewModel.IsWaveformVisible):
+            case nameof(viewModel.IsClassicTimingEnabled):
+            case nameof(viewModel.Spectrogram):
+            case nameof(viewModel.SpectrogramOverview):
+            case nameof(viewModel.Waveform):
+            case nameof(viewModel.WaveformOverview):
+            case nameof(viewModel.AudioDuration):
+                ApplyState();
+                break;
+        }
         if (e.PropertyName is nameof(viewModel.Document) or nameof(viewModel.SelectedTrackId))
         {
             RefreshTrackMenu();
@@ -329,11 +368,11 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     }
     private void OnViewportChanged(object? sender, TimelineViewportEventArgs e)
     {
-        viewModel.Viewport = e.Viewport;
-        if (!applying)
+        if (!applying && e.IsUserInitiated)
         {
-            ApplyState();
+            viewModel.SuspendPlaybackFollow();
         }
+        viewModel.Viewport = e.Viewport;
     }
     private void OnTrackContextRequested(object? sender, TimelineTrackContextEventArgs e)
     {
@@ -475,6 +514,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             TrackMenu.Close();
             ClipMenu.Close();
             overview.CancelGesture();
+            overview.Dispose();
             timeline.Dispose();
         }
     }

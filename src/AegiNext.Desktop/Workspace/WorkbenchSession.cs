@@ -592,7 +592,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private void OnDocumentChanged(object? sender, EventArgs e)
     {
         ClearInspectorPreview();
-        RefreshDocument();
+        if (!committingTimingCreation)
+        {
+            RefreshDocument();
+        }
         if (projectBusy || closing)
         {
             return;

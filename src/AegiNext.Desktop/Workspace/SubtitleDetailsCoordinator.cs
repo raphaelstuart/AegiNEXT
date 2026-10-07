@@ -755,7 +755,10 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
                 }
                 prepared = ProjectEditingOperations.SetKaraokeLeadingDelay(prepared, draft.Id, delay, draft.Start - ContentOrigin);
             }
-            ProjectValidator.Validate(prepared);
+            if (!ReferenceEquals(prepared, document))
+            {
+                ProjectValidator.Validate(prepared);
+            }
             preparedDocument = prepared;
             Error = null;
             return true;

@@ -1,0 +1,327 @@
+using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
+using AegiNext.Desktop.Editing;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Styling;
+
+namespace AegiNext.Desktop.Controls;
+
+public sealed partial class SubtitleTimelineControl
+{
+    private readonly TimelineDrawingCache audioDrawing = new();
+    private readonly TimelineDrawingCache clipDrawing = new();
+    private readonly TimelineDrawingCache chromeDrawing = new();
+    private readonly TimelineDrawingCache markerDrawing = new();
+    private readonly TimelineDrawingCache previewDrawing = new();
+    private Dictionary<Guid, TimelineVisibleClipIndex> rowClipIndexes = [];
+    private Dictionary<Guid, ProjectLayer> subtitleLayersByCue = [];
+    private readonly Dictionary<Guid, IReadOnlyList<ProjectLayer>> visibleClipsByRow = [];
+    private IReadOnlyList<TimelineRow>? drawingRowsSnapshot;
+    private TimelineViewport drawingViewport = new();
+    private Guid? drawingPreviewLayerId;
+    private Guid[] drawingSelection = [];
+    private double drawingOrigin;
+    private (TimelineDragMode Mode, Guid Id, MediaTime Start, MediaTime End, MediaTime Key, Guid? Track,
+        Guid? Operation, bool OperationStart, bool Valid, bool Stretching) drawingDrag;
+
+    internal long VisibleClipIndexBuildCount { get; private set; }
+    internal long StaticDrawingBuildCount { get; private set; }
+    internal long TextLayoutBuildCount { get; private set; }
+    internal long CurveSampleCount { get; private set; }
+    internal int VisibleClipProjectionCount { get; private set; }
+    internal long CachedDrawingBytes => audioDrawing.AllocatedBytes + clipDrawing.AllocatedBytes + chromeDrawing.AllocatedBytes +
+        markerDrawing.AllocatedBytes + previewDrawing.AllocatedBytes;
+
+    private Guid? PreviewLayerId => timingPreview is { } preview
+        ? subtitleLayersByCue.GetValueOrDefault(preview.CueId)?.Id : null;
+
+    private void RenderCachedTimeline(DrawingContext context)
+    {
+        var host = TopLevel.GetTopLevel(this);
+        var origin = host is null ? 0 : this.TranslatePoint(new(0, 0), host)?.X ?? 0;
+        if (!drawingOrigin.Equals(origin))
+        {
+            drawingOrigin = origin;
+            audioDrawing.Dispose();
+        }
+        RefreshDrawingState();
+        RefreshClipRangeProjection();
+        RefreshVisibleClipRanges();
+        var scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+        var cacheEnabled = TimelineDrawingCache.CanCache(Bounds.Size, scaling, 5);
+        var body = BodyRectangle();
+        audioDrawing.Draw(context, Bounds.Size, scaling, cacheEnabled, drawing =>
+        {
+            drawing.DrawRectangle(drawingPalette.Surface, null, new(Bounds.Size));
+            using var clip = drawing.PushClip(body);
+            if (IsSpectrumVisible)
+            {
+                DrawSpectrogram(drawing, body, spectrumOverview, spectrumOverviewBitmap);
+                DrawSpectrogram(drawing, body, spectrum, spectrumBitmap);
+            }
+            if (IsWaveformVisible)
+            {
+                DrawWaveform(drawing, body);
+            }
+        });
+        using (context.PushClip(body))
+        {
+            DrawClipRangeFills(context, body);
+        }
+        clipDrawing.Draw(context, Bounds.Size, scaling, cacheEnabled, drawing =>
+        {
+            StaticDrawingBuildCount++;
+            DrawTimelineRows(drawing, false);
+        });
+        if (PreviewLayerId.HasValue)
+        {
+            previewDrawing.Draw(context, Bounds.Size, scaling, cacheEnabled, drawing => DrawTimelineRows(drawing, true));
+        }
+        chromeDrawing.Draw(context, Bounds.Size, scaling, cacheEnabled, DrawTimelineChrome);
+        DrawClipBoundaries(context);
+        DrawSnapIndicator(context);
+        markerDrawing.Draw(context, Bounds.Size, scaling, cacheEnabled, drawing => DrawKeyframeMarkers(drawing, false));
+        DrawKeyframeMarkers(context, true);
+        var playhead = X(Seconds(position));
+        if (playhead >= HeaderWidth)
+        {
+            context.DrawLine(drawingPalette.Playhead, new(playhead, 0), new(playhead, Bounds.Height));
+        }
+        if (ContentHeight > viewport.Height && viewport.Height > 0)
+        {
+            var thumbHeight = Math.Max(12, viewport.Height * viewport.Height / ContentHeight);
+            var thumbY = RulerHeight + viewport.VerticalOffset / (ContentHeight - viewport.Height) * (viewport.Height - thumbHeight);
+            context.DrawRectangle(new SolidColorBrush(Color.Parse("#998B9AB1")), null,
+                new(Bounds.Width - 5, thumbY, 4, thumbHeight), 2, 2);
+        }
+        DrawHoveredLabel(context, drawingPalette.Foreground, ActualThemeVariant == ThemeVariant.Dark);
+    }
+
+    private void RefreshDrawingState()
+    {
+        var drag = (dragMode == TimelineDragMode.SEEK ? TimelineDragMode.NONE : dragMode, dragId, pendingStart,
+            pendingEnd, pendingKey, pendingTrackId, dragOperationId, dragOperationStart, validDrop, stretching);
+        if (ReferenceEquals(drawingRowsSnapshot, rows) && drawingViewport == viewport && drawingDrag == drag &&
+            drawingPreviewLayerId == PreviewLayerId && selectedIds.SetEquals(drawingSelection))
+        {
+            return;
+        }
+        InvalidateSceneDrawing();
+        drawingRowsSnapshot = rows;
+        drawingViewport = viewport;
+        drawingDrag = drag;
+        drawingPreviewLayerId = PreviewLayerId;
+        drawingSelection = selectedIds.ToArray();
+    }
+
+    private void InvalidateSceneDrawing()
+    {
+        DisposeDrawingCaches();
+        visibleClipsByRow.Clear();
+        VisibleClipProjectionCount = 0;
+        markersDirty = true;
+        previewMarkersSnapshot = null;
+    }
+
+    private void DisposeDrawingCaches()
+    {
+        audioDrawing.Dispose();
+        clipDrawing.Dispose();
+        chromeDrawing.Dispose();
+        markerDrawing.Dispose();
+        previewDrawing.Dispose();
+    }
+
+    private IReadOnlyList<ProjectLayer> VisibleClipsForRow(TimelineRow row)
+    {
+        if (visibleClipsByRow.TryGetValue(row.Id, out var result))
+        {
+            return result;
+        }
+        var padding = 9 / PixelsPerSecond;
+        var start = new MediaTime((long)Math.Floor((ViewStart - padding) * 1000000), 1000000);
+        var end = new MediaTime((long)Math.Ceiling((ViewStart + VisibleDuration + padding) * 1000000), 1000000);
+        if (dragMode is not (TimelineDragMode.NONE or TimelineDragMode.SEEK))
+        {
+            result = ClipsForRow(row).Where(clip =>
+            {
+                var displayed = DisplayedLayer(clip);
+                return displayed.Start < end && displayed.End > start;
+            }).ToArray();
+        }
+        else
+        {
+            result = rowClipIndexes.TryGetValue(row.Id, out var index) ? index.Query(start, end) : [];
+        }
+        VisibleClipProjectionCount += result.Count;
+        visibleClipsByRow.Add(row.Id, result);
+        return result;
+    }
+
+    private IReadOnlyList<ProjectLayer> RenderingClipsForRow(TimelineRow row, bool previewOnly) => previewOnly
+        ? PreviewLayerId is { } id && rowsByLayer.GetValueOrDefault(id)?.Id == row.Id ? [layersById[id]] : []
+        : VisibleClipsForRow(row);
+
+    private void DrawTimelineRows(DrawingContext context, bool previewOnly)
+    {
+        var grid = drawingPalette.Grid;
+        IReadOnlyList<TimelineRow> drawingRows = previewOnly
+            ? PreviewLayerId is { } id && rowsByLayer.TryGetValue(id, out var previewRow) ? new[] { previewRow } : []
+            : rows;
+        using (context.PushClip(BodyRectangle()))
+        {
+            foreach (var row in drawingRows)
+            {
+                var y = RowY(row);
+                if (y + row.Height < RulerHeight || y > Bounds.Height)
+                {
+                    continue;
+                }
+
+                if (!previewOnly)
+                {
+                    context.DrawLine(grid, new(HeaderWidth, y + row.Height), new(Bounds.Width, y + row.Height));
+                }
+                if (row.CurveHeight > 0)
+                {
+                    if (!previewOnly)
+                    {
+                        context.DrawRectangle(drawingPalette.AnimationSurface, null,
+                            new(HeaderWidth, y, Math.Max(0, Bounds.Width - HeaderWidth), row.CurveHeight));
+                    }
+                    foreach (var clip in RenderingClipsForRow(row, previewOnly))
+                    {
+                        if ((clip.Id == PreviewLayerId) != previewOnly)
+                        {
+                            continue;
+                        }
+                        var layer = DisplayedLayer(clip);
+                        var tracks = TracksFor(layer);
+                        foreach (var animation in row.Animations)
+                        {
+                            foreach (var target in animation.TargetsFor(clip.Id).OrderBy(target => IsSelectedMaskTarget(clip.Id, target)))
+                            {
+                                if (CurveRectangle(clip.Id, target) is { } curve &&
+                                    curve.Bottom >= RulerHeight && curve.Top <= Bounds.Height)
+                                {
+                                    DrawEffects(context, clip, layer, DisplayedTrack(layer, target, tracks), curve, animation.IsCollapsed);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                foreach (var clip in RenderingClipsForRow(row, previewOnly))
+                {
+                    if ((clip.Id == PreviewLayerId) != previewOnly)
+                    {
+                        continue;
+                    }
+                    var rectangle = ClipRectangle(clip, row);
+                    if (rectangle.Right < HeaderWidth || rectangle.Left > Bounds.Width)
+                    {
+                        continue;
+                    }
+
+                    var active = selectedIds.Contains(clip.Id);
+                    var invalid = IsInvalidClipDrag(clip.Id);
+                    context.DrawRectangle(invalid ? drawingPalette.InvalidClip : active ? selectedClipBrush : inactiveClipBrush,
+                        active ? selectedClipBorder : inactiveClipBorder, rectangle, 3, 3);
+                    using var clipOpacity = context.PushOpacity(active || invalid ? 1 : 0.6);
+                    var maskBadge = ClipMaskBadgeRectangle(clip, rectangle);
+                    if (maskBadge is { } badge)
+                    {
+                        if (badge.Width < badge.Height)
+                        {
+                            context.DrawRectangle(drawingPalette.ClipForeground, null, badge, 1, 1);
+                        }
+                        else
+                        {
+                            using (context.PushTransform(Matrix.CreateScale(badge.Width / 24, badge.Height / 24) *
+                                Matrix.CreateTranslation(badge.Left, badge.Top)))
+                            {
+                                context.DrawGeometry(drawingPalette.ClipForeground, null, clipMaskBadgeIcon);
+                            }
+                        }
+                    }
+                    var textLeft = maskBadge?.Right + 4 ?? rectangle.Left + 6;
+                    if (rectangle.Right - 3 > textLeft && rectangle.Height >= 10)
+                    {
+                        var text = clip.SubtitleId is { } cueId ? cuesById[cueId].Text.Replace('\n', ' ') : clip.Name;
+                        using (context.PushClip(new Rect(textLeft, rectangle.Top + 3, rectangle.Right - 3 - textLeft, rectangle.Height - 6)))
+                        {
+                            DrawText(context, text, new(textLeft, rectangle.Y + 3), drawingPalette.ClipForeground, 11);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void DrawTimelineChrome(DrawingContext context)
+    {
+        var foreground = drawingPalette.Foreground;
+        var grid = drawingPalette.Grid;
+        foreach (var row in rows)
+        {
+            var y = RowY(row);
+            if (y + row.Height < RulerHeight || y > Bounds.Height)
+            {
+                continue;
+            }
+
+            using (context.PushClip(new Rect(0, RulerHeight, HeaderWidth, Math.Max(0, Bounds.Height - RulerHeight))))
+            {
+                context.DrawRectangle(row.TrackId == selectedTrack && selectedTrack.HasValue
+                        ? drawingPalette.SelectedTrack : drawingPalette.Track, null,
+                    new(0, y, HeaderWidth, row.Height));
+                DrawExpander(context, row.ExpanderRectangle(y), row.IsCollapsed);
+
+                using (context.PushClip(new Rect(26 + row.Depth * 8, y, Math.Max(0, HeaderWidth - 28 - row.Depth * 8), row.Height)))
+                {
+                    DrawCenteredText(context, row.Name, new(26 + row.Depth * 8, y + 4,
+                        Math.Max(0, HeaderWidth - 28 - row.Depth * 8), 20), foreground, 11);
+                }
+                if (row.StyleBadgeRectangle(y, HeaderWidth) is { } badge)
+                {
+                    using (context.PushOpacity(row.AutoApplyStyle ? 1 : 0.5))
+                    {
+                        context.DrawRectangle(drawingPalette.StyleBadge, null, badge, 3, 3);
+                        using (context.PushClip(badge.Deflate(new Thickness(4, 0))))
+                        {
+                            DrawCenteredText(context, row.StylePresetName!, badge.Deflate(new Thickness(4, 0)), foreground, 10);
+                        }
+                    }
+                }
+            }
+        }
+
+        context.DrawRectangle(drawingPalette.Surface, null,
+            new(0, 0, Bounds.Width, RulerHeight));
+        var step = TimelineTimeScale.MajorStep(PixelsPerSecond);
+        var minor = Seconds(TimelineTimeScale.MinorStep(PixelsPerSecond));
+        for (var index = Math.Ceiling(ViewStart / minor); index * minor <= ViewStart + VisibleDuration; index++)
+        {
+            var tick = index * minor;
+            var x = X(tick);
+            if (x >= HeaderWidth)
+            {
+                context.DrawLine(grid, new(x, RulerHeight - 3), new(x, RulerHeight));
+            }
+        }
+        for (var index = Math.Ceiling(ViewStart / step); index * step <= ViewStart + VisibleDuration; index++)
+        {
+            var tick = index * step;
+            var x = X(tick);
+            if (x >= HeaderWidth)
+            {
+                context.DrawLine(grid, new(x, RulerHeight - 6), new(x, Bounds.Height));
+                DrawText(context, TimelineTimeScale.Label(tick, step), new(x + 3, 2), foreground, 10);
+            }
+        }
+
+        DrawPropertyTitles(context, foreground);
+    }
+}

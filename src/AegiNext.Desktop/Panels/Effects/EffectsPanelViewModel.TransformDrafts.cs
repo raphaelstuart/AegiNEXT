@@ -114,7 +114,10 @@ internal sealed partial class EffectsPanelViewModel
         try
         {
             var result = PrepareOperationDraft(document);
-            ProjectValidator.Validate(result);
+            if (!ReferenceEquals(result, document))
+            {
+                ProjectValidator.Validate(result);
+            }
             return result;
         }
         catch (Exception error) when (error is InvalidDataException or InvalidOperationException or ArgumentException or OverflowException)

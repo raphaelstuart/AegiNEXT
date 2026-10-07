@@ -68,7 +68,10 @@ internal sealed partial class WorkbenchSession
             prepared = MaskEditing.Prepare(prepared);
             prepared = ViewModel.Effects.PrepareOperationDraft(prepared);
 
-            ProjectValidator.Validate(prepared);
+            if (!ReferenceEquals(prepared, document))
+            {
+                ProjectValidator.Validate(prepared);
+            }
             ViewModel.InvalidPanelId = "export";
             var crf = ViewModel.Export.Crf ?? 20;
             var videoBitrate = ViewModel.Export.VideoBitrate ?? 8;
@@ -119,7 +122,7 @@ internal sealed partial class WorkbenchSession
                 }
                 else
                 {
-                    RefreshDocument();
+                    RefreshCommittedDrafts(changes, originalStylesDirty, originalEffectsDirty, originalFields);
                 }
             }
             catch
@@ -148,6 +151,54 @@ internal sealed partial class WorkbenchSession
             ViewModel.Subtitles.ValidationError = error.Message;
             ReportDraftError(error, focusInvalid);
             return false;
+        }
+    }
+
+    private void RefreshCommittedDrafts(Dictionary<Guid, SubtitleLine> changes, bool refreshStyles, bool refreshEffects,
+        string[] effectFields)
+    {
+        var previousUpdating = updatingWorkbench;
+        updatingWorkbench = true;
+        try
+        {
+            if (changes.Count > 0)
+            {
+                foreach (var row in ViewModel.Subtitles.Rows)
+                {
+                    if (changes.TryGetValue(row.Id, out var line))
+                    {
+                        row.Accept(line);
+                    }
+                }
+            }
+
+            MaskEditing.Refresh(true);
+            if (refreshStyles || refreshEffects)
+            {
+                RefreshInspector();
+                if (refreshStyles)
+                {
+                    OnStylePropertyChanged(this, new(nameof(ViewModel.Styles.FontSize)));
+                    OnStylePropertyChanged(this, new(nameof(ViewModel.Styles.StrokeWidth)));
+                }
+                if (refreshEffects)
+                {
+                    foreach (var field in effectFields)
+                    {
+                        var property = field.EndsWith("Text", StringComparison.Ordinal) ? field[..^4] : field;
+                        OnEffectPropertyChanged(this, new(property));
+                    }
+                }
+            }
+            else if (ViewModel.Effects.SelectedOperation is not null)
+            {
+                ViewModel.Effects.RefreshTransformOperations(SelectedLayer?.Tracks.FirstOrDefault(track => track.Target == SceneEditing.Target));
+            }
+            RefreshEditingPreview();
+        }
+        finally
+        {
+            updatingWorkbench = previousUpdating;
         }
     }
 
@@ -527,13 +578,18 @@ internal sealed partial class WorkbenchSession
 
         ViewModel.CancelGestures();
         InvalidateTimingSession();
+        SynchronizeCueSelection(id);
+        RefreshDocument();
+    }
+
+    private void SynchronizeCueSelection(Guid id)
+    {
         ResetSubtitleSelection(id);
         SelectedCueId = id;
         ViewModel.Effects.SelectedIds = [];
         SelectedLayerId = Flatten(editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == id)?.Id;
         SelectedKeyTime = null;
         ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
-        RefreshDocument();
     }
 
     internal void SelectLayer(Guid id, Guid[] selectedIds)

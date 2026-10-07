@@ -33,6 +33,7 @@ public sealed partial class SubtitleTimelineControl
         waveformOverview = overview;
         waveformMediaDuration = mediaDuration;
         waveformGeometryDirty = true;
+        audioDrawing.Dispose();
         InvalidateVisual();
     }
 

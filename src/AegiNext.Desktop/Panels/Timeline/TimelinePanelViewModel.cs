@@ -288,7 +288,7 @@ internal sealed class TimelinePanelViewModel : ObservableObject
             return;
         }
 
-        IsPlaybackFollowEnabled = false;
+        SuspendPlaybackFollow();
         pendingCenterCueId = cueId;
         ApplyPendingSubtitleCenter();
     }
@@ -316,6 +316,12 @@ internal sealed class TimelinePanelViewModel : ObservableObject
     internal void ResumePlaybackFollow()
     {
         IsPlaybackFollowEnabled = true;
+        pendingCenterCueId = null;
+    }
+
+    internal void SuspendPlaybackFollow()
+    {
+        IsPlaybackFollowEnabled = false;
         pendingCenterCueId = null;
     }
 

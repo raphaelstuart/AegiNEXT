@@ -238,7 +238,10 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         try
         {
             var result = Prepare(document);
-            ProjectValidator.Validate(result);
+            if (!ReferenceEquals(result, document))
+            {
+                ProjectValidator.Validate(result);
+            }
             lastValidPreview = result;
             lastValidSource = session.DocumentSnapshot;
             return result;

@@ -1,3 +1,4 @@
+using AegiNext.Core.Projects;
 using AegiNext.Desktop.Rendering;
 
 namespace AegiNext.Desktop.Workspace;
@@ -8,6 +9,6 @@ internal sealed partial class WorkbenchSession
 
     internal ProjectPreviewState GetPreviewState() => Volatile.Read(ref previewState);
 
-    private ProjectPreviewState CreatePreviewState() => new(PreviewDocument, ProjectDirectory, ProjectPosition,
+    private ProjectPreviewState CreatePreviewState(ProjectDocument? document = null) => new(document ?? PreviewDocument, ProjectDirectory, ProjectPosition,
         playback.IsInteractive, Preferences.PreviewQuality, previewQualityRevision);
 }

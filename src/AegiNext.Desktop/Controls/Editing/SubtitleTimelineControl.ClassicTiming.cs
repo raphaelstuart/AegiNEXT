@@ -21,9 +21,14 @@ public sealed partial class SubtitleTimelineControl
             return;
         }
 
+        var cueChanged = timingPreview?.CueId != value?.CueId;
         timingPreview = value;
-        projectedRows = null;
-        markersDirty = true;
+        previewDrawing.Dispose();
+        previewMarkersSnapshot = null;
+        if (cueChanged)
+        {
+            InvalidateSceneDrawing();
+        }
         InvalidateVisual();
     }
 

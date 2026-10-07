@@ -27,6 +27,10 @@ public sealed partial class SubtitleTimelineControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == IsSpectrumVisibleProperty || change.Property == IsWaveformVisibleProperty)
+        {
+            audioDrawing.Dispose();
+        }
         if (change.Property != TimelineViewStateProperty)
         {
             return;
@@ -43,7 +47,7 @@ public sealed partial class SubtitleTimelineControl
         collapsedAnimationRows.Clear();
         collapsedAnimationRows.UnionWith(state.CollapsedAnimationRows);
         RebuildRows();
-        PublishViewport(viewport);
+        PublishViewport(viewport, false);
         InvalidateVisual();
     }
 
