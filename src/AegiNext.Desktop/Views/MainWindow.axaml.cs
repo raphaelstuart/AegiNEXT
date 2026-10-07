@@ -73,8 +73,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         AvaloniaXamlLoader.Load(this);
         Session = preparedSession ?? WorkbenchCompositionRoot.Create(new WindowWorkbenchDialogService(this,
             registerWindow: RegisterAuxiliaryWindow), controllerFactory, startup: startup);
-        settingsCoordinator = new(Session.ApplicationContext);
-        settingsCoordinator.EffectScriptErrorReported += RevealEffectScriptError;
         ViewModel = Session.ViewModel;
         DataContext = ViewModel;
         panels = new(StringComparer.Ordinal)
@@ -97,6 +95,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             WorkbenchWindowRole.MAIN);
         layouts = new(this, panels, Session.PreferencesStore.DirectoryPath, ViewModel.TryCommitDrafts,
             ViewModel.CancelGestures, RegisterWorkspaceWindow);
+        settingsCoordinator = new(Session.ApplicationContext, captureLayout: layouts.CaptureFile,
+            requestApplicationExit: RequestApplicationExit);
+        settingsCoordinator.EffectScriptErrorReported += RevealEffectScriptError;
         workspaceHost.Content = layouts.Host;
         layouts.Changed += OnLayoutChanged;
         layouts.Error += OnLayoutError;
@@ -187,6 +188,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         clockTimer.Stop();
         settingsCoordinator.EffectScriptErrorReported -= RevealEffectScriptError;
         settingsCoordinator.Dispose();
+        await settingsCoordinator.TransferCompletion;
         aboutWindow?.Close();
         try
         {

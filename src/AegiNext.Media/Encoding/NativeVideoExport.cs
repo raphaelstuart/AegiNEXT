@@ -20,16 +20,7 @@ internal static class NativeVideoExport
         var input = ProjectAssetLocation.Resolve(inputAsset, request.ProjectDirectory);
         using var render = new ExportRenderContext(request.Project, request.ProjectDirectory, progress, cancellationToken);
         var handle = GCHandle.Alloc(render);
-        var arguments = new NativeExportRequest
-        {
-            StructSize = NativeExportAbi.REQUEST_SIZE, AbiVersion = NativeExportAbi.VERSION, VideoStreamIndex = request.Project.Media!.VideoStreamIndex,
-            Codec = (int)request.Codec, Crf = request.EncodingMode == VideoEncodingMode.SOFTWARE ? request.Crf : 20,
-            Width = (uint)request.Project.Width, Height = (uint)request.Project.Height,
-            ReferenceWhiteNits = (float)request.Project.ReferenceWhiteNits,
-            EncodingMode = (int)request.EncodingMode,
-            VideoBitrate = request.EncodingMode == VideoEncodingMode.HARDWARE ? request.VideoBitrate : 8000000,
-            DecodeMode = (uint)request.DecodeMode
-        };
+        var arguments = CreateRequestArguments(request);
         var error = stackalloc byte[1024];
         nint native = 0;
         try
@@ -61,7 +52,7 @@ internal static class NativeVideoExport
                 info.Generation, info.DeliveredFrames);
             return new(frames, Marshal.PtrToStringUTF8(NativeExportMethods.EncoderName(native)) ?? string.Empty,
                 decoder, new(info.ColorRange, info.ColorMatrix, info.ColorPrimaries, info.ColorTransfer,
-                    info.ChromaLocation, info.AlphaMode, info.InferredFields));
+                    info.ChromaLocation, info.AlphaMode, info.InferredFields), ReadRateControl(info));
         }
         finally
         {
@@ -75,6 +66,37 @@ internal static class NativeVideoExport
             Marshal.FreeCoTaskMem(arguments.OutputPath);
             Marshal.FreeCoTaskMem(arguments.Preset);
         }
+    }
+
+    internal static NativeExportRequest CreateRequestArguments(VideoExportRequest request)
+    {
+        var settings = VideoExportSettingsValidator.Normalize(request.ToSettings());
+        var mode = settings.RateControlMode;
+        return new()
+        {
+            StructSize = NativeExportAbi.REQUEST_SIZE,
+            AbiVersion = NativeExportAbi.VERSION,
+            VideoStreamIndex = request.Project.Media!.VideoStreamIndex,
+            Codec = (int)request.Codec,
+            Crf = mode == VideoRateControlMode.CRF ? settings.Crf : 0,
+            Width = (uint)request.Project.Width,
+            Height = (uint)request.Project.Height,
+            ReferenceWhiteNits = (float)request.Project.ReferenceWhiteNits,
+            EncodingMode = (int)request.EncodingMode,
+            VideoBitrate = mode == VideoRateControlMode.CRF ? 0 : settings.VideoBitrate,
+            DecodeMode = (uint)request.DecodeMode,
+            RateControlMode = (int)mode
+        };
+    }
+
+    internal static VideoRateControlInfo ReadRateControl(NativeExportResultInfo info)
+    {
+        if (info.RateControlReserved != 0)
+        {
+            throw new InvalidDataException("原生导出码控结果保留字段无效。");
+        }
+
+        return new((VideoRateControlMode)info.RateControlMode, info.VideoBitrate, info.Crf);
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

@@ -8,6 +8,8 @@ internal interface IWorkbenchDialogService
     Task<IReadOnlyList<string>> OpenFilesAsync(string title, string typeName, string[] patterns);
     Task<string?> OpenFolderAsync(string title);
     Task<int> ConfirmPresetChangesAsync(bool effects);
+    Task<int> ConfirmExportPresetChangesAsync() => ConfirmPresetChangesAsync(false);
+    Task<bool> ConfirmSettingsRestartAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
     Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName);
     Task<bool> ShowNewProjectAsync(string workspaceRoot,
         Func<ProjectCreationRequest, CancellationToken, Task<ProjectOpenResult>> create,

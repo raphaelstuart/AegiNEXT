@@ -38,6 +38,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly ProjectWorkflowCoordinator workflow;
     private readonly AnalysisCoordinator analysis;
     private readonly ExportCoordinator export;
+    private readonly ExportPresetCoordinator exportPresets;
     private readonly StyleLibraryCoordinator styles;
     private readonly LayerEditingCoordinator layerEditing;
     internal ClipMaskEditingCoordinator MaskEditing { get; }
@@ -92,6 +93,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         Details.Changed += OnSubtitleDetailsChanged;
         analysis = new(this);
         export = new(this, dialogs, exportService ?? new VideoWorkbenchExportService(new AegiNext.Media.Encoding.VideoExporter()));
+        exportPresets = new(this);
         styles = new(this, dialogs);
         styles.BusyChanged += OnTimingLibrariesBusyChanged;
         effectScripts = new(this, dialogs);
@@ -106,6 +108,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         this.applicationContext.StylesChanged += OnApplicationStylesChanged;
         this.applicationContext.BusyChanged += OnTimingLibrariesBusyChanged;
         this.applicationContext.EffectsChanged += OnApplicationEffectsChanged;
+        this.applicationContext.ExportPresetsChanged += OnApplicationExportPresetsChanged;
+        this.applicationContext.BusyChanged += OnApplicationLibrariesBusyChanged;
         this.applicationContext.ErrorChanged += OnApplicationErrorChanged;
         this.editor.StateChanged += OnEditorStateChanged;
         ViewModel.Styles.PropertyChanged += OnStylePropertyChanged;
@@ -118,6 +122,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         RefreshDocument();
         styles.Initialize();
         effectScripts.Initialize();
+        exportPresets.Refresh();
         Localization.LanguageChanged += OnLanguageChanged;
         foreach (var diagnostic in Localization.Diagnostics)
         {
@@ -407,6 +412,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         applicationContext.BusyChanged -= OnTimingLibrariesBusyChanged;
         styles.BusyChanged -= OnTimingLibrariesBusyChanged;
         applicationContext.EffectsChanged -= OnApplicationEffectsChanged;
+        applicationContext.ExportPresetsChanged -= OnApplicationExportPresetsChanged;
+        applicationContext.BusyChanged -= OnApplicationLibrariesBusyChanged;
         applicationContext.ErrorChanged -= OnApplicationErrorChanged;
         Localization.LanguageChanged -= OnLanguageChanged;
         Details.Changed -= OnSubtitleDetailsChanged;

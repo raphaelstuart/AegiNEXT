@@ -36,7 +36,8 @@ public sealed class WorkbenchRegressionUiTests
         var speed = UiTestActions.Find<ComboBox>(context.Window, "SpeedCombo");
         var audio = UiTestActions.Find<ComboBox>(context.Window, "AudioModeCombo");
         Assert.Equal(3, codec.ItemCount);
-        Assert.Equal(3, speed.ItemCount);
+        Assert.Equal(9, speed.ItemCount);
+        Assert.Equal("medium", model.EncodingPreset);
         Assert.Equal(3, audio.ItemCount);
         codec.SelectedIndex = 2;
         speed.SelectedIndex = 0;
@@ -49,10 +50,11 @@ public sealed class WorkbenchRegressionUiTests
             context.Session.UpdatePreferences(context.Session.Preferences with { Language = language });
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(3, codec.ItemCount);
-            Assert.Equal(3, speed.ItemCount);
+            Assert.Equal(9, speed.ItemCount);
             Assert.Equal(3, audio.ItemCount);
             Assert.Equal(2, codec.SelectedIndex);
             Assert.Equal(0, speed.SelectedIndex);
+            Assert.Equal("veryslow", model.EncodingPreset);
             Assert.Equal(1, audio.SelectedIndex);
             Assert.Equal("pending", model.CrfText);
             Assert.False(model.IsRunning);

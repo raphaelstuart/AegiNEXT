@@ -31,6 +31,13 @@ using aeginext::encode::ColorPipeline;
 using aeginext::media::DecoderSession;
 using aeginext::media::DecodeMode;
 using aeginext::media::DecodeWorkload;
+constexpr uint32_t EXPORT_ABI_VERSION = 4;
+constexpr int32_t RATE_CONTROL_CRF = 1;
+constexpr int32_t RATE_CONTROL_VBR = 2;
+constexpr int32_t RATE_CONTROL_CBR = 3;
+constexpr int64_t BITRATE_PRECISION = 1000;
+constexpr int64_t VBR_PEAK_MULTIPLIER = 2;
+constexpr int64_t VBV_DURATION_SECONDS = 2;
 struct Failure : std::runtime_error
 {
     int code;
@@ -210,6 +217,96 @@ struct EncoderDeleter
     void operator()(AVCodecContext *value) const { avcodec_free_context(&value); }
 };
 using EncoderContext = std::unique_ptr<AVCodecContext, EncoderDeleter>;
+int64_t TargetBitrate(const an_export_request &request)
+{
+    return request.video_bitrate / BITRATE_PRECISION * BITRATE_PRECISION;
+}
+int64_t PeakBitrate(const an_export_request &request)
+{
+    const auto target = TargetBitrate(request);
+    return request.rate_control_mode == RATE_CONTROL_CBR ? target : target * VBR_PEAK_MULTIPLIER;
+}
+void ConfigureRateControl(AVCodecContext &encoder, const an_export_request &request)
+{
+    if (request.rate_control_mode == RATE_CONTROL_CRF)
+    {
+        encoder.bit_rate = 0;
+        encoder.rc_min_rate = 0;
+        encoder.rc_max_rate = 0;
+        encoder.rc_buffer_size = 0;
+        return;
+    }
+
+    encoder.bit_rate = TargetBitrate(request);
+    encoder.rc_min_rate = request.rate_control_mode == RATE_CONTROL_CBR ? encoder.bit_rate : 0;
+    encoder.rc_max_rate = PeakBitrate(request);
+    encoder.rc_buffer_size = static_cast<int>(encoder.rc_max_rate * VBV_DURATION_SECONDS);
+    encoder.global_quality = 0;
+    encoder.flags &= ~AV_CODEC_FLAG_QSCALE;
+}
+bool MatchesIntegerOption(AVCodecContext &encoder, const char *name, int expected)
+{
+    int64_t actual = 0;
+    return av_opt_get_int(encoder.priv_data, name, 0, &actual) >= 0 && actual == expected;
+}
+bool MatchesNamedOption(AVCodecContext &encoder, const char *name, const char *expected)
+{
+    const auto *option = av_opt_find(encoder.priv_data, name, nullptr, 0, 0);
+    int expectedValue = 0;
+    return option && av_opt_eval_int(encoder.priv_data, option, expected, &expectedValue) >= 0 &&
+        MatchesIntegerOption(encoder, name, expectedValue);
+}
+void ConfirmRateControl(Context &context, const an_export_request &request, AVCodecContext &encoder)
+{
+    const auto *name = encoder.codec->name;
+    if (request.rate_control_mode == RATE_CONTROL_CRF)
+    {
+        double quality = -1;
+        Need(request.encoding_mode == 0 && av_opt_get_double(encoder.priv_data, "crf", 0, &quality) >= 0 &&
+            quality == request.crf, "Software encoder did not confirm the selected CRF quality");
+        context.resultInfo.rate_control_mode = RATE_CONTROL_CRF;
+        context.resultInfo.video_bitrate = 0;
+        context.resultInfo.crf = static_cast<int32_t>(quality);
+        return;
+    }
+
+    const auto target = TargetBitrate(request);
+    const auto peak = PeakBitrate(request);
+    Need(encoder.bit_rate == target && encoder.rc_max_rate == peak &&
+        encoder.rc_min_rate == (request.rate_control_mode == RATE_CONTROL_CBR ? target : 0) &&
+        encoder.rc_buffer_size == peak * VBV_DURATION_SECONDS,
+        "Encoder did not preserve the selected target bitrate or VBV configuration");
+    if (request.encoding_mode == 0)
+    {
+        double quality = 0;
+        Need(av_opt_get_double(encoder.priv_data, "crf", 0, &quality) >= 0 && quality < 0,
+            "Software encoder retained CRF instead of the selected bitrate mode");
+    }
+    else if (std::strstr(name, "videotoolbox"))
+    {
+        Need(MatchesIntegerOption(encoder, "constant_bit_rate", request.rate_control_mode == RATE_CONTROL_CBR ? 1 : 0) &&
+            MatchesIntegerOption(encoder, "allow_sw", 0) && MatchesIntegerOption(encoder, "require_sw", 0),
+            "VideoToolbox did not confirm the selected hardware rate-control configuration");
+    }
+    else if (std::strstr(name, "nvenc"))
+    {
+        Need(MatchesNamedOption(encoder, "rc", request.rate_control_mode == RATE_CONTROL_CBR ? "cbr" : "vbr"),
+            "NVENC did not confirm the selected rate-control configuration");
+    }
+    else if (std::strstr(name, "amf"))
+    {
+        Need(MatchesNamedOption(encoder, "rc", request.rate_control_mode == RATE_CONTROL_CBR ? "cbr" : "vbr_peak"),
+            "AMF did not confirm the selected rate-control configuration");
+    }
+    else
+    {
+        throw Failure(2, "Hardware encoder cannot confirm its initialized rate-control mode through the public FFmpeg API");
+    }
+
+    context.resultInfo.rate_control_mode = request.rate_control_mode;
+    context.resultInfo.video_bitrate = static_cast<int32_t>(encoder.bit_rate);
+    context.resultInfo.crf = 0;
+}
 EncoderContext ConfigureEncoder(const AVCodec *encoder, const an_export_request &r, AVStream *source,
     const AVFrame *frame, const AVFormatContext *output, AVPixelFormat format)
 {
@@ -221,6 +318,7 @@ EncoderContext ConfigureEncoder(const AVCodec *encoder, const an_export_request 
     value->color_primaries = frame->color_primaries; value->color_trc = frame->color_trc;
     value->chroma_sample_location = AVCHROMA_LOC_LEFT;
     value->thread_count = 4; value->flags |= AV_CODEC_FLAG_FRAME_DURATION;
+    ConfigureRateControl(*value, r);
     if (output->oformat->flags & AVFMT_GLOBALHEADER) value->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     return value;
 }
@@ -271,20 +369,20 @@ AVCodecContext *OpenHardwareEncoder(Context &c, const an_export_request &r, AVSt
         }
         auto value = ConfigureEncoder(encoder, r, source, frame, c.output, format);
         value->framerate = source->avg_frame_rate.num > 0 ? source->avg_frame_rate : source->r_frame_rate;
-        value->bit_rate = r.video_bitrate;
         AVDictionary *options = nullptr;
         const auto speed = std::string(HardwareSpeed(r.preset));
         if (std::strstr(name, "videotoolbox"))
         {
             av_dict_set(&options, "allow_sw", "0", 0);
             av_dict_set(&options, "require_sw", "0", 0);
+            av_dict_set(&options, "constant_bit_rate", r.rate_control_mode == RATE_CONTROL_CBR ? "1" : "0", 0);
             av_dict_set(&options, "prio_speed", speed == "fast" ? "1" : "0", 0);
             if (codec == 2) av_dict_set(&options, "profile", "main10", 0);
         }
         else if (std::strstr(name, "nvenc"))
         {
             av_dict_set(&options, "preset", speed == "fast" ? "p3" : speed == "slow" ? "p5" : "p4", 0);
-            av_dict_set(&options, "rc", "vbr", 0);
+            av_dict_set(&options, "rc", r.rate_control_mode == RATE_CONTROL_CBR ? "cbr" : "vbr", 0);
             if (codec == 2) av_dict_set(&options, "profile", "main10", 0);
         }
         else if (std::strstr(name, "qsv"))
@@ -303,11 +401,13 @@ AVCodecContext *OpenHardwareEncoder(Context &c, const an_export_request &r, AVSt
                 continue;
             }
             av_dict_set(&options, "preset", speed.c_str(), 0);
+            av_dict_set(&options, "look_ahead", "0", 0);
+            av_dict_set(&options, "vcm", "0", 0);
         }
         else if (std::strstr(name, "amf"))
         {
             av_dict_set(&options, "quality", speed == "fast" ? "speed" : speed == "slow" ? "quality" : "balanced", 0);
-            av_dict_set(&options, "rc", "vbr_peak", 0);
+            av_dict_set(&options, "rc", r.rate_control_mode == RATE_CONTROL_CBR ? "cbr" : "vbr_peak", 0);
         }
         const auto opened = avcodec_open2(value.get(), encoder, &options);
         const bool unusedOptions = av_dict_count(options) != 0;
@@ -317,6 +417,15 @@ AVCodecContext *OpenHardwareEncoder(Context &c, const an_export_request &r, AVSt
             char reason[AV_ERROR_MAX_STRING_SIZE]{};
             av_strerror(opened, reason, sizeof(reason));
             failures << name << ": initialization failed (" << (unusedOptions ? "unsupported encoder options" : reason) << "); ";
+            continue;
+        }
+        try
+        {
+            ConfirmRateControl(c, r, *value);
+        }
+        catch (const Failure &error)
+        {
+            failures << name << ": " << error.what() << "; ";
             continue;
         }
         c.encoderName = name;
@@ -393,11 +502,25 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
                 value->framerate = sourceStream->avg_frame_rate.num > 0 ? sourceStream->avg_frame_rate : sourceStream->r_frame_rate;
                 AVDictionary *options = nullptr;
                 av_dict_set(&options, "preset", r.preset, 0);
-                av_dict_set(&options, "crf", std::to_string(r.crf).c_str(), 0);
+                if (r.rate_control_mode == RATE_CONTROL_CRF)
+                {
+                    av_dict_set(&options, "crf", std::to_string(r.crf).c_str(), 0);
+                }
+                else if (codec == 1 && r.rate_control_mode == RATE_CONTROL_CBR)
+                {
+                    av_dict_set(&options, "x264-params", "filler=1", 0);
+                }
                 if (codec == 2)
                 {
                     std::string params = "pools=none:frame-threads=4:log-level=error:colorprim=" + std::to_string(decoded->color_primaries) + ":transfer=" + std::to_string(decoded->color_trc) + ":colormatrix=" + std::to_string(decoded->colorspace);
-                    if (r.crf == 0) params += ":lossless=1";
+                    if (r.rate_control_mode == RATE_CONTROL_CRF && r.crf == 0)
+                    {
+                        params += ":lossless=1";
+                    }
+                    else if (r.rate_control_mode == RATE_CONTROL_CBR)
+                    {
+                        params += ":strict-cbr=1";
+                    }
                     if (decoded->color_trc == AVCOL_TRC_SMPTE2084)
                     {
                         mastering = MasteringOption(decoded.get());
@@ -406,7 +529,11 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
                     av_dict_set(&options, "x265-params", params.c_str(), 0);
                 }
                 const auto opened = avcodec_open2(value.get(), encoder, &options);
-                av_dict_free(&options); Check(opened, "open video encoder");
+                const auto unusedOptions = av_dict_count(options) != 0;
+                av_dict_free(&options);
+                Check(opened, "open video encoder");
+                Need(!unusedOptions, "Software encoder did not consume the selected encoding options");
+                ConfirmRateControl(c, r, *value);
                 c.encoderName = encoder->name;
                 c.encoder = value.release();
             }
@@ -492,7 +619,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
     Check(avio_closep(&c.output->pb), "close output file");
     const auto &session = c.decoderSession->Info();
     c.resultInfo.struct_size = sizeof(an_export_result_info);
-    c.resultInfo.abi_version = 3;
+    c.resultInfo.abi_version = EXPORT_ABI_VERSION;
     c.resultInfo.core_version = aeginext::media::CORE_VERSION;
     c.resultInfo.capabilities = aeginext::media::CAPABILITIES;
     c.resultInfo.requested_decode_mode = static_cast<uint32_t>(session.requestedMode);
@@ -512,7 +639,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
 }
 extern "C"
 {
-uint32_t AN_EXPORT_CALL an_export_abi_version(void) { return 3; }
+uint32_t AN_EXPORT_CALL an_export_abi_version(void) { return EXPORT_ABI_VERSION; }
 uint32_t AN_EXPORT_CALL an_export_core_version(void) { return aeginext::media::CORE_VERSION; }
 uint32_t AN_EXPORT_CALL an_export_capabilities(void) { return aeginext::media::CAPABILITIES; }
 int32_t AN_EXPORT_CALL an_export_get_result_info(void *context, an_export_result_info *info,
@@ -520,7 +647,7 @@ int32_t AN_EXPORT_CALL an_export_get_result_info(void *context, an_export_result
 {
     try
     {
-        if (!info || info->struct_size != sizeof(*info) || info->abi_version != 3)
+        if (!info || info->struct_size != sizeof(*info) || info->abi_version != EXPORT_ABI_VERSION || info->rate_control_reserved)
             throw Failure(1, "Invalid export result information ABI");
         const auto *value = Get(context);
         if (!value->completed) throw Failure(1, "Export result is available only after successful completion");
@@ -575,14 +702,22 @@ int32_t AN_EXPORT_CALL an_export_run(void *context, const an_export_request *req
 {
     try
     {
-        if (!request || request->struct_size != sizeof(*request) || request->abi_version != 3 || !render || !frames ||
+        if (!request || request->struct_size != sizeof(*request) || request->abi_version != EXPORT_ABI_VERSION || !render || !frames ||
             !request->input_path || !request->output_path || !request->preset || request->flags || request->reserved || request->decode_reserved || request->decode_mode > 2 ||
             request->width == 0 || request->height == 0 || (request->width % 2) || (request->height % 2) ||
             static_cast<uint64_t>(request->width)*request->height > 33177600 || request->codec < 0 || request->codec > 2 ||
-            request->crf < 0 || request->crf > 51 || !std::isfinite(request->reference_white_nits) || request->reference_white_nits <= 0)
+            !std::isfinite(request->reference_white_nits) || request->reference_white_nits <= 0)
             throw Failure(1, "Invalid export request ABI, dimensions, codec or reference white");
-        if (request->encoding_mode < 0 || request->encoding_mode > 1 || request->video_bitrate < 100000 || request->video_bitrate > 200000000)
-            throw Failure(1, "Invalid video encoding mode or target bitrate");
+        if (request->encoding_mode < 0 || request->encoding_mode > 1 || request->rate_control_reserved ||
+            (request->rate_control_mode != RATE_CONTROL_CRF && request->rate_control_mode != RATE_CONTROL_VBR &&
+                request->rate_control_mode != RATE_CONTROL_CBR) ||
+            (request->rate_control_mode == RATE_CONTROL_CRF &&
+                (request->encoding_mode != 0 || request->crf < 0 || request->crf > 51)) ||
+            (request->rate_control_mode != RATE_CONTROL_CRF &&
+                (request->video_bitrate < 100000 || request->video_bitrate > 200000000)))
+        {
+            throw Failure(1, "Invalid video encoding mode, rate-control mode or active quality parameter");
+        }
         *frames = 0; auto *value = Get(context); Execute(*value, *request, render, user, *frames);
         CopyError(error, capacity, ""); return 0;
     }

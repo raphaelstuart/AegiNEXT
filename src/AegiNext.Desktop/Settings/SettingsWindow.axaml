@@ -8,6 +8,8 @@
         xmlns:shortcutPages="using:AegiNext.Desktop.Settings.Shortcuts"
         xmlns:stylePages="using:AegiNext.Desktop.Settings.Styles"
         xmlns:effectPages="using:AegiNext.Desktop.Settings.Effects"
+        xmlns:exportPages="using:AegiNext.Desktop.Settings.Export"
+        xmlns:transferPages="using:AegiNext.Desktop.Settings.Transfer"
         xmlns:colorPages="using:AegiNext.Desktop.Settings.Colors"
         xmlns:mediaPages="using:AegiNext.Desktop.Settings.Media"
         xmlns:projectPages="using:AegiNext.Desktop.Settings.Projects"
@@ -129,6 +131,19 @@
                            ToolTip.Tip="{Loc Key=Settings.TimingPostProcessor}" />
               </StackPanel>
             </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Export" />
+                <TextBlock Text="{Loc Key=Settings.ExportPresets}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Import" />
+                <TextBlock Text="{Loc Key=Settings.TransferNavigation}" VerticalAlignment="Center"
+                           ToolTip.Tip="{Loc Key=Settings.Transfer}" />
+              </StackPanel>
+            </ListBoxItem>
           </ListBox>
         </StackPanel>
       </Border>
@@ -169,6 +184,14 @@
         <Grid Grid.Row="1" IsVisible="{Binding IsTimingPostProcessorVisible}">
           <timingPages:TimingPostProcessorSettingsView Name="TimingPostProcessorView" DataContext="{Binding TimingPostProcessor}"
                                                      IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsExportPresetsVisible}">
+          <exportPages:ExportSettingsView Name="ExportPresetsView" DataContext="{Binding ExportPresets}"
+                                          IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsTransferVisible}">
+          <transferPages:UserSettingsTransferView Name="TransferView" DataContext="{Binding Transfer}"
+                                                 IsVisible="{Binding $parent[Grid].IsVisible}" />
         </Grid>
         <TextBlock Name="SettingsError" Grid.Row="2" Text="{Binding Error}"
                    Foreground="{DynamicResource SettingsError}" IsVisible="{Binding HasError}" TextWrapping="Wrap"

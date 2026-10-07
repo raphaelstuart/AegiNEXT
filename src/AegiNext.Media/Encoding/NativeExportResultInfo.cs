@@ -22,4 +22,8 @@ internal unsafe struct NativeExportResultInfo
     internal int ChromaLocation;
     internal int AlphaMode;
     internal fixed byte FallbackReason[256];
+    internal int RateControlMode;
+    internal int VideoBitrate;
+    internal int Crf;
+    internal uint RateControlReserved;
 }

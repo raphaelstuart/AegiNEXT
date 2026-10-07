@@ -3,12 +3,14 @@ using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings.Appearance;
 using AegiNext.Desktop.Settings.Colors;
 using AegiNext.Desktop.Settings.Effects;
+using AegiNext.Desktop.Settings.Export;
 using AegiNext.Desktop.Settings.Shortcuts;
 using AegiNext.Desktop.Settings.Styles;
 using AegiNext.Desktop.Settings.Media;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.Preview;
 using AegiNext.Desktop.Settings.TimingPostProcessor;
+using AegiNext.Desktop.Settings.Transfer;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegiNext.Desktop.Settings;
@@ -20,7 +22,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     private bool navigating;
     internal Task NavigationCompletion { get; private set; } = Task.CompletedTask;
     public bool IsNavigationAvailable => !navigating;
-    public bool HasUnsavedTemplates => Styles.IsDirty || Effects.IsDirty;
+    public bool HasUnsavedTemplates => Styles.IsDirty || Effects.IsDirty || ExportPresets.IsDirty;
     private string? externalError;
     private string title = Localization.Get("Settings.Settings");
 
@@ -34,6 +36,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Shortcuts = new(preferences.ShortcutBindings);
         Styles = new();
         Effects = new();
+        ExportPresets = new();
+        Transfer = new();
         Media = new(preferences);
         Projects = new(preferences.Projects);
         Preview = new(preferences);
@@ -41,6 +45,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Shortcuts.PropertyChanged += PageModelChanged;
         Styles.PropertyChanged += PageModelChanged;
         Effects.PropertyChanged += PageModelChanged;
+        ExportPresets.PropertyChanged += PageModelChanged;
+        Transfer.PropertyChanged += PageModelChanged;
         Projects.PropertyChanged += PageModelChanged;
         Preview.PropertyChanged += PageModelChanged;
         TimingPostProcessor.PropertyChanged += PageModelChanged;
@@ -51,6 +57,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public ShortcutSettingsViewModel Shortcuts { get; }
     public StyleSettingsViewModel Styles { get; }
     public EffectSettingsViewModel Effects { get; }
+    public ExportSettingsViewModel ExportPresets { get; }
+    public UserSettingsTransferViewModel Transfer { get; }
     public MediaSettingsViewModel Media { get; }
     public ProjectSettingsViewModel Projects { get; }
     public PreviewSettingsViewModel Preview { get; }
@@ -66,6 +74,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public bool IsProjectsVisible => CurrentPage == SettingsPage.PROJECTS;
     public bool IsPreviewVisible => CurrentPage == SettingsPage.PREVIEW;
     public bool IsTimingPostProcessorVisible => CurrentPage == SettingsPage.TIMING_POST_PROCESSOR;
+    public bool IsExportPresetsVisible => CurrentPage == SettingsPage.EXPORT_PRESETS;
+    public bool IsTransferVisible => CurrentPage == SettingsPage.TRANSFER;
 
     public string PageTitle => Localization.Get("Settings." + (CurrentPage switch
     {
@@ -77,6 +87,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.PROJECTS => "Projects",
         SettingsPage.PREVIEW => "Preview",
         SettingsPage.TIMING_POST_PROCESSOR => "TimingPostProcessor",
+        SettingsPage.EXPORT_PRESETS => "ExportPresets",
+        SettingsPage.TRANSFER => "Transfer",
         _ => "Appearance"
     }));
 
@@ -87,6 +99,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.PROJECTS => Projects.Error,
         SettingsPage.PREVIEW => Preview.Error,
         SettingsPage.TIMING_POST_PROCESSOR => TimingPostProcessor.Error,
+        SettingsPage.EXPORT_PRESETS => ExportPresets.Error,
+        SettingsPage.TRANSFER => Transfer.Error,
         _ => null
     });
 
@@ -128,10 +142,15 @@ public sealed class SettingsWindowViewModel : ObservableObject
             {
                 await Effects.SelectionCompletion;
             }
+            else if (CurrentPage == SettingsPage.EXPORT_PRESETS)
+            {
+                await ExportPresets.SelectionCompletion;
+            }
             var accepted = CurrentPage switch
             {
                 SettingsPage.STYLES when Styles.SaveDraftAsync is not null => await Styles.PrepareToLeaveAsync(),
                 SettingsPage.EFFECTS when Effects.SaveDraftAsync is not null => await Effects.PrepareToLeaveAsync(),
+                SettingsPage.EXPORT_PRESETS when ExportPresets.SaveDraftAsync is not null => await ExportPresets.PrepareToLeaveAsync(),
                 _ => true
             };
             if (!accepted)
@@ -164,6 +183,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsProjectsVisible));
             OnPropertyChanged(nameof(IsPreviewVisible));
             OnPropertyChanged(nameof(IsTimingPostProcessorVisible));
+            OnPropertyChanged(nameof(IsExportPresetsVisible));
+            OnPropertyChanged(nameof(IsTransferVisible));
             OnPropertyChanged(nameof(PageTitle));
             RefreshError();
         }
@@ -185,6 +206,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Shortcuts.RefreshLanguage();
         Styles.RefreshLanguage();
         Effects.RefreshLanguage();
+        ExportPresets.RefreshLanguage();
+        Transfer.RefreshLanguage();
         Media.RefreshLanguage();
         Projects.RefreshLanguage();
         Preview.RefreshLanguage();

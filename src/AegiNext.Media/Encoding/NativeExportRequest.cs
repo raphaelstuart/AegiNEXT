@@ -22,4 +22,6 @@ internal struct NativeExportRequest
     internal int VideoBitrate;
     internal uint DecodeMode;
     internal uint DecodeReserved;
+    internal int RateControlMode;
+    internal uint RateControlReserved;
 }

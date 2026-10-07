@@ -5,10 +5,13 @@ using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Layouts;
 using AegiNext.Desktop.Settings.Effects;
+using AegiNext.Desktop.Settings.Export;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.Preview;
 using AegiNext.Desktop.Settings.TimingPostProcessor;
+using AegiNext.Desktop.Settings.Transfer;
 using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Workspace.Diagnostics;
@@ -18,13 +21,19 @@ using Avalonia.Controls;
 namespace AegiNext.Desktop.Settings;
 
 internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applicationContext,
-    Func<Window, IWorkbenchDialogService>? createDialogs = null) : IDisposable
+    Func<Window, IWorkbenchDialogService>? createDialogs = null, Func<WorkspaceLayoutFile>? captureLayout = null,
+    Action? requestApplicationExit = null) : IDisposable
 {
     private WorkbenchSession? session;
     private IWorkbenchDialogService? dialogs;
     private WorkbenchPreferences? presentedPreferences;
     private bool disposed;
     private IWindowChrome? chrome;
+    private SettingsExportPresetCoordinator? exportPresets;
+    private SettingsTransferCoordinator? transfer;
+    private Task closedTransferCompletion = Task.CompletedTask;
+    internal Task ExportCompletion => exportPresets?.Completion ?? Task.CompletedTask;
+    internal Task TransferCompletion => Task.WhenAll(closedTransferCompletion, transfer?.Completion ?? Task.CompletedTask);
     internal Task TimingCompletion { get; private set; } = Task.CompletedTask;
 
     internal event Action<WorkbenchLogEntry>? EffectScriptErrorReported;
@@ -55,6 +64,8 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         try
         {
             Subscribe(window);
+            exportPresets = new(applicationContext, window, dialogs, session);
+            transfer = new(applicationContext, window, dialogs, captureLayout, requestApplicationExit);
             window.SetSubtitlePositionMeasurement(session is null ? MeasureDefaultPosition : session.MeasureStylePosition);
             window.UpdateShortcuts(applicationContext.Preferences.ShortcutBindings);
             window.UpdateStyles(applicationContext.StyleLibrary.Snapshot.Presets);
@@ -85,6 +96,9 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         }
         catch
         {
+            DisposeTransfer();
+            exportPresets?.Dispose();
+            exportPresets = null;
             Unsubscribe(window);
             Window = null;
             this.session = null;
@@ -111,6 +125,8 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         }
 
         disposed = true;
+        DisposeTransfer();
+        exportPresets?.Dispose();
         Window?.CloseImmediately();
         EffectScriptErrorReported = null;
     }
@@ -210,6 +226,9 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     {
         if (sender is SettingsWindow window && ReferenceEquals(Window, window))
         {
+            DisposeTransfer();
+            exportPresets?.Dispose();
+            exportPresets = null;
             Unsubscribe(window);
             chrome?.Dispose();
             chrome = null;
@@ -217,6 +236,16 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
             session = null;
             dialogs = null;
             presentedPreferences = null;
+        }
+    }
+
+    private void DisposeTransfer()
+    {
+        if (transfer is { } current)
+        {
+            current.Dispose();
+            closedTransferCompletion = Task.WhenAll(closedTransferCompletion, current.Completion);
+            transfer = null;
         }
     }
 

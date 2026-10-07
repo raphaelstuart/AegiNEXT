@@ -73,8 +73,10 @@ public sealed class ExportWireMaskTests
         };
         ProjectValidator.Validate(project);
         var job = new ExportWorkerJob(JsonSerializer.SerializeToElement(project, ExportWire.Options), Path.GetTempPath(),
-            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192, "ffmpeg");
+            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192000, "ffmpeg",
+            RateControlMode: VideoRateControlMode.CRF, ProtocolVersion: ExportWire.VERSION);
         var transmitted = JsonSerializer.Deserialize<ExportWorkerJob>(JsonSerializer.Serialize(job, ExportWire.Options), ExportWire.Options)!;
+        ExportWire.ValidateJob(transmitted);
         var layer = transmitted.Project.GetProperty("layers")[0];
         var restoredMask = layer.GetProperty("mask").Deserialize<ClipMask>(ExportWire.Options)!;
         var wireTrack = layer.GetProperty("tracks")[0];

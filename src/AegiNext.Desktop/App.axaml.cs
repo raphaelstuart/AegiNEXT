@@ -6,6 +6,8 @@ using AegiNext.Desktop.Views;
 using AegiNext.Desktop.Diagnostics;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Startup;
+using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Settings.Transfer;
 using System.Runtime.Versioning;
 
 namespace AegiNext.Desktop;
@@ -61,6 +63,9 @@ public class App : Avalonia.Application
             else
             {
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                using var preferencesStore = new WorkbenchPreferencesStore(
+                    Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
+                SettingsRestoreStartup.ApplyOnce(preferencesStore.DirectoryPath);
                 var startup = new DesktopStartupCoordinator(desktop);
                 startup.Start();
             }

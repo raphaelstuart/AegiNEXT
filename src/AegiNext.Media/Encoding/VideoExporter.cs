@@ -54,10 +54,12 @@ public sealed class VideoExporter
                 start.ArgumentList.Add(worker);
             }
 
+            var settings = VideoExportSettingsValidator.Normalize(request.ToSettings());
             var job = new ExportWorkerJob(JsonSerializer.SerializeToElement(request.Project, ExportWire.Options),
                 Path.GetFullPath(request.ProjectDirectory), temporary, Path.GetExtension(output).ToLowerInvariant(),
-                request.Codec, request.Preset, request.Crf, request.AudioMode, request.AudioBitrate, ffmpeg,
-                request.EncodingMode, request.VideoBitrate, request.DecodeMode);
+                settings.Codec, settings.Preset, settings.Crf, settings.AudioMode, settings.AudioBitrate, ffmpeg,
+                settings.EncodingMode, settings.VideoBitrate, request.DecodeMode,
+                settings.RateControlMode, ExportWire.VERSION);
             var serializedJob = JsonSerializer.Serialize(job, ExportWire.Options);
             using var process = new Process { StartInfo = start };
             if (!process.Start())
@@ -106,6 +108,7 @@ public sealed class VideoExporter
 
                 ValidateCompletedEncoder(request, completed.Encoder);
                 ValidateCompletedDecoder(request, completed);
+                ValidateCompletedRateControl(request, completed.RateControl);
 
                 var encoded = Path.Combine(temporary, "output" + job.Extension);
                 if (!File.Exists(encoded) || new FileInfo(encoded).Length == 0)
@@ -115,7 +118,7 @@ public sealed class VideoExporter
 
                 File.Move(encoded, output, false);
                 progress?.Report(new(completed.Frames, MediaTime.Zero, 1, "complete", completed.Encoder));
-                return new(output, completed.Frames, completed.Encoder, completed.Decoder, completed.OutputColor);
+                return new(output, completed.Frames, completed.Encoder, completed.Decoder, completed.OutputColor, completed.RateControl);
             }
             finally
             {
@@ -151,12 +154,8 @@ public sealed class VideoExporter
             throw new ArgumentException("首版压制支持 MP4 或 MKV。", nameof(request));
         }
 
-        if (!Enum.IsDefined(request.Codec) || !Enum.IsDefined(request.AudioMode) || !Enum.IsDefined(request.EncodingMode) ||
-            !Enum.IsDefined(request.DecodeMode) ||
-            (request.EncodingMode == VideoEncodingMode.HARDWARE && request.VideoBitrate is < 100000 or > 200000000) ||
-            (request.EncodingMode == VideoEncodingMode.SOFTWARE && request.Crf is < 0 or > 51) ||
-            request.Preset is not "ultrafast" and not "superfast" and not "veryfast" and not "faster" and not "fast" and not "medium" and not "slow" and not "slower" and not "veryslow" ||
-            request.AudioBitrate is < 32000 or > 512000)
+        VideoExportSettingsValidator.Validate(request.ToSettings());
+        if (!Enum.IsDefined(request.DecodeMode))
         {
             throw new ArgumentException("不支持的编码参数。", nameof(request));
         }
@@ -191,6 +190,18 @@ public sealed class VideoExporter
                 (!decoder.HardwareConfirmed || decoder.ActiveBackend == VideoDecoderBackend.Software)))
         {
             throw new InvalidDataException("导出 worker 未确认匹配的解码模式、实际后端与有效色彩；未提交成片。");
+        }
+    }
+
+    internal static void ValidateCompletedRateControl(VideoExportRequest request, VideoRateControlInfo? rateControl)
+    {
+        var settings = VideoExportSettingsValidator.Normalize(request.ToSettings());
+        var mode = settings.RateControlMode;
+        if (rateControl is null || rateControl.Mode != mode ||
+            (mode == VideoRateControlMode.CRF && (rateControl.VideoBitrate != 0 || rateControl.Crf != settings.Crf)) ||
+            (mode != VideoRateControlMode.CRF && (rateControl.Crf != 0 || rateControl.VideoBitrate != settings.VideoBitrate)))
+        {
+            throw new InvalidDataException("导出 worker 未确认匹配的实际码控模式和参数，可能部署了旧 worker；未提交成片。");
         }
     }
 

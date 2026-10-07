@@ -11,5 +11,7 @@ public enum SettingsPage
     MEDIA,
     PROJECTS,
     PREVIEW,
-    TIMING_POST_PROCESSOR
+    TIMING_POST_PROCESSOR,
+    EXPORT_PRESETS,
+    TRANSFER
 }

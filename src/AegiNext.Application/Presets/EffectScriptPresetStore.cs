@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using System.Diagnostics.CodeAnalysis;
 using AegiNext.Core.Effects;
 
 namespace AegiNext.Application.Presets;
@@ -8,25 +10,44 @@ namespace AegiNext.Application.Presets;
 /// <summary>个人脚本 JSON 库与 .aegifx 文本交换文件的严格、原子存储。</summary>
 public static class EffectScriptPresetStore
 {
-    private const int MAXIMUM_FILE_BYTES = 8 * 1024 * 1024;
+    /// <summary>个人脚本库 UTF-8 文档的最大容量。</summary>
+    [SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores", Justification = "项目交换文件预算常量采用 ALL_UPPER。")]
+    public const int MAXIMUM_FILE_BYTES = 8 * 1024 * 1024;
     private static readonly UTF8Encoding utf8 = new(false, true);
-    private static readonly JsonSerializerOptions options = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-        RespectRequiredConstructorParameters = true,
-        MaxDepth = 8
-    };
+    private static readonly JsonSerializerOptions options = CreateOptions();
 
     /// <summary>完整读取、验证个人库，不修改磁盘或调用方快照。</summary>
     public static async Task<EffectScriptPresetDocument> LoadAsync(string path, CancellationToken cancellationToken = default)
     {
         var bytes = await PresetFileReader.ReadAsync(path, MAXIMUM_FILE_BYTES, cancellationToken).ConfigureAwait(false);
+        return Deserialize(bytes);
+    }
+
+    /// <summary>完整验证个人脚本库后生成有界 UTF-8 JSON。</summary>
+    public static byte[] Serialize(EffectScriptPresetDocument collection)
+    {
+        EffectScriptPresetService.Validate(collection);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(collection, options);
+        if (bytes.Length > MAXIMUM_FILE_BYTES)
+        {
+            throw new InvalidDataException("特效脚本库超过 8 MiB。");
+        }
+
+        return bytes;
+    }
+
+    /// <summary>拒绝非法 UTF-8、重复、未知或缺失字段，并验证全部个人脚本。</summary>
+    public static EffectScriptPresetDocument Deserialize(ReadOnlySpan<byte> json)
+    {
+        if (json.Length > MAXIMUM_FILE_BYTES)
+        {
+            throw new InvalidDataException("特效脚本库超过 8 MiB。");
+        }
+
         try
         {
-            _ = utf8.GetCharCount(bytes);
-            using var document = JsonDocument.Parse(bytes, new() { MaxDepth = 8 });
+            _ = utf8.GetCharCount(json);
+            using var document = JsonDocument.Parse(json.ToArray(), new() { MaxDepth = 8 });
             ValidateKeys(document.RootElement);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("version", out _) || !root.TryGetProperty("presets", out _))
@@ -38,7 +59,7 @@ public static class EffectScriptPresetStore
             EffectScriptPresetService.Validate(collection);
             return collection;
         }
-        catch (Exception error) when (error is JsonException or DecoderFallbackException)
+        catch (Exception error) when (error is JsonException or ArgumentException or OverflowException)
         {
             throw new InvalidDataException("特效脚本库不是有效的 UTF-8 JSON。", error);
         }
@@ -47,8 +68,7 @@ public static class EffectScriptPresetStore
     /// <summary>验证后原子保存，取消、失败或非法输入保留原文件。</summary>
     public static Task SaveAsync(EffectScriptPresetDocument collection, string path, CancellationToken cancellationToken = default)
     {
-        EffectScriptPresetService.Validate(collection);
-        return WriteAtomicAsync(path, JsonSerializer.SerializeToUtf8Bytes(collection, options), cancellationToken);
+        return WriteAtomicAsync(path, Serialize(collection), cancellationToken);
     }
 
     /// <summary>读取单个可交换脚本，采用严格 UTF-8 并返回解析后的同一份源。</summary>
@@ -129,5 +149,30 @@ public static class EffectScriptPresetStore
                 ValidateKeys(item);
             }
         }
+    }
+
+    private static JsonSerializerOptions CreateOptions()
+    {
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(info =>
+        {
+            if (info.Kind == JsonTypeInfoKind.Object &&
+                (info.Type == typeof(EffectScriptPresetDocument) || info.Type == typeof(EffectScriptPreset)))
+            {
+                foreach (var property in info.Properties)
+                {
+                    property.IsRequired = true;
+                }
+            }
+        });
+        return new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = true,
+            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+            RespectRequiredConstructorParameters = true,
+            TypeInfoResolver = resolver,
+            MaxDepth = 8
+        };
     }
 }

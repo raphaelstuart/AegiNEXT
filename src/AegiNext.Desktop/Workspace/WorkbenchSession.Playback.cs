@@ -47,15 +47,15 @@ internal sealed partial class WorkbenchSession
     {
         if (e.PropertyName == "Crf")
         {
-            ViewModel.Export.CrfText = ViewModel.Export.Crf?.ToString(InterfaceCulture) ?? string.Empty;
+            ViewModel.Export.CrfText = ViewModel.Export.Crf?.ToString(System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty;
         }
         else if (e.PropertyName == "AudioBitrate")
         {
-            ViewModel.Export.AudioBitrateText = ViewModel.Export.AudioBitrate?.ToString(InterfaceCulture) ?? string.Empty;
+            ViewModel.Export.AudioBitrateText = ViewModel.Export.AudioBitrate?.ToString(System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty;
         }
         else if (e.PropertyName == "VideoBitrate")
         {
-            ViewModel.Export.VideoBitrateText = ViewModel.Export.VideoBitrate?.ToString(InterfaceCulture) ?? string.Empty;
+            ViewModel.Export.VideoBitrateText = ViewModel.Export.VideoBitrate?.ToString(System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty;
         }
     }
 }

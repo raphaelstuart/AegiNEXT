@@ -1,7 +1,9 @@
 using AegiNext.Application.Presets;
+using AegiNext.Media.Encoding.Presets;
 using AegiNext.Desktop.Editing;
 using AegiNext.Rendering.Fonts;
 using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Settings.Transfer;
 using AegiNext.Desktop.Workspace;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -17,10 +19,14 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     private Task preferencesCompletion = Task.CompletedTask;
     private Task stylesCompletion = Task.CompletedTask;
     private Task effectsCompletion = Task.CompletedTask;
+    private Task exportsCompletion = Task.CompletedTask;
     private Task? disposeTask;
     private int queuedStyles;
     private int queuedEffects;
+    private int queuedExports;
     private bool closing;
+    private Exception? preferencesLoadError;
+    private readonly Dictionary<PersonalLibraryKind, Exception> libraryLoadErrors = [];
 
     internal DesktopApplicationContext(WorkbenchPreferencesStore? preferencesStore = null,
         WorkbenchPreferences? initialPreferences = null)
@@ -28,29 +34,46 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         PreferencesStore = preferencesStore ?? new(Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
         preferences = initialPreferences ?? PreferencesStore.Load();
         preferences.Validate();
+        preferencesLoadError = PreferencesStore.LoadError;
+        SettingsRestore = new(PreferencesStore.DirectoryPath);
         StyleLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "subtitle-styles.aegistyles"));
         EffectScriptLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "effect-scripts.json"));
+        ExportPresetLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "export-presets.aegiexports"));
         RecentProjects = new(PreferencesStore.DirectoryPath);
         RecentProjects.ErrorChanged += OnRecentProjectsError;
         ApplyAppearance(preferences);
-        LastError = PreferencesStore.LoadError ?? RecentProjects.LastError;
-        var stylesInitialization = EnqueueLibraryOperation(() => StyleLibrary.LoadAsync(), true, false);
-        var effectsInitialization = EnqueueLibraryOperation(() => EffectScriptLibrary.LoadAsync(), false, false);
-        Initialization = Task.WhenAll(stylesInitialization, effectsInitialization);
+        LastError = SettingsRestoreStartup.GetError(PreferencesStore.DirectoryPath) ?? PreferencesStore.LoadError ?? RecentProjects.LastError;
+        var stylesInitialization = EnqueueLibraryOperation(() => StyleLibrary.LoadAsync(), PersonalLibraryKind.STYLE, false);
+        var effectsInitialization = EnqueueLibraryOperation(() => EffectScriptLibrary.LoadAsync(), PersonalLibraryKind.EFFECT, false);
+        var exportsInitialization = EnqueueLibraryOperation(() => ExportPresetLibrary.LoadAsync(), PersonalLibraryKind.EXPORT, false);
+        Initialization = Task.WhenAll(stylesInitialization, effectsInitialization, exportsInitialization);
     }
 
     internal event EventHandler? PreferencesChanged;
     internal event EventHandler? StylesChanged;
     internal event EventHandler? EffectsChanged;
+    internal event EventHandler? ExportPresetsChanged;
     internal event EventHandler? BusyChanged;
     internal event EventHandler? ErrorChanged;
     internal WorkbenchPreferencesStore PreferencesStore { get; }
     internal SubtitleStylePresetLibrary StyleLibrary { get; }
     internal EffectScriptPresetLibrary EffectScriptLibrary { get; }
+    internal VideoExportPresetLibrary ExportPresetLibrary { get; }
+    internal UserSettingsRestoreService SettingsRestore { get; }
     internal RecentProjectService RecentProjects { get; }
     internal SubtitleFontSelectionService Fonts => fonts.Value;
     internal Task Initialization { get; }
     internal Exception? LastError { get; private set; }
+    internal Exception? SettingsLoadError
+    {
+        get
+        {
+            lock (lifetime)
+            {
+                return preferencesLoadError ?? libraryLoadErrors.Values.FirstOrDefault();
+            }
+        }
+    }
 
     internal WorkbenchPreferences Preferences
     {
@@ -69,13 +92,14 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         {
             lock (lifetime)
             {
-                return Task.WhenAll(preferencesCompletion, stylesCompletion, effectsCompletion, RecentProjects.Completion);
+                return Task.WhenAll(preferencesCompletion, stylesCompletion, effectsCompletion, exportsCompletion, RecentProjects.Completion);
             }
         }
     }
 
     internal bool StylesBusy => Volatile.Read(ref queuedStyles) > 0;
     internal bool EffectsBusy => Volatile.Read(ref queuedEffects) > 0;
+    internal bool ExportPresetsBusy => Volatile.Read(ref queuedExports) > 0;
 
     internal void UpdatePreferences(Func<WorkbenchPreferences, WorkbenchPreferences> update)
     {
@@ -114,12 +138,17 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
 
     internal Task RunStyleOperationAsync(Func<Task> operation)
     {
-        return EnqueueLibraryOperation(operation, true, true);
+        return EnqueueLibraryOperation(operation, PersonalLibraryKind.STYLE, true);
     }
 
     internal Task RunEffectOperationAsync(Func<Task> operation)
     {
-        return EnqueueLibraryOperation(operation, false, true);
+        return EnqueueLibraryOperation(operation, PersonalLibraryKind.EFFECT, true);
+    }
+
+    internal Task RunExportPresetOperationAsync(Func<Task> operation)
+    {
+        return EnqueueLibraryOperation(operation, PersonalLibraryKind.EXPORT, true);
     }
 
     /// <inheritdoc />
@@ -133,7 +162,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         }
     }
 
-    private Task EnqueueLibraryOperation(Func<Task> operation, bool styles, bool propagateFailure)
+    private Task EnqueueLibraryOperation(Func<Task> operation, PersonalLibraryKind kind, bool propagateFailure)
     {
         ArgumentNullException.ThrowIfNull(operation);
         Task previous;
@@ -142,44 +171,60 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         lock (lifetime)
         {
             ObjectDisposedException.ThrowIf(closing, this);
-            if (styles)
+            switch (kind)
             {
-                previous = stylesCompletion;
-                stylesCompletion = completion.Task;
-                queuedStyles++;
-            }
-            else
-            {
-                previous = effectsCompletion;
-                effectsCompletion = completion.Task;
-                queuedEffects++;
+                case PersonalLibraryKind.STYLE:
+                    previous = stylesCompletion;
+                    stylesCompletion = completion.Task;
+                    queuedStyles++;
+                    break;
+                case PersonalLibraryKind.EFFECT:
+                    previous = effectsCompletion;
+                    effectsCompletion = completion.Task;
+                    queuedEffects++;
+                    break;
+                case PersonalLibraryKind.EXPORT:
+                    previous = exportsCompletion;
+                    exportsCompletion = completion.Task;
+                    queuedExports++;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind));
             }
         }
 
         BusyChanged?.Invoke(this, EventArgs.Empty);
-        _ = ExecuteLibraryOperationAsync(previous, operation, styles, propagateFailure, completion, result);
+        _ = ExecuteLibraryOperationAsync(previous, operation, kind, propagateFailure, completion, result);
         return result.Task;
     }
 
-    private async Task ExecuteLibraryOperationAsync(Task previous, Func<Task> operation, bool styles,
+    private async Task ExecuteLibraryOperationAsync(Task previous, Func<Task> operation, PersonalLibraryKind kind,
         bool propagateFailure, TaskCompletionSource completion, TaskCompletionSource result)
     {
         Exception? failure = null;
         try
         {
             await previous;
-            var before = styles ? (object)StyleLibrary.Snapshot : EffectScriptLibrary.Snapshot;
+            var before = LibrarySnapshot(kind);
             await operation();
-            var after = styles ? (object)StyleLibrary.Snapshot : EffectScriptLibrary.Snapshot;
+            var after = LibrarySnapshot(kind);
+            if (!propagateFailure || !ReferenceEquals(before, after))
+            {
+                SetLibraryLoadError(kind, null);
+            }
             if (!ReferenceEquals(before, after))
             {
-                if (styles)
+                switch (kind)
                 {
-                    StylesChanged?.Invoke(this, EventArgs.Empty);
-                }
-                else
-                {
-                    EffectsChanged?.Invoke(this, EventArgs.Empty);
+                    case PersonalLibraryKind.STYLE:
+                        StylesChanged?.Invoke(this, EventArgs.Empty);
+                        break;
+                    case PersonalLibraryKind.EFFECT:
+                        EffectsChanged?.Invoke(this, EventArgs.Empty);
+                        break;
+                    case PersonalLibraryKind.EXPORT:
+                        ExportPresetsChanged?.Invoke(this, EventArgs.Empty);
+                        break;
                 }
             }
         }
@@ -190,17 +235,25 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         catch (Exception error)
         {
             failure = error;
+            if (!propagateFailure)
+            {
+                SetLibraryLoadError(kind, error);
+            }
             ReportError(error);
         }
         finally
         {
-            if (styles)
+            switch (kind)
             {
-                Interlocked.Decrement(ref queuedStyles);
-            }
-            else
-            {
-                Interlocked.Decrement(ref queuedEffects);
+                case PersonalLibraryKind.STYLE:
+                    Interlocked.Decrement(ref queuedStyles);
+                    break;
+                case PersonalLibraryKind.EFFECT:
+                    Interlocked.Decrement(ref queuedEffects);
+                    break;
+                case PersonalLibraryKind.EXPORT:
+                    Interlocked.Decrement(ref queuedExports);
+                    break;
             }
 
             try
@@ -227,12 +280,27 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         }
     }
 
+    private object LibrarySnapshot(PersonalLibraryKind kind)
+    {
+        return kind switch
+        {
+            PersonalLibraryKind.STYLE => StyleLibrary.Snapshot,
+            PersonalLibraryKind.EFFECT => EffectScriptLibrary.Snapshot,
+            PersonalLibraryKind.EXPORT => ExportPresetLibrary.Snapshot,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
+    }
+
     private async Task SavePreferencesAsync(Task previous, WorkbenchPreferences value, TaskCompletionSource completion)
     {
         try
         {
             await previous;
             await PreferencesStore.SaveAsync(value);
+            lock (lifetime)
+            {
+                preferencesLoadError = null;
+            }
         }
         catch (Exception error)
         {
@@ -241,6 +309,21 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         finally
         {
             completion.TrySetResult();
+        }
+    }
+
+    private void SetLibraryLoadError(PersonalLibraryKind kind, Exception? error)
+    {
+        lock (lifetime)
+        {
+            if (error is null)
+            {
+                libraryLoadErrors.Remove(kind);
+            }
+            else
+            {
+                libraryLoadErrors[kind] = error;
+            }
         }
     }
 
@@ -301,10 +384,13 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         await RecentProjects.DisposeAsync();
         StyleLibrary.Dispose();
         EffectScriptLibrary.Dispose();
+        ExportPresetLibrary.Dispose();
+        SettingsRestore.Dispose();
         PreferencesStore.Dispose();
         PreferencesChanged = null;
         StylesChanged = null;
         EffectsChanged = null;
+        ExportPresetsChanged = null;
         BusyChanged = null;
         ErrorChanged = null;
     }

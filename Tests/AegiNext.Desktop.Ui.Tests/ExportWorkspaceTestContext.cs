@@ -77,6 +77,7 @@ internal sealed class ExportWorkspaceTestContext : IAsyncDisposable
 
     internal async Task InitializeAsync()
     {
+        await Session.ApplicationContext.Initialization;
         await Session.Styles.Completion;
         await Session.Controller.OpenAsync("controlled.mkv");
         Flush();

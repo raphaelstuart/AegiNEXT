@@ -141,12 +141,14 @@ public sealed partial class SettingsWindow : Window
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
-        if (allowClose || (ViewModel.Styles.SaveDraftAsync is null && ViewModel.Effects.SaveDraftAsync is null))
+        if (allowClose || (ViewModel.Styles.SaveDraftAsync is null && ViewModel.Effects.SaveDraftAsync is null &&
+                          ViewModel.ExportPresets.SaveDraftAsync is null))
         {
             return;
         }
         if (!ViewModel.HasUnsavedTemplates && ViewModel.NavigationCompletion.IsCompleted &&
-            ViewModel.Styles.SelectionCompletion.IsCompleted && ViewModel.Effects.SelectionCompletion.IsCompleted)
+            ViewModel.Styles.SelectionCompletion.IsCompleted && ViewModel.Effects.SelectionCompletion.IsCompleted &&
+            ViewModel.ExportPresets.SelectionCompletion.IsCompleted)
         {
             return;
         }
@@ -165,7 +167,9 @@ public sealed partial class SettingsWindow : Window
             await ViewModel.NavigationCompletion;
             await ViewModel.Styles.SelectionCompletion;
             await ViewModel.Effects.SelectionCompletion;
-            if (allowClose || await ViewModel.Styles.PrepareToLeaveAsync() && await ViewModel.Effects.PrepareToLeaveAsync())
+            await ViewModel.ExportPresets.SelectionCompletion;
+            if (allowClose || await ViewModel.Styles.PrepareToLeaveAsync() && await ViewModel.Effects.PrepareToLeaveAsync() &&
+                await ViewModel.ExportPresets.PrepareToLeaveAsync())
             {
                 allowClose = true;
                 Close();

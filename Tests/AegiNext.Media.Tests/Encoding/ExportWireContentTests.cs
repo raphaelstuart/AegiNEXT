@@ -26,8 +26,10 @@ public sealed class ExportWireContentTests
         };
         ProjectValidator.Validate(document);
         var job = new ExportWorkerJob(JsonSerializer.SerializeToElement(document, ExportWire.Options), Path.GetTempPath(),
-            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192, "ffmpeg");
+            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192000, "ffmpeg",
+            RateControlMode: VideoRateControlMode.CRF, ProtocolVersion: ExportWire.VERSION);
         var transmitted = JsonSerializer.Deserialize<ExportWorkerJob>(JsonSerializer.Serialize(job, ExportWire.Options), ExportWire.Options)!;
+        ExportWire.ValidateJob(transmitted);
         var restored = transmitted.Project.GetProperty("subtitles")[0];
         var clip = restored.GetProperty("karaoke")[0];
         Assert.Equal(ProjectDocument.CURRENT_VERSION, transmitted.Project.GetProperty("version").GetInt32());

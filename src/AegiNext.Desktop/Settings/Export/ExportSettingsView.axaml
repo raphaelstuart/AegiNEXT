@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:common="using:AegiNext.Desktop.Controls.Common"
+             xmlns:controls="using:AegiNext.Desktop.Controls"
+             xmlns:presets="using:AegiNext.Media.Encoding.Presets"
+             xmlns:vm="using:AegiNext.Desktop.Settings.Export"
+             x:Class="AegiNext.Desktop.Settings.Export.ExportSettingsView"
+             x:DataType="vm:ExportSettingsViewModel" Classes="business-surface">
+  <Grid Name="ExportPresetsPage" RowDefinitions="Auto,*" RowSpacing="12" IsEnabled="{Binding IsAvailable}">
+    <WrapPanel Name="ExportPresetLibraryToolbar" Orientation="Horizontal">
+      <Button Name="AddExportPresetButton" Command="{Binding AddCommand}">
+        <common:IconText IconKey="Add" Text="{Loc Key=Settings.Add}" />
+      </Button>
+      <Button Name="DuplicateExportPresetButton" Command="{Binding DuplicateCommand}">
+        <common:IconText IconKey="Duplicate" Text="{Loc Key=Settings.Duplicate}" />
+      </Button>
+      <Button Name="DeleteExportPresetButton" Command="{Binding DeleteCommand}">
+        <common:IconText IconKey="Delete" Text="{Loc Key=Settings.Delete}" />
+      </Button>
+      <Button Name="ImportExportPresetsButton" Command="{Binding ImportCommand}">
+        <common:IconText IconKey="Import" Text="{Loc Key=Settings.Import}" />
+      </Button>
+      <Button Name="ExportExportPresetsButton" Command="{Binding ExportCommand}">
+        <common:IconText IconKey="Export" Text="{Loc Key=Settings.Export}" />
+      </Button>
+      <Button Name="CaptureExportSettingsButton" Command="{Binding CaptureCommand}">
+        <common:IconText IconKey="Export" Text="{Loc Key=Settings.CaptureExportSettings}" />
+      </Button>
+      <Button Name="SaveExportPresetButton" Command="{Binding SaveCommand}" Classes="accent">
+        <common:IconText IconKey="Save" Text="{Loc Key=Settings.Save}" />
+      </Button>
+    </WrapPanel>
+    <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="16">
+      <Grid>
+        <ListBox Name="ExportPresetList" ItemsSource="{Binding ExportPresets}" SelectionMode="Multiple"
+                 Background="{DynamicResource SettingsSurface}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="presets:VideoExportPreset">
+              <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Name="EmptyExportPresetsLabel" IsVisible="{Binding IsEmpty}" Text="{Loc Key=Settings.EmptyExportPresets}"
+                   Classes="field" TextWrapping="Wrap" Margin="8" HorizontalAlignment="Center"
+                   VerticalAlignment="Center" IsHitTestVisible="False" />
+      </Grid>
+      <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Name="ExportPresetEditor" IsVisible="{Binding HasDraft}" IsEnabled="{Binding CanEdit}" Spacing="8">
+          <TextBlock Text="{Loc Key=Settings.Name}" Classes="field" />
+          <TextBox Name="ExportPresetNameInput" Text="{Binding Name, Mode=TwoWay}" MaxLength="128" />
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.Codec}" />
+          <ComboBox Name="CodecCombo" ItemsSource="{Binding Codecs}" HorizontalAlignment="Stretch"
+                    SelectedIndex="{Binding Codec, Mode=TwoWay}" />
+          <CheckBox Name="HardwareEncoderToggle"
+                    IsChecked="{Binding UseHardwareEncoder, Mode=TwoWay}" Content="{Loc Key=Workbench.HardwareEncoder}" />
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.Speed}" />
+          <ComboBox Name="SpeedCombo" ItemsSource="{Binding Speeds}" HorizontalAlignment="Stretch"
+                    SelectedIndex="{Binding Speed, Mode=TwoWay}" />
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.QualityMode}" />
+          <ComboBox Name="QualityModeCombo" ItemsSource="{Binding QualityModes}" HorizontalAlignment="Stretch"
+                    IsEnabled="{Binding CanSelectQualityMode}" SelectedIndex="{Binding QualityMode, Mode=TwoWay}" />
+          <StackPanel IsVisible="{Binding IsCrfMode}" Spacing="8">
+            <TextBlock Classes="field" Text="{Loc Key=Workbench.Quality}" />
+            <controls:NumericDraftInput Name="CrfInput" RawText="{Binding CrfText, Mode=TwoWay}" Minimum="0" Maximum="51"
+                                        Value="{Binding Crf, Mode=TwoWay}" />
+          </StackPanel>
+          <StackPanel IsVisible="{Binding IsBitrateMode}" Spacing="8">
+            <TextBlock Classes="field" Text="{Loc Key=Workbench.RateControlMode}" />
+            <ComboBox Name="BitrateModeCombo" ItemsSource="{Binding BitrateModes}" HorizontalAlignment="Stretch"
+                      SelectedIndex="{Binding BitrateMode, Mode=TwoWay}" />
+            <TextBlock Classes="field" Text="{Loc Key=Workbench.VideoBitrate}" />
+            <controls:NumericDraftInput Name="VideoBitrateInput" RawText="{Binding VideoBitrateText, Mode=TwoWay}"
+                                        Minimum="0.1" Maximum="200" Increment="0.001" Value="{Binding VideoBitrate, Mode=TwoWay}" />
+          </StackPanel>
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.Audio}" />
+          <ComboBox Name="AudioModeCombo" ItemsSource="{Binding AudioModes}" HorizontalAlignment="Stretch"
+                    SelectedIndex="{Binding AudioMode, Mode=TwoWay}" />
+          <StackPanel IsVisible="{Binding IsAacAudio}" Spacing="8">
+            <TextBlock Classes="field" Text="{Loc Key=Workbench.AudioBitrate}" />
+            <controls:NumericDraftInput Name="AudioBitrateInput" RawText="{Binding AudioBitrateText, Mode=TwoWay}"
+                                        Minimum="32" Maximum="512" Value="{Binding AudioBitrate, Mode=TwoWay}" Increment="16" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</UserControl>

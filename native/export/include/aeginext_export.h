@@ -15,7 +15,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* ABI 3; one run per context. Cancel may run concurrently; destruction may not. */
+/* ABI 4; one run per context. Cancel may run concurrently; destruction may not. */
 typedef struct an_export_request
 {
     uint32_t struct_size, abi_version;
@@ -26,9 +26,11 @@ typedef struct an_export_request
     float reference_white_nits;
     uint32_t reserved;
     int32_t encoding_mode; /* 0 software, 1 required hardware video encoding */
-    int32_t video_bitrate; /* bits/second; hardware target, software uses CRF */
+    int32_t video_bitrate; /* bits/second; active for VBR/CBR, normalized to whole kilobits/second */
     uint32_t decode_mode; /* 0 automatic, 1 software, 2 required hardware decoding */
     uint32_t decode_reserved;
+    int32_t rate_control_mode; /* 1 CRF (software only), 2 VBR, 3 CBR; automatic must be resolved by caller */
+    uint32_t rate_control_reserved;
 } an_export_request;
 /* Successful export diagnostics and effective encoded color. Source facts remain unchanged. */
 typedef struct an_export_result_info
@@ -38,6 +40,10 @@ typedef struct an_export_result_info
     uint64_t generation, delivered_frames;
     int32_t color_range, color_matrix, color_primaries, color_transfer, chroma_location, alpha_mode;
     char fallback_reason[256];
+    int32_t rate_control_mode; /* successfully initialized mode: 1 CRF, 2 VBR, 3 CBR */
+    int32_t video_bitrate; /* initialized target bits/second; zero for CRF */
+    int32_t crf; /* initialized quality; zero for VBR/CBR */
+    uint32_t rate_control_reserved;
 } an_export_result_info;
 /* Fill tight premultiplied linear-sRGB float RGBA; return 0 OK, 1 cancelled, 2 error. */
 typedef int32_t (AN_EXPORT_CALL *an_export_render_callback)(void *user, int64_t pts,
@@ -58,7 +64,7 @@ AN_EXPORT_API int32_t AN_EXPORT_CALL an_export_run(void *context, const an_expor
     an_export_render_callback render, void *user, uint64_t *frames, char *error, uint32_t capacity);
 #ifdef __cplusplus
 }
-static_assert(sizeof(an_export_request) == 80);
-static_assert(sizeof(an_export_result_info) == 328);
+static_assert(sizeof(an_export_request) == 88);
+static_assert(sizeof(an_export_result_info) == 344);
 #endif
 #endif

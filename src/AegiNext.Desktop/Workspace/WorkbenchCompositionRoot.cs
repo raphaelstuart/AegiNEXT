@@ -2,6 +2,7 @@ using AegiNext.Application;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Settings.Transfer;
 using AegiNext.Desktop.Startup;
 using AegiNext.Media.Encoding;
 
@@ -29,6 +30,7 @@ internal static class WorkbenchCompositionRoot
     internal static WorkbenchStartupPreferences LoadPreferences()
     {
         var store = new WorkbenchPreferencesStore(Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
+        SettingsRestoreStartup.ApplyOnce(store.DirectoryPath);
         var preferences = store.Load();
         ApplyLanguagePreference(preferences.Language);
         return new(store, preferences);

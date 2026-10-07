@@ -16,9 +16,13 @@ int main()
 {
     try
     {
-        static_assert(sizeof(an_export_request) == 80 && offsetof(an_export_request, input_path) == 32 &&
-            offsetof(an_export_request, reference_white_nits) == 56 && offsetof(an_export_request, encoding_mode) == 64);
-        Require(an_export_abi_version() == 3, "ABI version mismatch");
+        static_assert(sizeof(an_export_request) == 88 && offsetof(an_export_request, input_path) == 32 &&
+            offsetof(an_export_request, reference_white_nits) == 56 && offsetof(an_export_request, encoding_mode) == 64 &&
+            offsetof(an_export_request, rate_control_mode) == 80 && offsetof(an_export_request, rate_control_reserved) == 84);
+        static_assert(sizeof(an_export_result_info) == 344 && offsetof(an_export_result_info, fallback_reason) == 72 &&
+            offsetof(an_export_result_info, rate_control_mode) == 328 && offsetof(an_export_result_info, video_bitrate) == 332 &&
+            offsetof(an_export_result_info, crf) == 336 && offsetof(an_export_result_info, rate_control_reserved) == 340);
+        Require(an_export_abi_version() == 4, "ABI version mismatch");
         Require(an_export_core_version() == 1 && (an_export_capabilities() & 7) == 7,
             "Shared media core version or capabilities are missing");
         std::array<char, 256> error{};
@@ -29,10 +33,10 @@ int main()
             void *context = nullptr;
             Require(an_export_create(&context, error.data(), error.size()) == 0 && context, "Context creation failed");
             uint64_t frames = 123;
-            an_export_request request{sizeof(request),3,0,0,20,64,48,0,"unused","unused","ultrafast",203,0,0,8000000,0,0};
+            an_export_request request{sizeof(request),4,0,0,20,64,48,0,"unused","unused","ultrafast",203,0,0,8000000,0,0,1,0};
             an_export_result_info info{};
             info.struct_size = sizeof(info);
-            info.abi_version = 3;
+            info.abi_version = 4;
             Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
                 "Result information reported before completion");
             Require(an_export_get_result_info(context, nullptr, error.data(), error.size()) == 1,
@@ -41,11 +45,23 @@ int main()
             Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
                 "Invalid result information layout accepted");
             info.struct_size = sizeof(info);
+            info.abi_version = 3;
+            Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
+                "Legacy result information ABI accepted");
+            info.abi_version = 4;
+            info.rate_control_reserved = 1;
+            Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
+                "Rate-control result reserved field accepted");
+            info.rate_control_reserved = 0;
             Require(std::strlen(an_export_encoder_name(context)) == 0, "Encoder reported before initialization");
-            request.abi_version = 1;
+            request.abi_version = 3;
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
                 "Invalid ABI was accepted");
-            request.abi_version = 3;
+            request.abi_version = 4;
+            request.struct_size = 80;
+            Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
+                "Legacy request size accepted");
+            request.struct_size = sizeof(request);
             request.reserved = 1;
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
                 "Reserved field was accepted");
@@ -58,10 +74,24 @@ int main()
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
                 "Decode reserved field was accepted");
             request.decode_reserved = 0;
+            request.rate_control_reserved = 1;
+            Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
+                "Rate-control request reserved field accepted");
+            request.rate_control_reserved = 0;
+            request.rate_control_mode = 0;
+            Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
+                "Unresolved automatic rate-control mode accepted");
+            request.rate_control_mode = 4;
+            Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
+                "Unknown rate-control mode accepted");
+            request.rate_control_mode = 1;
             request.encoding_mode = 2;
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
                 "Unknown encoding mode accepted");
             request.encoding_mode = 1;
+            Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
+                "Hardware CRF accepted");
+            request.rate_control_mode = 2;
             request.video_bitrate = 1;
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
                 "Invalid hardware bitrate accepted");
@@ -71,6 +101,53 @@ int main()
                 "Sticky cancellation did not precede opening files");
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 4,
                 "Cancellation was reset");
+            for (const auto mode : {1, 2, 3})
+            {
+                request.rate_control_mode = mode;
+                request.encoding_mode = 0;
+                request.crf = mode == 1 ? 20 : -100;
+                request.video_bitrate = mode == 1 ? -100 : 8000000;
+                Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 4,
+                    "Inactive quality parameter blocked a valid rate-control mode");
+                if (mode == 1)
+                {
+                    for (const auto quality : {0, 51})
+                    {
+                        request.crf = quality;
+                        Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 4,
+                            "Valid CRF boundary rejected");
+                    }
+                    for (const auto quality : {-1, 52})
+                    {
+                        request.crf = quality;
+                        Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
+                            "Invalid active CRF accepted");
+                    }
+                }
+                else
+                {
+                    for (const auto encodingMode : {0, 1})
+                    {
+                        request.encoding_mode = encodingMode;
+                        for (const auto bitrate : {100000, 200000000})
+                        {
+                            request.video_bitrate = bitrate;
+                            Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 4,
+                                "Valid CPU/GPU bitrate boundary rejected");
+                        }
+                        for (const auto bitrate : {99999, 200000001})
+                        {
+                            request.video_bitrate = bitrate;
+                            Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
+                                "Invalid active CPU/GPU bitrate accepted");
+                        }
+                    }
+                }
+            }
+            request.encoding_mode = 0;
+            request.rate_control_mode = 1;
+            request.crf = 20;
+            request.video_bitrate = -100;
             an_export_destroy(context);
             an_export_destroy(context);
             Require(an_export_run(context, &request, Render, nullptr, &frames, error.data(), error.size()) == 1,
@@ -78,7 +155,7 @@ int main()
             Require(an_export_get_result_info(context, &info, error.data(), error.size()) == 1,
                 "Destroyed result information handle accepted");
         }
-        std::cout << "PASS ABI 3, encoding mode and bitrate, pinned runtime, invalid arguments, sticky cancellation, ownership\n";
+        std::cout << "PASS ABI 4, explicit CRF/VBR/CBR, active quality boundaries, inactive fields, pinned runtime, cancellation, ownership\n";
         return 0;
     }
     catch (const std::exception &error)

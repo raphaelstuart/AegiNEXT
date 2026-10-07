@@ -19,20 +19,23 @@ internal static class Program
 
             var job = JsonSerializer.Deserialize<ExportWorkerJob>(input, ExportWire.Options)
                 ?? throw new InvalidDataException("缺少导出请求。");
+            ExportWire.ValidateJob(job);
             var document = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(job.Project.GetRawText()));
             var output = Path.Combine(job.TemporaryDirectory, "output" + job.Extension);
             var request = new VideoExportRequest(document, job.ProjectDirectory, output)
             {
                 Codec = job.Codec, Preset = job.Preset, Crf = job.Crf, AudioMode = job.AudioMode,
                 AudioBitrate = job.AudioBitrate, FfmpegPath = job.FfmpegPath,
-                EncodingMode = job.EncodingMode, VideoBitrate = job.VideoBitrate, DecodeMode = job.DecodeMode
+                EncodingMode = job.EncodingMode, VideoBitrate = job.VideoBitrate, DecodeMode = job.DecodeMode,
+                RateControlMode = job.RateControlMode
             };
             var progress = new WorkerProgress();
             var encoded = NativeVideoExport.Run(request, Path.Combine(job.TemporaryDirectory, "video.nut"), progress, CancellationToken.None);
+            VideoExporter.ValidateCompletedRateControl(request, encoded.RateControl);
             await ExportMuxer.RunAsync(request, Path.Combine(job.TemporaryDirectory, "video.nut"), encoded.OutputColor,
                 CancellationToken.None).ConfigureAwait(false);
             Send(new("complete", encoded.Frames, Encoder: encoded.Encoder, Decoder: encoded.Decoder,
-                OutputColor: encoded.OutputColor));
+                OutputColor: encoded.OutputColor, RateControl: encoded.RateControl));
             return 0;
         }
         catch (Exception error)

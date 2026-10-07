@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:common="using:AegiNext.Desktop.Controls.Common"
+             xmlns:transfer="using:AegiNext.Desktop.Settings.Transfer"
+             x:Class="AegiNext.Desktop.Settings.Transfer.UserSettingsTransferView"
+             x:DataType="transfer:UserSettingsTransferViewModel" Classes="business-surface">
+  <ScrollViewer Name="TransferPage" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="16">
+      <TextBlock Text="{Loc Key=Settings.TransferScope}" Classes="field" TextWrapping="Wrap" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Loc Key=Settings.TransferExport}" FontWeight="SemiBold" />
+          <Button Name="ExportUserSettingsButton" Command="{Binding ExportCommand}" HorizontalAlignment="Left">
+            <common:IconText IconKey="Export" Text="{Loc Key=Settings.Export}" />
+          </Button>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Loc Key=Settings.TransferImport}" FontWeight="SemiBold" />
+          <Button Name="ImportUserSettingsButton" Command="{Binding ImportCommand}" HorizontalAlignment="Left">
+            <common:IconText IconKey="Import" Text="{Loc Key=Settings.TransferChooseFile}" />
+          </Button>
+          <StackPanel Name="UserSettingsImportPreview" IsVisible="{Binding HasPreview}" Spacing="12">
+            <TextBlock Name="UserSettingsImportFileName" Text="{Binding FileName}" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding FileName}" />
+            <TextBlock Name="UserSettingsImportSummary" Text="{Binding PreviewSummary}" TextWrapping="Wrap" Classes="field" />
+            <CheckBox Name="KeepWorkspaceRootToggle" Content="{Loc Key=Settings.TransferKeepWorkspaceRoot}"
+                      IsChecked="{Binding KeepWorkspaceRoot, Mode=TwoWay}" IsEnabled="{Binding !IsBusy}" />
+            <TextBlock Text="{Loc Key=Settings.TransferReplaceDescription}" Classes="field" TextWrapping="Wrap" />
+            <Button Name="StageSettingsRestoreButton" Command="{Binding StageRestoreCommand}" Classes="accent"
+                    HorizontalAlignment="Left" Content="{Loc Key=Settings.TransferRestoreNextStart}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <Border Name="PendingSettingsRestore" Classes="card" IsVisible="{Binding HasPending}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Loc Key=Settings.TransferPending}" TextWrapping="Wrap" />
+          <WrapPanel Orientation="Horizontal">
+            <Button Name="RestartForSettingsRestoreButton" Command="{Binding RestartCommand}"
+                    IsVisible="{Binding CanRequestExit}" Content="{Loc Key=Settings.TransferCloseNow}" Margin="0,0,8,0" />
+            <Button Name="CancelSettingsRestoreButton" Command="{Binding CancelPendingCommand}"
+                    Content="{Loc Key=Settings.TransferCancelPending}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+      <TextBlock Name="SettingsTransferStatus" Text="{Binding Status}" IsVisible="{Binding HasStatus}"
+                 Classes="field" TextWrapping="Wrap" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

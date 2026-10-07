@@ -1,11 +1,12 @@
 using System.Text.Json;
 using System.Globalization;
+using AegiNext.Desktop.Settings.Transfer;
 
 namespace AegiNext.Desktop.Layouts;
 
 internal sealed class WorkspaceLayoutStore
 {
-    private const long MAX_FILE_LENGTH = 4 * 1024 * 1024;
+    internal const int MAXIMUM_FILE_BYTES = 4 * 1024 * 1024;
     private static readonly JsonSerializerOptions jsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
     private readonly string path;
     private readonly object writeLock = new();
@@ -28,7 +29,7 @@ internal sealed class WorkspaceLayoutStore
 
         try
         {
-            if (new FileInfo(path).Length > MAX_FILE_LENGTH)
+            if (new FileInfo(path).Length > MAXIMUM_FILE_BYTES)
             {
                 throw new InvalidDataException("The layout file exceeds the size limit.");
             }
@@ -55,10 +56,49 @@ internal sealed class WorkspaceLayoutStore
         }
     }
 
+    internal WorkspaceLayoutFile LoadStrict()
+    {
+        if (!File.Exists(path))
+        {
+            return new();
+        }
+
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > MAXIMUM_FILE_BYTES)
+        {
+            throw new InvalidDataException("The layout file exceeds the size limit.");
+        }
+
+        var bytes = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(bytes);
+        return Deserialize(bytes);
+    }
+
+    internal static byte[] Serialize(WorkspaceLayoutFile file)
+    {
+        ValidateFile(file);
+        return SettingsTransferJson.Serialize(file, MAXIMUM_FILE_BYTES);
+    }
+
+    internal static WorkspaceLayoutFile Deserialize(ReadOnlySpan<byte> bytes)
+    {
+        try
+        {
+            var file = SettingsTransferJson.Deserialize<WorkspaceLayoutFile>(bytes, MAXIMUM_FILE_BYTES);
+            file = WorkspaceLayoutMigration.Upgrade(file);
+            ValidateFile(file);
+            return file;
+        }
+        catch (Exception error) when (error is ArgumentException or NullReferenceException)
+        {
+            throw new InvalidDataException("The layout document is invalid.", error);
+        }
+    }
+
     internal Task SaveAsync(WorkspaceLayoutFile file)
     {
         ValidateFile(file);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(file, jsonOptions);
+        var bytes = Serialize(file);
         lock (writeLock)
         {
             pendingWrite = WriteAfterAsync(pendingWrite, bytes);
@@ -114,6 +154,11 @@ internal sealed class WorkspaceLayoutStore
 
     private static void ValidateFile(WorkspaceLayoutFile file)
     {
+        if (file is null || file.Current is null || file.Presets is null || file.Presets.Any(preset => preset is null))
+        {
+            throw new InvalidDataException("The layout document is incomplete.");
+        }
+
         if (file.Version != WorkspaceLayoutSnapshot.CURRENT_VERSION)
         {
             throw new InvalidDataException($"Unsupported layout file version: {file.Version}.");

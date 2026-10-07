@@ -34,6 +34,14 @@ Reuse shared typography, spacing, panel corners, and chrome. Layout owns outer f
 
 macOS defaults to system menus; window-menu mode shows menus on the main workbench. Windows chrome integrates native caption actions and resizing. Theme/shortcut refreshes preserve command identity; language regrouping waits for safe menu lifecycle points.
 
+## User settings backup and migration
+
+Export a `.aegisettings` bundle from the Settings import/export page. The bundle includes all committed preferences, personal subtitle styles with embedded fonts, personal effect scripts, encoding presets, the current workspace layout, and personal layout presets. Builtin scripts and layouts, recent projects, caches, and project assets are excluded. Export does not commit project drafts or include unsaved preset drafts.
+
+Import validates the complete bundle and previews its personal preset counts before scheduling restoration at the next launch. Migration keeps this device's default project directory by default; disable that option to restore the bundled directory, which must be valid on the destination system. Audio calibration remains scoped to an exactly matching device chain. After import, a restart prompt can close the application through its normal exit workflow, including existing unsaved-project confirmation. Deferred restoration can be cancelled from the settings page.
+
+`Settings/Transfer/` composes existing storage contracts without introducing Desktop dependencies into Application or Media. The pending bundle does not replace files while the application is running. Before loading preferences and libraries on the next launch, restoration backs up the original bytes and replaces the files as one journaled transaction. Failed or interrupted restoration rolls back the old files and retains the backup and pending bundle for retry. Builtin resources remain supplied by the application.
+
 ## Localization
 
 Language packs remain external UTF-8 JSON in `I18n/Languages/`, copied to application `i18n/`. Each has `LanguageName`, `LanguageID`, and string-valued `Strings`; language IDs and keys must be unique.

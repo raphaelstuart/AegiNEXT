@@ -73,33 +73,15 @@ internal sealed partial class WorkbenchSession
                 ProjectValidator.Validate(prepared);
             }
             ViewModel.InvalidPanelId = "export";
-            var crf = ViewModel.Export.Crf ?? 20;
-            var videoBitrate = ViewModel.Export.VideoBitrate ?? 8;
-            if (ViewModel.Export.UseHardwareEncoder)
+            try
             {
-                videoBitrate = (decimal)RequiredNumber(ViewModel.Export.VideoBitrateText, "VideoBitrate", "VideoBitrateInput");
+                ViewModel.Export.AcceptSettings(ViewModel.Export.CaptureSettings());
             }
-            else
+            catch (ExportSettingsValidationException error)
             {
-                crf = (decimal)RequiredNumber(ViewModel.Export.CrfText, "Quality", "CrfInput");
+                ViewModel.InvalidFieldKey = error.FieldKey;
+                throw new InvalidDataException(Localization.Get(error.LocalizationKey), error);
             }
-            if (!ViewModel.Export.UseHardwareEncoder && (crf is < 0 or > 51 || crf != Math.Truncate(crf)))
-            {
-                throw new InvalidDataException(Localization.Get("Workbench.Quality"));
-            }
-            var bitrate = RequiredNumber(ViewModel.Export.AudioBitrateText, "AudioBitrate", "AudioBitrateInput");
-            if (bitrate is < 32 or > 512 || bitrate != Math.Truncate(bitrate))
-            {
-                throw new InvalidDataException(Localization.Get("Workbench.AudioBitrate"));
-            }
-            if (ViewModel.Export.Codec is < 0 or > 2 || ViewModel.Export.Speed is < 0 or > 2 || ViewModel.Export.AudioMode is < 0 or > 2)
-            {
-                ViewModel.InvalidFieldKey = "CodecCombo";
-                throw new InvalidDataException(Localization.Get("Workbench.Codec"));
-            }
-            ViewModel.Export.Crf = (decimal)crf;
-            ViewModel.Export.VideoBitrate = videoBitrate;
-            ViewModel.Export.AudioBitrate = (decimal)bitrate;
             var originalStylesDirty = stylesDirty;
             var originalEffectsDirty = effectsDirty;
             stylesDirty = false;

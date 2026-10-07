@@ -23,8 +23,10 @@ public sealed class ExportWireFontVariantTests
         };
         ProjectValidator.Validate(document);
         var job = new ExportWorkerJob(JsonSerializer.SerializeToElement(document, ExportWire.Options), Path.GetTempPath(),
-            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192, "ffmpeg");
+            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192000, "ffmpeg",
+            RateControlMode: VideoRateControlMode.CRF, ProtocolVersion: ExportWire.VERSION);
         var received = JsonSerializer.Deserialize<ExportWorkerJob>(JsonSerializer.Serialize(job, ExportWire.Options), ExportWire.Options)!;
+        ExportWire.ValidateJob(received);
         Assert.Equal(style, received.Project.GetProperty("subtitleTracks")[0].GetProperty("defaultStyle").Deserialize<SubtitleStyle>(ExportWire.Options));
         Assert.Equal(style, received.Project.GetProperty("subtitles")[0].GetProperty("style").Deserialize<SubtitleStyle>(ExportWire.Options));
         Assert.Equal(line.InlineSpans[0].Style, received.Project.GetProperty("subtitles")[0].GetProperty("inlineSpans")[0].GetProperty("style")

@@ -350,6 +350,17 @@ internal sealed class WorkbenchLayoutController : IDisposable
         await store.FlushAsync();
     }
 
+    internal WorkspaceLayoutFile CaptureFile()
+    {
+        EnsureUsable();
+        return WorkspaceLayoutStore.Deserialize(WorkspaceLayoutStore.Serialize(new()
+        {
+            Current = Capture(),
+            CurrentPresetId = CurrentPresetId,
+            Presets = userPresets.ToArray()
+        }));
+    }
+
     internal WorkspaceLayoutSnapshot Capture()
     {
         EnsureUsable();

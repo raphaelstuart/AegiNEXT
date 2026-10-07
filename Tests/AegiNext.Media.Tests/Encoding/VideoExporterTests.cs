@@ -161,9 +161,12 @@ public sealed class VideoExporterTests
     }
 
     [ExportTheory]
-    [InlineData(VideoCodec.H264, "h264", "yuv420p")]
-    [InlineData(VideoCodec.Hevc, "hevc", "yuv420p10le")]
-    public async Task HardwareWorkerUsesActualHardwareOrReportsUnavailableWithoutCpuFallback(VideoCodec codec, string codecName, string pixelFormat)
+    [InlineData(VideoCodec.H264, "h264", "yuv420p", VideoRateControlMode.VBR)]
+    [InlineData(VideoCodec.H264, "h264", "yuv420p", VideoRateControlMode.CBR)]
+    [InlineData(VideoCodec.Hevc, "hevc", "yuv420p10le", VideoRateControlMode.VBR)]
+    [InlineData(VideoCodec.Hevc, "hevc", "yuv420p10le", VideoRateControlMode.CBR)]
+    public async Task HardwareWorkerUsesActualHardwareOrReportsUnavailableWithoutCpuFallback(VideoCodec codec, string codecName,
+        string pixelFormat, VideoRateControlMode rateControlMode)
     {
         using var fixture = await SdrPreviewFixture.CreateAsync(false);
         var directory = Path.GetDirectoryName(fixture.MediaPath)!;
@@ -172,7 +175,7 @@ public sealed class VideoExporterTests
         var request = Request(project, directory, output) with
         {
             Codec = codec, EncodingMode = VideoEncodingMode.HARDWARE, VideoBitrate = 8000000,
-            AudioMode = AudioExportMode.Aac
+            AudioMode = AudioExportMode.Aac, RateControlMode = rateControlMode
         };
         var progress = new ExportProgressCapture();
         var expectUnavailable = Environment.GetEnvironmentVariable("AEGINEXT_EXPECT_GPU_ENCODER") == "unavailable";
@@ -186,12 +189,14 @@ public sealed class VideoExporterTests
             Assert.Empty(Directory.GetDirectories(directory, ".aeginext-export-*"));
             var cpu = await new VideoExporter().ExportAsync(request with { EncodingMode = VideoEncodingMode.SOFTWARE });
             Assert.Equal(codec == VideoCodec.H264 ? "libx264" : "libx265", cpu.Encoder);
+            Assert.Equal(new VideoRateControlInfo(rateControlMode, 8000000, 0), cpu.RateControl);
             Assert.True(File.Exists(output));
             return;
         }
 
         var result = await new VideoExporter().ExportAsync(request, progress);
         Assert.Equal(3UL, result.Frames);
+        Assert.Equal(new VideoRateControlInfo(rateControlMode, 8000000, 0), result.RateControl);
         Assert.NotNull(result.Encoder);
         var prefix = codec == VideoCodec.H264 ? "h264_" : "hevc_";
         Assert.Contains(result.Encoder, new[] { prefix + "videotoolbox", prefix + "nvenc", prefix + "qsv", prefix + "amf" });
@@ -255,6 +260,7 @@ public sealed class VideoExporterTests
         var progress = new ExportProgressCapture();
         var result = await new VideoExporter().ExportAsync(request, progress);
         Assert.Equal((ulong)DecoderFixture.FRAME_COUNT, result.Frames);
+        Assert.Equal(new VideoRateControlInfo(VideoRateControlMode.CRF, 0, 0), result.RateControl);
         Assert.Equal(output, result.OutputPath);
         Assert.Contains(progress.Values, item => item.Stage == "encoding" && item.Position >= new MediaTime(3));
         Assert.Equal("complete", progress.Values[^1].Stage);

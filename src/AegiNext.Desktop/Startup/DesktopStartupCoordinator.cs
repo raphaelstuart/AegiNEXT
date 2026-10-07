@@ -55,7 +55,7 @@ internal sealed class DesktopStartupCoordinator : IAsyncDisposable
         this.shutdown = shutdown;
         this.context = context ?? new();
         this.sessionFactory = sessionFactory ?? ((service, application) => new(service, applicationContext: application));
-        settings = new(this.context);
+        settings = new(this.context, requestApplicationExit: RequestApplicationExit);
         var viewModel = new WelcomeViewModel(this.context.RecentProjects,
             () => BeginOpen(true, null), path => BeginOpen(false, path), OpenSettingsAsync);
         WelcomeWindow = new(viewModel);
@@ -386,6 +386,7 @@ internal sealed class DesktopStartupCoordinator : IAsyncDisposable
     private async Task DisposeCoreAsync()
     {
         settings.Dispose();
+        await settings.TransferCompletion;
         await operation;
         if (desktopLifetime is { } lifetime)
         {

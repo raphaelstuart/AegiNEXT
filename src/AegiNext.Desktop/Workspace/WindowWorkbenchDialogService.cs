@@ -68,6 +68,26 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
         return result switch { 1 => 0, 2 => 1, _ => 2 };
     }
 
+    /// <summary>询问压制预设草稿：保存、恢复或取消切换。</summary>
+    public async Task<int> ConfirmExportPresetChangesAsync()
+    {
+        var dialog = new UnsavedProjectDialog("Settings.UnsavedExportPresetText");
+        registerWindow?.Invoke(dialog);
+        var result = await dialog.ShowDialog<int>(ownerProvider());
+        return result switch { 1 => 0, 2 => 1, _ => 2 };
+    }
+
+    /// <summary>提示下次启动恢复个人设置；取消请求会关闭确认窗口。</summary>
+    public async Task<bool> ConfirmSettingsRestartAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var dialog = new SettingsRestartDialog();
+        registerWindow?.Invoke(dialog);
+        var answer = dialog.ShowDialog<bool>(ownerProvider());
+        using var registration = cancellationToken.Register(() => Dispatcher.UIThread.Post(() => dialog.Close(false)));
+        return await answer;
+    }
+
     /// <summary>选择带指定扩展名的本地保存路径，并由系统确认覆盖。</summary>
     public async Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName)
     {

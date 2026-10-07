@@ -22,8 +22,10 @@ public sealed class ExportWireAnimationTests
         };
         ProjectValidator.Validate(project);
         var job = new ExportWorkerJob(JsonSerializer.SerializeToElement(project, ExportWire.Options), Path.GetTempPath(),
-            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192, "ffmpeg");
+            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192000, "ffmpeg",
+            RateControlMode: VideoRateControlMode.CRF, ProtocolVersion: ExportWire.VERSION);
         var restoredJob = JsonSerializer.Deserialize<ExportWorkerJob>(JsonSerializer.Serialize(job, ExportWire.Options), ExportWire.Options)!;
+        ExportWire.ValidateJob(restoredJob);
         var restoredLine = restoredJob.Project.GetProperty("subtitles")[0];
         Assert.Equal(highlight, restoredLine.GetProperty("karaokeStyle").Deserialize<KaraokeHighlightStyle>(ExportWire.Options));
         var segment = restoredLine.GetProperty("karaoke")[0];
@@ -62,9 +64,11 @@ public sealed class ExportWireAnimationTests
         ProjectValidator.Validate(project);
         var element = JsonSerializer.SerializeToElement(project, ExportWire.Options);
         var job = new ExportWorkerJob(element, Path.GetTempPath(), Path.GetTempPath(), ".mkv", VideoCodec.H264,
-            "medium", 18, AudioExportMode.None, 192, "ffmpeg");
+            "medium", 18, AudioExportMode.None, 192000, "ffmpeg",
+            RateControlMode: VideoRateControlMode.CRF, ProtocolVersion: ExportWire.VERSION);
         var encoded = JsonSerializer.Serialize(job, ExportWire.Options);
         var restored = Assert.IsType<ExportWorkerJob>(JsonSerializer.Deserialize<ExportWorkerJob>(encoded, ExportWire.Options));
+        ExportWire.ValidateJob(restored);
         var layer = restored.Project.GetProperty("layers")[0];
         var position = layer.GetProperty("transform").GetProperty("position");
         Assert.Equal(20, position.GetProperty("x").GetDouble());

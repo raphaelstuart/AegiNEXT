@@ -10,6 +10,22 @@ namespace AegiNext.Desktop.Ui.Tests;
 
 internal static class UiTestCapture
 {
+    internal static void CaptureExportPanel(Window window, string name)
+    {
+        var directory = Environment.GetEnvironmentVariable("AEGINEXT_UI_CAPTURE_DIRECTORY");
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return;
+        }
+        if (!Path.IsPathFullyQualified(directory))
+        {
+            throw new InvalidOperationException("Headless capture directory must be an absolute isolated artifacts path.");
+        }
+
+        Directory.CreateDirectory(directory);
+        Capture(window, directory, $"headless-export-{name}.png");
+    }
+
     internal static void CaptureWorkbench(MainWindow main)
     {
         var directory = Environment.GetEnvironmentVariable("AEGINEXT_UI_CAPTURE_DIRECTORY");

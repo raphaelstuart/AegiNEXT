@@ -37,16 +37,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         var snapshot = session.Editor.Snapshot;
         var directory = session.ProjectDirectory;
         var vm = session.ViewModel.Export;
-        var request = new VideoExportRequest(snapshot, directory, string.Empty)
-        {
-            Codec = vm.Codec switch { 1 => VideoCodec.H264, 2 => VideoCodec.Hevc, _ => VideoCodec.Auto },
-            EncodingMode = vm.UseHardwareEncoder ? VideoEncodingMode.HARDWARE : VideoEncodingMode.SOFTWARE,
-            VideoBitrate = vm.UseHardwareEncoder ? checked((int)((vm.VideoBitrate ?? 8) * 1000000)) : 8000000,
-            Preset = vm.Speed switch { 0 => "fast", 2 => "slow", _ => "medium" },
-            Crf = vm.UseHardwareEncoder ? 20 : checked((int)(vm.Crf ?? 20)),
-            AudioMode = vm.AudioMode switch { 1 => AudioExportMode.Aac, 2 => AudioExportMode.None, _ => AudioExportMode.Copy },
-            AudioBitrate = checked((int)(vm.AudioBitrate ?? 192) * 1000)
-        };
+        var request = new VideoExportRequest(snapshot, directory, string.Empty).WithSettings(vm.CaptureSettings());
         cancellation?.Dispose();
         cancellation = new();
         activeOperation = true;
