@@ -19,7 +19,11 @@ Subtitle list selection centers the primary clip without changing zoom. Enter co
 
 ## Playback and timing
 
-Space plays/pauses outside text inputs. F8 creates a new timing segment; F9 finishes that valid segment. Seeking, selection changes, or other editing can invalidate it. Use Q/W/E/R with Timeline or a subtitle row focused to audition before, after, the start of, or the whole subtitle. The default short range is 500 ms, configurable in Settings → Preview.
+Space plays/pauses outside text inputs. F8 creates a new timing segment; F9 finishes that valid segment. Seeking, selection changes, or other editing can invalidate it.
+
+Classic Aegisub audition keys target the primary selected subtitle: **Q** plays a short range before its start, **W** a short range after its end, **E** a short range from its start, and **R** the whole subtitle. Timeline or a subtitle row must have focus; text inputs keep normal typing. Short ranges default to 500 ms, configurable in **Settings → Preview**. Ranges stay within media boundaries, and E also stops at the subtitle's end.
+
+Classic mouse timing is off by default. Select a subtitle, then enable **Classic Aegisub timing** using the mouse icon at the timeline's bottom left. In the timeline body, **left click** sets the primary selected subtitle's start and **right click** sets its end at the clicked time. These clicks keep the primary selection; track headings and the top ruler retain their normal behavior. Turn the toggle off to restore normal selection, dragging, and clip context menus. See the [Quickstart control table](quick-start.md#classic-aegisub-controls).
 
 Preview qualities are Low 320p, Smooth 540p (default), Standard 720p, and High 1080p. Scrubbing temporarily caps quality at 540p without exceeding the chosen level; release restores it. Small videos are not enlarged, and export is independent.
 

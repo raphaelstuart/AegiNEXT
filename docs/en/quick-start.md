@@ -52,3 +52,18 @@ Use Cmd on macOS and Ctrl on Windows. Settings → Shortcuts shows current bindi
 | Export video | Cmd/Ctrl + E |
 
 Text fields keep their text-entry behavior. If function keys are captured by the OS, use the Subtitle menu or rebind them.
+
+### Classic Aegisub controls
+
+Select a subtitle first. Q/W/E/R work with Timeline or a subtitle row focused, outside text editing. Short audition ranges default to 500 ms; adjust their duration in **Settings → Preview**.
+
+| Action | Default key / mouse |
+|---|---|
+| Audition a short range before the subtitle starts | Q |
+| Audition a short range after the subtitle ends | W |
+| Audition a short range from the subtitle's start | E |
+| Audition the whole subtitle | R |
+| Set the primary selected subtitle's start at the clicked time | Left click in the timeline body |
+| Set the primary selected subtitle's end at the clicked time | Right click in the timeline body |
+
+For mouse timing, enable **Classic Aegisub timing** using the mouse icon at the timeline's bottom left; it is off by default. While enabled, left and right clicks in the body edit the primary selected subtitle without changing selection. Turn it off to restore normal selection, dragging, and clip context menus.
