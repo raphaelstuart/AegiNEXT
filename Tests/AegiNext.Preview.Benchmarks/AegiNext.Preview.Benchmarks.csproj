@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType><IsPackable>false</IsPackable></PropertyGroup>
+  <PropertyGroup><OutputType>Exe</OutputType><IsPackable>false</IsPackable><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
   <ItemGroup Condition="'$(BaselineAssemblyRoot)' == ''">
+    <None Include="../AegiNext.Rendering.Tests/Fixtures/NotoSans.ttf" Link="Fixtures/NotoSans.ttf" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../src/AegiNext.Media/AegiNext.Media.csproj" />
     <ProjectReference Include="../../src/AegiNext.Rendering/AegiNext.Rendering.csproj" />
+    <ProjectReference Include="../../src/AegiNext.Desktop/AegiNext.Desktop.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(BaselineAssemblyRoot)' != ''">
     <Reference Include="AegiNext.Core"><HintPath>$(BaselineAssemblyRoot)/AegiNext.Core.dll</HintPath></Reference>
@@ -11,5 +13,9 @@
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="SkiaSharp.HarfBuzz" />
     <None Include="$(BaselineAssemblyRoot)/libaeginext_decode.dylib" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(BaselineAssemblyRoot)' != ''"><DefineConstants>$(DefineConstants);BASELINE_ASSEMBLIES</DefineConstants></PropertyGroup>
+  <ItemGroup Condition="'$(BaselineAssemblyRoot)' != ''">
+    <Compile Remove="PreviewBenchmarkGraphics.cs;PreviewBenchmarkApplication.cs;GpuPreviewVerification.cs;GpuPlaybackVerification.cs" />
   </ItemGroup>
 </Project>

@@ -7,11 +7,12 @@ using SkiaSharp;
 
 namespace AegiNext.Rendering.Projects;
 
-/// <summary>预览与压制共用的 CPU F16 工程渲染器；实例及缓存限同一线程使用。</summary>
+/// <summary>共享线性 F16 工程渲染逻辑；默认 CPU，也可借用调用方的 GPU 上下文。实例及缓存限同一线程使用。</summary>
 public sealed partial class ProjectSceneRenderer : IDisposable
 {
     private const float PREVIEW_REFERENCE_WHITE_NITS = 203;
     private readonly IProjectAssetResolver assets;
+    private readonly GRContext? graphicsContext;
     private readonly Dictionary<ProjectAsset, SKImage> images = [];
     private readonly Dictionary<(SubtitleLine Subtitle, int Width, int Height), SubtitleLayout> layouts = [];
     private readonly Dictionary<(Guid? Asset, string Family, SubtitleFontVariant? Variant, bool Bold, bool Italic), TextShaper> textShapers = [];
@@ -29,12 +30,14 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private bool previewSceneValid;
     private SKBlender? additiveBlend;
     private SKColorFilter? previewWhiteFilter;
+    private GpuLinearColorShader? extendedColorShader;
 
-    /// <summary>绑定资源解析器和可选的共享系统字体目录，渲染器不接管解析器生命周期。</summary>
-    public ProjectSceneRenderer(IProjectAssetResolver assets, SystemFontCatalog? fontCatalog = null)
+    /// <summary>绑定资源解析器、字体目录和可选 GPU 上下文；不接管借用资源生命周期。GPU 调用和释放须在创建线程的当前上下文中执行。</summary>
+    public ProjectSceneRenderer(IProjectAssetResolver assets, SystemFontCatalog? fontCatalog = null, GRContext? graphicsContext = null)
     {
         ArgumentNullException.ThrowIfNull(assets);
         this.assets = assets;
+        this.graphicsContext = graphicsContext;
         systemFonts = new(() => new(fontCatalog ?? new SystemFontCatalog()));
     }
 
@@ -42,7 +45,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     public LinearRenderSurface Render(ProjectDocument document, MediaTime time)
     {
         ArgumentNullException.ThrowIfNull(document);
-        var surface = new LinearRenderSurface(new(document.Width, document.Height, (float)document.ReferenceWhiteNits));
+        var surface = new LinearRenderSurface(new(document.Width, document.Height, (float)document.ReferenceWhiteNits), graphicsContext);
         try
         {
             RenderInto(document, time, surface);
@@ -168,13 +171,13 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         if (previewScene is null || previewScene.Info.Width != sceneWidth || previewScene.Info.Height != sceneHeight)
         {
             previewScene?.Dispose();
-            previewScene = new(new(sceneWidth, sceneHeight, (float)document.ReferenceWhiteNits));
+            previewScene = new(new(sceneWidth, sceneHeight, (float)document.ReferenceWhiteNits), graphicsContext);
             previewSceneValid = false;
         }
         if (previewTarget is null || previewTarget.Info.Width != outputWidth || previewTarget.Info.Height != outputHeight)
         {
             previewTarget?.Dispose();
-            previewTarget = new(new(outputWidth, outputHeight, PREVIEW_REFERENCE_WHITE_NITS));
+            previewTarget = new(new(outputWidth, outputHeight, PREVIEW_REFERENCE_WHITE_NITS), graphicsContext);
         }
 
         if (!previewSceneValid || !Equivalent(previewLayers, layers))
@@ -258,6 +261,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         ClearPreview();
         images.Clear();
         additiveBlend?.Dispose();
+        extendedColorShader?.Dispose();
         linear.Dispose();
         isDisposed = true;
     }
@@ -329,7 +333,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private void DrawLayer(ProjectDocument document, SKCanvas parent, EvaluatedLayer layer, int renderWidth = 0, int renderHeight = 0, float blurScale = 1, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var surface = new LinearRenderSurface(new(renderWidth > 0 ? renderWidth : document.Width, renderHeight > 0 ? renderHeight : document.Height, (float)document.ReferenceWhiteNits));
+        using var surface = new LinearRenderSurface(new(renderWidth > 0 ? renderWidth : document.Width, renderHeight > 0 ? renderHeight : document.Height, (float)document.ReferenceWhiteNits), graphicsContext);
         var canvas = surface.Canvas;
         canvas.SetMatrix(parent.TotalMatrix);
         var saved = canvas.Save();
@@ -566,8 +570,21 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private SKPaint Paint(SceneColor color)
     {
         var paint = new SKPaint { IsAntialias = true };
-        paint.SetColor(new((float)color.Red, (float)color.Green, (float)color.Blue, (float)color.Alpha), linear);
-        return paint;
+        try
+        {
+            paint.SetColor(new((float)color.Red, (float)color.Green, (float)color.Blue, (float)color.Alpha), linear);
+            if (graphicsContext is not null && (color.Red is < 0 or > 1 || color.Green is < 0 or > 1 || color.Blue is < 0 or > 1))
+            {
+                extendedColorShader ??= new();
+                extendedColorShader.Apply(paint, (float)color.Red, (float)color.Green, (float)color.Blue, (float)color.Alpha);
+            }
+            return paint;
+        }
+        catch
+        {
+            paint.Dispose();
+            throw;
+        }
     }
 
     private static SKPath Path(PathGeometry geometry)

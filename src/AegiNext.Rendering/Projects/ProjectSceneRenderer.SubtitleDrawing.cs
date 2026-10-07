@@ -27,7 +27,7 @@ public sealed partial class ProjectSceneRenderer
         }
         Prepare(document);
         var surface = new LinearRenderSurface(new((int)Math.Ceiling(cropBounds.Width),
-            (int)Math.Ceiling(cropBounds.Height), (float)document.ReferenceWhiteNits));
+            (int)Math.Ceiling(cropBounds.Height), (float)document.ReferenceWhiteNits), graphicsContext);
         try
         {
             surface.Canvas.Translate(-cropBounds.Left, -cropBounds.Top);

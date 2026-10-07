@@ -5,6 +5,8 @@ using AegiNext.Media.Preview;
 using AegiNext.Rendering.Projects;
 using AegiNext.Rendering.Fonts;
 using AegiNext.Desktop.Settings;
+using Avalonia.OpenGL;
+using Avalonia.Platform;
 
 namespace AegiNext.Desktop.Rendering;
 
@@ -15,18 +17,24 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
     private readonly Action<Exception?> reportError;
     private readonly PreviewFrameCatalog? previewFrames;
     private readonly Func<SystemFontCatalog?>? fontCatalog;
+    private readonly Func<IOpenGlTextureSharingRenderInterfaceContextFeature?>? getGraphics;
+    private PreviewGraphicsContext? graphics;
+    private bool graphicsDisabled;
     private ProjectSceneRenderer? renderer;
     private string? directory;
     private AegiNext.Core.Projects.ProjectDocument? failedDocument;
     private bool disposed;
+    internal bool UsesGpu => graphics is not null;
 
     internal ProjectPreviewConverter(Func<ProjectPreviewState> getState, Action<Exception?>? reportError = null,
-        PreviewFrameCatalog? previewFrames = null, Func<SystemFontCatalog?>? fontCatalog = null)
+        PreviewFrameCatalog? previewFrames = null, Func<SystemFontCatalog?>? fontCatalog = null,
+        Func<IOpenGlTextureSharingRenderInterfaceContextFeature?>? getGraphics = null)
     {
         this.getState = getState;
         this.reportError = reportError ?? (static _ => { });
         this.previewFrames = previewFrames;
         this.fontCatalog = fontCatalog;
+        this.getGraphics = getGraphics;
     }
 
     public SdrVideoFrame Convert(IVideoFrame frame, CancellationToken cancellationToken = default)
@@ -50,25 +58,28 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
         }
 
         reportError(null);
-        if (renderer is null || directory != state.Directory)
-        {
-            renderer?.Dispose();
-            directory = state.Directory;
-            renderer = new(new DirectoryProjectAssetResolver(directory), fontCatalog?.Invoke());
-        }
-
         try
         {
-            var size = GetPreviewSize(document, background.Width, background.Height);
-            if (size.Width == background.Width && size.Height == background.Height && !renderer.HasPreviewLayers(document, time))
+            if (graphics is null && !graphicsDisabled && getGraphics?.Invoke() is { } feature)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                return CompleteFrame(background, background, state, time);
+                DisposeRenderer();
+                graphics = PreviewGraphicsContext.TryCreate(feature);
+                graphicsDisabled = graphics is null;
             }
-            var pixels = renderer.ComposePreview(document, time, background.Pixels.Span,
-                background.Width, background.Height, background.Width * 4, size.Width, size.Height, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            return CompleteFrame(new(size.Width, size.Height, pixels), background, state, time);
+            try
+            {
+                return ComposeFrame(background, state, time, cancellationToken);
+            }
+            catch (Exception error) when (graphics is not null && error is
+                OpenGlException or PlatformGraphicsContextLostException or InvalidOperationException or NotSupportedException)
+            {
+                System.Diagnostics.Trace.TraceWarning("GPU project preview failed; retrying with CPU: {0}", error.Message);
+                DisposeRenderer();
+                graphics.Dispose();
+                graphics = null;
+                graphicsDisabled = true;
+                return ComposeFrame(background, state, time, cancellationToken);
+            }
         }
         catch (Exception error) when (error is InvalidDataException or IOException or InvalidOperationException or NotSupportedException or ArgumentException)
         {
@@ -76,6 +87,35 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
             reportError(error);
             return CompleteFrame(background, background, state, time);
         }
+    }
+
+    private SdrVideoFrame ComposeFrame(SdrVideoFrame background, ProjectPreviewState state, MediaTime time,
+        CancellationToken cancellationToken)
+    {
+        using var current = graphics?.MakeCurrent();
+        if (renderer is null || directory != state.Directory)
+        {
+            renderer?.Dispose();
+            directory = state.Directory;
+            renderer = new(new DirectoryProjectAssetResolver(directory), fontCatalog?.Invoke(), graphics?.Context);
+        }
+        var size = GetPreviewSize(state.Document, background.Width, background.Height);
+        if (size.Width == background.Width && size.Height == background.Height && !renderer.HasPreviewLayers(state.Document, time))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return CompleteFrame(background, background, state, time);
+        }
+        var pixels = renderer.ComposePreview(state.Document, time, background.Pixels.Span,
+            background.Width, background.Height, background.Width * 4, size.Width, size.Height, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return CompleteFrame(new(size.Width, size.Height, pixels), background, state, time);
+    }
+
+    private void DisposeRenderer()
+    {
+        using var current = graphics?.MakeCurrentForDisposal();
+        renderer?.Dispose();
+        renderer = null;
     }
 
     /// <inheritdoc />
@@ -109,13 +149,20 @@ internal sealed class ProjectPreviewConverter : IVideoPreviewConverter
         disposed = true;
         try
         {
-            renderer?.Dispose();
+            DisposeRenderer();
         }
         finally
         {
-            foreach (var converter in converters.Values)
+            try
             {
-                converter.Dispose();
+                graphics?.Dispose();
+            }
+            finally
+            {
+                foreach (var converter in converters.Values)
+                {
+                    converter.Dispose();
+                }
             }
         }
     }

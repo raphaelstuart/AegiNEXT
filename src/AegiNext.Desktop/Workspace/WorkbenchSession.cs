@@ -15,6 +15,7 @@ using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace.Diagnostics;
 using AegiNext.Media.Playback;
 using Avalonia.Threading;
+using Avalonia.OpenGL;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -45,6 +46,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly PlaybackSeekingCoordinator playback;
     private readonly PreviewFrameCatalog previewFrames = new();
     private ProjectPreviewState previewState = new(new(), Path.GetTempPath());
+    private IOpenGlTextureSharingRenderInterfaceContextFeature? previewGraphics;
     private WorkbenchPreferences preferences;
     private string? projectPath;
     private string projectDirectory;
@@ -85,7 +87,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ViewModel = new(this);
         controller = controllerFactory?.Invoke(ApplyUpdate) ?? new(this.dispatch, ApplyUpdate,
             () => new ProjectPreviewConverter(GetPreviewState,
-                error => Volatile.Write(ref previewRenderError, error), previewFrames, () => Fonts.Catalog));
+                error => Volatile.Write(ref previewRenderError, error), previewFrames, () => Fonts.Catalog,
+                () => Volatile.Read(ref previewGraphics)));
         controller.ConfigureDecodeMode(preferences.PreviewDecodeMode);
         InitializeAudioCalibration();
         workflow = new(this, dialogs);
@@ -147,6 +150,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal SubtitleDetailsCoordinator Details { get; }
     internal VideoPreviewController Controller => controller;
     internal PreviewFrameCatalog PreviewFrames => previewFrames;
+    internal void ConfigurePreviewGraphics(IOpenGlTextureSharingRenderInterfaceContextFeature graphics) =>
+        Volatile.Write(ref previewGraphics, graphics);
     internal DesktopApplicationContext ApplicationContext => applicationContext;
     internal WorkbenchPreferences Preferences => applicationContext.Preferences;
     internal WorkbenchPreferencesStore PreferencesStore => preferencesStore;

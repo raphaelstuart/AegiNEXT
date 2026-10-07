@@ -24,6 +24,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using Avalonia.OpenGL;
+using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 
@@ -109,6 +111,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         Session.PreferencesChanged += OnPreferencesChanged;
         clockTimer.Tick += (_, _) => Session.Tick();
         Opened += (_, _) => clockTimer.Start();
+        Opened += InitializePreviewGraphics;
         Closed += (_, _) => clockTimer.Stop();
         ApplyWindowPreferences();
         RefreshLayoutMenu();
@@ -127,6 +130,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     internal WorkbenchWindowRegistry WindowRegistry => windowRegistry;
     internal ProjectDocument DocumentSnapshot => Session.DocumentSnapshot;
     internal bool IsApplicationExitRequested { get; private set; }
+
+    private async void InitializePreviewGraphics(object? sender, EventArgs args)
+    {
+        try
+        {
+            var compositor = ElementComposition.GetElementVisual(this)?.Compositor;
+            if (compositor is not null &&
+                await compositor.TryGetRenderInterfaceFeature(typeof(IOpenGlTextureSharingRenderInterfaceContextFeature))
+                    is IOpenGlTextureSharingRenderInterfaceContextFeature graphics &&
+                !closing && disposeTask is null)
+            {
+                Session.ConfigurePreviewGraphics(graphics);
+            }
+        }
+        catch (Exception error) when (error is InvalidOperationException or NotSupportedException or Avalonia.OpenGL.OpenGlException)
+        {
+            System.Diagnostics.Trace.TraceWarning("Preview GPU feature unavailable: {0}", error.Message);
+        }
+    }
 
     internal void RequestApplicationExit()
     {

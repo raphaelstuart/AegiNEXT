@@ -5,27 +5,33 @@ using SkiaSharp;
 namespace AegiNext.Rendering;
 
 /// <summary>
-/// 拥有 CPU 离屏 F16 表面的绘制上下文。实例限单线程使用，调用方负责释放。
+/// 拥有离屏 F16 表面的绘制上下文。GPU 上下文由调用方持有；实例限同一线程和当前上下文使用。
 /// </summary>
 public sealed class LinearRenderSurface : IDisposable
 {
     private readonly SKColorSpace colorSpace;
     private readonly SKSurface surface;
+    private readonly GRContext? graphicsContext;
+    private SKSurface? srgbReadback;
+    private GpuLinearColorShader? extendedColorShader;
     private bool isDisposed;
 
     /// <summary>
     /// 创建透明黑表面；不创建窗口，也不执行显示器映射或 tone mapping。
     /// </summary>
-    public LinearRenderSurface(RenderSurfaceInfo info)
+    public LinearRenderSurface(RenderSurfaceInfo info, GRContext? graphicsContext = null)
     {
         ArgumentNullException.ThrowIfNull(info);
         Info = info;
+        this.graphicsContext = graphicsContext;
         colorSpace = SKColorSpace.CreateSrgbLinear();
         SKSurface? createdSurface = null;
         try
         {
-            createdSurface = SKSurface.Create(
-                new SKImageInfo(info.Width, info.Height, SKColorType.RgbaF16, SKAlphaType.Premul, colorSpace), info.RowBytes)
+            var imageInfo = new SKImageInfo(info.Width, info.Height, SKColorType.RgbaF16, SKAlphaType.Premul, colorSpace);
+            createdSurface = (graphicsContext is null
+                ? SKSurface.Create(imageInfo, info.RowBytes)
+                : SKSurface.Create(graphicsContext, true, imageInfo))
                 ?? throw new InvalidOperationException("无法创建 F16 离屏表面。");
             createdSurface.Canvas.Clear(SKColors.Transparent);
             surface = createdSurface;
@@ -80,6 +86,10 @@ public sealed class LinearRenderSurface : IDisposable
     {
         ObjectDisposedException.ThrowIf(isDisposed, this);
         using var srgb = SKColorSpace.CreateSrgb();
+        if (graphicsContext is not null)
+        {
+            return CopyGpuSrgbBgra(srgb);
+        }
         using var bitmap = new SKBitmap(new SKImageInfo(Info.Width, Info.Height, SKColorType.Bgra8888, SKAlphaType.Premul, srgb));
         if (!surface.ReadPixels(bitmap.Info, bitmap.GetPixels(), bitmap.RowBytes, 0, 0))
         {
@@ -92,6 +102,25 @@ public sealed class LinearRenderSurface : IDisposable
             Marshal.Copy(bitmap.GetPixels() + row * bitmap.RowBytes, result, row * Info.Width * 4, Info.Width * 4);
         }
 
+        return result;
+    }
+
+    private unsafe byte[] CopyGpuSrgbBgra(SKColorSpace srgb)
+    {
+        var imageInfo = new SKImageInfo(Info.Width, Info.Height, SKColorType.Bgra8888, SKAlphaType.Premul, srgb);
+        srgbReadback ??= SKSurface.Create(graphicsContext!, true, imageInfo)
+            ?? throw new InvalidOperationException("无法创建 GPU sRGB 回读表面。");
+        using var image = surface.Snapshot();
+        using var paint = new SKPaint { BlendMode = SKBlendMode.Src };
+        srgbReadback.Canvas.DrawImage(image, 0, 0, paint);
+        var result = new byte[checked(Info.Width * Info.Height * 4)];
+        fixed (byte* pixels = result)
+        {
+            if (!srgbReadback.ReadPixels(imageInfo, (nint)pixels, Info.Width * 4, 0, 0))
+            {
+                throw new InvalidOperationException("无法读取 GPU sRGB 预览像素。");
+            }
+        }
         return result;
     }
 
@@ -169,14 +198,30 @@ public sealed class LinearRenderSurface : IDisposable
             throw new ArgumentException("目标缓冲不足以容纳全部像素。", nameof(destination));
         }
 
-        using var pixels = surface.PeekPixels()
-            ?? throw new InvalidOperationException("无法读取离屏像素。");
+        using var pixels = surface.PeekPixels();
+        if (pixels is null)
+        {
+            CopyGpuPixels(destination);
+            return;
+        }
         var bytes = pixels.GetPixelSpan();
         var rowChannels = Info.Width * 4;
         for (var row = 0; row < Info.Height; row++)
         {
             MemoryMarshal.Cast<byte, Half>(bytes.Slice(row * pixels.RowBytes, Info.RowBytes))
                 .CopyTo(destination.Slice(row * rowChannels, rowChannels));
+        }
+    }
+
+    private unsafe void CopyGpuPixels(Span<Half> destination)
+    {
+        fixed (Half* buffer = destination)
+        {
+            if (!surface.ReadPixels(new(Info.Width, Info.Height, SKColorType.RgbaF16, SKAlphaType.Premul, colorSpace),
+                    (nint)buffer, Info.RowBytes, 0, 0))
+            {
+                throw new InvalidOperationException("无法读取 GPU 离屏像素。");
+            }
         }
     }
 
@@ -188,6 +233,8 @@ public sealed class LinearRenderSurface : IDisposable
             return;
         }
 
+        srgbReadback?.Dispose();
+        extendedColorShader?.Dispose();
         surface.Dispose();
         colorSpace.Dispose();
         isDisposed = true;
@@ -201,6 +248,11 @@ public sealed class LinearRenderSurface : IDisposable
             paint.IsAntialias = true;
             paint.BlendMode = SKBlendMode.SrcOver;
             paint.SetColor(new(color.Red, color.Green, color.Blue, color.Alpha), colorSpace);
+            if (graphicsContext is not null && (color.Red is < 0 or > 1 || color.Green is < 0 or > 1 || color.Blue is < 0 or > 1))
+            {
+                extendedColorShader ??= new();
+                extendedColorShader.Apply(paint, color.Red, color.Green, color.Blue, color.Alpha);
+            }
             return paint;
         }
         catch
