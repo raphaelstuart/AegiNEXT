@@ -10,8 +10,8 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <ProjectReference Include="../../src/AegiNext.Core/AegiNext.Core.csproj" />
     <Using Include="Xunit" />
-    <None Include="../../docs/examples/effects/slide-pop.aegifx" Link="Samples/slide-pop.aegifx" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../docs/examples/effects/mask-morph.aegifx" Link="Samples/mask-morph.aegifx" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../docs/examples/effects/mask-slide.aegifx" Link="Samples/mask-slide.aegifx" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/en/examples/effects/slide-pop.aegifx" Link="Samples/slide-pop.aegifx" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/en/examples/effects/mask-morph.aegifx" Link="Samples/mask-morph.aegifx" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/en/examples/effects/mask-slide.aegifx" Link="Samples/mask-slide.aegifx" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

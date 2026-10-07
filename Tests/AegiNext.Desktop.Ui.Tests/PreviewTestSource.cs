@@ -9,20 +9,26 @@ internal sealed class PreviewTestSource(byte markerBase, params long[] timestamp
     private int position;
     private int cancelCount;
     private int disposeCount;
+    private int readCount;
+    private int seekCount;
 
     internal ConcurrentQueue<PreviewTestFrame> IssuedFrames { get; } = new();
     internal int CancelCount => Volatile.Read(ref cancelCount);
     internal int DisposeCount => Volatile.Read(ref disposeCount);
+    internal int ReadCount => Volatile.Read(ref readCount);
+    internal int SeekCount => Volatile.Read(ref seekCount);
 
     public PositionedVideoFrame? ReadFrame(CancellationToken cancellationToken = default)
     {
         CheckState(cancellationToken);
+        Interlocked.Increment(ref readCount);
         return position < timestamps.Length ? Create(position++, false) : null;
     }
 
     public PositionedVideoFrame? SeekFrame(MediaTime target, CancellationToken cancellationToken = default)
     {
         CheckState(cancellationToken);
+        Interlocked.Increment(ref seekCount);
         if (timestamps.Length == 0)
         {
             return null;

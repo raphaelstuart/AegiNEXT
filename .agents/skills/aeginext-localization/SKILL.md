@@ -3,56 +3,56 @@ name: aeginext-localization
 description: Add, change, review, or debug AegiNext UI localization using external JSON language packs, the shared Localization service, and live Avalonia Loc bindings. Use for translated controls, dynamic view-model text, menus, window titles, language preferences, and language-resource packaging; subtitle content, user preset names, and effect-script syntax remain business data.
 ---
 
-# AegiNext 本地化
+# AegiNext localization
 
-先定位当前 AegiNext checkout，读取实际消费方及相关代码。仓库路径均相对 checkout 根目录；不要把开发机绝对路径写入实现。入口是 `src/AegiNext.Desktop/I18n/`，命名空间为 `AegiNext.Desktop.I18n`。本地化体系已统一，新增文案沿用此入口。
+Locate the current AegiNext checkout and read the actual consumer and related code first. Resolve repository paths against that checkout; do not embed developer-machine paths. The shared entry point is `src/AegiNext.Desktop/I18n/`, with namespace `AegiNext.Desktop.I18n`. Extend this existing system for new UI text.
 
-## 按改动选择上下文
+## Choose context for the change
 
-| 改动 | 优先读取 |
+| Change | Read first |
 |---|---|
-| 文案、语言包、缺项或语言匹配 | `I18n/Languages/*.json`、`I18n/Localization.cs`、`I18n/LocalizationCatalog.cs`、`I18n/LanguagePackReader.cs` |
-| 静态控件文本、工具提示、辅助名称 | 消费方 AXAML、`I18n/LocExtension.cs`、`I18n/XamlNamespace.cs`、`Controls/Common/IconText.cs` |
-| 动态状态、菜单、Dock 或窗口标题 | 所属 ViewModel / 控制器、`Workspace/WorkbenchSession.cs`、`Windowing/WorkbenchWindowRegistry.cs` |
-| 首次显示、语言选项、偏好 | `App.axaml.cs`、`Views/MainWindow.axaml.cs`、`Workspace/WorkbenchStartupPreferences.cs`、`Settings/Appearance/AppearanceSettingsViewModel.cs` |
-| 构建或发布资源 | `AegiNext.Desktop.csproj`、`scripts/publish/AegiNext.Publish.psm1`、`docs/zh-CN/publishing.md` |
+| Text, language packs, missing entries, or language matching | `I18n/Languages/*.json`, `I18n/Localization.cs`, `I18n/LocalizationCatalog.cs`, `I18n/LanguagePackReader.cs` |
+| Static labels, tooltips, or accessibility names | Consumer AXAML, `I18n/LocExtension.cs`, `I18n/XamlNamespace.cs`, `Controls/Common/IconText.cs` |
+| Dynamic state, menus, Dock, or window titles | Owning ViewModel/controller, `Workspace/WorkbenchSession.cs`, `Windowing/WorkbenchWindowRegistry.cs` |
+| First display, language choices, or preferences | `App.axaml.cs`, `Views/MainWindow.axaml.cs`, `Workspace/WorkbenchStartupPreferences.cs`, `Settings/Appearance/AppearanceSettingsViewModel.cs` |
+| Build or publish resources | `AegiNext.Desktop.csproj`, `scripts/publish/AegiNext.Publish.psm1`, `docs/en/publishing.md` |
 
-生产代码路径除完整路径外均在 `src/AegiNext.Desktop/` 下；仓库脚本与文档从 checkout 根目录解析。完整约定见 `docs/zh-CN/composable-workspace.md` 的本地化部分。需要验证时读取 [references/verification.md](references/verification.md)；不必为普通文案修改读取所有实现。
+Production paths without a full prefix are under `src/AegiNext.Desktop/`; scripts and documentation resolve from the checkout root. See `docs/en/composable-workspace.md` for workspace localization. Read [references/verification.md](references/verification.md) when verification is needed; ordinary text edits do not require loading every implementation.
 
-## 语言包与 key
+## Language packs and keys
 
-修改源文件 `I18n/Languages/`，不要把输出目录当作源码。内置 `en-US.json` 和 `zh-CN.json` 的 key 集合保持一致；新增 key 同时提供两种文案。第三方语言允许缺项并使用回退。沿用来源前缀 `Workbench`、`Settings`、`Preview`、`Layout`、`Log`、`WorkflowLog`、`WindowChromeProbe`；新模块按真实所属职责命名，保留语义不同的 key，例如 `Workbench.Export` 与 `Settings.Export`。
+Edit source packs in `I18n/Languages/`, not copied output. Keep builtin `en-US.json` and `zh-CN.json` key sets equal and add both translations for new keys. Third-party packs may omit entries and use fallback. Preserve owning prefixes such as `Workbench`, `Settings`, `Preview`, `Layout`, `Log`, `WorkflowLog`, and `WindowChromeProbe`. Keep semantically distinct keys, such as `Workbench.Export` and `Settings.Export`.
 
 ```json
 {
-  "LanguageName": "简体中文",
-  "LanguageID": "zh-CN",
+  "LanguageName": "English",
+  "LanguageID": "en-US",
   "Strings": {
-    "Workbench.Cancel": "取消"
+    "Workbench.Cancel": "Cancel"
   }
 }
 ```
 
-此片段说明结构，不用于替换完整内置文件。保存为无 BOM 的 UTF-8。`LanguageName` 非空，`LanguageID` 为有效文化标识，`system` 是保留选择值；`Strings` 的 key 非空、值全部为字符串。拒绝重复根字段和文本 key。ID 比较忽略大小写并规范化，文本 key 区分大小写。翻译中的位置参数必须保留对应索引与格式语义。
+This illustrates the schema, not a replacement builtin pack. Save UTF-8 without a BOM. `LanguageName` must be nonempty, `LanguageID` a valid culture identifier, and every nonempty `Strings` key must map to a string. `system` is reserved as a selection value. Reject duplicate root fields and text keys. Language IDs are normalized and compared case-insensitively; text keys are case-sensitive. Preserve positional argument indices and formatting semantics in translations.
 
-启动只扫描语言目录第一层 `*.json`，以文件内 ID 为准。损坏的可选包记录文件诊断并排除；重复 ID 冲突组全部排除。有效且唯一的 `en-US` 缺失时启动失败。不要增加 C# 文案副本掩盖资源问题。资源修改或新增后重启生效，当前体系没有热重载。
+Startup scans only first-level `*.json` files and uses their internal IDs. Malformed optional packs produce file diagnostics and are excluded; every pack in a duplicate-ID group is excluded. Startup fails without a valid unique `en-US` pack. Do not hide resource failures with duplicate C# text tables. Resource changes require restart; this system has no hot reload.
 
-工程字幕、用户预设名称、文件路径、脚本关键字与语法、序列化 ID 和编码器标识保留业务含义。枚举到文案 key 的映射放在所属业务模块，例如 `Editing/AnimationPropertyLocalization.cs`，不扩张通用本地化服务。
+Subtitle content, user preset names, paths, script syntax, serialized IDs, and encoder identities retain their business meaning. Enum-to-key mappings belong to the feature, for example `Editing/AnimationPropertyLocalization.cs`, rather than expanding the general service.
 
-## 服务契约与偏好
+## Service and preference contracts
 
-- `Initialize(directory)` 在 UI 线程调用一次，捕获原始系统 UI 文化；应用在加载 AXAML 前用 `Path.Combine(AppContext.BaseDirectory, "i18n")` 初始化。不要在每个控件或窗口重复初始化。
-- `Get(key)` 可在后台线程读取不可变快照，顺序为当前语言、`en-US`、原始 key。翻译结果不依赖调用线程的 `CurrentUICulture`；异步播放回调也使用此入口。
-- `Format(key, params object[] arguments)` 使用 `CurrentCulture` 格式化数值。切换语言只同步界面文化，不因翻译改变现有数值输入文化。
-- `SetLanguage(lang)` 仅在 UI 线程切换，支持已安装 ID 与 `system`。未知 ID 抛出参数异常并保持原语言；相同选择和生效状态不重复通知。
-- `SelectedLanguageID` 是请求值，`CurrentLanguageID` 是解析结果；选择 `system` 时二者可以不同。系统匹配使用初始化捕获的文化，依次尝试精确 ID、父级、同语言候选，中文／英文优先 `zh-CN`／`en-US`，其他候选按 ID 排序，最后回退英文。
-- `KnownLanguages` 供设置页显示 `LanguageName`、按 `LanguageID` 选择，加上翻译后的“跟随系统”。不要恢复中英文固定索引或偏好语言白名单。
-- 服务不写偏好。设置页走现有偏好保存流程；主窗口在自身 AXAML 加载前应用同一份已读取的启动偏好，并把同一 store / snapshot 传入会话。已保存语言包暂时缺失时显示英文，保留原保存 ID 与其他偏好。
-- 直接 `SetLanguage` 后，保存主题、音量等无关偏好不得重置当前语言；仅语言偏好本身变化时应用新选择。
+- Call `Initialize(directory)` once on the UI thread before loading AXAML, using `Path.Combine(AppContext.BaseDirectory, "i18n")`. It captures the original system UI culture; do not initialize per control/window.
+- `Get(key)` reads immutable snapshots from any thread: current language, then `en-US`, then the raw key. Results do not depend on the caller's `CurrentUICulture`; asynchronous playback callbacks use the same service.
+- `Format(key, params object[] arguments)` uses `CurrentCulture` for numeric formatting. Language changes update UI culture without changing established numeric-input culture.
+- `SetLanguage(lang)` runs on the UI thread and accepts installed IDs or `system`. Unknown IDs throw without changing language; unchanged selection/effective state does not notify again.
+- `SelectedLanguageID` is the requested selection; `CurrentLanguageID` is the resolved pack. System matching uses the initially captured culture: exact ID, parents, same-language candidates, then English. Chinese/English prefer `zh-CN`/`en-US`; other candidates sort by ID.
+- `KnownLanguages` supplies `LanguageName` labels and `LanguageID` selection, plus a localized system option. Do not restore fixed English/Chinese indices or a preference whitelist.
+- The service does not persist preferences. Apply the same loaded startup preference before MainWindow AXAML, and pass that store/snapshot into the session. If a saved pack is temporarily unavailable, display English while preserving the saved ID and other preferences.
+- After a direct `SetLanguage`, saving an unrelated theme/volume preference must not reset language. Apply a new selection only when the language preference itself changes.
 
-## 静态文本使用 Loc
+## Use Loc for static text
 
-默认 Avalonia XML 命名空间已通过程序集 `XmlnsDefinition` 注册 `LocExtension`，直接使用无前缀的 `{Loc Key=...}`：
+The default Avalonia XML namespace registers `LocExtension` through `XmlnsDefinition`, so use `{Loc Key=...}` without a prefix:
 
 ```xml
 <TextBlock Text="{Loc Key=Workbench.Codec}" />
@@ -63,15 +63,15 @@ description: Add, change, review, or debug AegiNext UI localization using extern
 </Button>
 ```
 
-最后一个示例需要 `xmlns:common="using:AegiNext.Desktop.Controls.Common"`。复用 `IconText` 的现有图标、字体和行高；图标身份由 `IconKey` 决定，不能从翻译 key 或翻译结果推断。根据控件属性迁移 `Text`、`Content`、`Header`、工具提示和辅助名称；不要覆盖仍需业务绑定的状态文本或动态内容。
+The last example needs `xmlns:common="using:AegiNext.Desktop.Controls.Common"`. Reuse IconText typography and sizing; `IconKey` identifies the icon independently of translated keys/values. Migrate Text, Content, Header, tooltips, and accessibility names as appropriate; preserve business bindings for dynamic content.
 
-`Loc` 返回可观察绑定，首次订阅立即提供当前文本，语言变化后重新推送。保留业务 `DataContext`；不要捕获目标控件、扫描控件树或重新引入翻译用 `Tag`。不要用一次性 `Localization.Get` 赋值替代需要即时更新的绑定。
+Loc returns an observable binding, immediately supplies text on subscription, and updates on language changes. Preserve DataContext. Do not capture target controls, scan trees, reintroduce translation Tags, or replace live bindings with one-time Get assignments.
 
-## 动态文本与订阅生命周期
+## Dynamic text and subscription lifetime
 
-播放／暂停、静音、快捷键录入、导出状态等继续绑定所属 ViewModel，其刷新逻辑调用 `Get` / `Format`。状态保存语义 key、枚举和格式参数，不能仅缓存上一次翻译后的字符串。会话、布局控制器、窗口注册器和设置窗口集中刷新各自拥有的动态文本；先复用现有 `LanguageChanged` 处理入口，避免对同一对象重复订阅。
+Play/pause, mute, shortcut recording, and export states stay bound to their owning ViewModels, which call Get/Format. Store semantic keys, enums, and format arguments rather than only the last translated string. Reuse centralized LanguageChanged handlers in sessions, layouts, registries, and settings; avoid duplicate subscriptions.
 
-C# 创建的控件使用同一观察绑定，并持有、释放绑定句柄：
+For programmatic controls, retain and release the observable binding handle:
 
 ```csharp
 var binding = button.Bind(
@@ -79,12 +79,12 @@ var binding = button.Bind(
     Localization.Observe("Workbench.Cancel").ToBinding());
 ```
 
-这是 Desktop 程序集内部用法，`Observe` 目前是 internal。窗口在 `Closed` / `Dispose` 释放句柄和事件订阅；替换状态绑定先释放旧绑定。带格式参数的 provider 只捕获必要业务值，避免捕获整个窗口；参照 `Views/TrackStyleChangeDialog.cs`。固定面板临时 detach 与最终 disposal 要按现有生命周期区分，重新挂载不得失去翻译更新。
+Observe is currently internal to Desktop. Release handles/events on Closed/Dispose and dispose a replaced state binding first. Providers capture only necessary business values, as in `Views/TrackStyleChangeDialog.cs`. Distinguish temporary fixed-panel detach from final disposal so reattachment still receives updates.
 
-语言刷新只改变呈现，不能调用业务提交、重建工程、推进 Undo 或丢弃草稿。刷新本地化选项列表时保留稳定 ID、真实选中值和原始无效文本，禁止把 ComboBox 自动选择反馈当作用户编辑。相关模式见 `Panels/Styles/`、`Panels/Effects/` 的同步 `ChoicesRefreshing` / `ChoicesRefreshed` 和初始化保护；仅在需要的消费方复用该模式。
+Language refresh changes presentation only: no business commits, project recreation, Undo, or discarded drafts. Refresh choice lists while preserving stable IDs, actual selection, and invalid raw input; ignore framework automatic selection as a user edit. Reuse the consuming Styles/Effects ChoicesRefreshing/ChoicesRefreshed guards where needed.
 
-## 验证与交付
+## Verify and deliver
 
-按改动范围执行 [验证参考](references/verification.md)，检查真实编译后的 AXAML、语言切换、业务状态和释放行为。key 存在性直接检查 JSON，不能用 `Get` 的回退结果证明翻译齐全。修改构建、加载或发布规则时检查实际输出 `i18n/`、包哈希与非程序工作目录启动。macOS 包路径为 `AegiNext.app/Contents/MacOS/i18n/`。
+Follow the affected groups in [verification](references/verification.md), checking compiled AXAML, live switching, business state, and release behavior. Inspect raw JSON for key completeness; Get fallback cannot prove translations exist. Build/loading/publishing changes require actual output i18n directories, package hashes, and startup from another working directory. macOS packages use `AegiNext.app/Contents/MacOS/i18n/`.
 
-报告实际执行的编译／静态分析、测试与跳过、发布资源和原生验收证据。测试数量、语言 key 数量和既有失败均以当前执行结果为准，不把历史记录固定成验收标准。按钮图标、长文本布局和平台菜单的最终视觉验收与 Headless 结果分别说明。保持用户授权范围，保留无关工作区改动，不因使用此 skill 自动提交或升级依赖。
+Report actual builds/analysis, passed/failed/skipped tests, resource checks, and native acceptance. Recount keys/tests from current evidence rather than historical totals. Separate Headless results from button/icon, long-text, and platform-menu appearance. Preserve scope and unrelated work; using this skill does not authorize commits or dependency upgrades.

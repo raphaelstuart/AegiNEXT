@@ -1,0 +1,51 @@
+# Workspace integration
+
+[English](composable-workspace.md) · [简体中文](../zh-cn/composable-workspace.md) · [All guides](README.md)
+
+## Put changes in the owning layer
+
+Paths below are under `src/AegiNext.Desktop/`.
+
+| Directory | Owner |
+|---|---|
+| `Workspace/` | One WorkbenchSession, editor/controllers, selection, drafts, and awaitable workflows |
+| `Layouts/` | Dock tree, floating hosts, layout snapshots, and presets |
+| `Panels/` | Feature Views and ViewModels |
+| `Controls/Common/`, `Controls/Editing/`, `Editing/` | Reusable controls and field/gesture editing behavior |
+| `Settings/` | Personal libraries/preferences and their drafts |
+| `Views/`, `Windowing/` | Hosts, platform chrome, menus, and input coordination |
+| `I18n/` | Language service, JSON packs, and live bindings |
+
+Read the consuming panel and closest shared control before adding an API. Shared controls expose values, drafts, commands, and completion/cancel events; they do not acquire a session or depend on Dock. ViewModels contain business state rather than controls/pixels.
+
+## Integrate a panel or control
+
+1. Add the View/ViewModel in the feature owner and compose dependencies in Workspace.
+2. Supply one fixed View per stable `WorkbenchPanelIds` entry to the layout controller; docking/hiding never recreates it.
+3. Route real input through shared commands and preserve local text/IME behavior.
+4. Commit valid drafts before changing editing targets; invalid raw input retains the target and Esc restores one field.
+5. Give each completed gesture one transaction; cancel on capture loss or target changes. Close drains asynchronous work and disposes owned resources.
+
+Layouts control space without owning editor, Undo, playback, or export. Current layout and named presets are independent. Persistence validates app-owned snapshots, writes atomically, and constrains restored windows to available monitors. Floating close hides panels; main close flushes layouts and drains the session.
+
+## Window appearance and input
+
+Reuse shared typography, spacing, panel corners, and chrome. Layout owns outer frames; panels avoid duplicate borders. Register floating/settings hosts for the same menu/shortcut policy.
+
+macOS defaults to system menus; window-menu mode shows menus on the main workbench. Windows chrome integrates native caption actions and resizing. Theme/shortcut refreshes preserve command identity; language regrouping waits for safe menu lifecycle points.
+
+## Localization
+
+Language packs remain external UTF-8 JSON in `I18n/Languages/`, copied to application `i18n/`. Each has `LanguageName`, `LanguageID`, and string-valued `Strings`; language IDs and keys must be unique.
+
+- C#: `Localization.Get("Key")` and `Localization.SetLanguage(...)`.
+- XAML: `{Loc Key=...}` binds live through the markup extension.
+- Lookup: current language → `en-US` → key.
+- Discover available packs automatically; preserve system-language matching and preferences.
+- Keep subtitle content, preset names, and DSL syntax as business data.
+
+Do not add Tag/tree scanning. Pack changes need restart; publishing validates and hashes them. Portable guidance is in [controls](../../.agents/skills/aeginext-controls/SKILL.md) and [localization](../../.agents/skills/aeginext-localization/SKILL.md) skills.
+
+## Verify integration
+
+Run affected Desktop controller tests and Desktop.Ui Headless tests. Use actual Views, pointer/key input, and deterministic service boundaries; close every created host. Native menus, drag/docking, fullscreen, multiple monitors, DPI, and IME appearance need platform interaction checks.

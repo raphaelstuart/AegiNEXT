@@ -230,6 +230,35 @@ public sealed class VideoPreviewControllerTests
     }
 
     [Fact]
+    public async Task AFailedProbeRetainsItsErrorAfterRetirementAndCanBeClearedAndReopened()
+    {
+        var failure = new IOException("The probe failed.");
+        var source = new PreviewTestSource(10, 0, 40);
+        var converter = new PreviewTestConverter();
+        var updates = new ConcurrentQueue<VideoPreviewUpdate>();
+        await using var controller = new VideoPreviewController((path, _) =>
+        {
+            return Path.GetFileName(path) == "failed.mkv"
+                ? Task.FromException<VideoPreviewMedia>(failure)
+                : Task.FromResult(new VideoPreviewMedia(0, MediaTime.Zero, new(1)));
+        }, (_, _) => new(_ => source), () => converter, DispatchImmediately, updates.Enqueue);
+
+        var actual = await Assert.ThrowsAsync<IOException>(() => controller.OpenAsync("failed.mkv"));
+
+        Assert.Same(failure, actual);
+        Assert.Same(failure, controller.Snapshot.Error);
+        Assert.Equal(VideoPlaybackState.FAULTED, controller.Snapshot.State);
+        Assert.False(controller.Snapshot.IsOpening);
+        await controller.CloseMediaAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Null(controller.Snapshot.Error);
+        Assert.Equal(VideoPlaybackState.CREATED, controller.Snapshot.State);
+        await controller.OpenAsync("valid.mkv").WaitAsync(TimeSpan.FromSeconds(5));
+        await EventuallyAsync(() => HasFrame(updates, 10));
+        await controller.CloseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        AssertReleased(source, converter);
+    }
+
+    [Fact]
     public async Task ClosingAnOpenWithABlockedSourceFactoryCancelsItAndDrainsTheOpeningOperation()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -288,7 +317,7 @@ public sealed class VideoPreviewControllerTests
     }
 
     [Fact]
-    public async Task SustainedSlowConversionKeepsPresentingCompletedFramesWithoutSlowingThePlaybackClock()
+    public async Task SustainedSlowConversionSkipsFramesAndPresentsValidIntervalsWithoutSlowingThePlaybackClock()
     {
         var source = new PreviewTestSource(10, 0, 33, 66, 99, 132, 165, 198, 231, 264, 297);
         var clock = new ManualPlaybackTimeProvider();
@@ -296,11 +325,6 @@ public sealed class VideoPreviewControllerTests
         {
             ConversionWork = marker =>
             {
-                if (marker != 19)
-                {
-                    clock.WaitForScheduledTimerAsync().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
-                }
-
                 clock.Advance(TimeSpan.FromMilliseconds(40));
             }
         };
@@ -322,7 +346,7 @@ public sealed class VideoPreviewControllerTests
             var presented = updates.Where(update => update.Frame is not null).ToArray();
             Assert.True(presented.Length >= 6,
                 $"Every conversion exceeds a frame interval, but playback must keep presenting; received {presented.Length} frames.");
-            Assert.Equal(10, presented[0].Frame!.Pixels.Span[0]);
+            Assert.DoesNotContain(presented, update => update.Frame!.Pixels.Span[0] == 10);
             Assert.All(presented, update =>
             {
                 Assert.Equal(epoch, update.Snapshot.Epoch);
@@ -340,9 +364,12 @@ public sealed class VideoPreviewControllerTests
             Assert.True(playing.Length >= 5);
             for (var index = 0; index < playing.Length; index++)
             {
-                Assert.Equal(new MediaTime((index + 1) * 40, 1000), playing[index].Snapshot.Position);
-                var frameTime = new MediaTime((playing[index].Frame!.Pixels.Span[0] - 10) * 33, 1000);
-                Assert.True(playing[index].Snapshot.Position > frameTime);
+                var snapshot = playing[index].Snapshot;
+                Assert.True(snapshot.PresentedFrameTime <= snapshot.PresentedAtPosition);
+                Assert.True(snapshot.PresentedFrameEnd > snapshot.PresentedAtPosition);
+                Assert.InRange(snapshot.PreparedFrameCount, 0, 2);
+                Assert.InRange(snapshot.PreparationPendingCount, 0, 2);
+                Assert.InRange(snapshot.PreparedBytes, 0, 128L * 1024 * 1024);
             }
 
             Assert.Equal(converter.ConversionCount * TimeSpan.FromMilliseconds(40).Ticks, clock.GetTimestamp());
@@ -362,6 +389,251 @@ public sealed class VideoPreviewControllerTests
         {
             converter.Release();
         }
+    }
+
+    [Fact]
+    public async Task AColdConversionExceedingTheLookaheadRecoversOnTheContinuouslyAdvancingSystemClock()
+    {
+        var source = new PreviewTestSource(10, Enumerable.Range(0, 200).Select(index => (long)index * 33).ToArray());
+        var converter = new PreviewTestConverter
+        {
+            ConversionWork = marker => Thread.Sleep(marker == 10 ? 350 : 1)
+        };
+        var updates = new ConcurrentQueue<VideoPreviewUpdate>();
+        await using var controller = CreateController(source, converter, updates, TimeProvider.System);
+        await controller.OpenAsync("cold-conversion.mkv");
+        await EventuallyAsync(() => HasFrame(updates, 10));
+        await controller.PlayAsync();
+        using var recoveryDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (updates.Count(update => update.Frame is not null && update.Snapshot.State == VideoPlaybackState.PLAYING) < 12)
+        {
+            await Task.Delay(1, recoveryDeadline.Token);
+        }
+
+        var playing = updates.Where(update => update.Frame is not null && update.Snapshot.State == VideoPlaybackState.PLAYING).ToArray();
+        Assert.True(converter.ConversionCount >= 13);
+        Assert.All(playing, update =>
+        {
+            Assert.True(update.Snapshot.PresentedFrameTime <= update.Snapshot.PresentedAtPosition);
+            Assert.True(update.Snapshot.PresentedAtPosition < update.Snapshot.PresentedFrameEnd);
+            Assert.InRange(update.Snapshot.PreparedFrameCount, 0, 2);
+            Assert.InRange(update.Snapshot.PreparationPendingCount, 0, 2);
+        });
+        Assert.True(controller.Snapshot.Position > new MediaTime(1, 4));
+        await controller.CloseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        AssertReleased(source, converter);
+    }
+
+    [Fact]
+    public async Task ABlockedUiCallbackKeepsRefreshingItsExpiredQueuedSuccessorWithinTheTwoFrameBudget()
+    {
+        var clock = new ManualPlaybackTimeProvider();
+        var source = new PreviewTestSource(10, Enumerable.Range(0, 30).Select(index => index * 40L).ToArray());
+        var converter = new PreviewTestConverter
+        {
+            ConversionWork = _ => clock.Advance(TimeSpan.FromMilliseconds(40))
+        };
+        var dispatcher = new PreviewTestDispatcher();
+        var updates = new ConcurrentQueue<VideoPreviewUpdate>();
+        await using var controller = CreateController(source, converter, updates, clock, dispatcher);
+        try
+        {
+            await controller.OpenAsync("refresh-queued-preview.mkv");
+            await EventuallyAsync(() => HasFrame(updates, 10));
+            converter.BlockNextConversion();
+            await controller.PlayAsync();
+            await converter.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            dispatcher.BlockNextDispatch();
+            converter.Release();
+            await dispatcher.Queued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await EventuallyAsync(() => converter.ConversionCount >= 3 && controller.Snapshot.PreparedFrameCount == 2);
+
+            for (var index = 0; index < 3; index++)
+            {
+                var previousConversions = converter.ConversionCount;
+                clock.Advance(TimeSpan.FromMilliseconds(40));
+                await EventuallyAsync(() => converter.ConversionCount > previousConversions && controller.Snapshot.PreparedFrameCount == 2);
+                Assert.InRange(controller.Snapshot.PreparationPendingCount, 0, 2);
+                Assert.InRange(controller.Snapshot.PreparedBytes, 0, 128L * 1024 * 1024);
+                Assert.Single(updates, update => update.Frame is not null);
+            }
+
+            var position = controller.Snapshot.Position;
+            dispatcher.RunPending();
+            await EventuallyAsync(() => updates.Any(update => update.Frame is not null && update.Snapshot.State == VideoPlaybackState.PLAYING));
+            var presented = updates.First(update => update.Frame is not null && update.Snapshot.State == VideoPlaybackState.PLAYING);
+            Assert.Equal(position, presented.Snapshot.PresentedAtPosition);
+            Assert.True(presented.Snapshot.PresentedFrameTime <= presented.Snapshot.PresentedAtPosition);
+            Assert.True(presented.Snapshot.PresentedAtPosition < presented.Snapshot.PresentedFrameEnd);
+            Assert.Equal(1, converter.MaximumActiveCount);
+        }
+        finally
+        {
+            converter.Release();
+            dispatcher.RunPending();
+            await controller.CloseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.Equal(0, controller.Snapshot.PreparedFrameCount);
+        Assert.Equal(0, controller.Snapshot.PreparedBytes);
+        Assert.Equal(0, controller.Snapshot.PreparationPendingCount);
+        AssertReleased(source, converter);
+    }
+
+    [Fact]
+    public async Task AQueuedExpiredFrameUsesItsAlreadyPreparedCurrentSuccessorInTheSameUiCallback()
+    {
+        var clock = new ManualPlaybackTimeProvider();
+        var source = new PreviewTestSource(10, 0, 40, 80, 120, 160, 200, 240, 280, 320);
+        var converter = new PreviewTestConverter
+        {
+            ConversionWork = _ => clock.Advance(TimeSpan.FromMilliseconds(80))
+        };
+        var dispatcher = new PreviewTestDispatcher();
+        var updates = new ConcurrentQueue<VideoPreviewUpdate>();
+        await using var controller = CreateController(source, converter, updates, clock, dispatcher);
+        try
+        {
+            await controller.OpenAsync("late-bound-preview.mkv");
+            await EventuallyAsync(() => HasFrame(updates, 10));
+            converter.BlockNextConversion();
+            await controller.PlayAsync();
+            await converter.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            dispatcher.BlockNextDispatch();
+            converter.Release();
+            await dispatcher.Queued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await EventuallyAsync(() => converter.ConversionCount >= 3 && controller.Snapshot.PreparedFrameCount == 2);
+            Assert.False(HasFrame(updates, 12));
+            Assert.False(HasFrame(updates, 14));
+            Assert.InRange(controller.Snapshot.PreparationPendingCount, 0, 2);
+            Assert.InRange(controller.Snapshot.PreparedBytes, 0, 128L * 1024 * 1024);
+
+            dispatcher.RunPending();
+            await EventuallyAsync(() => HasFrame(updates, 14));
+            var selected = updates.First(update => update.Frame?.Pixels.Span[0] == 14);
+            Assert.Equal(new MediaTime(160, 1000), selected.Snapshot.PresentedFrameTime);
+            Assert.Equal(new MediaTime(200, 1000), selected.Snapshot.PresentedFrameEnd);
+            Assert.Equal(new MediaTime(160, 1000), selected.Snapshot.PresentedAtPosition);
+            Assert.False(HasFrame(updates, 12));
+            Assert.Equal(1, converter.MaximumActiveCount);
+        }
+        finally
+        {
+            converter.Release();
+            dispatcher.RunPending();
+            await controller.CloseAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.Equal(0, controller.Snapshot.PreparedFrameCount);
+        Assert.Equal(0, controller.Snapshot.PreparedBytes);
+        Assert.Equal(0, controller.Snapshot.PreparationPendingCount);
+        AssertReleased(source, converter);
+    }
+
+    [Fact]
+    public async Task AFrameExpiringInsideTheUiQueueIsRejectedAndPlaybackRecovers()
+    {
+        var clock = new ManualPlaybackTimeProvider();
+        var source = new PreviewTestSource(10, 0, 40, 100, 160, 260);
+        var converter = new PreviewTestConverter();
+        var dispatcher = new PreviewTestDispatcher();
+        var updates = new ConcurrentQueue<VideoPreviewUpdate>();
+        await using var controller = CreateController(source, converter, updates, clock, dispatcher);
+        try
+        {
+            await controller.OpenAsync("late-ui.mkv");
+            await EventuallyAsync(() => HasFrame(updates, 10));
+            await controller.PlayAsync();
+            dispatcher.BlockNextDispatch();
+            await EventuallyAsync(() => clock.ActiveTimerCount != 0);
+            clock.Advance(TimeSpan.FromMilliseconds(40));
+            await dispatcher.Queued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            clock.Advance(TimeSpan.FromMilliseconds(70));
+            await EventuallyAsync(() => controller.Snapshot.PreparedFrameCount == 2);
+            dispatcher.RunPending();
+            await EventuallyAsync(() => HasFrame(updates, 12));
+            var recovered = updates.First(update => update.Frame?.Pixels.Span[0] == 12);
+            Assert.Equal(new MediaTime(110, 1000), recovered.Snapshot.PresentedAtPosition);
+            clock.Advance(TimeSpan.FromMilliseconds(60));
+            await EventuallyAsync(() => source.IssuedFrames.Any(frame => frame.Marker == 13));
+            await EventuallyAsync(() => HasFrame(updates, 13));
+            Assert.False(HasFrame(updates, 11));
+            Assert.Equal(new MediaTime(170, 1000), controller.Snapshot.Position);
+            Assert.All(updates.Where(update => update.Frame is not null && update.Snapshot.State == VideoPlaybackState.PLAYING), update =>
+            {
+                Assert.True(update.Snapshot.PresentedFrameTime <= update.Snapshot.PresentedAtPosition);
+                Assert.True(update.Snapshot.PresentedAtPosition < update.Snapshot.PresentedFrameEnd);
+            });
+        }
+        finally
+        {
+            dispatcher.RunPending();
+        }
+    }
+
+    [Fact]
+    public async Task AnEarlyConvertedFrameWaitsUntilItsRealPtsBeforePresentation()
+    {
+        var clock = new ManualPlaybackTimeProvider();
+        var source = new PreviewTestSource(10, 0, 40, 100, 160);
+        var converter = new PreviewTestConverter
+        {
+            ConversionWork = marker =>
+            {
+                if (marker == 10)
+                {
+                    clock.Advance(TimeSpan.FromMilliseconds(20));
+                }
+            }
+        };
+        var updates = new ConcurrentQueue<VideoPreviewUpdate>();
+        await using var controller = CreateController(source, converter, updates, clock);
+        await controller.OpenAsync("future.mkv");
+        await EventuallyAsync(() => HasFrame(updates, 10));
+        await controller.PlayAsync();
+        await EventuallyAsync(() => clock.ActiveTimerCount != 0);
+        clock.Advance(TimeSpan.FromMilliseconds(20));
+        await EventuallyAsync(() => converter.ConversionCount >= 2);
+        Assert.False(HasFrame(updates, 11));
+        Assert.Equal(new MediaTime(20, 1000), controller.Snapshot.Position);
+        await EventuallyAsync(() => clock.ActiveTimerCount != 0);
+        clock.Advance(TimeSpan.FromMilliseconds(20));
+        await EventuallyAsync(() => HasFrame(updates, 11));
+        var presented = updates.First(update => update.Frame?.Pixels.Span[0] == 11);
+        Assert.Equal(new MediaTime(40, 1000), presented.Snapshot.PresentedFrameTime);
+        Assert.Equal(new MediaTime(100, 1000), presented.Snapshot.PresentedFrameEnd);
+        Assert.Equal(new MediaTime(40, 1000), presented.Snapshot.PresentedAtPosition);
+    }
+
+    [Fact]
+    public async Task SeekingCancelsAnAlreadyConvertedFutureFrameWithoutWaitingForItsDeadline()
+    {
+        var clock = new ManualPlaybackTimeProvider();
+        var source = new PreviewTestSource(10, 0, 400, 1000, 1200);
+        var converter = new PreviewTestConverter
+        {
+            ConversionWork = marker =>
+            {
+                if (marker == 10)
+                {
+                    clock.Advance(TimeSpan.FromMilliseconds(20));
+                }
+            }
+        };
+        var updates = new ConcurrentQueue<VideoPreviewUpdate>();
+        await using var controller = CreateController(source, converter, updates, clock);
+        await controller.OpenAsync("cancel-ready-future.mkv");
+        await EventuallyAsync(() => HasFrame(updates, 10));
+        await controller.PlayAsync();
+        await EventuallyAsync(() => clock.ActiveTimerCount != 0);
+        clock.Advance(TimeSpan.FromMilliseconds(380));
+        await EventuallyAsync(() => converter.ConversionCount >= 2);
+        Assert.False(HasFrame(updates, 11));
+        await controller.SeekAsync(new(100, 1000));
+        await EventuallyAsync(() => controller.Snapshot.PresentedGeneration == 1);
+        Assert.Equal(new MediaTime(100, 1000), controller.Snapshot.Position);
+        Assert.Equal(new MediaTime(100, 1000), controller.Snapshot.PresentedAtPosition);
+        Assert.Equal(MediaTime.Zero, controller.Snapshot.PresentedFrameTime);
+        Assert.False(HasFrame(updates, 11));
+        Assert.Equal(VideoPlaybackState.PAUSED, controller.Snapshot.State);
     }
 
     private static VideoPreviewController CreateController(PreviewTestSource source, PreviewTestConverter converter,

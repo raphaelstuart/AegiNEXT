@@ -36,6 +36,17 @@ public sealed class ProjectMediaBindingValidatorTests
     }
 
     [Fact]
+    public void ConfirmedPlaybackOriginMismatchIsRejectedWhileUnknownMetadataRemainsUnknown()
+    {
+        var document = CreateDocument(new(3));
+        document = document with { Media = document.Media! with { PlaybackOrigin = new(29, 10) } };
+        var media = new VideoPreviewMedia(0, new(3), new(10), 1, 1920, 1080) { PlaybackOrigin = new(3) };
+        Assert.Throws<InvalidDataException>(() => ProjectMediaBindingValidator.Validate(document, media));
+        ProjectMediaBindingValidator.Validate(document, media with { PlaybackOrigin = null });
+        ProjectMediaBindingValidator.Validate(document with { Media = document.Media with { PlaybackOrigin = null } }, media);
+    }
+
+    [Fact]
     public void UnknownStartHasExplicitZeroIdentityMappingOnly()
     {
         var unknown = new VideoPreviewMedia(0, null, null, 1, 1920, 1080);

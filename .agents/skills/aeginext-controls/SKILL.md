@@ -5,7 +5,7 @@ description: Develop, refactor, integrate, or review AegiNext Avalonia reusable 
 
 # AegiNext control development and use
 
-Read the actual consuming panel and the closest existing control before designing an interface. Locate the checkout via `git rev-parse --show-toplevel`, or resolve this skill's `.agents/skills/aeginext-controls/` location three directories below it. Read `docs/composable-workspace.md`, `docs/layouts.md`, and `references/integration-checks.md` as needed; Chinese counterparts are under `docs/zh-CN/`.
+Read the actual consuming panel and the closest existing control before designing an interface. Locate the checkout via `git rev-parse --show-toplevel`, or resolve this skill's `.agents/skills/aeginext-controls/` location three directories below it. Read `docs/en/composable-workspace.md` and `references/integration-checks.md` as needed; Chinese counterparts are under `docs/zh-cn/`.
 
 ## Choose the owner before editing
 

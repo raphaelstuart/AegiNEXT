@@ -10,7 +10,7 @@ Use the repository's actual DSL v1 parser and compiler as the authority. This is
 ## Establish the authoring target
 
 1. Locate the AegiNext checkout (`git rev-parse --show-toplevel` when already inside it). This repository skill lives at `.agents/skills/aeginext-effect-dsl/`; its resolved location is three directories below the checkout root. Resolve symlinks before deriving a root.
-2. Read `docs/effect-dsl.md` (English) or `docs/zh-CN/effect-dsl.md` (Chinese), then the closest existing sample in `src/AegiNext.Core/Effects/Scripts/` or `docs/examples/effects/`. Read `references/authoring-checks.md` for failure cases and test entry points.
+2. Read `docs/en/effect-dsl.md` (English) or `docs/zh-cn/effect-dsl.md` (Chinese), then the closest existing sample in `src/AegiNext.Core/Effects/Scripts/` or `docs/en/examples/effects/`. Read `references/authoring-checks.md` for failure cases and test entry points.
 3. Determine the intended visual effect, fixed entrance/exit durations, changed properties, and behavior on clips shorter than the fixed total. Use an explicitly supplied policy; otherwise state the chosen `compress` policy with the delivered script. Ask only when a missing decision materially changes the effect.
 4. Give personal scripts a unique lowercase stable identifier. Built-in IDs are reserved; retain an existing personal ID when editing that template. Display names belong to the template library and do not replace the source identifier.
 
@@ -38,4 +38,4 @@ When changing the language itself, update parser, validator, compiler, metadata,
 
 ## Deliver
 
-Provide the complete UTF-8 `.aegifx` source or a clickable path to its saved file, policy and timing behavior, affected properties, and exact validation evidence. Use `docs/examples/effects/` for a requested reusable repository example; do not modify a built-in sample unless that is the requested scope.
+Provide the complete UTF-8 `.aegifx` source or a clickable path to its saved file, policy and timing behavior, affected properties, and exact validation evidence. Use `docs/en/examples/effects/` for a requested reusable repository example; do not modify a built-in sample unless that is the requested scope.

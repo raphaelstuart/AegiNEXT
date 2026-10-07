@@ -16,6 +16,83 @@ namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class TimelineWaveformRenderingUiTests
 {
+    private static readonly double[] quietSpectrumTimes = [12.07, 12.17, 12.27, 12.37, 12.47, 13.07, 13.17, 13.27, 13.37, 13.47];
+    private static readonly double[] peakSpectrumTimes = [12.57, 12.67, 12.77, 12.87, 12.97];
+
+    /// <summary>独立频谱没有峰值时不会生成旧式波形回退。</summary>
+    [AvaloniaFact]
+    public void LevelsOnlySpectrumDoesNotInventWaveformPeaks()
+    {
+        using var environment = new UiTestEnvironment();
+        using var timeline = CreateTimeline();
+        timeline.SetWaveform(null, null, new(2));
+        var window = CreateWindow(timeline);
+        try
+        {
+            Prepare(window);
+            timeline.SetViewport(new(0, 150), 60);
+            using var empty = Capture(timeline);
+            var levelsOnly = new SpectrogramData(4, 128, MediaTime.Zero, new(1, 2), new byte[4 * 128]);
+            Assert.True(levelsOnly.Waveform.IsEmpty);
+            timeline.SetSpectrogram(levelsOnly);
+            using var spectrum = Capture(timeline);
+            var y = WaveY(timeline, 0.2);
+            for (var x = TimeX(timeline, 0.05); x < TimeX(timeline, 1.95); x++)
+            {
+                Assert.Equal(empty.GetPixel(x, y), spectrum.GetPixel(x, y));
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void LocalSpectrumUsesItsOwnStartAndColumnIntervalsOverTheOverview()
+    {
+        using var environment = new UiTestEnvironment();
+        using var timeline = CreateTimeline();
+        timeline.IsWaveformVisible = false;
+        timeline.IsSpectrumVisible = true;
+        var overview = new SpectrogramData(16, 128, new(10), new(1, 2), new byte[16 * 128]);
+        var levels = new byte[4 * 128];
+        for (var row = 0; row < 128; row++)
+        {
+            levels[row * 4 + 1] = 255;
+        }
+        var detail = new SpectrogramData(4, 128, new(12), new(1, 2), levels);
+        timeline.SetSpectrogram(null, overview);
+        timeline.SetWaveform(null, null, new(18));
+        var window = CreateWindow(timeline);
+        try
+        {
+            Prepare(window);
+            timeline.SetViewport(new(10, 50), 60);
+            var y = WaveY(timeline, 0.1);
+            var beforeX = TimeX(timeline, 11.27);
+            var peakX = TimeX(timeline, 12.77);
+            var afterX = TimeX(timeline, 14.27);
+            using var coarse = Capture(timeline);
+            timeline.SetSpectrogram(detail, overview);
+            using var refined = Capture(timeline);
+            Assert.Equal(coarse.GetPixel(beforeX, y), refined.GetPixel(beforeX, y));
+            Assert.All(quietSpectrumTimes, time =>
+                Assert.Equal(coarse.GetPixel(TimeX(timeline, time), y), refined.GetPixel(TimeX(timeline, time), y)));
+            Assert.All(peakSpectrumTimes, time =>
+                Assert.NotEqual(coarse.GetPixel(TimeX(timeline, time), y), refined.GetPixel(TimeX(timeline, time), y)));
+            Assert.Equal(coarse.GetPixel(afterX, y), refined.GetPixel(afterX, y));
+            timeline.SetSpectrogram(null, overview);
+            using var restored = Capture(timeline);
+            Assert.Equal(coarse.GetPixel(peakX, y), restored.GetPixel(peakX, y));
+            Save(refined, "timeline-spectrum-local-detail.png");
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     [AvaloniaFact]
     public void EnlargingTwoCoarseBucketsKeepsTheVisibleEnvelopeContinuous()
     {

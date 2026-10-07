@@ -6,6 +6,16 @@ namespace AegiNext.Desktop.Tests;
 
 public sealed class WaveformViewportPlannerTests
 {
+    [Fact]
+    public void TemporalPrefetchIsCappedEvenWhenZoomedOut()
+    {
+        var plan = WaveformViewportPlanner.Create(new(100, 1, Width: 1000), 1, new(21600))!;
+        var bucketDuration = new MediaTime(plan.Visible.SamplesPerBucket, WaveformAnalyzer.SAMPLE_RATE);
+
+        Assert.True(plan.Visible.Start - plan.Analysis.Start <= new MediaTime(2) + bucketDuration);
+        Assert.True(plan.Analysis.End - plan.Visible.End <= new MediaTime(2) + bucketDuration);
+    }
+
     [Theory]
     [InlineData(48, 1, 512)]
     [InlineData(480, 1, 64)]

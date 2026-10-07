@@ -93,6 +93,60 @@ public sealed class SubtitleRowTests
         Assert.Equal(nameof(SubtitleRow.Text), Assert.Single(changes));
     }
 
+    [Fact]
+    public void AcceptingUnchangedSnapshotsDoesNotNotifyBindings()
+    {
+        var original = CreateLine();
+        var row = new SubtitleRow(original, 1);
+        var changes = new List<string?>();
+        row.PropertyChanged += (_, change) => changes.Add(change.PropertyName);
+
+        row.Accept(original);
+        var equivalent = original with { };
+        row.Accept(equivalent);
+
+        Assert.Empty(changes);
+        Assert.Same(equivalent, row.Original);
+        Assert.False(row.IsDirty);
+    }
+
+    [Fact]
+    public void AcceptingTheOriginalSnapshotRestoresDirtyFieldsWithoutNotifyingDerivedValues()
+    {
+        var original = CreateLine();
+        var row = new SubtitleRow(original, 1) { StartText = "invalid", Text = "draft" };
+        var changes = new List<string?>();
+        row.PropertyChanged += (_, change) => changes.Add(change.PropertyName);
+
+        row.Accept(original);
+
+        Assert.Equal(new[] { nameof(SubtitleRow.StartText), nameof(SubtitleRow.Text) }, changes);
+        Assert.Equal(TimelineTimeText.Format(original.Start), row.StartText);
+        Assert.Equal(original.Text, row.Text);
+        Assert.False(row.IsDirty);
+    }
+
+    [Fact]
+    public void AcceptingTextAndTimingChangesOnlyNotifiesTheirAffectedValues()
+    {
+        var original = CreateLine();
+        var row = new SubtitleRow(original, 1);
+        var changes = new List<string?>();
+        row.PropertyChanged += (_, change) => changes.Add(change.PropertyName);
+
+        var textChanged = original with { Text = "replacement" };
+        row.Accept(textChanged);
+        Assert.Equal(nameof(SubtitleRow.Text), Assert.Single(changes));
+
+        changes.Clear();
+        row.Accept(textChanged with { End = new(1) });
+        Assert.Equal(new[] { nameof(SubtitleRow.EndText), nameof(SubtitleRow.Duration) }, changes);
+
+        changes.Clear();
+        row.Accept(row.Original with { Karaoke = [] });
+        Assert.Equal(nameof(SubtitleRow.ContentType), Assert.Single(changes));
+    }
+
     private static SubtitleLine CreateLine()
     {
         return new()

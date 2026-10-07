@@ -19,8 +19,13 @@ public sealed class ProjectPreferencesTests
         Assert.Null(store.LoadError);
         Assert.Equal("zh-CN", preferences.Language);
         Assert.Equal(0.375f, preferences.Volume);
-        Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AegiNext", "Workspace"),
-            preferences.Projects.WorkspaceRoot);
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        if (Path.IsPathFullyQualified(documents))
+        {
+            Assert.Equal(Path.Combine(documents, "AegiNext", "Workspace"), preferences.Projects.WorkspaceRoot);
+        }
+        Assert.True(Path.IsPathFullyQualified(preferences.Projects.WorkspaceRoot));
+        preferences.Projects.Validate();
         Assert.True(preferences.Projects.AutoSaveEnabled);
         Assert.Equal(2, preferences.Projects.AutoSaveIntervalMinutes);
         Assert.True(preferences.Projects.BackupEnabled);
@@ -74,5 +79,25 @@ public sealed class ProjectPreferencesTests
     public void WorkspaceMustBeAnAbsoluteLocalPath(string path)
     {
         Assert.Throws<InvalidDataException>(() => new ProjectPreferences { WorkspaceRoot = path }.Validate());
+    }
+
+    /// <summary>无文档目录的账号仍获得绝对默认位置，路径选择不会创建目录。</summary>
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void DefaultWorkspaceUsesAnAbsoluteAvailableFolderWithoutCreatingIt(bool hasDocuments, bool hasProfile)
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        var documents = Path.Combine(directory.Path, "Documents");
+        var profile = Path.Combine(directory.Path, "Profile");
+        var temporary = Path.Combine(directory.Path, "Temporary");
+        var root = ProjectPreferences.ResolveDefaultWorkspaceRoot(hasDocuments ? documents : string.Empty,
+            hasProfile ? profile : string.Empty, temporary);
+        var expected = Path.Combine(hasDocuments ? documents : hasProfile ? profile : temporary, "AegiNext", "Workspace");
+        Assert.Equal(expected, root);
+        Assert.True(Path.IsPathFullyQualified(root));
+        Assert.False(Directory.Exists(root));
+        new ProjectPreferences { WorkspaceRoot = root }.Validate();
     }
 }

@@ -13,6 +13,7 @@ internal sealed class BlockingPreviewSource : IVideoFrameSource
     internal ConcurrentQueue<MediaTime> SeekTargets { get; } = new();
     internal IEnumerable<PreviewTestFrame> IssuedFrames => source.IssuedFrames;
     internal int DisposeCount => source.DisposeCount;
+    internal int ReadCount => source.ReadCount;
 
     internal BlockedPreviewSeek BlockNextSeek(MediaTime target)
     {

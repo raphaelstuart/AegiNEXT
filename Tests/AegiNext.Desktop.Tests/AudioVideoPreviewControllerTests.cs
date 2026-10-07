@@ -76,6 +76,40 @@ public sealed class AudioVideoPreviewControllerTests
         Assert.Null(controller.Snapshot.Error);
     }
 
+    [Fact]
+    public async Task RecoveringAnInitiallyMissingOutputMakesTheNewSystemClockDriveTheExistingVideoSession()
+    {
+        var clock = new ManualPlaybackTimeProvider();
+        var output = new PreviewAudioOutput { ClockQuality = AudioClockQuality.SYSTEM };
+        var opens = 0;
+        var sources = new ConcurrentQueue<PreviewTestSource>();
+        await using var controller = new VideoPreviewController(
+            (_, _) => Task.FromResult(new VideoPreviewMedia(0, MediaTime.Zero, new(2), 1)),
+            (_, _, position) => new(_ =>
+            {
+                var source = new PreviewTestSource(10, 0, 40, 100, 160, 1000);
+                sources.Enqueue(source);
+                return source;
+            }, clock, externalPosition: position),
+            () => new PreviewTestConverter(), Dispatch, _ => { },
+            (_, _, position, _) => ++opens == 1
+                ? Task.FromException<AudioPlaybackSession>(new IOException("Output unavailable while opening"))
+                : Task.FromResult(new AudioPlaybackSession(new PreviewAudioSource(), output, position)));
+        await controller.OpenAsync("initially-missing-output.mkv");
+        Assert.NotNull(controller.Snapshot.AudioError);
+        Assert.False(controller.Snapshot.AudioAvailable);
+        await controller.ReopenAudioOutputAsync();
+        Assert.Null(controller.Snapshot.AudioError);
+        Assert.True(controller.Snapshot.AudioAvailable);
+        Assert.Equal(AudioClockQuality.SYSTEM, controller.AudioClock!.Quality);
+        await controller.PlayAsync();
+        output.Consume(2400);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(new MediaTime(1, 20), controller.Snapshot.Position);
+        Assert.Equal(VideoPlaybackState.PLAYING, controller.Snapshot.State);
+        Assert.Single(sources);
+    }
+
     private static Task Dispatch(Action action, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

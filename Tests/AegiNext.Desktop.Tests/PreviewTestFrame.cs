@@ -6,7 +6,7 @@ internal sealed class PreviewTestFrame : IVideoFrame
 {
     private int disposeCount;
 
-    internal PreviewTestFrame(long timestamp, byte marker)
+    internal PreviewTestFrame(long timestamp, byte marker, int timestampDenominator = 1000)
     {
         Info = new(new NativeDecodedFrameInfo
         {
@@ -15,7 +15,7 @@ internal sealed class PreviewTestFrame : IVideoFrame
             planeCount = 1,
             componentCount = 3,
             timeBaseNum = 1,
-            timeBaseDen = 1000,
+            timeBaseDen = timestampDenominator,
             flags = 1,
             pts = timestamp
         }, default, []);

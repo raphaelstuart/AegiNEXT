@@ -6,6 +6,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using AegiNext.Desktop.Shortcuts;
+using AegiNext.Core.Timing;
+using Avalonia.Media.Imaging;
+using SkiaSharp;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
@@ -77,6 +81,83 @@ public sealed class PreviewQualityUiTests
         Assert.Equal(before.Position, context.Controller.Snapshot.Position);
         Assert.Equal(before.PresentedGeneration, context.Controller.Snapshot.PresentedGeneration);
         Assert.Equal(new PixelSize(1280, 720), UiTestActions.Find<EffectCanvasControl>(context.Window, "EffectCanvas").MaximumPreviewSize);
+    }
+
+    [AvaloniaFact]
+    public async Task QualityChangesDuringPlaybackKeepActualCanvasPixelsAdvancingWithoutTickRecomposition()
+    {
+        MainWindowTestContext? owner = null;
+        await using var context = new MainWindowTestContext(
+            videoSourceFactory: () => new PreviewTestSource(20, Enumerable.Range(0, 51).Select(index => index * 100L).ToArray()),
+            videoConverterFactory: () => new UiComposedPreviewConverter(owner!.Session));
+        owner = context;
+        await context.OpenMediaAsync();
+        context.Window.GetCommand(WorkbenchCommand.VIEW_PREVIEW).Execute(null);
+        var canvas = UiTestActions.Find<EffectCanvasControl>(context.Window, "EffectCanvas");
+        await DrainAsync(() => context.Controller.Snapshot.PresentedGeneration is not null);
+        var initialGeneration = context.Controller.Snapshot.PresentedGeneration;
+        await context.Controller.RefreshPausedPreviewAsync();
+        await DrainAsync(() => context.Controller.Snapshot.PresentedGeneration > initialGeneration);
+        await context.Controller.PlayAsync();
+        context.Clock.Advance(TimeSpan.FromMilliseconds(50));
+        context.Session.Tick();
+        Assert.Equal(new SKColor(0, UiComposedPreviewConverter.Green(20, PreviewQuality.LOW), 0), CanvasPixel(canvas));
+        var firstSequence = canvas.PreviewSequence;
+        context.Clock.Advance(TimeSpan.FromMilliseconds(10));
+        context.Session.Tick();
+        Assert.Equal(new SKColor(0, UiComposedPreviewConverter.Green(20, PreviewQuality.LOW), 0), CanvasPixel(canvas));
+        Assert.Equal(firstSequence, canvas.PreviewSequence);
+
+        Choose(UiTestActions.Find<ComboBox>(context.Window, "QualityCombo"), PreviewQuality.STANDARD);
+        var changedQualitySequence = canvas.PresentedPreviewSequence;
+        var observed = new List<SKColor>();
+        var elapsedMilliseconds = 60;
+        for (var step = 0; step < 20 && observed.Distinct().Count() < 4; step++)
+        {
+            context.Clock.Advance(TimeSpan.FromMilliseconds(100));
+            elapsedMilliseconds += 100;
+            context.Session.Tick();
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+            Dispatcher.UIThread.RunJobs();
+            var snapshot = context.Controller.Snapshot;
+            var actual = CanvasPixel(canvas);
+            if (!snapshot.IsPresentedFrameCurrent || snapshot.PresentedFrameTime is not { } sourceTime)
+            {
+                continue;
+            }
+
+            var marker = checked((byte)(20 + sourceTime.Numerator * 10 / sourceTime.Denominator));
+            var expected = new SKColor(0, UiComposedPreviewConverter.Green(marker, PreviewQuality.STANDARD), 0);
+            if (actual == expected)
+            {
+                observed.Add(actual);
+            }
+        }
+
+        Assert.Equal(4, observed.Distinct().Count());
+        Assert.True(canvas.PresentedPreviewSequence > changedQualitySequence);
+        Assert.Equal(canvas.PreviewSequence, canvas.PresentedPreviewSequence);
+        Assert.Equal(VideoPlaybackState.PLAYING, context.Controller.Snapshot.State);
+        Assert.Equal(new MediaTime(elapsedMilliseconds, 1000), context.Controller.Snapshot.Position);
+        Assert.Equal(new PixelSize(1280, 720), canvas.MaximumPreviewSize);
+    }
+
+    private static SKColor CanvasPixel(EffectCanvasControl canvas)
+    {
+        var width = Math.Max(1, (int)Math.Ceiling(canvas.Bounds.Width));
+        var height = Math.Max(1, (int)Math.Ceiling(canvas.Bounds.Height));
+        using var target = new RenderTargetBitmap(new(width, height), new(96, 96));
+        using (var drawing = target.CreateDrawingContext())
+        {
+            canvas.Render(drawing);
+        }
+
+        using var stream = new MemoryStream();
+        target.Save(stream, PngBitmapEncoderOptions.Default);
+        stream.Position = 0;
+        using var pixels = SKBitmap.Decode(stream);
+        var board = canvas.ProjectRectangle;
+        return pixels.GetPixel((int)(board.X + board.Width / 2), (int)(board.Y + board.Height / 2));
     }
 
     private static void Choose(ComboBox selector, PreviewQuality quality)

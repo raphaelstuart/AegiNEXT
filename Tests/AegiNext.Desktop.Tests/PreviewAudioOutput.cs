@@ -6,12 +6,19 @@ internal sealed class PreviewAudioOutput : IAudioOutput
 {
     private readonly Lock gate = new();
     private int queued;
+    private int clockQuality = (int)AudioClockQuality.ESTIMATED;
+    private long playedFrames;
     private readonly List<float> written = [];
     internal bool Paused { get; private set; } = true;
     internal float Gain { get; private set; } = 1;
     internal int DisposeCount { get; private set; }
     internal Action? PlaybackStarted { get; set; }
     internal bool ThrowOnPause { get; set; }
+    internal AudioClockQuality ClockQuality
+    {
+        get => (AudioClockQuality)Volatile.Read(ref clockQuality);
+        set => Volatile.Write(ref clockQuality, (int)value);
+    }
     internal float[] Written
     {
         get
@@ -22,6 +29,15 @@ internal sealed class PreviewAudioOutput : IAudioOutput
             }
         }
     }
+    /// <summary>允许回归测试切换输出时钟的可用性。</summary>
+    public AudioOutputClockSnapshot ReadClock()
+    {
+        lock (gate)
+        {
+            return new(playedFrames, 0, 1, "unknown", "test", 0, ClockQuality, queued);
+        }
+    }
+
     public int LatencyFrames => 480;
     public int QueuedFrames
     {
@@ -40,7 +56,9 @@ internal sealed class PreviewAudioOutput : IAudioOutput
         {
             if (!Paused)
             {
-                queued -= Math.Min(queued, frames);
+                var consumed = Math.Min(queued, frames);
+                queued -= consumed;
+                playedFrames += consumed;
             }
         }
     }
@@ -76,6 +94,7 @@ internal sealed class PreviewAudioOutput : IAudioOutput
         lock (gate)
         {
             queued = 0;
+            playedFrames = 0;
             written.Clear();
         }
     }

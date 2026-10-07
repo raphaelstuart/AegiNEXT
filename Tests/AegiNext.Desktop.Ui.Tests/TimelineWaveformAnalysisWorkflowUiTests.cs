@@ -30,12 +30,14 @@ public sealed class TimelineWaveformAnalysisWorkflowUiTests
                 mediaProbe: (_, _) => Task.FromResult(new VideoPreviewMedia(0, MediaTime.Zero, new(20), 0,
                     VideoWidth: 1, VideoHeight: 1)));
             var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
+            var model = context.ViewModel.Timeline;
+            model.PixelsPerSecond = 10;
             await context.Window.OpenMediaAsync(path, false);
             await context.Session.Analysis.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-            var model = context.ViewModel.Timeline;
             Assert.NotNull(model.Waveform);
-            Assert.NotNull(model.WaveformOverview);
+            Assert.Null(model.WaveformOverview);
             Assert.NotNull(model.Spectrogram);
+            Assert.Null(model.SpectrogramOverview);
             Assert.Equal(new MediaTime(20), model.AudioDuration);
             Assert.Equal(string.Empty, model.AnalysisStatus);
             var previousResolution = model.Waveform.SamplesPerBucket;
@@ -43,34 +45,45 @@ public sealed class TimelineWaveformAnalysisWorkflowUiTests
             var previousDocument = context.Session.DocumentSnapshot;
             var playbackSeeks = playback.SeekCount;
             var previousOverview = model.WaveformOverview;
-            var pointer = new Point(timeline.HeaderWidth + timeline.Viewport.Width / 2,
+            var previousSpectrumOverview = model.SpectrogramOverview;
+            var previousSpectrumStep = model.Spectrogram.ColumnDuration;
+            var pointer = new Point(timeline.HeaderWidth + (10 - timeline.ViewStart) * timeline.PixelsPerSecond,
                 timeline.RulerHeight + timeline.Viewport.Height * 0.75);
             var windowPointer = timeline.TranslatePoint(pointer, context.Window)!.Value;
 
-            context.Window.MouseWheel(windowPointer, new(0, 10), RawInputModifiers.Control);
+            context.Window.MouseWheel(windowPointer, new(0, 20), RawInputModifiers.Control);
             await context.Session.Analysis.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
             Assert.NotNull(model.Waveform);
             Assert.True(model.Waveform.SamplesPerBucket < previousResolution);
             Assert.Same(previousOverview, model.WaveformOverview);
+            Assert.Same(previousSpectrumOverview, model.SpectrogramOverview);
+            Assert.NotNull(model.Spectrogram);
+            Assert.True(model.Spectrogram.ColumnDuration < previousSpectrumStep);
+            Assert.Equal(new MediaTime(SpectrogramAnalyzer.HOP_SIZE, SpectrogramAnalyzer.SAMPLE_RATE), model.Spectrogram.ColumnDuration);
             Assert.Equal(previousPosition, model.Position);
             Assert.Equal(playbackSeeks, playback.SeekCount);
             Assert.Same(previousDocument, context.Session.DocumentSnapshot);
             Assert.True(model.Waveform.Peaks.ToArray().Max() > 0.45F);
-            timeline.IsSpectrumVisible = false;
+            Assert.True(timeline.ViewStart + timeline.Viewport.VisibleDuration <= 20,
+                $"缩放后的视口 [{timeline.ViewStart}, {timeline.ViewStart + timeline.Viewport.VisibleDuration}) 必须位于真实音频范围 [0, 20) 内。");
+            model.IsSpectrumVisible = false;
+            await context.Session.Analysis.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             timeline.SetAudioGraphPalette(new() { Waveform = "#FF0000FF" });
             using var image = Capture(timeline);
             var y = (int)(timeline.RulerHeight + timeline.Viewport.Height * 0.4);
             var first = (int)Math.Ceiling(timeline.HeaderWidth) + 3;
             var last = (int)timeline.Bounds.Width - 3;
-            Assert.True(Enumerable.Range(first, last - first).Count(x => image.GetPixel(x, y).Red > 180 &&
-                image.GetPixel(x, y).Green < 80) >= (last - first) * 0.95);
             Save(image);
+            var colored = Enumerable.Range(first, last - first).Count(x => image.GetPixel(x, y).Red > 180 && image.GetPixel(x, y).Green < 80);
+            Assert.True(colored >= (last - first) * 0.95,
+                $"有效音频视口内只有 {colored}/{last - first} 个像素列绘制了波形。");
 
             await context.Session.Analysis.ClearAsync();
             Assert.Null(model.Waveform);
             Assert.Null(model.WaveformOverview);
             Assert.Null(model.Spectrogram);
+            Assert.Null(model.SpectrogramOverview);
             Assert.Equal(MediaTime.Zero, model.AudioDuration);
         }
         finally

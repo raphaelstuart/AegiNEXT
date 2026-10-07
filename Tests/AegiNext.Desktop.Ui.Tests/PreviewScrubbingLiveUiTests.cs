@@ -1,6 +1,7 @@
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Settings;
+using AegiNext.Media.Playback;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -15,17 +16,25 @@ namespace AegiNext.Desktop.Ui.Tests;
 public sealed class PreviewScrubbingLiveUiTests
 {
     [AvaloniaTheory]
-    [InlineData(false, PreviewQuality.LOW)]
-    [InlineData(true, PreviewQuality.LOW)]
-    [InlineData(false, PreviewQuality.LOWEST)]
-    [InlineData(true, PreviewQuality.LOWEST)]
+    [InlineData(false, PreviewQuality.LOW, false)]
+    [InlineData(true, PreviewQuality.LOW, false)]
+    [InlineData(false, PreviewQuality.LOWEST, false)]
+    [InlineData(true, PreviewQuality.LOWEST, false)]
+    [InlineData(false, PreviewQuality.LOW, true)]
+    [InlineData(true, PreviewQuality.LOW, true)]
+    [InlineData(false, PreviewQuality.LOWEST, true)]
+    [InlineData(true, PreviewQuality.LOWEST, true)]
     public async Task VideoPresentsIntermediateFramesWhilePointerRemainsPressedAndCanReturnToStart(bool useProgressBar,
-        PreviewQuality quality)
+        PreviewQuality quality, bool playing)
     {
         await using var context = new MainWindowTestContext();
         context.Session.UpdatePreferences(context.Session.Preferences with { PreviewQuality = quality });
         await context.OpenMediaAsync();
         await DrainAsync(() => context.Controller.Snapshot.PresentedGeneration is not null);
+        if (playing)
+        {
+            await context.Controller.PlayAsync();
+        }
         var initialGeneration = context.Controller.Snapshot.PresentedGeneration!.Value;
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         var slider = UiTestActions.Find<Slider>(context.Window, "PositionSlider");
@@ -42,6 +51,7 @@ public sealed class PreviewScrubbingLiveUiTests
             var target = context.Session.ProjectPosition;
             Assert.True(target >= new MediaTime(5));
             await DrainAsync(() => context.Controller.Snapshot.PresentedAtPosition == target);
+            Assert.Equal(playing ? VideoPlaybackState.PLAYING : VideoPlaybackState.PAUSED, context.Controller.Snapshot.State);
             Assert.True(context.Controller.Snapshot.PresentedGeneration > initialGeneration);
             Assert.True(context.Controller.Snapshot.PresentedFrameTime >= new MediaTime(5));
             Assert.True(useProgressBar ? context.ViewModel.Preview.IsScrubbing : context.ViewModel.Timeline.IsSeeking);
@@ -49,6 +59,8 @@ public sealed class PreviewScrubbingLiveUiTests
             Assert.Equal(quality, context.ViewModel.Preview.Scene.Quality);
             var expectedSize = quality == PreviewQuality.LOWEST ? new PixelSize(568, 320) : new PixelSize(960, 540);
             Assert.Equal(expectedSize, UiTestActions.Find<EffectCanvasControl>(context.Window, "EffectCanvas").MaximumPreviewSize);
+            context.Clock.Advance(TimeSpan.FromMilliseconds(200));
+            Assert.Equal(playing ? target + new MediaTime(1, 5) : target, context.Controller.Snapshot.Position);
             context.Window.MouseMove(start);
             var returned = context.Session.ProjectPosition;
             Assert.InRange((double)returned.Numerator / returned.Denominator, 0, 0.1);
@@ -63,6 +75,116 @@ public sealed class PreviewScrubbingLiveUiTests
         Assert.False(context.ViewModel.Preview.IsScrubbing);
         Assert.False(context.ViewModel.Timeline.IsSeeking);
         Assert.Equal(quality, context.Session.Preferences.PreviewQuality);
+        await DrainAsync(() => context.Controller.Snapshot.PresentedAtPosition is { } final && final <= new MediaTime(1, 10));
+        Assert.Equal(playing ? VideoPlaybackState.PLAYING : VideoPlaybackState.PAUSED, context.Controller.Snapshot.State);
+    }
+
+    [AvaloniaFact]
+    public async Task AHundredPlayingTimelineMovesCoalesceBehindOneNativeSeekWithoutBlockingUiInput()
+    {
+        await using var context = new SeekSchedulingTestContext();
+        await context.OpenMediaAsync();
+        await context.Controller.PlayAsync();
+        context.Source.SeekTargets.Clear();
+        var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
+        context.Window.UpdateLayout();
+        var firstPoint = timeline.TranslatePoint(new(timeline.HeaderWidth + timeline.PixelsPerSecond * 5, 8), context.Window)!.Value;
+        var finalPoint = timeline.TranslatePoint(new(timeline.HeaderWidth + timeline.PixelsPerSecond * 10, 8), context.Window)!.Value;
+        var blocked = context.Source.BlockNextSeek(new(5));
+        var readsBefore = context.Source.ReadCount;
+        context.Window.MouseDown(firstPoint, MouseButton.Left);
+        try
+        {
+            await DrainAsync(() => blocked.Entered.IsCompleted);
+            for (var index = 1; index <= 100; index++)
+            {
+                context.Window.MouseMove(firstPoint + (finalPoint - firstPoint) * (index / 100d));
+            }
+            Assert.Equal(new MediaTime(10), context.Window.Session.ProjectPosition);
+            Assert.True(timeline.IsSeeking);
+            Assert.Equal([new MediaTime(5)], context.Source.SeekTargets.ToArray());
+            Assert.Equal(readsBefore, context.Source.ReadCount);
+            var heartbeat = false;
+            Dispatcher.UIThread.Post(() => heartbeat = true, DispatcherPriority.Input);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(heartbeat);
+            Assert.Equal([new MediaTime(5)], context.Source.SeekTargets.ToArray());
+
+            blocked.Release();
+            await DrainAsync(() => context.Controller.Snapshot.PresentedFrameTime == new MediaTime(10) &&
+                context.Controller.Snapshot.State == VideoPlaybackState.PLAYING);
+            Assert.Equal([new MediaTime(5), new(10)], context.Source.SeekTargets.ToArray());
+        }
+        finally
+        {
+            blocked.Release();
+            context.Window.MouseUp(finalPoint, MouseButton.Left);
+        }
+        await DrainAsync(() => context.Source.SeekTargets.Count == 3 && !timeline.IsSeeking);
+        Assert.Equal([new MediaTime(5), new(10), new(10)], context.Source.SeekTargets.ToArray());
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SynchronizingTheBoundSliderWhileCapturedDoesNotSubmitATransportSeek(bool playing)
+    {
+        var source = new PreviewTestSource(1, 0, 5000, 10000, 15000, 20000);
+        await using var context = new MainWindowTestContext(videoSourceFactory: () => source);
+        await context.OpenMediaAsync();
+        if (playing)
+        {
+            await context.Controller.PlayAsync();
+        }
+        var slider = UiTestActions.Find<Slider>(context.Window, "PositionSlider");
+        context.Window.UpdateLayout();
+        var thumb = slider.GetVisualDescendants().OfType<Thumb>().Single();
+        var point = thumb.TranslatePoint(new(thumb.Bounds.Width / 2, thumb.Bounds.Height / 2), context.Window)!.Value;
+        var seekCount = source.SeekCount;
+        var position = context.Session.ProjectPosition;
+        context.Window.MouseDown(point, MouseButton.Left);
+        try
+        {
+            context.ViewModel.Preview.Position = 4;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(context.ViewModel.Preview.IsScrubbing);
+            Assert.Equal(position, context.Session.ProjectPosition);
+            Assert.Equal(seekCount, source.SeekCount);
+            context.ViewModel.CancelGestures();
+        }
+        finally
+        {
+            context.Window.MouseUp(point, MouseButton.Left);
+        }
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(seekCount, source.SeekCount);
+        Assert.Equal(playing ? VideoPlaybackState.PLAYING : VideoPlaybackState.PAUSED, context.Controller.Snapshot.State);
+    }
+
+    [AvaloniaFact]
+    public async Task ScrollingThePlayingTimelineViewportDoesNotReadOrSeekVideo()
+    {
+        var source = new PreviewTestSource(1, 0, 5000, 10000, 15000, 20000);
+        await using var context = new MainWindowTestContext(videoSourceFactory: () => source);
+        await context.OpenMediaAsync();
+        await context.Controller.PlayAsync();
+        context.ViewModel.Timeline.PixelsPerSecond = 120;
+        var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
+        context.Window.UpdateLayout();
+        var point = timeline.TranslatePoint(new(timeline.HeaderWidth + 100, 8), context.Window)!.Value;
+        var before = timeline.ViewStart;
+        var reads = source.ReadCount;
+        var seeks = source.SeekCount;
+        for (var index = 0; index < 100; index++)
+        {
+            context.Window.MouseWheel(point, new(0, -1), RawInputModifiers.Shift);
+        }
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(timeline.ViewStart > before);
+        Assert.False(timeline.IsSeeking);
+        Assert.Equal(reads, source.ReadCount);
+        Assert.Equal(seeks, source.SeekCount);
+        Assert.Equal(VideoPlaybackState.PLAYING, context.Controller.Snapshot.State);
     }
 
     private static async Task DrainAsync(Func<bool> completed)

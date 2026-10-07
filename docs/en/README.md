@@ -1,0 +1,29 @@
+# Documentation
+
+[English](README.md) · [简体中文](../zh-cn/README.md) · [AegiNext](../../README.md)
+
+Start with [Quickstart](quick-start.md): create a project, time a subtitle, and export.
+
+## Use AegiNext
+
+| Guide | What to do |
+|---|---|
+| [Quickstart](quick-start.md) | Your first project and subtitled video |
+| [Workbench](workbench.md) | Tracks, playback, styles, layouts, and backups |
+| [Subtitle editing](subtitle-editing.md) | Rich text, karaoke, audition, ASS, and SRT |
+| [Timing post-processor](timing-post-processor.md) | Save timing settings with style presets |
+| [Effect scripts](effect-dsl.md) | Apply and write `.aegifx` effects |
+| [Video export](export.md) | CPU/GPU encoding, audio, and HDR |
+
+## Develop AegiNext
+
+| Guide | What to do |
+|---|---|
+| [Building](building.md) | Set up dependencies, run, debug, and test |
+| [Publishing](publishing.md) | Create and verify application packages |
+| [Architecture](architecture.md) | Find modules and storage contracts |
+| [Workspace integration](composable-workspace.md) | Add panels, controls, layouts, and localization |
+| [Media](media.md) | Work with probing, decoding, clocks, and preview |
+| [Rendering](rendering.md) | Use scene geometry and linear F16 composition |
+
+The two language directories share the same guide names. Runnable effect examples are shared from [examples/effects](examples/effects/).
