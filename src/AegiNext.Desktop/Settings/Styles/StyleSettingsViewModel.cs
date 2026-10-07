@@ -46,14 +46,19 @@ public sealed class StyleSettingsViewModel : ObservableObject
     private string shadowXText = string.Empty;
     private string shadowYText = string.Empty;
     private string? invalidFieldKey;
-    private Func<SubtitleStylePreset, SubtitlePositionMeasurement>? measurePosition;
+    private Func<SubtitleStylePreset, string, SubtitlePositionMeasurement>? measurePosition;
     private string? positionMeasurementError;
+    private string previewText = Localization.Get("Workbench.SubtitlePreviewText");
+    private bool previewTextEdited;
+    private long previewRevision;
+    private string? previewError;
     internal SubtitleFontSelectionService Fonts { get; private set; } = new(Array.Empty<AegiNext.Rendering.Fonts.SystemFontFace>());
 
     internal void SetFonts(SubtitleFontSelectionService fonts)
     {
         Fonts = fonts;
         OnPropertyChanged(nameof(Fonts));
+        InvalidatePreview();
     }
 
     /// <summary>创建样式命令；工程和存储操作交由会话处理。</summary>
@@ -62,12 +67,16 @@ public sealed class StyleSettingsViewModel : ObservableObject
         FillDraft.Committed += (_, args) => Fill = args.Value;
         StrokeDraft.Committed += (_, args) => Stroke = args.Value;
         ShadowDraft.Committed += (_, args) => ShadowColor = args.Value;
+        FillDraft.Changed += (_, _) => InvalidatePreview();
+        StrokeDraft.Changed += (_, _) => InvalidatePreview();
+        ShadowDraft.Changed += (_, _) => InvalidatePreview();
         Position.Changed += (_, _) =>
         {
             if (Position.Validate() is null)
             {
                 ChangeStyle(style => style with { Position = Position.CreatePosition() });
             }
+            InvalidatePreview();
         };
         AddCommand = new(() => { SelectionCompletion = CreateDraftAsync(false); }, () => !IsBusy && !switching);
         DuplicateCommand = new(() => { SelectionCompletion = CreateDraftAsync(true); }, () => CanEdit && !switching);
@@ -128,6 +137,78 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public bool IsAvailable => !IsBusy;
     public string FontSource => Localization.Get("Settings." + (draft?.Preset.Font is null ? "SystemFont" : "EmbeddedFont"));
     public int DraftVersion => draftVersion;
+    public bool HasPreview => HasDraft && selectedIds.Length <= 1;
+    internal long PreviewRevision => previewRevision;
+    public string? PreviewError => previewError is null ? null : Localization.Format("Settings.StylePreviewError", previewError);
+    public bool HasPreviewError => previewError is not null;
+
+    public string PreviewText
+    {
+        get => previewText;
+        set
+        {
+            if (SetProperty(ref previewText, value))
+            {
+                previewTextEdited = true;
+                RefreshPositionMeasurement(!Position.IsExplicit);
+                InvalidatePreview();
+            }
+        }
+    }
+
+    internal void SetPreviewError(string? value)
+    {
+        previewError = value;
+        OnPropertyChanged(nameof(PreviewError));
+        OnPropertyChanged(nameof(HasPreviewError));
+    }
+
+    internal bool TryCreatePreviewPreset(out SubtitleStylePreset? preset)
+    {
+        preset = null;
+        if (!HasPreview || Position.Validate() is not null || FillDraft.HasError || StrokeDraft.HasError || ShadowDraft.HasError ||
+            NumericFields().Any(field => field.Value is null || field.Value < field.Minimum || field.Value > field.Maximum))
+        {
+            return false;
+        }
+        var source = draft!.Preset.Style;
+        var style = source with
+        {
+            FontSize = ReadPreviewNumber(FontSizeText, source.FontSize),
+            StrokeWidth = ReadPreviewNumber(StrokeWidthText, source.StrokeWidth),
+            Margin = ReadPreviewNumber(MarginText, source.Margin),
+            LineHeight = ReadPreviewNumber(LineHeightText, source.LineHeight),
+            ShadowBlur = ReadPreviewNumber(ShadowBlurText, source.ShadowBlur),
+            ShadowOffset = new(ReadPreviewNumber(ShadowXText, source.ShadowOffset.X), ReadPreviewNumber(ShadowYText, source.ShadowOffset.Y)),
+            Fill = FillDraft.Value, Stroke = StrokeDraft.Value, ShadowColor = ShadowDraft.Value,
+            Position = Position.CreatePosition()
+        };
+        try
+        {
+            ProjectValidator.ValidateSubtitleStyle(style);
+            preset = draft.Preset with { Style = style };
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private static double ReadPreviewNumber(string text, double source)
+    {
+        var number = ParseNumber(text)!.Value;
+        return number == (decimal)source ? source : (double)number;
+    }
+
+    private void InvalidatePreview()
+    {
+        if (!loading)
+        {
+            previewRevision++;
+            OnPropertyChanged(nameof(PreviewRevision));
+        }
+    }
 
     public string? InvalidFieldKey
     {
@@ -578,8 +659,16 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public void SetPositionMeasurement(Func<SubtitleStylePreset, SubtitlePositionMeasurement> measure)
     {
         ArgumentNullException.ThrowIfNull(measure);
+        SetPositionMeasurement((preset, _) => measure(preset));
+    }
+
+    /// <summary>按当前示例文字测量字体和位置，不提交页面草稿。</summary>
+    public void SetPositionMeasurement(Func<SubtitleStylePreset, string, SubtitlePositionMeasurement> measure)
+    {
+        ArgumentNullException.ThrowIfNull(measure);
         measurePosition = measure;
         RefreshPositionMeasurement(true);
+        InvalidatePreview();
     }
 
     /// <summary>提交局部字体控件已确认的字体名。</summary>
@@ -646,6 +735,11 @@ public sealed class StyleSettingsViewModel : ObservableObject
             FillDraft.RefreshLanguage();
             StrokeDraft.RefreshLanguage();
             ShadowDraft.RefreshLanguage();
+            OnPropertyChanged(nameof(PreviewError));
+            if (!previewTextEdited && SetProperty(ref previewText, Localization.Get("Workbench.SubtitlePreviewText"), nameof(PreviewText)))
+            {
+                RefreshPositionMeasurement(!Position.IsExplicit);
+            }
             if (errorKey is not null)
             {
                 Error = Localization.Get("Settings." + errorKey);
@@ -655,6 +749,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             loading = wasLoading;
         }
+        InvalidatePreview();
     }
 
     private void Add()
@@ -688,6 +783,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
             draft.UpdateStyle(change(draft.Preset.Style), clearFont);
             RefreshPositionMeasurement(!Position.IsExplicit);
             OnPropertyChanged(nameof(FontSource));
+            InvalidatePreview();
         }
     }
 
@@ -708,6 +804,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
             {
                 change(number);
             }
+            InvalidatePreview();
         }
     }
 
@@ -772,7 +869,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
 
     private void RefreshPositionMeasurement(bool reload)
     {
-        var measurement = draft is not null ? measurePosition?.Invoke(draft.Preset) : null;
+        var measurement = draft is not null ? measurePosition?.Invoke(draft.Preset, PreviewText) : null;
         positionMeasurementError = measurement?.Error;
         OnPropertyChanged(nameof(PositionMeasurementError));
         OnPropertyChanged(nameof(HasPositionMeasurementError));
@@ -795,6 +892,8 @@ public sealed class StyleSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(CanApply));
         OnPropertyChanged(nameof(IsAvailable));
         OnPropertyChanged(nameof(CanDelete));
+        OnPropertyChanged(nameof(HasPreview));
+        InvalidatePreview();
         foreach (var command in new[]
                  {
                      AddCommand, DuplicateCommand, DeleteCommand, SaveCommand, ApplyCommand, CaptureCommand,
@@ -854,16 +953,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
             return null;
         }
 
-        foreach (var field in new (decimal? Value, decimal Minimum, decimal Maximum, string Key)[]
-                 {
-                     (FontSize is null ? null : ParseNumber(FontSizeText), 0.01m, 4096, "FontSizeInput"),
-                     (StrokeWidth is null ? null : ParseNumber(StrokeWidthText), 0, 4096, "StrokeWidthInput"),
-                     (Margin is null ? null : ParseNumber(MarginText), 0, 32768, "MarginInput"),
-                     (LineHeight is null ? null : ParseNumber(LineHeightText), 0.1m, 10, "LineHeightInput"),
-                     (ShadowBlur is null ? null : ParseNumber(ShadowBlurText), 0, 512, "ShadowBlurInput"),
-                     (ShadowX is null ? null : ParseNumber(ShadowXText), -1000000000, 1000000000, "ShadowXInput"),
-                     (ShadowY is null ? null : ParseNumber(ShadowYText), -1000000000, 1000000000, "ShadowYInput")
-                 })
+        foreach (var field in NumericFields())
         {
             if (field.Value is null || field.Value < field.Minimum || field.Value > field.Maximum)
             {
@@ -913,5 +1003,19 @@ public sealed class StyleSettingsViewModel : ObservableObject
     {
         errorKey = key;
         Error = Localization.Get("Settings." + key);
+    }
+
+    private (decimal? Value, decimal Minimum, decimal Maximum, string Key)[] NumericFields()
+    {
+        return
+        [
+            (FontSize is null ? null : ParseNumber(FontSizeText), 0.01m, 4096, "FontSizeInput"),
+            (StrokeWidth is null ? null : ParseNumber(StrokeWidthText), 0, 4096, "StrokeWidthInput"),
+            (Margin is null ? null : ParseNumber(MarginText), 0, 32768, "MarginInput"),
+            (LineHeight is null ? null : ParseNumber(LineHeightText), 0.1m, 10, "LineHeightInput"),
+            (ShadowBlur is null ? null : ParseNumber(ShadowBlurText), 0, 512, "ShadowBlurInput"),
+            (ShadowX is null ? null : ParseNumber(ShadowXText), -1000000000, 1000000000, "ShadowXInput"),
+            (ShadowY is null ? null : ParseNumber(ShadowYText), -1000000000, 1000000000, "ShadowYInput")
+        ];
     }
 }

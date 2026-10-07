@@ -12,8 +12,13 @@ internal sealed partial class WorkbenchSession
 
     internal SubtitlePositionMeasurement MeasureStylePosition(SubtitleStylePreset preset)
     {
-        var document = Editor.Snapshot;
         var text = SelectedCue?.Text ?? Localization.Get("Workbench.SubtitlePreviewText");
+        return MeasureStylePosition(preset, text);
+    }
+
+    internal SubtitlePositionMeasurement MeasureStylePosition(SubtitleStylePreset preset, string text)
+    {
+        var document = Editor.Snapshot;
         return Rendering.SubtitleStylePositionMeasurer.Measure(preset, document.Width, document.Height, text, Fonts.Catalog);
     }
     internal void NotifyStyleLibraryChanged()

@@ -187,6 +187,7 @@ public sealed partial class SettingsWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        this.FindControl<Styles.StyleSettingsView>("StylesView")!.Dispose();
         Localization.LanguageChanged -= OnLanguageChanged;
         ViewModel.Appearance.Changed -= OnAppearanceChanged;
         ViewModel.Colors.Changed -= OnColorsChanged;

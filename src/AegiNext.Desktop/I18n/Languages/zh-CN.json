@@ -341,6 +341,9 @@
     "Settings.Export": "导出",
     "Settings.Font": "字体",
     "Settings.FontSize": "字号",
+    "Settings.PreviewText": "预览文字",
+    "Settings.StylePreview": "样式预览",
+    "Settings.StylePreviewError": "无法预览此样式：{0}",
     "Settings.SystemFont": "系统字体",
     "Settings.EmbeddedFont": "内嵌字体",
     "Settings.Bold": "粗体",
@@ -784,6 +787,7 @@
     "Workbench.ImportUserSettings": "导入个人设置",
     "Workbench.UserSettingsFiles": "AegiNext 设置文件",
     "Settings.ShadowOffset": "阴影偏移",
-    "Workbench.LineHeight": "行高"
+    "Workbench.LineHeight": "行高",
+    "Settings.StylePreviewNavigationHint": "Cmd/Ctrl＋滚轮缩放，左键拖动平移"
   }
 }

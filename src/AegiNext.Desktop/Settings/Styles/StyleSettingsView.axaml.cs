@@ -1,25 +1,40 @@
 using System.ComponentModel;
+using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
+using AegiNext.Desktop.Rendering;
+using AegiNext.Rendering.Fonts;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Selection;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Settings.Styles;
 
 /// <summary>样式页面局部字体、对齐确认和焦点适配。</summary>
-public sealed partial class StyleSettingsView : UserControl
+public sealed partial class StyleSettingsView : UserControl, IDisposable
 {
     private StyleSettingsViewModel? model;
     private bool synchronizingSelection;
+    private readonly SubtitleStylePreviewScheduler preview;
+    private readonly SystemFontCatalog fallbackFontCatalog = new();
+    private long previewRevision;
+    private Guid? previewPresetId;
+    private bool disposed;
+    internal Task PreviewCompletion => preview.Completion;
 
     /// <summary>先隔离父级上下文，再加载编译绑定和本地控件的语义提交。</summary>
     public StyleSettingsView()
     {
         DataContext = null;
         AvaloniaXamlLoader.Load(this);
+        preview = new(SubtitleStylePreviewRenderer.Render, PresentPreview);
         DataContextChanged += (_, _) => ChangeModel();
+        AttachedToVisualTree += (_, _) => RefreshPreview();
+        DetachedFromVisualTree += (_, _) => preview.Invalidate(++previewRevision);
         this.FindControl<ListBox>("StyleList")!.SelectionChanged += SelectionChanged;
         this.FindControl<FontFamilyPicker>("FontInput")!.FamilyCommitted +=
             (_, value) => model?.CommitFont(value.Selection);
@@ -29,6 +44,14 @@ public sealed partial class StyleSettingsView : UserControl
 
     private void ChangeModel()
     {
+        if (disposed)
+        {
+            return;
+        }
+        preview.Invalidate(++previewRevision);
+        previewPresetId = null;
+        this.FindControl<PreviewViewportControl>("StylePreviewViewport")!.ResetView();
+        this.FindControl<VideoFramePresenter>("StylePreviewFrame")!.Clear();
         if (model is not null)
         {
             model.PropertyChanged -= ModelChanged;
@@ -50,6 +73,7 @@ public sealed partial class StyleSettingsView : UserControl
             RefreshFontFamilies();
             LoadFont();
         }
+        RefreshPreview();
     }
 
     private async void SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -126,6 +150,10 @@ public sealed partial class StyleSettingsView : UserControl
 
     private void ModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(StyleSettingsViewModel.PreviewRevision))
+        {
+            RefreshPreview();
+        }
         if (e.PropertyName is nameof(StyleSettingsViewModel.SelectedIds) or nameof(StyleSettingsViewModel.Styles))
         {
             SynchronizeSelection();
@@ -157,6 +185,87 @@ public sealed partial class StyleSettingsView : UserControl
         var style = preset?.Style ?? new();
         this.FindControl<FontFamilyPicker>("FontInput")!.SetCurrentFont(
             new(style.FontFamily, style.FontVariant, preset?.Font is null && !style.FontAssetId.HasValue));
+    }
+
+    private void RefreshPreview()
+    {
+        var revision = ++previewRevision;
+        preview.Invalidate(revision);
+        if (disposed || model is null || !model.HasPreview)
+        {
+            previewPresetId = null;
+            this.FindControl<PreviewViewportControl>("StylePreviewViewport")!.ResetView();
+            this.FindControl<VideoFramePresenter>("StylePreviewFrame")!.Clear();
+            model?.SetPreviewError(null);
+            return;
+        }
+        if (previewPresetId != model.Draft!.Id)
+        {
+            previewPresetId = model.Draft.Id;
+            this.FindControl<PreviewViewportControl>("StylePreviewViewport")!.ResetView();
+            this.FindControl<VideoFramePresenter>("StylePreviewFrame")!.Clear();
+            model.SetPreviewError(null);
+        }
+        if (!IsVisible || !this.IsAttachedToVisualTree() || !model.TryCreatePreviewPreset(out var preset))
+        {
+            return;
+        }
+        var canvas = model.Position.Geometry?.ParentSize;
+        var defaults = new ProjectDocument();
+        preview.Submit(new(revision, preset!, model.PreviewText,
+            canvas is { } size ? (int)size.X : defaults.Width,
+            canvas is { } dimensions ? (int)dimensions.Y : defaults.Height, model.Fonts.Catalog ?? fallbackFontCatalog));
+    }
+
+    private void PresentPreview(SubtitleStylePreviewResult result)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (disposed || result.Request.Revision != previewRevision || model?.Draft?.Id != result.Request.Preset.Id ||
+                !IsVisible || !this.IsAttachedToVisualTree())
+            {
+                return;
+            }
+            model.SetPreviewError(result.Error?.Message);
+            if (result.Frame is { } frame)
+            {
+                this.FindControl<VideoFramePresenter>("StylePreviewFrame")!.Present(frame);
+            }
+        });
+    }
+
+    /// <inheritdoc />
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IsVisibleProperty && preview is not null)
+        {
+            if (!IsVisible)
+            {
+                this.FindControl<PreviewViewportControl>("StylePreviewViewport")!.CancelInteraction();
+            }
+            RefreshPreview();
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        if (disposed)
+        {
+            return;
+        }
+        disposed = true;
+        previewRevision++;
+        this.FindControl<PreviewViewportControl>("StylePreviewViewport")!.CancelInteraction();
+        preview.Dispose();
+        if (model is not null)
+        {
+            model.PropertyChanged -= ModelChanged;
+            model.CommitPendingInputs = null;
+            model.HasPendingInputs = null;
+        }
+        this.FindControl<VideoFramePresenter>("StylePreviewFrame")!.Dispose();
     }
 
     private void FocusName(object? sender, RoutedEventArgs e)

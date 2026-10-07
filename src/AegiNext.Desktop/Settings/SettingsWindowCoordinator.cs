@@ -66,7 +66,9 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
             Subscribe(window);
             exportPresets = new(applicationContext, window, dialogs, session);
             transfer = new(applicationContext, window, dialogs, captureLayout, requestApplicationExit);
-            window.SetSubtitlePositionMeasurement(session is null ? MeasureDefaultPosition : session.MeasureStylePosition);
+            window.ViewModel.Styles.SetPositionMeasurement((preset, text) => session is null
+                ? MeasureDefaultPosition(preset, text)
+                : session.MeasureStylePosition(preset, text));
             window.UpdateShortcuts(applicationContext.Preferences.ShortcutBindings);
             window.UpdateStyles(applicationContext.StyleLibrary.Snapshot.Presets);
             window.UpdateEffects(applicationContext.EffectScriptLibrary.Snapshot.Presets);
@@ -634,10 +636,10 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         }
     }
 
-    private SubtitlePositionMeasurement MeasureDefaultPosition(SubtitleStylePreset preset)
+    private SubtitlePositionMeasurement MeasureDefaultPosition(SubtitleStylePreset preset, string text)
     {
         var document = new ProjectDocument();
         return Rendering.SubtitleStylePositionMeasurer.Measure(preset, document.Width, document.Height,
-            Localization.Get("Workbench.SubtitlePreviewText"), applicationContext.Fonts.Catalog);
+            text, applicationContext.Fonts.Catalog);
     }
 }

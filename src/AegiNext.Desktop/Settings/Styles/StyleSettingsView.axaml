@@ -46,6 +46,21 @@
       </Grid>
       <ScrollViewer Grid.Column="1">
         <StackPanel Name="StyleEditor" IsEnabled="{Binding CanEdit}" Spacing="12">
+          <StackPanel Name="StylePreviewSection" IsVisible="{Binding HasPreview}" Spacing="8">
+            <TextBlock Text="{Loc Key=Settings.PreviewText}" Classes="field" />
+            <TextBox Name="StylePreviewTextInput" Text="{Binding PreviewText, Mode=TwoWay}"
+                     AcceptsReturn="True" TextWrapping="Wrap" MaxLength="4096" MinHeight="64" />
+            <Border BorderBrush="{DynamicResource SettingsBorder}" BorderThickness="1" CornerRadius="6"
+                    ClipToBounds="True" Height="180">
+              <controls:PreviewViewportControl Name="StylePreviewViewport"
+                                               ToolTip.Tip="{Loc Key=Settings.StylePreviewNavigationHint}">
+                <controls:VideoFramePresenter Name="StylePreviewFrame" Stretch="Uniform" IsHitTestVisible="False"
+                                              AutomationProperties.Name="{Loc Key=Settings.StylePreview}" />
+              </controls:PreviewViewportControl>
+            </Border>
+            <TextBlock Text="{Binding PreviewError}" IsVisible="{Binding HasPreviewError}"
+                       TextWrapping="Wrap" Foreground="{DynamicResource SettingsError}" Classes="field" />
+          </StackPanel>
           <StackPanel Spacing="8">
             <TextBlock Text="{Loc Key=Settings.Name}" Classes="field" />
             <TextBox Name="StyleNameInput" Text="{Binding Name, Mode=TwoWay}" MaxLength="128" />
