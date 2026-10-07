@@ -3,7 +3,6 @@ using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Effects;
-using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
@@ -327,8 +326,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
     {
         var layer = session.SelectedLayer ?? throw new InvalidOperationException(Localization.Get("Workbench.NoSelection"));
         var time = session.ProjectPosition - layer.Start + layer.AnimationOffset;
-        if (session.ProjectPosition < layer.Start || session.ProjectPosition > layer.End ||
-            time < MediaTime.Zero)
+        if (LayerAnimationTiming.ClampTime(layer, time) != time)
         {
             return;
         }
@@ -406,8 +404,8 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
     {
         session.ViewModel.Effects.CanAddKeyframe = session.SelectedLayer is { } layer &&
             layer.Tracks.FirstOrDefault(track => track.Target == ActiveTarget)?.Transforms.IsEmpty != false &&
-            session.ProjectPosition >= layer.Start && session.ProjectPosition <= layer.End &&
-            session.ProjectPosition - layer.Start + layer.AnimationOffset >= MediaTime.Zero;
+            LayerAnimationTiming.ClampTime(layer, session.ProjectPosition - layer.Start + layer.AnimationOffset) ==
+            session.ProjectPosition - layer.Start + layer.AnimationOffset;
     }
 
     internal void EditPath() => BeginPathEdit();

@@ -604,7 +604,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         var delta = IsStepEnabled && (e.KeyModifiers & KeyModifiers.Alt) == 0
             ? new MediaTime((long)Math.Round(seconds * 1000000), 1000000)
             : TimeFromSeconds(seconds, e.KeyModifiers);
-        var minimum = new MediaTime(document.FrameRate.Denominator, document.FrameRate.Numerator);
+        var clipDelta = ClipDeltaFromSeconds(seconds, e.KeyModifiers);
+        var minimum = new MediaTime(1, 1000);
         snapTarget = null;
         switch (dragMode)
         {
@@ -612,14 +613,15 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                 RequestSeek(TimeAt(point.X, e.KeyModifiers));
                 break;
             case TimelineDragMode.MOVE:
-                UpdateMove(delta, e.KeyModifiers);
+                UpdateMove(clipDelta, e.KeyModifiers);
                 break;
             case TimelineDragMode.TRIM_START:
-                pendingStart = Max(MediaTime.Zero, Min(originalEnd - minimum, SnapEdit(originalStart + delta, e.KeyModifiers)));
+                pendingStart = Max(MediaTime.Zero, Min(originalEnd - minimum,
+                    SnapEdit(originalStart + clipDelta, e.KeyModifiers, position)));
                 snapTarget = snapTarget == pendingStart ? snapTarget : null;
                 break;
             case TimelineDragMode.TRIM_END:
-                pendingEnd = Max(originalStart + minimum, SnapEdit(originalEnd + delta, e.KeyModifiers));
+                pendingEnd = Max(originalStart + minimum, SnapEdit(originalEnd + clipDelta, e.KeyModifiers, position));
                 snapTarget = snapTarget == pendingEnd ? snapTarget : null;
                 break;
             case TimelineDragMode.KEYFRAME:
@@ -1842,7 +1844,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             ? TimelineQuantization.Quantize(value, TimelineTimeScale.MinorStep(PixelsPerSecond)) : value;
     }
 
-    private MediaTime SnapEdit(MediaTime value, KeyModifiers modifiers)
+    private MediaTime SnapEdit(MediaTime value, KeyModifiers modifiers, MediaTime? additionalBoundary = null)
     {
         var result = QuantizeEdit(value, modifiers);
         if (!ShouldSnap(modifiers))
@@ -1850,7 +1852,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             return result;
         }
 
-        var snap = TimelineQuantization.ResolveSnap(result, snapBoundaries, PixelsPerSecond);
+        var snap = TimelineQuantization.ResolveSnap(result, snapBoundaries, PixelsPerSecond, additionalBoundary);
         snapTarget = snap.Boundary;
         return snap.Value;
     }

@@ -2,6 +2,12 @@
 
 [English](subtitle-editing.md) · [简体中文](../zh-cn/subtitle-editing.md) · [All guides](README.md)
 
+## Timeline clip timing
+
+Move subtitle clips and trim either edge in 1 ms increments by default; trimming keeps at least 1 ms of duration. **Step** aligns edits to the visible ruler divisions. With snapping enabled, either clip edge can snap to another clip boundary or the current red playback line, using the target's exact time. Hold Alt to temporarily bypass Step and snapping.
+
+Extending a clip to the left preserves existing effect keyframes at their original project times. You can move or add keyframes throughout the expanded clip. Each completed drag commits once and can be undone.
+
 ## Rich text and karaoke
 
 Select a subtitle and open **Subtitle Details** from View or the subtitle row. The panel can dock or float and offers rich-text, highlight-timing, and advanced-code views of the same cue.

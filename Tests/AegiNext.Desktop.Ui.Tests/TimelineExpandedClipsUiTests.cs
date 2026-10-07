@@ -204,7 +204,7 @@ public sealed class TimelineExpandedClipsUiTests
     }
 
     [AvaloniaTheory]
-    [InlineData(false, 2000, 13, 30)]
+    [InlineData(false, 2000, 427, 1000)]
     [InlineData(true, 2000, 43, 100)]
     public void StepUsesTheVisibleMinorDivisionForRealClipTrim(bool step, double pixelsPerSecond,
         long expectedNumerator, long expectedDenominator)

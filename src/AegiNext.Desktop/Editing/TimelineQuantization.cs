@@ -27,13 +27,16 @@ internal static class TimelineQuantization
         return ResolveSnap(value, boundaries, pixelsPerSecond).Value;
     }
 
-    internal static TimelineSnapResult ResolveSnap(MediaTime value, IReadOnlyList<MediaTime> boundaries, double pixelsPerSecond)
+    internal static TimelineSnapResult ResolveSnap(MediaTime value, IReadOnlyList<MediaTime> boundaries, double pixelsPerSecond,
+        MediaTime? additionalBoundary = null)
     {
         var result = value;
         MediaTime? target = null;
         var distance = 8d;
-        foreach (var boundary in boundaries)
+        var boundaryCount = boundaries.Count + (additionalBoundary.HasValue ? 1 : 0);
+        for (var index = 0; index < boundaryCount; index++)
         {
+            var boundary = index < boundaries.Count ? boundaries[index] : additionalBoundary!.Value;
             var difference = Math.Abs(Seconds(boundary - value)) * pixelsPerSecond;
             if (difference <= distance)
             {
@@ -53,14 +56,16 @@ internal static class TimelineQuantization
     }
 
     internal static TimelineSnapResult ResolveSnapOffset(MediaTime start, MediaTime end, IReadOnlyList<MediaTime> boundaries,
-        double pixelsPerSecond)
+        double pixelsPerSecond, MediaTime? additionalBoundary = null)
     {
         var result = MediaTime.Zero;
         MediaTime? target = null;
         var distance = 8d;
         ReadOnlySpan<MediaTime> edges = [start, end];
-        foreach (var boundary in boundaries)
+        var boundaryCount = boundaries.Count + (additionalBoundary.HasValue ? 1 : 0);
+        for (var index = 0; index < boundaryCount; index++)
         {
+            var boundary = index < boundaries.Count ? boundaries[index] : additionalBoundary!.Value;
             foreach (var edge in edges)
             {
                 var offset = boundary - edge;

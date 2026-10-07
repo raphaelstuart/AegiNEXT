@@ -229,11 +229,12 @@ public sealed class EffectScriptTests
     public void PositiveAndNegativeAnimationOffsetsUseTheLegalContentRange()
     {
         var script = BuiltinEffectScripts.Get("fade-in-out").Script;
-        foreach (var offset in new MediaTime[] { new(5), new(-1) })
+        foreach (var offset in new MediaTime[] { new(5), new(-1), new(-3) })
         {
             var target = new ProjectLayer { Start = new(10), End = new(12), AnimationOffset = offset };
             var (minimum, maximum) = LayerAnimationTiming.GetRange(target);
             var track = Assert.Single(EffectScriptCompiler.Compile(script, target));
+            Assert.Equal(offset, minimum);
             Assert.Equal(minimum, track.Keyframes[0].Time);
             Assert.Equal(maximum, track.Keyframes[^1].Time);
             var project = new ProjectDocument { Layers = [target with { Tracks = [track] }] };
@@ -242,7 +243,7 @@ public sealed class EffectScriptTests
             Assert.Empty(SceneEvaluator.Evaluate(project, new(12)));
         }
 
-        Assert.Throws<EffectScriptException>(() => EffectScriptCompiler.Compile(script, new() { End = new(1), AnimationOffset = new(-1) }));
+        Assert.Throws<EffectScriptException>(() => EffectScriptCompiler.Compile(script, new() { End = MediaTime.Zero, AnimationOffset = new(-1) }));
     }
 
     [Fact]

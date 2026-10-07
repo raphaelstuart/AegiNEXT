@@ -152,7 +152,7 @@ public sealed class TimelineBatchGestureBoundaryUiTests
             Assert.Null(timeline.SnapTarget);
             window.MouseUp(destination, MouseButton.Left);
 
-            var offset = new MediaTime(31, 30);
+            var offset = new MediaTime(1033, 1000);
             Assert.Equal(first.Start + offset, editor.Snapshot.Layers.Single(layer => layer.Id == first.Id).Start);
             Assert.Equal(second.Start + offset, editor.Snapshot.Layers.Single(layer => layer.Id == second.Id).Start);
             Assert.True(editor.Undo());

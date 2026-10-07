@@ -273,7 +273,7 @@ public static class ProjectValidator
             Mask(mask);
         }
 
-        Tracks(layer.Tracks, mask: layer.Mask);
+        Tracks(layer.Tracks, mask: layer.Mask, allowNegativeKeyTimes: true);
         if (enforceAnimationRange)
         {
             var (minimumKeyTime, maximumKeyTime) = Editing.LayerAnimationTiming.GetRange(layer);
@@ -363,7 +363,8 @@ public static class ProjectValidator
         }
     }
 
-    private static void Tracks(ImmutableArray<AnimationTrack> tracks, bool allowLegacyColors = false, ClipMask? mask = null)
+    private static void Tracks(ImmutableArray<AnimationTrack> tracks, bool allowLegacyColors = false, ClipMask? mask = null,
+        bool allowNegativeKeyTimes = false)
     {
         Require(!tracks.IsDefault && tracks.Length <= 30064 &&
             tracks.Count(track => track is not null && !AnimationPropertyMetadata.IsNodeProperty(track.Property)) <= 64,
@@ -414,8 +415,8 @@ public static class ProjectValidator
             foreach (var frame in track.Keyframes)
             {
                 NotNull(frame, "数据项不能为 null。");
-                Require(frame.Time >= Timing.MediaTime.Zero && (!previous.HasValue || frame.Time > previous.Value),
-                    "关键帧时间必须非负且严格递增。");
+                Require(allowNegativeKeyTimes || frame.Time >= Timing.MediaTime.Zero, "预设关键帧时间必须非负。");
+                Require(!previous.HasValue || frame.Time > previous.Value, "关键帧时间必须严格递增。");
                 Curve(new(frame.Interpolation, frame.CurveStart, frame.CurveEnd) { Exponent = frame.Exponent });
                 AnimationValue(track.Property, frame.Value);
                 Require(!frame.ComponentCurves.IsDefault && (frame.ComponentCurves.IsEmpty || frame.ComponentCurves.Length == dimension - 1),

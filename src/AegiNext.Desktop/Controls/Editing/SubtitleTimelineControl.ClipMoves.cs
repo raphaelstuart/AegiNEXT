@@ -12,6 +12,12 @@ public sealed partial class SubtitleTimelineControl
 
     private bool IsBatchMove => dragMode == TimelineDragMode.MOVE && movingClips.Count > 1;
 
+    private MediaTime ClipDeltaFromSeconds(double seconds, KeyModifiers modifiers)
+    {
+        var denominator = IsStepEnabled && (modifiers & KeyModifiers.Alt) == 0 ? 1000000 : 1000;
+        return new((long)Math.Round(seconds * denominator), denominator);
+    }
+
     private void FreezeMovingClips(Guid id, TimelineDragMode mode)
     {
         if (mode != TimelineDragMode.MOVE)
@@ -35,7 +41,7 @@ public sealed partial class SubtitleTimelineControl
         pendingEnd = originalEnd + offset;
         if (delta != MediaTime.Zero && ShouldSnap(modifiers))
         {
-            var snap = TimelineQuantization.ResolveSnapOffset(pendingStart, pendingEnd, snapBoundaries, PixelsPerSecond);
+            var snap = TimelineQuantization.ResolveSnapOffset(pendingStart, pendingEnd, snapBoundaries, PixelsPerSecond, position);
             offset = Max(-earliest, offset + snap.Value);
             pendingStart = originalStart + offset;
             pendingEnd = originalEnd + offset;

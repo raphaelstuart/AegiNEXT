@@ -8,12 +8,11 @@ namespace AegiNext.Core.Editing;
 /// <summary>裁剪保留内容时钟及曲线相位，有序变换保留操作时间；拉伸同步缩放所有动画时间。</summary>
 public static class LayerAnimationTiming
 {
-    /// <summary>获取片段允许的非负内容时间，右端可保存结束关键帧。</summary>
+    /// <summary>获取片段完整的有符号内容时间范围，右端可保存结束关键帧。</summary>
     public static (MediaTime Minimum, MediaTime Maximum) GetRange(ProjectLayer layer)
     {
         ArgumentNullException.ThrowIfNull(layer);
-        return (layer.AnimationOffset < MediaTime.Zero ? MediaTime.Zero : layer.AnimationOffset,
-            layer.AnimationOffset + layer.End - layer.Start);
+        return (layer.AnimationOffset, layer.AnimationOffset + layer.End - layer.Start);
     }
 
     /// <summary>将一次关键帧编辑限制在当前片段内。</summary>
@@ -22,7 +21,7 @@ public static class LayerAnimationTiming
         var (minimum, maximum) = GetRange(layer);
         if (maximum < minimum)
         {
-            throw new InvalidOperationException("片段中没有可编辑的非负动画时间。");
+            throw new InvalidOperationException("片段中没有可编辑的动画时间。");
         }
 
         return time < minimum ? minimum : time > maximum ? maximum : time;
