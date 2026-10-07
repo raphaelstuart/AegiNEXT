@@ -34,7 +34,7 @@ public sealed class AudioAnalysisIoBudgetTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task AdjacentUncachedWindowsContinueThePcmCursorUnderTheLatestCompletedRequestOwner()
+    public async Task AdjacentUncachedWindowsContinueThePcmCursorAndBackwardWindowsReusePeakSummaries()
     {
         var source = new WindowAudioSource(_ => 0.25F, 30L * WaveformAnalyzer.SAMPLE_RATE);
         await using var session = new AudioAnalysisSession(_ => source, new(MediaTime.Zero), new(30), maximumCachedBytes: 8192);
@@ -43,9 +43,13 @@ public sealed class AudioAnalysisIoBudgetTests(ITestOutputHelper output)
 
         Assert.Equal(0.25F, second.Waveform.Peaks.Span[1]);
         Assert.Equal(1, source.SeekCount);
+        var reads = source.ReadCount;
+        var frames = source.FramesRead;
         var backward = await session.GetWindowAsync(new(MediaTime.Zero, 32768, 1), false);
         Assert.Equal(0.25F, backward.Waveform.Peaks.Span[1]);
-        Assert.Equal(2, source.SeekCount);
+        Assert.Equal(1, source.SeekCount);
+        Assert.Equal(reads, source.ReadCount);
+        Assert.Equal(frames, source.FramesRead);
         Assert.Equal(0, source.CancelCount);
         Assert.InRange(session.CachedBytes, 1, 8192);
     }

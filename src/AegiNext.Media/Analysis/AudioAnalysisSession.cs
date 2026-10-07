@@ -7,6 +7,8 @@ namespace AegiNext.Media.Analysis;
 public sealed class AudioAnalysisSession : IAsyncDisposable
 {
     private const int TILE_COLUMNS = 1024;
+    private const int BASE_WAVEFORM_SAMPLES = 512;
+    private const int PREVIEW_WINDOW_SAMPLES = 1024;
     private const long DEFAULT_CACHE_BYTES = 64L * 1024 * 1024;
     private readonly Lock gate = new();
     private readonly Func<CancellationToken, IAudioSampleSource> sourceFactory;
@@ -213,6 +215,8 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
     private AudioAnalysisLayers ReadLayers(AudioAnalysisWorkItem work)
     {
         var request = work.Request;
+        var tileSamples = request.Mode == AudioAnalysisMode.PREVIEW
+            ? AudioAnalysisSampleReader.PREVIEW_TILE_SAMPLES : AudioAnalysisSampleReader.TILE_SAMPLES;
         var pcmTimeBase = new MediaTimeBase(1, WaveformAnalyzer.SAMPLE_RATE);
         var mediaStart = mapping.Origin.ToTimestamp(pcmTimeBase, MediaTimeRounding.CEILING).Value;
         var mediaEnd = mapping.ToMediaTime(Duration).ToTimestamp(pcmTimeBase, MediaTimeRounding.CEILING).Value;
@@ -220,8 +224,9 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
         var projectStart = request.Start.ToTimestamp(pcmTimeBase, MediaTimeRounding.FLOOR).Value;
         var projectEnd = (request.End < Duration ? request.End : Duration).ToTimestamp(pcmTimeBase, MediaTimeRounding.CEILING).Value;
         projectEnd = Math.Min(projectEnd, Math.Max(0, mediaEnd - mediaStart));
-        var waveformResolution = Math.Min(request.SamplesPerBucket, AudioAnalysisSampleReader.TILE_SAMPLES);
-        var waveformTileColumns = Math.Min(TILE_COLUMNS, AudioAnalysisSampleReader.TILE_SAMPLES / waveformResolution);
+        var waveformResolution = request.Mode == AudioAnalysisMode.PREVIEW ? request.SamplesPerBucket
+            : Math.Min(request.SamplesPerBucket, AudioAnalysisSampleReader.TILE_SAMPLES);
+        var waveformTileColumns = Math.Max(1, Math.Min(TILE_COLUMNS, AudioAnalysisSampleReader.TILE_SAMPLES / waveformResolution));
         var waveformColumn = projectStart / waveformResolution;
         var waveformAfter = work.Waveform ? Ceiling(projectEnd, waveformResolution) : waveformColumn;
         var peaks = work.Waveform ? new float[request.BucketCount * 2] : null;
@@ -239,18 +244,19 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
         var levels = work.Spectrum ? new byte[checked(count * SpectrogramAnalyzer.FREQUENCY_BINS)] : null;
         var spectrumColumn = Math.Max(first, Ceiling(mediaStart, stride * 3L));
         var spectrumAfter = work.Spectrum ? Math.Min(after, Ceiling(mediaEnd, stride * 3L)) : spectrumColumn;
-        var reader = new AudioAnalysisSampleReader(index => ReadPcmTile(index, mediaStart, mediaEnd, work), mediaStart, mediaEnd);
+        var reader = new AudioAnalysisSampleReader(index => ReadPcmTile(index, tileSamples, mediaStart, mediaEnd, work),
+            mediaStart, mediaEnd, tileSamples);
         while (waveformColumn < waveformAfter || spectrumColumn < spectrumAfter)
         {
             Check(work);
             var waveformTileIndex = waveformColumn / waveformTileColumns;
             var spectrumTileIndex = AudioSpectrumWindowAnalyzer.Floor(spectrumColumn * stride * 3,
-                AudioAnalysisSampleReader.TILE_SAMPLES) / AudioAnalysisSampleReader.TILE_SAMPLES;
+                tileSamples) / tileSamples;
             var waveformTileStart = waveformTileIndex * waveformTileColumns * waveformResolution + mediaStart;
-            var spectrumTileStart = spectrumTileIndex * AudioAnalysisSampleReader.TILE_SAMPLES;
+            var spectrumTileStart = spectrumTileIndex * tileSamples;
             if (waveformColumn < waveformAfter && (spectrumColumn >= spectrumAfter || waveformTileStart <= spectrumTileStart))
             {
-                var tile = ReadWaveformTile(new(AudioAnalysisTileKind.WAVEFORM, waveformResolution, waveformTileIndex),
+                var tile = ReadWaveformTile(new(AudioAnalysisTileKind.WAVEFORM, waveformResolution, waveformTileIndex, request.Mode),
                     waveformTileColumns, mediaStart, reader, work).Waveform!;
                 var tileFirst = waveformTileIndex * waveformTileColumns;
                 var columns = (int)Math.Min(tileFirst + waveformTileColumns - waveformColumn, waveformAfter - waveformColumn);
@@ -266,10 +272,10 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
             else
             {
                 var tileFirst = Ceiling(spectrumTileStart, stride * 3L);
-                var tileAfter = Ceiling(spectrumTileStart + AudioAnalysisSampleReader.TILE_SAMPLES, stride * 3L);
+                var tileAfter = Ceiling(spectrumTileStart + tileSamples, stride * 3L);
                 var tileColumns = checked((int)(tileAfter - tileFirst));
-                var tile = ReadSpectrumTile(new(AudioAnalysisTileKind.SPECTRUM, stride, spectrumTileIndex), tileFirst,
-                    tileColumns, mediaStart, Math.Min(mediaEnd, confirmedSourceEnd ?? mediaEnd), reader, work).Spectrogram!;
+                var tile = ReadSpectrumTile(new(AudioAnalysisTileKind.SPECTRUM, stride, spectrumTileIndex, request.Mode), tileFirst,
+                    tileColumns, tileSamples, mediaStart, Math.Min(mediaEnd, confirmedSourceEnd ?? mediaEnd), reader, work).Spectrogram!;
                 var offset = (int)(spectrumColumn - tileFirst);
                 spectrumAfter = Math.Min(spectrumAfter, Ceiling(confirmedSourceEnd ?? mediaEnd, stride * 3L));
                 var columns = (int)Math.Min(tileAfter - spectrumColumn, spectrumAfter - spectrumColumn);
@@ -300,52 +306,317 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
         {
             return cached;
         }
+        if (key.Mode == AudioAnalysisMode.EXACT && key.SamplesPerColumn > BASE_WAVEFORM_SAMPLES)
+        {
+            var basis = ReadWaveformTile(key with { SamplesPerColumn = BASE_WAVEFORM_SAMPLES },
+                AudioAnalysisSampleReader.TILE_SAMPLES / BASE_WAVEFORM_SAMPLES, mediaStart, reader, work);
+            return AggregateWaveformTile(key, columns, basis.Waveform!, work);
+        }
+        if (key.Mode == AudioAnalysisMode.PREVIEW && key.SamplesPerColumn >= BASE_WAVEFORM_SAMPLES)
+        {
+            for (var resolution = key.SamplesPerColumn / 2; resolution >= BASE_WAVEFORM_SAMPLES; resolution /= 2)
+            {
+                if (TryAggregatePreviewWaveformTile(key, columns, resolution, work) is { } reused)
+                {
+                    return reused;
+                }
+            }
+            for (var resolution = (long)key.SamplesPerColumn * 2; resolution <= 1L << 30; resolution *= 2)
+            {
+                if (TryResamplePreviewWaveformTile(key, columns, (int)resolution, work) is { } reused)
+                {
+                    return reused;
+                }
+            }
+        }
         var first = key.Index * columns * key.SamplesPerColumn;
         var peaks = new float[columns * 2];
         var end = Math.Min(first + (long)columns * key.SamplesPerColumn,
             Duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value);
-        for (var sample = first; sample < end; sample++)
+        if (confirmedSourceEnd is { } sourceEnd)
         {
-            if ((sample & 1023) == 0)
+            end = Math.Min(end, Math.Max(0, sourceEnd - mediaStart));
+        }
+        for (var column = 0; column < columns; column++)
+        {
+            var start = first + (long)column * key.SamplesPerColumn;
+            var after = Math.Min(start + key.SamplesPerColumn, end);
+            if (key.Mode == AudioAnalysisMode.PREVIEW)
+            {
+                var center = start + (after - start) / 2;
+                start = Math.Max(start, center - PREVIEW_WINDOW_SAMPLES / 2);
+                after = Math.Min(after, center + PREVIEW_WINDOW_SAMPLES / 2);
+            }
+            while (start < after)
             {
                 Check(work);
+                var samples = reader.ReadSpan(mediaStart + start, (int)Math.Min(1024, after - start));
+                var (minimum, maximum) = AudioWaveformPeakReducer.Reduce(samples);
+                peaks[column * 2] = Math.Min(peaks[column * 2], minimum);
+                peaks[column * 2 + 1] = Math.Max(peaks[column * 2 + 1], maximum);
+                start += samples.Length;
             }
-            var value = reader.Read(mediaStart + sample);
-            var column = (int)((sample - first) / key.SamplesPerColumn);
-            peaks[column * 2] = Math.Min(peaks[column * 2], value);
-            peaks[column * 2 + 1] = Math.Max(peaks[column * 2 + 1], value);
         }
-        var data = new WaveformData(new(new(first, WaveformAnalyzer.SAMPLE_RATE), key.SamplesPerColumn, columns), peaks);
+        return SaveWaveformTile(key, columns, peaks, work);
+    }
+
+    private AudioAnalysisTile? TryResamplePreviewWaveformTile(AudioAnalysisTileKey key, int columns, int resolution,
+        AudioAnalysisWorkItem work)
+    {
+        var basisColumns = Math.Max(1, Math.Min(TILE_COLUMNS, AudioAnalysisSampleReader.TILE_SAMPLES / resolution));
+        var first = key.Index * columns * key.SamplesPerColumn;
+        var end = Duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
+        var peaks = new float[columns * 2];
+        WaveformData? basis = null;
+        var previousIndex = -1L;
+        for (var column = 0; column < columns; column++)
+        {
+            Check(work);
+            var sample = first + (long)column * key.SamplesPerColumn;
+            if (sample >= end)
+            {
+                break;
+            }
+            var basisColumn = sample / resolution;
+            var tileIndex = basisColumn / basisColumns;
+            if (tileIndex != previousIndex)
+            {
+                basis = Find(key with { SamplesPerColumn = resolution, Index = tileIndex })?.Waveform;
+                previousIndex = tileIndex;
+                if (basis is null)
+                {
+                    return null;
+                }
+            }
+            var offset = checked((int)(basisColumn % basisColumns)) * 2;
+            peaks[column * 2] = basis!.Peaks.Span[offset];
+            peaks[column * 2 + 1] = basis.Peaks.Span[offset + 1];
+        }
+        return SaveWaveformTile(key, columns, peaks, work);
+    }
+
+    private AudioAnalysisTile? TryAggregatePreviewWaveformTile(AudioAnalysisTileKey key, int columns, int resolution,
+        AudioAnalysisWorkItem work)
+    {
+        var basisColumns = Math.Max(1, Math.Min(TILE_COLUMNS, AudioAnalysisSampleReader.TILE_SAMPLES / resolution));
+        var first = key.Index * columns * key.SamplesPerColumn / resolution;
+        var ratio = key.SamplesPerColumn / resolution;
+        var end = Duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
+        var peaks = new float[columns * 2];
+        WaveformData? basis = null;
+        var previousIndex = -1L;
+        for (var column = 0; column < columns; column++)
+        {
+            Check(work);
+            for (var index = 0; index < ratio; index++)
+            {
+                if (index % TILE_COLUMNS == 0)
+                {
+                    Check(work);
+                }
+                var basisColumn = first + (long)column * ratio + index;
+                if (basisColumn * resolution >= end)
+                {
+                    break;
+                }
+                var tileIndex = basisColumn / basisColumns;
+                if (tileIndex != previousIndex)
+                {
+                    var basisKey = key with { SamplesPerColumn = resolution, Index = tileIndex };
+                    basis = (Find(basisKey) ?? Find(basisKey with { Mode = AudioAnalysisMode.EXACT }))?.Waveform;
+                    previousIndex = tileIndex;
+                    if (basis is null)
+                    {
+                        return null;
+                    }
+                }
+                var offset = checked((int)(basisColumn % basisColumns)) * 2;
+                peaks[column * 2] = Math.Min(peaks[column * 2], basis!.Peaks.Span[offset]);
+                peaks[column * 2 + 1] = Math.Max(peaks[column * 2 + 1], basis.Peaks.Span[offset + 1]);
+            }
+        }
+        return SaveWaveformTile(key, columns, peaks, work);
+    }
+
+    private AudioAnalysisTile AggregateWaveformTile(AudioAnalysisTileKey key, int columns, WaveformData basis,
+        AudioAnalysisWorkItem work)
+    {
+        var peaks = new float[columns * 2];
+        var ratio = key.SamplesPerColumn / basis.SamplesPerBucket;
+        for (var column = 0; column < columns; column++)
+        {
+            Check(work);
+            for (var index = column * ratio; index < (column + 1) * ratio; index++)
+            {
+                peaks[column * 2] = Math.Min(peaks[column * 2], basis.Peaks.Span[index * 2]);
+                peaks[column * 2 + 1] = Math.Max(peaks[column * 2 + 1], basis.Peaks.Span[index * 2 + 1]);
+            }
+        }
+        return SaveWaveformTile(key, columns, peaks, work);
+    }
+
+    private AudioAnalysisTile SaveWaveformTile(AudioAnalysisTileKey key, int columns, float[] peaks, AudioAnalysisWorkItem work)
+    {
+        var first = key.Index * columns * key.SamplesPerColumn;
+        var data = new WaveformData(new(new(first, WaveformAnalyzer.SAMPLE_RATE), key.SamplesPerColumn, columns, key.Mode), peaks);
         var tile = new AudioAnalysisTile(key, data, null);
         Save(tile, work);
         return tile;
     }
 
     private AudioAnalysisTile ReadSpectrumTile(AudioAnalysisTileKey key, long firstColumn, int columns,
-        long mediaStart, long mediaEnd, AudioAnalysisSampleReader reader, AudioAnalysisWorkItem work)
+        int tileSamples, long mediaStart, long mediaEnd, AudioAnalysisSampleReader reader, AudioAnalysisWorkItem work)
     {
         if (Find(key) is { } cached)
         {
             return cached;
         }
+        for (var resolution = key.SamplesPerColumn / 2; resolution >= SpectrogramAnalyzer.HOP_SIZE; resolution /= 2)
+        {
+            if (Find(key with { SamplesPerColumn = resolution })?.Spectrogram is not { } basis)
+            {
+                continue;
+            }
+            var levels = new byte[columns * SpectrogramAnalyzer.FREQUENCY_BINS];
+            var firstBasis = Ceiling(key.Index * tileSamples, resolution * 3L);
+            for (var column = 0; column < columns; column++)
+            {
+                Check(work);
+                var sourceColumn = checked((int)((firstColumn + column) * key.SamplesPerColumn / resolution - firstBasis));
+                for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
+                {
+                    levels[row * columns + column] = basis.Levels.Span[row * basis.Width + sourceColumn];
+                }
+            }
+            return SaveSpectrumTile(key, firstColumn, columns, levels, work);
+        }
+        if (key.Mode == AudioAnalysisMode.PREVIEW)
+        {
+            for (var resolution = key.SamplesPerColumn; resolution >= SpectrogramAnalyzer.HOP_SIZE; resolution /= 2)
+            {
+                if (TryReuseExactSpectrumTile(key, firstColumn, columns, resolution, work) is { } reused)
+                {
+                    return reused;
+                }
+            }
+            for (var resolution = (long)key.SamplesPerColumn * 2; resolution <= 1L << 30; resolution *= 2)
+            {
+                if (TryResamplePreviewSpectrumTile(key, firstColumn, columns, (int)resolution,
+                        tileSamples, mediaStart, mediaEnd, work) is { } reused)
+                {
+                    return reused;
+                }
+            }
+        }
         var data = AudioSpectrumWindowAnalyzer.Analyze(reader.Read, reader.Prepare, mapping.Origin,
             firstColumn * key.SamplesPerColumn, key.SamplesPerColumn, columns, mediaStart,
             () => Math.Min(mediaEnd, confirmedSourceEnd ?? mediaEnd), () => Check(work));
+        if (key.Mode == AudioAnalysisMode.EXACT && !work.Waveform &&
+            work.Request.SamplesPerBucket <= AudioAnalysisSampleReader.TILE_SAMPLES)
+        {
+            var projectTile = Math.Max(0, AudioSpectrumWindowAnalyzer.Floor(key.Index * tileSamples - mediaStart,
+                AudioAnalysisSampleReader.TILE_SAMPLES) / AudioAnalysisSampleReader.TILE_SAMPLES);
+            ReadWaveformTile(new(AudioAnalysisTileKind.WAVEFORM, BASE_WAVEFORM_SAMPLES, projectTile),
+                AudioAnalysisSampleReader.TILE_SAMPLES / BASE_WAVEFORM_SAMPLES, mediaStart, reader, work);
+        }
         var tile = new AudioAnalysisTile(key, null, data);
         Save(tile, work);
         return tile;
     }
 
-    private AudioAnalysisTile ReadPcmTile(long index, long mediaStart, long mediaEnd, AudioAnalysisWorkItem work)
+    private AudioAnalysisTile? TryReuseExactSpectrumTile(AudioAnalysisTileKey key, long firstColumn, int columns,
+        int resolution, AudioAnalysisWorkItem work)
     {
-        var key = new AudioAnalysisTileKey(AudioAnalysisTileKind.PCM, AudioAnalysisSampleReader.TILE_SAMPLES, index);
+        var levels = new byte[columns * SpectrogramAnalyzer.FREQUENCY_BINS];
+        SpectrogramData? basis = null;
+        var previousIndex = long.MinValue;
+        for (var column = 0; column < columns; column++)
+        {
+            Check(work);
+            var center = (firstColumn + column) * key.SamplesPerColumn;
+            var tileIndex = AudioSpectrumWindowAnalyzer.Floor(center * 3, AudioAnalysisSampleReader.TILE_SAMPLES)
+                            / AudioAnalysisSampleReader.TILE_SAMPLES;
+            if (tileIndex != previousIndex)
+            {
+                basis = Find(key with { SamplesPerColumn = resolution, Index = tileIndex, Mode = AudioAnalysisMode.EXACT })?.Spectrogram;
+                previousIndex = tileIndex;
+                if (basis is null)
+                {
+                    return null;
+                }
+            }
+            var offset = checked((int)(center / resolution
+                - Ceiling(tileIndex * AudioAnalysisSampleReader.TILE_SAMPLES, resolution * 3L)));
+            for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
+            {
+                levels[row * columns + column] = basis!.Levels.Span[row * basis.Width + offset];
+            }
+        }
+        return SaveSpectrumTile(key, firstColumn, columns, levels, work);
+    }
+
+    private AudioAnalysisTile? TryResamplePreviewSpectrumTile(AudioAnalysisTileKey key, long firstColumn, int columns,
+        int resolution, int tileSamples, long mediaStart, long mediaEnd, AudioAnalysisWorkItem work)
+    {
+        var levels = new byte[columns * SpectrogramAnalyzer.FREQUENCY_BINS];
+        var firstBasis = Ceiling(mediaStart, resolution * 3L);
+        var afterBasis = Ceiling(mediaEnd, resolution * 3L);
+        if (firstBasis >= afterBasis)
+        {
+            return null;
+        }
+        SpectrogramData? basis = null;
+        var previousIndex = long.MinValue;
+        for (var column = 0; column < columns; column++)
+        {
+            Check(work);
+            var center = (firstColumn + column) * key.SamplesPerColumn;
+            if (center * 3 < mediaStart || center * 3 >= mediaEnd)
+            {
+                continue;
+            }
+            var basisColumn = Math.Clamp(AudioSpectrumWindowAnalyzer.Floor(center + resolution / 2, resolution) / resolution,
+                firstBasis, afterBasis - 1);
+            var tileIndex = AudioSpectrumWindowAnalyzer.Floor(basisColumn * resolution * 3, tileSamples) / tileSamples;
+            if (tileIndex != previousIndex)
+            {
+                basis = Find(key with { SamplesPerColumn = resolution, Index = tileIndex })?.Spectrogram;
+                previousIndex = tileIndex;
+                if (basis is null)
+                {
+                    return null;
+                }
+            }
+            var offset = checked((int)(basisColumn - Ceiling(tileIndex * tileSamples, resolution * 3L)));
+            for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
+            {
+                levels[row * columns + column] = basis!.Levels.Span[row * basis.Width + offset];
+            }
+        }
+        return SaveSpectrumTile(key, firstColumn, columns, levels, work);
+    }
+
+    private AudioAnalysisTile SaveSpectrumTile(AudioAnalysisTileKey key, long firstColumn, int columns,
+        byte[] levels, AudioAnalysisWorkItem work)
+    {
+        var data = new SpectrogramData(columns, SpectrogramAnalyzer.FREQUENCY_BINS,
+            mapping.ToProjectTime(new(firstColumn * key.SamplesPerColumn - key.SamplesPerColumn / 2,
+                SpectrogramAnalyzer.SAMPLE_RATE)), new(key.SamplesPerColumn, SpectrogramAnalyzer.SAMPLE_RATE), levels);
+        var tile = new AudioAnalysisTile(key, null, data);
+        Save(tile, work);
+        return tile;
+    }
+
+    private AudioAnalysisTile ReadPcmTile(long index, int tileSamples, long mediaStart, long mediaEnd, AudioAnalysisWorkItem work)
+    {
+        var key = new AudioAnalysisTileKey(AudioAnalysisTileKind.PCM, tileSamples, index, work.Request.Mode);
         if (Find(key) is { } cached)
         {
             return cached;
         }
         Check(work);
-        var first = index * AudioAnalysisSampleReader.TILE_SAMPLES - AudioAnalysisSampleReader.PADDING;
-        var samples = new float[AudioAnalysisSampleReader.TILE_SAMPLES + AudioAnalysisSampleReader.PADDING * 2];
+        var first = index * tileSamples - AudioAnalysisSampleReader.PADDING;
+        var samples = new float[tileSamples + AudioAnalysisSampleReader.PADDING * 2];
         var start = Math.Max(first, mediaStart);
         var end = Math.Min(first + samples.Length, Math.Min(mediaEnd, confirmedSourceEnd ?? mediaEnd));
         if (start >= end)
@@ -371,9 +642,10 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
         {
             throw new InvalidDataException("分析会话要求 48 kHz 单声道 PCM。");
         }
-        if (pcmReader is not null && lastPcmTile is { } previous && previous.Key.Index + 1 == index)
+        if (pcmReader is not null && lastPcmTile is { } previous && previous.Key.SamplesPerColumn == tileSamples &&
+            previous.Key.Mode == work.Request.Mode && previous.Key.Index + 1 == index)
         {
-            var previousFirst = previous.Key.Index * AudioAnalysisSampleReader.TILE_SAMPLES - AudioAnalysisSampleReader.PADDING;
+            var previousFirst = previous.Key.Index * tileSamples - AudioAnalysisSampleReader.PADDING;
             var overlapEnd = Math.Min(end, pcmReadThrough);
             if (overlapEnd > start)
             {
@@ -388,18 +660,10 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
             Check(work);
             pcmReader = new(source, CheckActiveRequest, lifetime.Token);
         }
-        for (var sample = start; sample < end; sample++)
+        pcmReader.CopyTo(start, samples.AsSpan((int)(start - first), checked((int)(end - start))));
+        if (pcmReader.EndSample is { } sourceEnd)
         {
-            if ((sample & 1023) == 0)
-            {
-                Check(work);
-            }
-            samples[(int)(sample - first)] = pcmReader.Read(sample);
-            if (pcmReader.EndSample is { } sourceEnd)
-            {
-                confirmedSourceEnd = Math.Min(sourceEnd, confirmedSourceEnd ?? sourceEnd);
-                break;
-            }
+            confirmedSourceEnd = Math.Min(sourceEnd, confirmedSourceEnd ?? sourceEnd);
         }
         var tile = new AudioAnalysisTile(key, null, null, samples);
         Save(tile, work);

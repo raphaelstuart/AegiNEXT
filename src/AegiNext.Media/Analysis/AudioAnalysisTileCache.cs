@@ -1,48 +1,43 @@
 namespace AegiNext.Media.Analysis;
 
-internal sealed class AudioAnalysisTileCache(long maximumBytes)
+internal sealed class AudioAnalysisTileCache
 {
-    private readonly LinkedList<AudioAnalysisTile> entries = new();
-    private readonly Dictionary<AudioAnalysisTileKey, LinkedListNode<AudioAnalysisTile>> byKey = [];
-    internal long Bytes { get; private set; }
+    private const long SUMMARY_BYTES = 16L * 1024 * 1024;
+    private readonly AudioAnalysisTileLruCache pcm;
+    private readonly AudioAnalysisTileLruCache summaries;
+    private readonly long maximumBytes;
+
+    internal AudioAnalysisTileCache(long maximumBytes)
+    {
+        var summaryBytes = Math.Min(maximumBytes, SUMMARY_BYTES);
+        this.maximumBytes = maximumBytes;
+        summaries = new(summaryBytes);
+        pcm = new(maximumBytes);
+    }
+
+    internal long Bytes => pcm.Bytes + summaries.Bytes;
 
     internal AudioAnalysisTile? Find(AudioAnalysisTileKey key)
     {
-        if (!byKey.TryGetValue(key, out var entry))
-        {
-            return null;
-        }
-        entries.Remove(entry);
-        entries.AddFirst(entry);
-        return entry.Value;
+        return (key.Kind == AudioAnalysisTileKind.PCM ? pcm : summaries).Find(key);
     }
 
     internal void Add(AudioAnalysisTile tile)
     {
-        if (tile.Bytes > maximumBytes)
+        if (tile.Key.Kind == AudioAnalysisTileKind.PCM)
         {
-            return;
+            pcm.Add(tile, maximumBytes - summaries.Bytes);
         }
-        if (byKey.Remove(tile.Key, out var previous))
+        else
         {
-            entries.Remove(previous);
-            Bytes -= previous.Value.Bytes;
+            summaries.Add(tile);
+            pcm.TrimTo(maximumBytes - summaries.Bytes);
         }
-        while (Bytes + tile.Bytes > maximumBytes && entries.Last is { } oldest)
-        {
-            byKey.Remove(oldest.Value.Key);
-            Bytes -= oldest.Value.Bytes;
-            entries.RemoveLast();
-        }
-        entries.AddFirst(tile);
-        byKey.Add(tile.Key, entries.First!);
-        Bytes += tile.Bytes;
     }
 
     internal void Clear()
     {
-        entries.Clear();
-        byKey.Clear();
-        Bytes = 0;
+        pcm.Clear();
+        summaries.Clear();
     }
 }

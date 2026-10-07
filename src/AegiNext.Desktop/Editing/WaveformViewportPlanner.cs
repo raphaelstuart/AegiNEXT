@@ -6,6 +6,7 @@ namespace AegiNext.Desktop.Editing;
 internal static class WaveformViewportPlanner
 {
     private const int OVERVIEW_BUCKET_COUNT = 4096;
+    private const int PREVIEW_SAMPLES_PER_BUCKET = 32768;
 
     internal static WaveformViewportPlan? Create(TimelineViewport viewport, double renderScaling, MediaTime duration)
     {
@@ -39,7 +40,8 @@ internal static class WaveformViewportPlanner
             samplesPerBucket = checked(samplesPerBucket * 2);
         }
 
-        return new(Request(visibleStart, visibleEnd, samplesPerBucket), Request(analysisStart, analysisEnd, samplesPerBucket));
+        var mode = samplesPerBucket >= PREVIEW_SAMPLES_PER_BUCKET ? AudioAnalysisMode.PREVIEW : AudioAnalysisMode.EXACT;
+        return new(Request(visibleStart, visibleEnd, samplesPerBucket, mode), Request(analysisStart, analysisEnd, samplesPerBucket, mode));
     }
 
     internal static WaveformAnalysisRequest CreateOverview(MediaTime duration)
@@ -54,9 +56,10 @@ internal static class WaveformViewportPlanner
         return Request(0, samples, samplesPerBucket);
     }
 
-    private static WaveformAnalysisRequest Request(long start, long end, int samplesPerBucket)
+    private static WaveformAnalysisRequest Request(long start, long end, int samplesPerBucket,
+        AudioAnalysisMode mode = AudioAnalysisMode.EXACT)
     {
-        return new(new(start, WaveformAnalyzer.SAMPLE_RATE), samplesPerBucket, (int)BucketCount(start, end, samplesPerBucket));
+        return new(new(start, WaveformAnalyzer.SAMPLE_RATE), samplesPerBucket, (int)BucketCount(start, end, samplesPerBucket), mode);
     }
 
     private static long BucketCount(long start, long end, int samplesPerBucket)

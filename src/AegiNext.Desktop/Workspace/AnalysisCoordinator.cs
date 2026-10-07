@@ -110,15 +110,27 @@ internal sealed class AnalysisCoordinator : IDisposable
             {
                 return;
             }
-            var result = await current.GetLayersAsync(request, waveform, spectrum, token);
-            if (IsCurrent(requestEpoch, token) && requestRevision == revision)
+            var timeline = session.ViewModel.Timeline;
+            if (spectrum)
             {
-                var timeline = session.ViewModel.Timeline;
-                timeline.Waveform = result.Waveform;
+                var result = await current.GetLayersAsync(request, false, true, token);
+                if (!IsCurrent(requestEpoch, token) || requestRevision != revision)
+                {
+                    return;
+                }
                 timeline.Spectrogram = result.Spectrogram;
-                timeline.AnalysisStatus = string.Empty;
-                published = true;
             }
+            if (waveform)
+            {
+                var result = await current.GetLayersAsync(request, true, false, token);
+                if (!IsCurrent(requestEpoch, token) || requestRevision != revision)
+                {
+                    return;
+                }
+                timeline.Waveform = result.Waveform;
+            }
+            timeline.AnalysisStatus = string.Empty;
+            published = true;
         }
         catch (OperationCanceledException)
         {

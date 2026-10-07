@@ -12,13 +12,40 @@ internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action c
     private bool eof;
     internal long? EndSample { get; private set; }
 
-    internal float Read(long sample)
+    internal void CopyTo(long sample, Span<float> destination)
+    {
+        while (!destination.IsEmpty)
+        {
+            checkRequest();
+            if (!Prepare(sample))
+            {
+                destination.Clear();
+                return;
+            }
+            if (sample < blockStart)
+            {
+                var silent = (int)Math.Min(destination.Length, blockStart - sample);
+                destination[..silent].Clear();
+                destination = destination[silent..];
+                sample += silent;
+                continue;
+            }
+            var count = (int)Math.Min(Math.Min(destination.Length, 1024), blockStart + block!.FrameCount - sample);
+            var samples = block.Samples.Span.Slice((int)(sample - blockStart), count);
+            AudioAnalysisSampleValidation.EnsureFinite(samples);
+            samples.CopyTo(destination);
+            destination = destination[count..];
+            sample += count;
+        }
+    }
+
+    private bool Prepare(long sample)
     {
         while (block is null || sample >= blockStart + block.FrameCount)
         {
             if (eof)
             {
-                return 0;
+                return false;
             }
             checkRequest();
             block = source.Read(lifetime);
@@ -27,7 +54,7 @@ internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action c
             {
                 eof = true;
                 EndSample = lastBlockEnd ?? sample;
-                return 0;
+                return false;
             }
             if (block.Format != source.Format || expected is { } previous && block.Start < previous)
             {
@@ -37,15 +64,6 @@ internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action c
             lastBlockEnd = blockStart + block.FrameCount;
             expected = block.Start + new MediaTime(block.FrameCount, WaveformAnalyzer.SAMPLE_RATE);
         }
-        if (sample < blockStart)
-        {
-            return 0;
-        }
-        var value = block.Samples.Span[(int)(sample - blockStart)];
-        if (!float.IsFinite(value))
-        {
-            throw new InvalidDataException("PCM 包含非有限样本。");
-        }
-        return value;
+        return true;
     }
 }

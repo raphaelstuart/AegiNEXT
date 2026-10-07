@@ -8,7 +8,8 @@ public sealed record WaveformAnalysisRequest
     public const int MAX_BUCKET_COUNT = 16384;
 
     /// <summary>将工程相对起点向下对齐到采样桶，桶内样本数必须为二的幂。</summary>
-    public WaveformAnalysisRequest(MediaTime start, int samplesPerBucket, int bucketCount)
+    public WaveformAnalysisRequest(MediaTime start, int samplesPerBucket, int bucketCount,
+        AudioAnalysisMode mode = AudioAnalysisMode.EXACT)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(start, MediaTime.Zero);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(samplesPerBucket);
@@ -19,10 +20,15 @@ public sealed record WaveformAnalysisRequest
 
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bucketCount);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(bucketCount, MAX_BUCKET_COUNT);
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode));
+        }
         var sample = start.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.FLOOR).Value;
         Start = new(sample - sample % samplesPerBucket, WaveformAnalyzer.SAMPLE_RATE);
         SamplesPerBucket = samplesPerBucket;
         BucketCount = bucketCount;
+        Mode = mode;
         Duration = new((long)samplesPerBucket * bucketCount, WaveformAnalyzer.SAMPLE_RATE);
         End = Start + Duration;
     }
@@ -36,4 +42,6 @@ public sealed record WaveformAnalysisRequest
     public int SamplesPerBucket { get; }
 
     public int BucketCount { get; }
+
+    public AudioAnalysisMode Mode { get; }
 }
