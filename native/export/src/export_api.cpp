@@ -1,6 +1,8 @@
 #include "aeginext_export.h"
 #include "color_pipeline.h"
+#include "export_performance.h"
 #include "export_versions.h"
+#include "yuv_frame_pipeline.h"
 #include "media_core.h"
 #include "color_resolution.h"
 #include <algorithm>
@@ -28,6 +30,8 @@ extern "C"
 namespace
 {
 using aeginext::encode::ColorPipeline;
+using aeginext::encode::ExportStage;
+using aeginext::encode::YuvFramePipeline;
 using aeginext::media::DecoderSession;
 using aeginext::media::DecodeMode;
 using aeginext::media::DecodeWorkload;
@@ -75,13 +79,12 @@ struct Context
     AVPacket *encoded = nullptr;
     std::unique_ptr<DecoderSession> decoderSession;
     std::mutex decoderMutex;
-    SwsContext *upsample = nullptr, *downsample = nullptr;
     std::string encoderName;
     an_export_result_info resultInfo{};
     bool completed = false;
+    aeginext::encode::ExportPerformance performance;
     ~Context()
     {
-        sws_free_context(&upsample); sws_free_context(&downsample);
         av_packet_free(&encoded);
         avcodec_free_context(&encoder);
         if (output)
@@ -147,43 +150,17 @@ void ValidateFrame(const AVFrame *f)
         }
     }
 }
-SwsContext *MakeScaler(int sw, int sh, AVPixelFormat sf, int dw, int dh, AVPixelFormat df, AVChromaLocation srcLocation, AVChromaLocation dstLocation, bool fullRange)
-{
-    auto *c = sws_alloc_context();
-    if (!c) throw std::bad_alloc();
-    try
-    {
-        Check(av_opt_set_int(c, "srcw", sw, 0), "srcw"); Check(av_opt_set_int(c, "srch", sh, 0), "srch");
-        Check(av_opt_set_int(c, "src_format", sf, 0), "src format");
-        Check(av_opt_set_int(c, "dstw", dw, 0), "dstw"); Check(av_opt_set_int(c, "dsth", dh, 0), "dsth");
-        Check(av_opt_set_int(c, "dst_format", df, 0), "dst format");
-        Check(av_opt_set_int(c, "src_range", fullRange, 0), "source range");
-        Check(av_opt_set_int(c, "dst_range", fullRange, 0), "target range");
-        Check(av_opt_set_int(c, "sws_flags", SWS_BILINEAR | SWS_ACCURATE_RND | SWS_BITEXACT, 0), "scale flags");
-        for (int side = 0; side < 2; ++side)
-        {
-            const auto location = side ? dstLocation : srcLocation;
-            if (location == AVCHROMA_LOC_UNSPECIFIED) continue;
-            int x = 0, y = 0; Check(av_chroma_location_enum_to_pos(&x, &y, location), "chroma position");
-            Check(av_opt_set_int(c, side ? "dst_h_chr_pos" : "src_h_chr_pos", x, 0), "chroma X");
-            Check(av_opt_set_int(c, side ? "dst_v_chr_pos" : "src_v_chr_pos", y, 0), "chroma Y");
-        }
-        Check(sws_init_context(c, nullptr, nullptr), "initialize same-domain YUV resampling");
-        return c;
-    }
-    catch (...) { sws_free_context(&c); throw; }
-}
 void WritePackets(Context &c, AVStream *stream)
 {
     while (true)
     {
         c.CheckCancel();
-        const auto result = avcodec_receive_packet(c.encoder, c.encoded);
+        const auto result = c.performance.Measure(ExportStage::ReceivePacket, [&]() { return avcodec_receive_packet(c.encoder, c.encoded); });
         if (result == AVERROR(EAGAIN) || result == AVERROR_EOF) return;
         Check(result, "receive encoded packet");
         av_packet_rescale_ts(c.encoded, c.encoder->time_base, stream->time_base);
         c.encoded->stream_index = stream->index;
-        Check(av_interleaved_write_frame(c.output, c.encoded), "mux encoded packet");
+        Check(c.performance.Measure(ExportStage::Mux, [&]() { return av_interleaved_write_frame(c.output, c.encoded); }), "mux encoded packet");
     }
 }
 std::string MasteringOption(const AVFrame *f)
@@ -465,9 +442,10 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
     c.encoded = av_packet_alloc();
     Frame decoded;
     if (!c.encoded) throw std::bad_alloc();
-    Frame upsampled, composed, outputFrame;
+    Frame outputFrame;
     AVStream *targetStream = nullptr;
     std::unique_ptr<ColorPipeline> color;
+    std::unique_ptr<YuvFramePipeline> yuv;
     std::vector<float> layer(static_cast<size_t>(r.width) * r.height * 4);
     int64_t lastPts = AV_NOPTS_VALUE;
     std::string mastering;
@@ -548,60 +526,46 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
             sourceFormat = decoded->format; sourceWidth = decoded->width; sourceHeight = decoded->height;
             matrix = decoded->colorspace; primaries = decoded->color_primaries; transfer = decoded->color_trc; range = decoded->color_range; chroma = decoded->chroma_location;
             color = std::make_unique<ColorPipeline>(decoded->colorspace, decoded->color_primaries, decoded->color_trc);
-            upsampled = Allocate(AV_PIX_FMT_YUV444P16LE, sourceWidth, sourceHeight);
-            composed = Allocate(AV_PIX_FMT_YUV444P16LE, r.width, r.height);
             outputFrame = Allocate(c.encoder->pix_fmt, r.width, r.height);
-            c.upsample = MakeScaler(sourceWidth, sourceHeight, static_cast<AVPixelFormat>(sourceFormat), sourceWidth, sourceHeight, AV_PIX_FMT_YUV444P16LE, decoded->chroma_location, AVCHROMA_LOC_UNSPECIFIED, decoded->color_range == AVCOL_RANGE_JPEG);
-            c.downsample = MakeScaler(r.width, r.height, AV_PIX_FMT_YUV444P16LE, r.width, r.height, c.encoder->pix_fmt, AVCHROMA_LOC_UNSPECIFIED, AVCHROMA_LOC_LEFT, decoded->color_range == AVCOL_RANGE_JPEG);
+            yuv = std::make_unique<YuvFramePipeline>(decoded.get(), r.width, r.height, c.encoder->pix_fmt);
         }
         Need(sourceFormat == decoded->format && sourceWidth == decoded->width && sourceHeight == decoded->height &&
             matrix == decoded->colorspace && primaries == decoded->color_primaries && transfer == decoded->color_trc && range == decoded->color_range && chroma == decoded->chroma_location,
             "Midstream video format/color changes require a new export segment");
         if (decoded->color_trc == AVCOL_TRC_SMPTE2084)
             Need(MasteringOption(decoded.get()) == mastering, "Midstream mastering metadata changes require an explicit export policy");
-        std::fill(layer.begin(), layer.end(), 0);
-        const auto result = render(user, pts, sourceStream->time_base.num, sourceStream->time_base.den, r.width, r.height, layer.data(), layer.size());
+        c.performance.Measure(ExportStage::ClearOverlay, [&]() { std::fill(layer.begin(), layer.end(), 0); return 0; });
+        const auto result = c.performance.Measure(ExportStage::Render, [&]()
+        {
+            return render(user, pts, sourceStream->time_base.num, sourceStream->time_base.den, r.width, r.height, layer.data(), layer.size());
+        });
         if (result != 0) throw Failure(result == 1 ? 4 : 3, result == 1 ? "Export cancelled" : "Project renderer failed");
         c.CheckCancel();
-        Check(sws_scale(c.upsample, decoded->data, decoded->linesize, 0, decoded->height, upsampled->data, upsampled->linesize), "upsample encoded YUV");
-        for (uint32_t y = 0; y < r.height; ++y)
+        Check(c.performance.Measure(ExportStage::Upsample, [&]()
         {
-            if (!(y % 32)) c.CheckCancel();
-            const uint16_t *input[3]{}; uint16_t *dest[3]{};
-            for (int p = 0; p < 3; ++p)
-            {
-                input[p] = reinterpret_cast<uint16_t *>(upsampled->data[p] + (y + decoded->crop_top) * upsampled->linesize[p]) + decoded->crop_left;
-                dest[p] = reinterpret_cast<uint16_t *>(composed->data[p] + y * composed->linesize[p]);
-                std::memcpy(dest[p], input[p], r.width * 2);
-            }
-            for (uint32_t x = 0; x < r.width; ++x)
-            {
-                const auto *pixel = &layer[(static_cast<size_t>(y)*r.width+x)*4];
-                if (pixel[3] == 0) continue;
-                const bool limited = range == AVCOL_RANGE_MPEG;
-                const double yOffset = limited ? 4096 : 0, yScale = limited ? 56064 : 65535, uvScale = limited ? 57344 : 65535;
-                const auto encoded = color->Composite({(input[0][x]-yOffset)/yScale,(input[1][x]-32768.0)/uvScale,(input[2][x]-32768.0)/uvScale}, {pixel[0],pixel[1],pixel[2],pixel[3]}, r.reference_white_nits);
-                for (int p = 0; p < 3; ++p)
-                {
-                    const auto value = encoded[p]*(p == 0 ? yScale : uvScale)+(p == 0 ? yOffset : 32768);
-                    Need(std::isfinite(value), "Non-finite composited sample");
-                    dest[p][x] = static_cast<uint16_t>(std::clamp(std::llround(value), 0LL, 65535LL));
-                }
-            }
-        }
-        Check(av_frame_make_writable(outputFrame.get()), "writable encode frame");
-        Check(sws_scale(c.downsample, composed->data, composed->linesize, 0, r.height, outputFrame->data, outputFrame->linesize), "downsample encoded YUV");
+            return yuv->Upsample(decoded.get());
+        }), "upsample encoded YUV");
+        c.performance.Measure(ExportStage::Composite, [&]()
+        {
+            yuv->Composite(decoded.get(), layer, *color, r.reference_white_nits, [&]() { c.CheckCancel(); });
+            return 0;
+        });
+        Check(c.performance.Measure(ExportStage::WritableFrame, [&]() { return av_frame_make_writable(outputFrame.get()); }), "writable encode frame");
+        Check(c.performance.Measure(ExportStage::Downsample, [&]()
+        {
+            return yuv->Downsample(outputFrame.get());
+        }), "downsample encoded YUV");
         outputFrame->pts = pts; outputFrame->duration = decoded->duration; outputFrame->time_base = sourceStream->time_base;
         outputFrame->color_range = decoded->color_range; outputFrame->colorspace = decoded->colorspace;
         outputFrame->color_primaries = decoded->color_primaries; outputFrame->color_trc = decoded->color_trc;
         outputFrame->chroma_location = AVCHROMA_LOC_LEFT; outputFrame->sample_aspect_ratio = decoded->sample_aspect_ratio;
-        Check(avcodec_send_frame(c.encoder, outputFrame.get()), "send composited frame");
+        Check(c.performance.Measure(ExportStage::SendFrame, [&]() { return avcodec_send_frame(c.encoder, outputFrame.get()); }), "send composited frame");
         WritePackets(c, targetStream); ++frames;
     };
     while (true)
     {
         c.CheckCancel();
-        auto raw = c.decoderSession->ReadFrame();
+        auto raw = c.performance.Measure(ExportStage::Decode, [&]() { return c.decoderSession->ReadFrame(); });
         if (!raw) break;
         sourceStream = c.decoderSession->SourceStream();
         Need(sourceStream && sourceStream->time_base.num > 0 && sourceStream->time_base.den > 0,
@@ -614,7 +578,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         c.resultInfo.inferred_fields |= resolved.inferredFields;
     }
     Need(c.encoder != nullptr && frames > 0, "No decoded video frames");
-    Check(avcodec_send_frame(c.encoder, nullptr), "drain encoder"); WritePackets(c, targetStream);
+    Check(c.performance.Measure(ExportStage::SendFrame, [&]() { return avcodec_send_frame(c.encoder, nullptr); }), "drain encoder"); WritePackets(c, targetStream);
     Check(av_write_trailer(c.output), "write output trailer");
     Check(avio_closep(&c.output->pb), "close output file");
     const auto &session = c.decoderSession->Info();
@@ -635,6 +599,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
     c.resultInfo.alpha_mode = decoded->alpha_mode;
     CopyError(c.resultInfo.fallback_reason, sizeof(c.resultInfo.fallback_reason), session.fallbackReason.c_str());
     c.completed = true;
+    c.performance.Report(frames, session.decodeNanoseconds, session.downloadNanoseconds);
 }
 }
 extern "C"

@@ -77,3 +77,9 @@ pwsh -NoProfile -File ./scripts/test-build.ps1
 ```
 
 首条命令将固定版本 QA 工具还原到工程产物目录。Headless UI 和静音音频测试不能证明原生外观或可听延迟；应用打包见[发布](publishing.md)。
+
+## 压制性能计时
+
+启动 `aegn-exporter` 前设置 `AEGINEXT_EXPORT_PROFILE=1`，原生导出成功后会向 stderr 写入一行以 `AEGINEXT_EXPORT_PROFILE` 开头的 JSON，记录帧数、原生总耗时、解码/下载时间，以及渲染、YUV 重采样、合成、编码和封装的工作耗时。正常 worker 协议仍使用 stdout；未设置开关时不读取阶段时钟。
+
+诊断时直接捕获 worker stderr，桌面导出器会消费该输出。另行测量包含 worker 启动和最终封装的完整导出时间，比较 FPS 时使用相同素材、工程快照、配置和构建模式。内部重采样与合成每阶段最多使用四个线程；GPU 编码仍可能受 CPU 合成速度限制。

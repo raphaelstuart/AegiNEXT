@@ -225,6 +225,27 @@ public sealed class LinearRenderSurface : IDisposable
         }
     }
 
+    /// <summary>
+    /// 将 F16 样本转换为紧密排列的预乘线性 RGBA float，保留负值与扩展亮度；调用方拥有目标缓冲。
+    /// </summary>
+    public unsafe void CopyPixels(Span<float> destination)
+    {
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+        if (destination.Length < Info.ChannelCount)
+        {
+            throw new ArgumentException("目标缓冲不足以容纳全部像素。", nameof(destination));
+        }
+
+        var info = new SKImageInfo(Info.Width, Info.Height, SKColorType.RgbaF32, SKAlphaType.Premul, colorSpace);
+        fixed (float* pixels = destination)
+        {
+            if (!surface.ReadPixels(info, (nint)pixels, checked(Info.Width * 4 * sizeof(float)), 0, 0))
+            {
+                throw new InvalidOperationException("无法读取线性 float 像素。");
+            }
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {

@@ -120,6 +120,61 @@ public class LinearRenderSurfaceTests
     }
 
     [Fact]
+    public void FloatCopyMatchesHalfSamplesAndLeavesExtraBufferUntouched()
+    {
+        using var surface = new LinearRenderSurface(new(3, 2, 203));
+        surface.FillRectangle(Vector2.Zero, Vector2.One, new(4, -0.5f, 2, 0.5f));
+        surface.FillRectangle(new(2, 1), Vector2.One, new(65504, -65504, 0.123f, 1));
+        var half = new Half[surface.Info.ChannelCount];
+        surface.CopyPixels(half);
+        var pixels = new float[surface.Info.ChannelCount + 4];
+        pixels.AsSpan(surface.Info.ChannelCount).Fill(42);
+
+        surface.CopyPixels(pixels);
+        surface.Clear();
+
+        for (var index = 0; index < half.Length; index++)
+        {
+            Assert.Equal((float)half[index], pixels[index]);
+        }
+
+        Assert.All(pixels.Skip(surface.Info.ChannelCount), value => Assert.Equal(42, value));
+        Assert.Equal(2, pixels[0]);
+        Assert.Equal(-0.25f, pixels[1]);
+        Assert.Equal(0.5f, pixels[3]);
+        Assert.Equal(65504, pixels[20]);
+        Assert.Equal(-65504, pixels[21]);
+    }
+
+    [Fact]
+    public void FloatCopyPreservesAntialiasedPremultipliedSamples()
+    {
+        using var surface = new LinearRenderSurface(new(16, 16, 203));
+        surface.FillEllipse(new(1.25f, 1.25f), new(13.5f, 13.5f), new(4, -2, 0, 0.5f));
+        var half = new Half[surface.Info.ChannelCount];
+        var pixels = new float[surface.Info.ChannelCount];
+        surface.CopyPixels(half);
+
+        surface.CopyPixels(pixels);
+
+        for (var index = 0; index < pixels.Length; index++)
+        {
+            Assert.Equal((float)half[index], pixels[index]);
+        }
+
+        Assert.Contains(Enumerable.Range(0, pixels.Length / 4), index => pixels[index * 4 + 3] is > 0 and < 0.49f);
+    }
+
+    [Fact]
+    public void FloatCopyRejectsShortBufferAndDisposedSurface()
+    {
+        using var surface = new LinearRenderSurface(new(2, 2, 203));
+        Assert.Throws<ArgumentException>(() => surface.CopyPixels(new float[15]));
+        surface.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => surface.CopyPixels(new float[16]));
+    }
+
+    [Fact]
     public void AntialiasedEdgesRemainPremultiplied()
     {
         using var layer = new LinearRenderSurface(new(16, 16, 203));

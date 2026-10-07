@@ -77,3 +77,9 @@ pwsh -NoProfile -File ./scripts/test-build.ps1
 ```
 
 The first command restores pinned QA tools to project artifacts. Headless UI and silent audio tests do not establish native appearance or audible latency. Package the result with [Publishing](publishing.md).
+
+## Profile video export
+
+Set `AEGINEXT_EXPORT_PROFILE=1` before starting `aegn-exporter` to write one `AEGINEXT_EXPORT_PROFILE` JSON line to stderr after a successful native export. It reports frame count, native elapsed time, decoder/download time, and work time for rendering, YUV resampling, composition, encoding, and muxing. The normal worker protocol remains on stdout. Without the switch, stage clocks are disabled.
+
+Capture worker stderr directly when diagnosing performance; the desktop exporter consumes it. Measure complete export wall time separately, including worker startup and final remux. Use the same media, project snapshot, configuration, and build mode when comparing FPS. Internal resampling and composition use at most four threads per stage; GPU encoding can still be limited by CPU composition.

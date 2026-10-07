@@ -259,6 +259,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
 
         ClearLayouts();
         ClearPreview();
+        ClearFrameCache();
         images.Clear();
         additiveBlend?.Dispose();
         extendedColorShader?.Dispose();
@@ -272,6 +273,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         {
             prepared = new(document);
             ClearPreview();
+            ClearFrameCache();
             ClearLayouts();
             foreach (var image in images.Values)
             {
@@ -319,7 +321,9 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         {
             var a = previous[i];
             var b = current[i];
-            if (!ReferenceEquals(a.Source, b.Source) || a.Transform != b.Transform || !a.Opacity.Equals(b.Opacity) ||
+            if (!ReferenceEquals(a.Source, b.Source) || !ReferenceEquals(a.Subtitle, b.Subtitle) ||
+                a.HasFillAnimation != b.HasFillAnimation || a.HasStrokeAnimation != b.HasStrokeAnimation ||
+                a.HasStrokeWidthAnimation != b.HasStrokeWidthAnimation || a.Transform != b.Transform || !a.Opacity.Equals(b.Opacity) ||
                 a.Fill != b.Fill || a.Stroke != b.Stroke || !a.StrokeWidth.Equals(b.StrokeWidth) || !a.Blur.Equals(b.Blur) || !EquivalentMask(a.Mask, b.Mask) ||
                 (a.Subtitle is { Karaoke.IsEmpty: false } && a.LocalTime != b.LocalTime) || !Equivalent(a.Children, b.Children))
             {

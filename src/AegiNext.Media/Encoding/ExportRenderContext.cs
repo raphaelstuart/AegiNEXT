@@ -1,6 +1,5 @@
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
-using AegiNext.Rendering;
 using AegiNext.Rendering.Projects;
 using System.Runtime.InteropServices;
 
@@ -9,8 +8,7 @@ namespace AegiNext.Media.Encoding;
 internal sealed class ExportRenderContext : IDisposable
 {
     private readonly ProjectSceneRenderer renderer;
-    private readonly LinearRenderSurface surface;
-    private readonly Half[] pixels;
+    private readonly int channelCount;
     private readonly IProgress<VideoExportProgress>? progress;
     private readonly CancellationToken cancellationToken;
     private readonly ProjectDocument project;
@@ -22,8 +20,7 @@ internal sealed class ExportRenderContext : IDisposable
         this.progress = progress;
         this.cancellationToken = cancellationToken;
         renderer = new(new DirectoryProjectAssetResolver(projectDirectory));
-        surface = new(new(project.Width, project.Height, (float)project.ReferenceWhiteNits));
-        pixels = new Half[surface.Info.ChannelCount];
+        channelCount = checked(project.Width * project.Height * 4);
     }
 
     internal Exception? Failure { get; private set; }
@@ -34,19 +31,13 @@ internal sealed class ExportRenderContext : IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (width != project.Width || height != project.Height || channels != (ulong)pixels.Length || output is null)
+            if (width != project.Width || height != project.Height || channels != (ulong)channelCount || output is null)
             {
                 throw new InvalidDataException("原生导出帧尺寸与项目不一致。");
             }
 
             var time = new MediaTimestamp(pts, new(timeBaseNumerator, timeBaseDenominator)).ToMediaTime() - project.Media!.MediaOrigin;
-            renderer.RenderInto(project, time, surface);
-            surface.CopyPixels(pixels);
-            var destination = new Span<float>(output, pixels.Length);
-            for (var index = 0; index < pixels.Length; index++)
-            {
-                destination[index] = (float)pixels[index];
-            }
+            renderer.CopyCachedFramePixels(project, time, new Span<float>(output, channelCount), cancellationToken);
 
             frames++;
             if (frames == 1 || frames % 10 == 0)
@@ -70,7 +61,6 @@ internal sealed class ExportRenderContext : IDisposable
 
     public void Dispose()
     {
-        surface.Dispose();
         renderer.Dispose();
     }
 }
