@@ -1,4 +1,7 @@
 using System.Collections.Immutable;
+using System.Text;
+using System.Text.Json.Nodes;
+using AegiNext.Application;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
@@ -24,6 +27,58 @@ namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class TimelineTimingPostProcessorUiTests
 {
+    [AvaloniaFact]
+    public async Task PointerSelectedLegacyDefaultClipInheritsItsMatchingAutoAppliedTrackAssociation()
+    {
+        await using var context = new MainWindowTestContext();
+        var preset = Preset(100, 200) with { Name = "nano", Style = new() { FontSize = 42 } };
+        await SeedAsync(context.Session, preset);
+        Assert.DoesNotContain(context.Session.StyleLibrary.Snapshot.Presets, value => value.Name == "Default");
+        var track = SubtitleTrack.Default with
+        {
+            DefaultStyle = preset.Style, StylePresetId = preset.Id, StylePresetName = preset.Name, AutoApplyStyle = true
+        };
+        var first = new SubtitleLine
+        {
+            Start = new(2), End = new(3), Text = "Legacy selected 中文 ABC 123", Style = preset.Style
+        };
+        var second = first with { Id = Guid.NewGuid(), Start = new(5), End = new(6), Text = "Legacy unselected" };
+        var json = JsonNode.Parse(ProjectStore.Serialize(Document([first, second], [track])))!.AsObject();
+        foreach (var line in json["subtitles"]!.AsArray().OfType<JsonObject>())
+        {
+            line.Remove("stylePresetId");
+        }
+        var document = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString()));
+        var originalFirst = document.Subtitles.Single(value => value.Id == first.Id);
+        var originalSecond = document.Subtitles.Single(value => value.Id == second.Id);
+        Assert.Equal("Default", originalFirst.StyleName);
+        Assert.Null(originalFirst.StylePresetId);
+        Assert.Equal(document.SubtitleTracks[0].DefaultStyle, originalFirst.Style);
+        Assert.NotSame(document.SubtitleTracks[0].DefaultStyle, originalFirst.Style);
+        context.Session.Editor.Reset(document);
+        var timeline = Prepare(context.Window, context.Session);
+        Select(context.Window, timeline, LayerFor(document, originalFirst).Id);
+        Assert.Equal(new[] { LayerFor(document, originalFirst).Id }, context.ViewModel.Timeline.SelectedLayerIds);
+        var button = UiTestActions.Find<Button>(context.Window, "TimelineTimingPostProcessorButton");
+        Assert.True(button.IsEffectivelyEnabled);
+        var command = Assert.IsType<AsyncRelayCommand>(button.Command);
+
+        UiTestActions.Click(context.Window, "TimelineTimingPostProcessorButton");
+        Assert.NotNull(command.ExecutionTask);
+        await command.ExecutionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Flush(context.Window);
+
+        AssertTiming(context.Session.DocumentSnapshot, first.Id, new(1900, 1000), new(3200, 1000));
+        Assert.Equal(preset.Id, context.Session.DocumentSnapshot.Subtitles.Single(value => value.Id == first.Id).StylePresetId);
+        Assert.Same(originalSecond, context.Session.DocumentSnapshot.Subtitles.Single(value => value.Id == second.Id));
+        Assert.Same(LayerFor(document, originalSecond), LayerFor(context.Session.DocumentSnapshot, originalSecond));
+        Assert.Null(context.Session.LastError);
+        Assert.False(context.Session.IsProjectBusy);
+        Assert.True(context.Session.Editor.Undo());
+        Assert.Same(document, context.Session.DocumentSnapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+    }
+
     [AvaloniaFact]
     public async Task PointerSelectedClipsAndBottomButtonUseEachAssociationAndOneUndoAcrossTracks()
     {
