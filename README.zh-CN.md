@@ -18,6 +18,8 @@
 
 AegiNext 致力于提供更易上手的字幕制作体验，兼容 Aegisub 文件标准，原生支持 macOS 与 Windows。开发目标是在 Aegisub 原作者停止维护后，接替旧版 Aegisub，延续字幕制作工作流。
 
+![](docs/assets/screenshot.jpg)
+
 ## 功能
 
 - **字幕制作**：多轨编辑、波形与语谱图打轴、ASS/SRT 导入导出。

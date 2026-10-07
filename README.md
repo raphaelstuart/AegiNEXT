@@ -18,6 +18,8 @@
 
 AegiNext makes subtitle creation easier to learn, supports Aegisub file standards, and runs natively on macOS and Windows. Its goal is to succeed the original Aegisub after its author stopped maintaining it, carrying the subtitle creation workflow forward.
 
+![](docs/assets/screenshot.jpg)
+
 ## Features
 
 - **Subtitle creation**: multiple tracks, waveform and spectrogram timing, and ASS/SRT import and export.
