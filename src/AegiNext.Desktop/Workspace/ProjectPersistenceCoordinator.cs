@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Settings.Projects;
@@ -516,6 +515,6 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
 
     private static string ComputeFingerprint(ProjectDocument snapshot)
     {
-        return Convert.ToHexStringLower(SHA256.HashData(ProjectStore.Serialize(snapshot)));
+        return ProjectStore.ComputeFingerprint(snapshot);
     }
 }

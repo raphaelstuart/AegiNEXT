@@ -85,7 +85,7 @@ public static partial class SubtitleTextFormat
             result.Append(FormatTime(start, MediaTimeRounding.FLOOR)).Append(" --> ")
                 .AppendLine(FormatTime(end, MediaTimeRounding.CEILING));
             result.AppendLine(Normalize(line.Text)).AppendLine();
-            if (index > 100000 || result.Length > 16 * 1024 * 1024)
+            if (index > 100000)
             {
                 throw new InvalidDataException("字幕交换内容过大。");
             }
@@ -160,9 +160,9 @@ public static partial class SubtitleTextFormat
     private static void CheckText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        if (text.Length > 16 * 1024 * 1024 || text.Contains('\0'))
+        if (text.Contains('\0'))
         {
-            throw new InvalidDataException("字幕交换内容过大或包含空字符。");
+            throw new InvalidDataException("字幕交换内容包含空字符。");
         }
 
         ProjectValidator.ValidateText(text);

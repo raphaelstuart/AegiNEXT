@@ -114,7 +114,7 @@ internal sealed partial class ProjectWorkflowCoordinator
         EnsureMergeTargetUnchanged(captured, directory);
         await using var resources = await ProjectMergeResources.PrepareAsync(sources, directory, cancellationToken);
         var result = ProjectEditingOperations.MergeProjects(captured, resources.Sources);
-        _ = ProjectStore.Serialize(result.Document);
+        ProjectStore.ValidateSerialization(result.Document);
         cancellationToken.ThrowIfCancellationRequested();
         EnsureMergeTargetUnchanged(captured, directory);
         await resources.CommitAsync(cancellationToken);

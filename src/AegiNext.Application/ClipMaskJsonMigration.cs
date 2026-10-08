@@ -6,18 +6,21 @@ namespace AegiNext.Application;
 
 internal static class ClipMaskJsonMigration
 {
-    internal static void RejectCurrentLegacyFields(JsonObject document)
+    internal static void RejectCurrentLegacyFields(JsonElement document)
     {
-        if (document["layers"] is JsonArray layers)
+        if (document.TryGetProperty("layers", out var layers) && layers.ValueKind == JsonValueKind.Array)
         {
             RejectLayerLegacyFields(layers);
         }
 
-        if (document["presets"] is JsonArray presets)
+        if (document.TryGetProperty("presets", out var presets) && presets.ValueKind == JsonValueKind.Array)
         {
-            foreach (var preset in presets.OfType<JsonObject>())
+            foreach (var preset in presets.EnumerateArray())
             {
-                RejectTrackLegacyFields(preset);
+                if (preset.ValueKind == JsonValueKind.Object)
+                {
+                    RejectTrackLegacyFields(preset);
+                }
             }
         }
     }
@@ -68,41 +71,64 @@ internal static class ClipMaskJsonMigration
         }
     }
 
-    private static void RejectLayerLegacyFields(JsonArray layers)
+    private static void RejectLayerLegacyFields(JsonElement layers)
     {
-        foreach (var layer in layers.OfType<JsonObject>())
+        foreach (var layer in layers.EnumerateArray())
         {
-            if (layer["transform"] is JsonObject transform &&
-                transform.Any(pair => pair.Key is "x" or "y" or "scaleX" or "scaleY" or "anchorX" or "anchorY"))
+            if (layer.ValueKind != JsonValueKind.Object)
             {
-                throw new JsonException("版本 5 不接受旧标量图层变换字段。");
+                continue;
+            }
+
+            if (layer.TryGetProperty("transform", out var transform) && transform.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in transform.EnumerateObject())
+                {
+                    if (property.NameEquals("x") || property.NameEquals("y") ||
+                        property.NameEquals("scaleX") || property.NameEquals("scaleY") ||
+                        property.NameEquals("anchorX") || property.NameEquals("anchorY"))
+                    {
+                        throw new JsonException("版本 5 不接受旧标量图层变换字段。");
+                    }
+                }
             }
 
             RejectTrackLegacyFields(layer);
-            if (layer["children"] is JsonArray children)
+            if (layer.TryGetProperty("children", out var children) && children.ValueKind == JsonValueKind.Array)
             {
                 RejectLayerLegacyFields(children);
             }
         }
     }
 
-    private static void RejectTrackLegacyFields(JsonObject owner)
+    private static void RejectTrackLegacyFields(JsonElement owner)
     {
-        if (owner["tracks"] is not JsonArray tracks)
+        if (!owner.TryGetProperty("tracks", out var tracks) || tracks.ValueKind != JsonValueKind.Array)
         {
             return;
         }
 
-        foreach (var track in tracks.OfType<JsonObject>())
+        foreach (var track in tracks.EnumerateArray())
         {
-            if (track.ContainsKey("property"))
+            if (track.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (track.TryGetProperty("property", out _))
             {
                 throw new JsonException("版本 5 的动画轨道只接受完整 target，不接受旧 property 字段。");
             }
 
-            if (track["keyframes"] is JsonArray frames && frames.OfType<JsonObject>().Any(frame => frame.ContainsKey("vectorCurve")))
+            if (track.TryGetProperty("keyframes", out var frames) && frames.ValueKind == JsonValueKind.Array)
             {
-                throw new JsonException("版本 5 的关键帧不接受旧 vectorCurve 字段。");
+                foreach (var frame in frames.EnumerateArray())
+                {
+                    if (frame.ValueKind == JsonValueKind.Object && frame.TryGetProperty("vectorCurve", out _))
+                    {
+                        throw new JsonException("版本 5 的关键帧不接受旧 vectorCurve 字段。");
+                    }
+                }
             }
         }
     }

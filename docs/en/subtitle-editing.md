@@ -64,4 +64,4 @@ Create rectangle or closed multi-contour Bézier geometry in **Masks**, then edi
 
 Advanced code includes the selected Clip's mask. Compatible edits preserve node identities and mask tracks; node morph animation requires clearing node tracks before changing topology. Text, mask, and animation commit together.
 
-ASS writes exactly representable rectangle animation as `\t`. Other mask animation expands to frame-sampled static events, with diagnostics for sampling and coordinate rounding. Such karaoke uses absolute `\kt` timing; the target player must support it. Export limits are 100,000 dialogues and 16 Mi characters.
+ASS writes exactly representable rectangle animation as `\t`. Other mask animation expands to frame-sampled static events, with diagnostics for sampling and coordinate rounding. Such karaoke uses absolute `\kt` timing; the target player must support it. Export is limited to 100,000 dialogues.

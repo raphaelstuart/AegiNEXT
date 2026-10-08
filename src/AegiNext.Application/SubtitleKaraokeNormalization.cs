@@ -12,13 +12,28 @@ public static class SubtitleKaraokeNormalization
     public static SubtitleLine Normalize(SubtitleLine line)
     {
         ArgumentNullException.ThrowIfNull(line);
-        ProjectValidator.ValidateSubtitleKaraoke(line);
+        if (line.Karaoke.IsDefaultOrEmpty && line.InactiveKaraoke.IsDefaultOrEmpty)
+        {
+            ProjectValidator.ValidateSubtitleKaraoke(line);
+            return line;
+        }
+        if (line.Text is null)
+        {
+            throw new InvalidDataException("字幕文字不能为 null。");
+        }
+        var boundaries = new SubtitleTextBoundaries(line.Text);
+        ProjectValidator.ValidateSubtitleKaraoke(line, boundaries);
+        return NormalizeValidated(line, boundaries);
+    }
+
+    private static SubtitleLine NormalizeValidated(SubtitleLine line, SubtitleTextBoundaries? boundaries = null)
+    {
         if (line.Karaoke.IsEmpty && line.InactiveKaraoke.IsEmpty)
         {
             return line;
         }
 
-        var boundaries = SubtitleTextEditMap.Boundaries(line.Text);
+        boundaries ??= new(line.Text);
         var ids = line.Karaoke.Concat(line.InactiveKaraoke).Select(clip => clip.Id).ToHashSet();
         var karaoke = NormalizeSegments(line.Karaoke, boundaries, ids);
         var inactiveKaraoke = NormalizeSegments(line.InactiveKaraoke, boundaries, ids);
@@ -27,14 +42,14 @@ public static class SubtitleKaraokeNormalization
     }
 
     private static ImmutableArray<KaraokeSegment> NormalizeSegments(ImmutableArray<KaraokeSegment> segments,
-        int[] boundaries, HashSet<Guid> ids)
+        SubtitleTextBoundaries boundaries, HashSet<Guid> ids)
     {
         ImmutableArray<KaraokeSegment>.Builder? changed = null;
         for (var index = 0; index < segments.Length; index++)
         {
             var clip = segments[index];
-            var first = Array.BinarySearch(boundaries, clip.Utf16Start);
-            var count = Array.BinarySearch(boundaries, clip.Utf16Start + clip.Utf16Length) - first;
+            var first = boundaries.IndexOf(clip.Utf16Start);
+            var count = boundaries.IndexOf(clip.Utf16Start + clip.Utf16Length) - first;
             if (count == 1)
             {
                 changed?.Add(clip);
@@ -73,7 +88,7 @@ public static class SubtitleKaraokeNormalization
         for (var index = 0; index < document.Subtitles.Length; index++)
         {
             var line = document.Subtitles[index];
-            var normalized = Normalize(line);
+            var normalized = NormalizeValidated(line);
             if (!ReferenceEquals(line, normalized))
             {
                 changed ??= document.Subtitles.ToBuilder();

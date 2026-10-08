@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using AegiNext.Application;
 using AegiNext.Media.Encoding;
@@ -12,15 +11,15 @@ internal static class Program
         try
         {
             var input = await Console.In.ReadLineAsync().ConfigureAwait(false);
-            if (input is null || input.Length > 64 * 1024 * 1024)
+            if (input is null)
             {
-                throw new InvalidDataException("导出 worker 需要有限大小的快照请求。");
+                throw new InvalidDataException("导出 worker 需要快照请求。");
             }
 
             var job = JsonSerializer.Deserialize<ExportWorkerJob>(input, ExportWire.Options)
                 ?? throw new InvalidDataException("缺少导出请求。");
             ExportWire.ValidateJob(job);
-            var document = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(job.Project.GetRawText()));
+            var document = ProjectStore.Deserialize(job.Project);
             var output = Path.Combine(job.TemporaryDirectory, "output" + job.Extension);
             var request = new VideoExportRequest(document, job.ProjectDirectory, output)
             {

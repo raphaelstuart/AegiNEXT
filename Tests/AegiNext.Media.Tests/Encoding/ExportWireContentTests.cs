@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Media.Encoding;
 
@@ -6,6 +7,29 @@ namespace AegiNext.Media.Tests.Encoding;
 
 public sealed class ExportWireContentTests
 {
+    [Fact]
+    public void LargeWorkerRequestsPreserveBodiesBeyondPreviousMessageBudget()
+    {
+        var line = new SubtitleLine { Text = new string('中', 12 * 1024 * 1024) };
+        var document = new ProjectDocument
+        {
+            Subtitles = [line],
+            Layers = [new() { Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End }]
+        };
+        var job = new ExportWorkerJob(JsonSerializer.SerializeToElement(document, ExportWire.Options), Path.GetTempPath(),
+            Path.GetTempPath(), ".mkv", VideoCodec.H264, "medium", 18, AudioExportMode.None, 192000, "ffmpeg",
+            RateControlMode: VideoRateControlMode.CRF, ProtocolVersion: ExportWire.VERSION);
+        var request = JsonSerializer.Serialize(job, ExportWire.Options);
+        Assert.True(request.Length > 64 * 1024 * 1024);
+
+        var transmitted = JsonSerializer.Deserialize<ExportWorkerJob>(request, ExportWire.Options)!;
+        ExportWire.ValidateJob(transmitted);
+        var restored = ProjectStore.Deserialize(transmitted.Project);
+
+        Assert.Equal(line.Id, Assert.Single(restored.Subtitles).Id);
+        Assert.Equal(line.Text, restored.Subtitles[0].Text);
+    }
+
     [Fact]
     public void RealWorkerRequestCarriesInlineFontsClipIdentityAndExactContentTime()
     {

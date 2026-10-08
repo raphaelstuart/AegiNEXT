@@ -133,10 +133,6 @@ internal static class AssFormatValues
     internal static void CheckText(string source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        if (source.Length > 16 * 1024 * 1024)
-        {
-            throw new InvalidDataException("字幕交换内容超过 16 MiB。");
-        }
         ProjectValidator.ValidateText(source);
     }
 

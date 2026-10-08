@@ -27,7 +27,6 @@ internal static class AssMaskSampling
         var quantized = false;
         var geometryQuantized = false;
         var sampleDiagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
-        var outputLength = 0L;
         for (var frame = first; frame < last; frame++)
         {
             var start = frameDuration * frame;
@@ -42,15 +41,6 @@ internal static class AssMaskSampling
             var maskTags = AssMaskWriter.StaticTags(evaluated, line.Id, sampleDiagnostics);
             geometryQuantized |= sampleDiagnostics.Count > 0;
             sampleDiagnostics.Clear();
-            if (buckets.TryGetValue(bucket, out var replaced))
-            {
-                outputLength -= replaced.Tags.Length;
-            }
-            outputLength += maskTags.Length;
-            if (outputLength > 16 * 1024 * 1024)
-            {
-                throw new InvalidDataException("ASS 蒙版展开文本超过 16 Mi 字符预算。");
-            }
             buckets[bucket] = new(sceneStart, end, content, maskTags, true);
         }
         var values = buckets.Values.ToArray();

@@ -1,4 +1,6 @@
 using AegiNext.Desktop.Shortcuts;
+using AegiNext.Application;
+using AegiNext.Core.Projects;
 using System.Text;
 
 namespace AegiNext.Desktop.Tests.Workspace;
@@ -6,6 +8,76 @@ namespace AegiNext.Desktop.Tests.Workspace;
 [Collection("Workspace session")]
 public sealed class SubtitleFormatWorkflowTests
 {
+    [Fact]
+    public async Task LargeSubtitleBodiesCanBeImportedEditedSavedAndReopened()
+    {
+        await using var context = new WorkspaceSessionTestContext();
+        await context.InitializeAsync();
+        var content = new string('中', 1_000_001);
+        var lines = Enumerable.Range(0, 9).Select(index => new SubtitleLine
+        {
+            Start = new(index), End = new(index + 1), Text = content
+        }).ToArray();
+        var path = Path.Combine(context.DirectoryPath, "large-body.srt");
+        await File.WriteAllTextAsync(path, SubtitleTextFormat.WriteSrt(lines), new UTF8Encoding(false));
+        context.Dialogs.OpenPath = path;
+        context.Dialogs.ConversionChoice = true;
+
+        await context.Session.ExecuteCommandAsync(WorkbenchCommand.IMPORT_SUBTITLES);
+
+        Assert.Null(context.Session.LastError);
+        Assert.Equal(lines.Length, context.Editor.Snapshot.Subtitles.Length);
+        Assert.All(context.Editor.Snapshot.Subtitles, line => Assert.Equal(content, line.Text));
+        var imported = context.Editor.Snapshot.Subtitles[0];
+        context.Editor.ReplaceSubtitleTextRange(imported.Id, 0, 1, "文");
+        context.Dialogs.SavePath = Path.Combine(context.DirectoryPath, "large-body.aeginext");
+
+        await context.Session.ExecuteCommandAsync(WorkbenchCommand.SAVE_PROJECT_AS);
+
+        Assert.Null(context.Session.LastError);
+        Assert.True(new FileInfo(context.Dialogs.SavePath).Length > 32 * 1024 * 1024);
+        Assert.False(context.Session.HasUnsavedChanges);
+        context.Dialogs.OpenPath = context.Dialogs.SavePath;
+
+        await context.Session.ExecuteCommandAsync(WorkbenchCommand.OPEN_PROJECT);
+
+        Assert.Null(context.Session.LastError);
+        Assert.Equal(lines.Length, context.Editor.Snapshot.Subtitles.Length);
+        Assert.Equal("文" + content[1..], context.Editor.Snapshot.Subtitles[0].Text);
+        Assert.All(context.Editor.Snapshot.Subtitles.Skip(1), line => Assert.Equal(content, line.Text));
+        Assert.False(context.Editor.CanUndo);
+        Assert.False(context.Session.HasUnsavedChanges);
+    }
+
+    [Theory]
+    [InlineData(WorkbenchCommand.IMPORT_SUBTITLES)]
+    [InlineData(WorkbenchCommand.IMPORT_ASS)]
+    public async Task SubtitleFilesLargerThanSixteenMiBAreImportedAtomically(WorkbenchCommand command)
+    {
+        await using var context = new WorkspaceSessionTestContext();
+        await context.InitializeAsync();
+        var original = context.Editor.Snapshot;
+        var ass = command == WorkbenchCommand.IMPORT_ASS;
+        var path = Path.Combine(context.DirectoryPath, ass ? "large.ass" : "large.srt");
+        var source = ass
+            ? "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,中文 😀\n"
+            : "1\n00:00:00,000 --> 00:00:02,000\n中文 😀\n";
+        await File.WriteAllTextAsync(path, new string(' ', 16 * 1024 * 1024) + "\n" + source,
+            new UTF8Encoding(true));
+        Assert.True(new FileInfo(path).Length > 16 * 1024 * 1024);
+        context.Dialogs.OpenPath = path;
+        context.Dialogs.ConversionChoice = true;
+
+        await context.Session.ExecuteCommandAsync(command);
+
+        Assert.Null(context.Session.LastError);
+        Assert.Equal("中文 😀", Assert.Single(context.Editor.Snapshot.Subtitles).Text);
+        Assert.Single(context.Editor.Snapshot.Layers);
+        Assert.True(context.Editor.Undo());
+        Assert.Same(original, context.Editor.Snapshot);
+        Assert.False(context.Editor.CanUndo);
+    }
+
     [Fact]
     public async Task SrtImportCreatesIndependentTracksForOverlapsAndOneUndoRestoresEverything()
     {

@@ -1,8 +1,5 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
-using System.Buffers;
-using System.Text;
 
 namespace AegiNext.Core.Projects;
 
@@ -70,23 +67,20 @@ public static class ProjectValidator
         }
 
         var subtitles = new Dictionary<Guid, SubtitleLine>();
-        long totalText = 0;
         foreach (var line in document.Subtitles)
         {
             NotNull(line, "数据项不能为 null。");
             Require(line.Id != Guid.Empty && subtitles.TryAdd(line.Id, line), "字幕标识为空或重复。");
             Require(trackIds.Contains(line.TrackId), "字幕引用不存在的轨道。");
-            Require(line.Start < line.End && line.Text is { Length: <= 1000000 } && !line.Karaoke.IsDefault &&
+            Require(line.Start < line.End && line.Text is not null && !line.Karaoke.IsDefault &&
                 !line.InactiveKaraoke.IsDefault &&
                 !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
             ValidateText(line.Text);
             ValidateSubtitleStyleName(line.StyleName);
             Require(line.StylePresetId is null || line.StylePresetId != Guid.Empty, "字幕样式预设标识无效。");
-            totalText += line.Text.Length;
-            Require(totalText <= 8 * 1024 * 1024, "项目文本总量超过预算。");
             Style(line.Style, assets);
-            var boundaries = StringInfo.ParseCombiningCharacters(line.Text).ToHashSet();
-            boundaries.Add(line.Text.Length);
+            var boundaries = line.InlineSpans.IsEmpty && line.Karaoke.IsEmpty && line.InactiveKaraoke.IsEmpty
+                ? null : new SubtitleTextBoundaries(line.Text);
             var previousEnd = 0;
             foreach (var span in line.InlineSpans)
             {
@@ -94,7 +88,7 @@ public static class ProjectValidator
                 Require(span.Utf16Start >= previousEnd && span.Utf16Length > 0 &&
                     (long)span.Utf16Start + span.Utf16Length <= line.Text.Length, "局部样式文本区间重叠或越界。");
                 var end = checked(span.Utf16Start + span.Utf16Length);
-                Require(boundaries.Contains(span.Utf16Start) && boundaries.Contains(end), "局部样式不能拆开字素。");
+                Require(boundaries!.Contains(span.Utf16Start) && boundaries.Contains(end), "局部样式不能拆开字素。");
                 var inlineStyle = span.Style;
                 NotNull(inlineStyle, "局部样式不能为 null。");
                 Require(inlineStyle.HasOverrides && !(inlineStyle.ClearFontAsset && inlineStyle.FontAssetId.HasValue) &&
@@ -103,7 +97,7 @@ public static class ProjectValidator
                 Style(inlineStyle.ApplyTo(line.Style), assets);
                 previousEnd = end;
             }
-            ValidateSubtitleKaraoke(line, boundaries);
+            ValidateSubtitleKaraokeCore(line, boundaries);
         }
 
         foreach (var track in document.Subtitles.GroupBy(line => line.TrackId))
@@ -149,14 +143,28 @@ public static class ProjectValidator
     public static void ValidateSubtitleKaraoke(SubtitleLine line)
     {
         ArgumentNullException.ThrowIfNull(line);
-        Require(line.Text is { Length: <= 1000000 }, "字幕文字超过有效范围。");
+        Require(line.Text is not null, "字幕文字不能为 null。");
         ValidateText(line.Text);
-        var boundaries = StringInfo.ParseCombiningCharacters(line.Text).ToHashSet();
-        boundaries.Add(line.Text.Length);
-        ValidateSubtitleKaraoke(line, boundaries);
+        var boundaries = line.Karaoke.IsDefaultOrEmpty && line.InactiveKaraoke.IsDefaultOrEmpty
+            ? null : new SubtitleTextBoundaries(line.Text);
+        ValidateSubtitleKaraokeCore(line, boundaries);
     }
 
-    private static void ValidateSubtitleKaraoke(SubtitleLine line, HashSet<int> boundaries)
+    /// <summary>使用绑定到同一文字实例的字素索引验证高亮，使调用方可以复用已构建的边界。</summary>
+    public static void ValidateSubtitleKaraoke(SubtitleLine line, SubtitleTextBoundaries boundaries)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        ArgumentNullException.ThrowIfNull(boundaries);
+        Require(line.Text is not null, "字幕文字不能为 null。");
+        if (!ReferenceEquals(line.Text, boundaries.Text))
+        {
+            throw new ArgumentException("字素索引必须绑定到字幕的同一文字实例。", nameof(boundaries));
+        }
+        ValidateText(line.Text);
+        ValidateSubtitleKaraokeCore(line, boundaries);
+    }
+
+    private static void ValidateSubtitleKaraokeCore(SubtitleLine line, SubtitleTextBoundaries? boundaries)
     {
         Require(!line.Karaoke.IsDefault && !line.InactiveKaraoke.IsDefault, "卡拉 OK 数组无效。");
         if (line.KaraokeStyle is { } karaokeStyle)
@@ -196,7 +204,7 @@ public static class ProjectValidator
     }
 
     private static void ValidateKaraokeSegments(ImmutableArray<KaraokeSegment> segments, SubtitleLine line,
-        HashSet<int> boundaries, HashSet<Guid> segmentIds)
+        SubtitleTextBoundaries? boundaries, HashSet<Guid> segmentIds)
     {
         var previousEnd = 0;
         foreach (var segment in segments)
@@ -207,7 +215,7 @@ public static class ProjectValidator
             Require(segment.Utf16Start >= previousEnd && segment.Utf16Length > 0 &&
                 (long)segment.Utf16Start + segment.Utf16Length <= line.Text.Length, "卡拉 OK 文本区间重叠或越界。");
             var end = checked(segment.Utf16Start + segment.Utf16Length);
-            Require(boundaries.Contains(segment.Utf16Start) && boundaries.Contains(end), "卡拉 OK 不能拆开字素。");
+            Require(boundaries!.Contains(segment.Utf16Start) && boundaries.Contains(end), "卡拉 OK 不能拆开字素。");
             Require(segment.Start >= Timing.MediaTime.Zero && segment.Start < segment.End, "卡拉 OK 时间越界。");
             Color(segment.HighlightColor);
             if (segment.InactiveStyle is { } inactive)
@@ -236,11 +244,17 @@ public static class ProjectValidator
     {
         ArgumentNullException.ThrowIfNull(text);
         var remaining = text.AsSpan();
+        Require(remaining.IndexOf('\0') < 0, "文本包含无效 Unicode 或空字符。");
         while (!remaining.IsEmpty)
         {
-            var status = Rune.DecodeFromUtf16(remaining, out var rune, out var consumed);
-            Require(status == OperationStatus.Done && rune.Value != 0, "文本包含无效 Unicode 或空字符。");
-            remaining = remaining[consumed..];
+            var index = remaining.IndexOfAnyInRange('\uD800', '\uDFFF');
+            if (index < 0)
+            {
+                return;
+            }
+            Require(index + 1 < remaining.Length && char.IsHighSurrogate(remaining[index]) &&
+                char.IsLowSurrogate(remaining[index + 1]), "文本包含无效 Unicode 或空字符。");
+            remaining = remaining[(index + 2)..];
         }
     }
 

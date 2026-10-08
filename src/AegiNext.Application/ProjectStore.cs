@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -9,50 +10,50 @@ namespace AegiNext.Application;
 /// <summary>版本化 JSON 工程存储；同目录临时文件落盘成功后才原子替换目标。</summary>
 public static class ProjectStore
 {
-    private const int MAXIMUM_BYTES = 32 * 1024 * 1024;
     private static readonly JsonSerializerOptions options = CreateOptions();
+    private static readonly JsonDocumentOptions documentOptions = new()
+    {
+        MaxDepth = 128,
+        AllowDuplicateProperties = false
+    };
 
-    /// <summary>加载有限大小工程；重复键、未知字段、缺少必需字段与非法版本全部拒绝。</summary>
+    /// <summary>从文件加载工程；重复键、未知字段、缺少必需字段与非法版本全部拒绝。</summary>
     public static async Task<ProjectDocument> LoadAsync(string path, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, true);
-        if (stream.Length > MAXIMUM_BYTES)
+        try
         {
-            throw new InvalidDataException("项目文件超过 32 MiB。");
+            using var parsed = await JsonDocument.ParseAsync(stream, documentOptions, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var document = DeserializeCore(parsed.RootElement);
+            cancellationToken.ThrowIfCancellationRequested();
+            return document;
         }
-
-        using var buffer = new MemoryStream();
-        var chunk = new byte[65536];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        catch (Exception error) when (error is JsonException or ArgumentException or OverflowException)
         {
-            if (buffer.Length + read > MAXIMUM_BYTES)
-            {
-                throw new InvalidDataException("项目文件超过 32 MiB。");
-            }
-
-            buffer.Write(chunk, 0, read);
+            throw new InvalidDataException("项目 JSON 格式无效。", error);
         }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        return Deserialize(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length)));
     }
 
     /// <summary>先验证快照并完整写入临时文件；提交前取消或失败不修改已有工程。</summary>
     public static Task SaveAsync(ProjectDocument document, string path, CancellationToken cancellationToken = default)
-        => WriteAsync(document, path, true, cancellationToken);
+    {
+        return WriteAsync(document, path, true, cancellationToken);
+    }
 
     /// <summary>原子提交新工程文件；已有文件或目录永不覆盖。</summary>
     public static Task CreateAsync(ProjectDocument document, string path, CancellationToken cancellationToken = default)
-        => WriteAsync(document, path, false, cancellationToken);
+    {
+        return WriteAsync(document, path, false, cancellationToken);
+    }
 
     private static async Task WriteAsync(ProjectDocument document, string path, bool overwrite,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         cancellationToken.ThrowIfCancellationRequested();
-        var bytes = Serialize(document);
+        ProjectValidator.Validate(document);
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath)!;
         Directory.CreateDirectory(directory);
@@ -62,7 +63,7 @@ public static class ProjectStore
             await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 65536, FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
-                await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+                await JsonSerializer.SerializeAsync(stream, document, options, cancellationToken).ConfigureAwait(false);
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
                 stream.Flush(true);
             }
@@ -80,57 +81,99 @@ public static class ProjectStore
     public static byte[] Serialize(ProjectDocument document)
     {
         ProjectValidator.Validate(document);
-        var result = JsonSerializer.SerializeToUtf8Bytes(document, options);
-        if (result.Length > MAXIMUM_BYTES)
-        {
-            throw new InvalidDataException("项目文件超过 32 MiB。");
-        }
+        return JsonSerializer.SerializeToUtf8Bytes(document, options);
+    }
 
-        return result;
+    /// <summary>验证工程可按存储配置完整序列化，不保留完整 JSON 字节数组。</summary>
+    public static void ValidateSerialization(ProjectDocument document)
+    {
+        ProjectValidator.Validate(document);
+        JsonSerializer.Serialize(Stream.Null, document, options);
+    }
+
+    /// <summary>计算存储 JSON 的 SHA-256 小写指纹，不保留完整 JSON 字节数组。</summary>
+    public static string ComputeFingerprint(ProjectDocument document)
+    {
+        ProjectValidator.Validate(document);
+        using var hash = SHA256.Create();
+        using var stream = new CryptoStream(Stream.Null, hash, CryptoStreamMode.Write);
+        JsonSerializer.Serialize(stream, document, options);
+        stream.FlushFinalBlock();
+        return Convert.ToHexStringLower(hash.Hash!);
     }
 
     /// <summary>解析 UTF-8 JSON，并统一报告工程格式错误。</summary>
     public static ProjectDocument Deserialize(ReadOnlySpan<byte> json)
     {
-        if (json.Length > MAXIMUM_BYTES)
-        {
-            throw new InvalidDataException("项目文件超过 32 MiB。");
-        }
-
         try
         {
-            using var parsed = JsonDocument.Parse(json.ToArray(), new() { MaxDepth = 128 });
-            RejectDuplicateKeys(parsed.RootElement);
-            if (parsed.RootElement.ValueKind != JsonValueKind.Object ||
-                !parsed.RootElement.TryGetProperty("version", out var version) ||
-                version.ValueKind != JsonValueKind.Number ||
-                !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or 6 or ProjectDocument.CURRENT_VERSION))
-            {
-                throw new InvalidDataException($"只支持项目版本 3、4、5、6 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
-            }
-
-            var content = JsonNode.Parse(parsed.RootElement.GetRawText(), documentOptions: new() { MaxDepth = 128 })!.AsObject();
-            if (number is 3 or 4)
-            {
-                SubtitleContentJsonMigration.UpgradeProject(content, number);
-                ClipMaskJsonMigration.UpgradeLegacy(content);
-                using var normalized = JsonDocument.Parse(content.ToJsonString(new() { MaxDepth = 128 }), new() { MaxDepth = 128 });
-                content = VectorAnimationJsonMigration.Upgrade(normalized.RootElement, options);
-            }
-            else
-            {
-                ClipMaskJsonMigration.RejectCurrentLegacyFields(content);
-            }
-
-            PlaybackOriginJsonMigration.Upgrade(content, number);
-            content["version"] = ProjectDocument.CURRENT_VERSION;
-            var document = content.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
-            return SubtitleKaraokeNormalization.Normalize(document);
+            using var parsed = JsonDocument.Parse(json.ToArray(), documentOptions);
+            return DeserializeCore(parsed.RootElement);
         }
         catch (Exception error) when (error is JsonException or ArgumentException or OverflowException)
         {
             throw new InvalidDataException("项目 JSON 格式无效。", error);
         }
+    }
+
+    /// <summary>解析外部 JSON 元素；迁移前拒绝所有层级的重复字段并保持严格工程校验。</summary>
+    public static ProjectDocument Deserialize(JsonElement json)
+    {
+        try
+        {
+            RejectDuplicateKeys(json);
+            return DeserializeCore(json);
+        }
+        catch (Exception error) when (error is JsonException or ArgumentException or OverflowException)
+        {
+            throw new InvalidDataException("项目 JSON 格式无效。", error);
+        }
+    }
+
+    private static ProjectDocument DeserializeCore(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("version", out var version) ||
+            version.ValueKind != JsonValueKind.Number ||
+            !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or 6 or ProjectDocument.CURRENT_VERSION))
+        {
+            throw new InvalidDataException($"只支持项目版本 3、4、5、6 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
+        }
+
+        if (number >= 5)
+        {
+            ClipMaskJsonMigration.RejectCurrentLegacyFields(root);
+        }
+
+        if (number >= 6)
+        {
+            var current = root.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
+            if (current.Version != ProjectDocument.CURRENT_VERSION)
+            {
+                current = current with
+                {
+                    Version = ProjectDocument.CURRENT_VERSION
+                };
+            }
+            return SubtitleKaraokeNormalization.Normalize(current);
+        }
+
+        var content = JsonNode.Parse(root.GetRawText(), documentOptions: documentOptions)!.AsObject();
+        if (number is 3 or 4)
+        {
+            SubtitleContentJsonMigration.UpgradeProject(content, number);
+            ClipMaskJsonMigration.UpgradeLegacy(content);
+            using var normalized = JsonDocument.Parse(content.ToJsonString(new()
+            {
+                MaxDepth = 128
+            }), documentOptions);
+            content = VectorAnimationJsonMigration.Upgrade(normalized.RootElement, options);
+        }
+
+        PlaybackOriginJsonMigration.Upgrade(content, number);
+        content["version"] = ProjectDocument.CURRENT_VERSION;
+        var document = content.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
+        return SubtitleKaraokeNormalization.Normalize(document);
     }
 
     private static JsonSerializerOptions CreateOptions()
@@ -165,6 +208,7 @@ public static class ProjectStore
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             WriteIndented = true,
             MaxDepth = 128,
+            AllowDuplicateProperties = false,
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
             RespectRequiredConstructorParameters = true,
             TypeInfoResolver = resolver
@@ -174,8 +218,13 @@ public static class ProjectStore
         return result;
     }
 
-    private static void RejectDuplicateKeys(JsonElement element)
+    private static void RejectDuplicateKeys(JsonElement element, int depth = 0)
     {
+        if (element.ValueKind is JsonValueKind.Object or JsonValueKind.Array && depth >= options.MaxDepth)
+        {
+            throw new JsonException("项目 JSON 嵌套过深。");
+        }
+
         if (element.ValueKind == JsonValueKind.Object)
         {
             var names = new HashSet<string>(StringComparer.Ordinal);
@@ -186,14 +235,14 @@ public static class ProjectStore
                     throw new JsonException($"重复的字段：{property.Name}");
                 }
 
-                RejectDuplicateKeys(property.Value);
+                RejectDuplicateKeys(property.Value, depth + 1);
             }
         }
         else if (element.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in element.EnumerateArray())
             {
-                RejectDuplicateKeys(item);
+                RejectDuplicateKeys(item, depth + 1);
             }
         }
     }

@@ -264,16 +264,13 @@ public static class AssSubtitleFormat
                 var maskTags = sample.Tags.Length == 0 ? string.Empty : "{" + sample.Tags + "}";
                 result.AppendLine(string.Create(CultureInfo.InvariantCulture,
                     $"Dialogue: {order},{AssFormatValues.Time(sample.Start + timeOffset, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End + timeOffset, MediaTimeRounding.CEILING)},{styles[line.Style with { FontAssetId = null, Position = null }]},,0,0,0,,{placement}{maskTags}{body.Text}"));
-                if (result.Length > 16 * 1024 * 1024)
-                {
-                    throw new InvalidDataException("ASS 导出文本超过 16 Mi 字符预算。");
-                }
             }
             order++;
         }
         SubtitleFormatLossAnalysis.AddCompositionLoss(document, diagnostics, supportsMasks: true);
-        AssFormatValues.CheckText(result.ToString());
-        return new(result.ToString(), diagnostics.Distinct().ToImmutableArray());
+        var text = result.ToString();
+        AssFormatValues.CheckText(text);
+        return new(text, diagnostics.Distinct().ToImmutableArray());
     }
 
     private static AssStyleDefinition ParseStyle(Dictionary<string, string> row, double sx, double sy)

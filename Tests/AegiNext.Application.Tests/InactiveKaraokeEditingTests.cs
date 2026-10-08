@@ -18,7 +18,7 @@ public sealed class InactiveKaraokeEditingTests
         editor.SetSubtitleKaraokeEnabled(line.Id, false);
         var disabled = editor.Snapshot;
         Assert.Empty(disabled.Subtitles[0].Karaoke);
-        Assert.Equal(allClips, disabled.Subtitles[0].InactiveKaraoke);
+        Assert.Equal<KaraokeSegment>(allClips, disabled.Subtitles[0].InactiveKaraoke);
         Assert.Equal(line.KaraokeStyle, disabled.Subtitles[0].KaraokeStyle);
         editor.SetSubtitleKaraokeEnabled(line.Id, false);
         Assert.Same(disabled, editor.Snapshot);
@@ -28,7 +28,7 @@ public sealed class InactiveKaraokeEditingTests
         Assert.True(editor.Redo());
         editor.SetSubtitleKaraokeEnabled(line.Id, true);
         var restored = editor.Snapshot;
-        Assert.Equal(allClips, restored.Subtitles[0].Karaoke);
+        Assert.Equal<KaraokeSegment>(allClips, restored.Subtitles[0].Karaoke);
         Assert.Empty(restored.Subtitles[0].InactiveKaraoke);
         Assert.Equal(line.KaraokeStyle, restored.Subtitles[0].KaraokeStyle);
         editor.SetSubtitleKaraokeEnabled(line.Id, true);

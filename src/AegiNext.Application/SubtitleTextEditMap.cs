@@ -1,4 +1,3 @@
-using System.Globalization;
 using AegiNext.Core.Projects;
 
 namespace AegiNext.Application;
@@ -18,11 +17,6 @@ internal sealed class SubtitleTextEditMap
         {
             throw new ArgumentException("替换文字包含无效 Unicode 或空字符。", nameof(replacement), exception);
         }
-        if ((long)text.Length - length + replacement.Length > 1000000)
-        {
-            throw new ArgumentOutOfRangeException(nameof(replacement), "字幕文字超过预算。");
-        }
-
         Text = string.Concat(text.AsSpan(0, start), replacement, text.AsSpan(start + length));
         NewBoundaries = Boundaries(Text);
         Delta = replacement.Length - length;
@@ -30,27 +24,27 @@ internal sealed class SubtitleTextEditMap
         OriginalNewEnd = start + replacement.Length;
         var oldStart = start;
         var oldEnd = start + length;
-        while (Array.BinarySearch(NewBoundaries, oldStart) < 0)
+        while (NewBoundaries.IndexOf(oldStart) < 0)
         {
-            oldStart = OldBoundaries[Array.BinarySearch(OldBoundaries, oldStart) - 1];
+            oldStart = OldBoundaries[OldBoundaries.IndexOf(oldStart) - 1];
         }
-        while (Array.BinarySearch(NewBoundaries, oldEnd + Delta) < 0)
+        while (NewBoundaries.IndexOf(oldEnd + Delta) < 0)
         {
-            oldEnd = OldBoundaries[Array.BinarySearch(OldBoundaries, oldEnd) + 1];
+            oldEnd = OldBoundaries[OldBoundaries.IndexOf(oldEnd) + 1];
         }
         OldStart = oldStart;
         OldEnd = oldEnd;
         NewStart = oldStart;
         NewEnd = oldEnd + Delta;
-        OldStartIndex = Array.BinarySearch(OldBoundaries, OldStart);
-        NewStartIndex = Array.BinarySearch(NewBoundaries, NewStart);
-        OldCount = Array.BinarySearch(OldBoundaries, OldEnd) - OldStartIndex;
-        NewCount = Array.BinarySearch(NewBoundaries, NewEnd) - NewStartIndex;
+        OldStartIndex = OldBoundaries.IndexOf(OldStart);
+        NewStartIndex = NewBoundaries.IndexOf(NewStart);
+        OldCount = OldBoundaries.IndexOf(OldEnd) - OldStartIndex;
+        NewCount = NewBoundaries.IndexOf(NewEnd) - NewStartIndex;
     }
 
     internal string Text { get; }
-    internal int[] OldBoundaries { get; }
-    internal int[] NewBoundaries { get; }
+    internal SubtitleTextBoundaries OldBoundaries { get; }
+    internal SubtitleTextBoundaries NewBoundaries { get; }
     internal int Delta { get; }
     internal int OldStart { get; }
     internal int OldEnd { get; }
@@ -77,7 +71,7 @@ internal sealed class SubtitleTextEditMap
         {
             throw new InvalidOperationException("受影响范围内部不能按原索引映射。");
         }
-        return NewBoundaries[NewStartIndex + Array.BinarySearch(OldBoundaries, offset) - OldStartIndex];
+        return NewBoundaries[NewStartIndex + OldBoundaries.IndexOf(offset) - OldStartIndex];
     }
 
     internal int StyleSourceOffset(int offset)
@@ -92,7 +86,7 @@ internal sealed class SubtitleTextEditMap
         }
         if (OldCount == NewCount)
         {
-            return OldBoundaries[OldStartIndex + Array.BinarySearch(NewBoundaries, offset) - NewStartIndex];
+            return OldBoundaries[OldStartIndex + NewBoundaries.IndexOf(offset) - NewStartIndex];
         }
         if (offset < OriginalStart)
         {
@@ -105,15 +99,15 @@ internal sealed class SubtitleTextEditMap
         return OriginalStart == OldBoundaries[^1] && OriginalStart > 0 ? OldBoundaries[^2] : OriginalStart;
     }
 
-    internal static int[] Boundaries(string text)
+    internal static SubtitleTextBoundaries Boundaries(string text)
     {
-        return StringInfo.ParseCombiningCharacters(text).Append(text.Length).ToArray();
+        return new(text);
     }
 
-    internal static void ValidateRange(string text, int[] boundaries, int start, int length)
+    internal static void ValidateRange(string text, SubtitleTextBoundaries boundaries, int start, int length)
     {
         if (start < 0 || length < 0 || (long)start + length > text.Length ||
-            Array.BinarySearch(boundaries, start) < 0 || Array.BinarySearch(boundaries, start + length) < 0)
+            !boundaries.Contains(start) || !boundaries.Contains(start + length))
         {
             throw new ArgumentOutOfRangeException(nameof(start), "编辑范围必须位于完整字素边界。");
         }

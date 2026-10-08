@@ -16,18 +16,23 @@ internal static class SubtitleContentEditing
         {
             return line;
         }
-        var spans = ImmutableArray.CreateBuilder<SubtitleInlineSpan>();
-        for (var index = 0; index < map.NewBoundaries.Length - 1; index++)
+        var inlineSpans = line.InlineSpans;
+        if (!inlineSpans.IsEmpty)
         {
-            var offset = map.NewBoundaries[index];
-            AppendSpan(spans, offset, map.NewBoundaries[index + 1] - offset,
-                StyleAt(line.InlineSpans, map.StyleSourceOffset(offset)));
+            var spans = ImmutableArray.CreateBuilder<SubtitleInlineSpan>();
+            for (var index = 0; index < map.NewBoundaries.Length - 1; index++)
+            {
+                var offset = map.NewBoundaries[index];
+                AppendSpan(spans, offset, map.NewBoundaries[index + 1] - offset,
+                    StyleAt(line.InlineSpans, map.StyleSourceOffset(offset)));
+            }
+            inlineSpans = Reuse(line.InlineSpans, spans.ToImmutable());
         }
         var (karaoke, inactiveKaraoke) = RemapKaraoke(line, map);
         return line with
         {
             Text = map.Text,
-            InlineSpans = Reuse(line.InlineSpans, spans.ToImmutable()),
+            InlineSpans = inlineSpans,
             Karaoke = karaoke,
             InactiveKaraoke = inactiveKaraoke
         };
@@ -119,8 +124,8 @@ internal static class SubtitleContentEditing
         var right = clips[last];
         var regionStart = map.MapBoundary(Math.Min(left.Utf16Start, map.OldStart));
         var regionEnd = Math.Max(right.Utf16Start + right.Utf16Length, map.OldEnd) + map.Delta;
-        var firstGlyph = Array.BinarySearch(map.NewBoundaries, regionStart);
-        var glyphCount = Array.BinarySearch(map.NewBoundaries, regionEnd) - firstGlyph;
+        var firstGlyph = map.NewBoundaries.IndexOf(regionStart);
+        var glyphCount = map.NewBoundaries.IndexOf(regionEnd) - firstGlyph;
         var result = ImmutableArray.CreateBuilder<KaraokeSegment>();
         for (var index = 0; index < first; index++)
         {
@@ -184,14 +189,14 @@ internal static class SubtitleContentEditing
     }
 
     private static List<(int First, int Last, int Weight)> TimingGroups(ImmutableArray<KaraokeSegment> segments,
-        int[] boundaries, int first, int last)
+        SubtitleTextBoundaries boundaries, int first, int last)
     {
         List<(int First, int Last, int Weight)> groups = [];
         for (var index = first; index <= last; index++)
         {
             var segment = segments[index];
-            var count = Array.BinarySearch(boundaries, segment.Utf16Start + segment.Utf16Length) -
-                Array.BinarySearch(boundaries, segment.Utf16Start);
+            var count = boundaries.IndexOf(segment.Utf16Start + segment.Utf16Length) -
+                boundaries.IndexOf(segment.Utf16Start);
             if (groups.Count > 0 && segment.Start == segments[index - 1].End)
             {
                 var previous = groups[^1];

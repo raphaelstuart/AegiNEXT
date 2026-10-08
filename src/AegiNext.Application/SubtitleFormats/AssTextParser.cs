@@ -439,10 +439,11 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
 
     internal static void ValidateLine(SubtitleLine line)
     {
-        var boundaries = StringInfo.ParseCombiningCharacters(line.Text).Append(line.Text.Length).ToHashSet();
+        var boundaries = line.InlineSpans.IsEmpty && line.Karaoke.IsEmpty
+            ? null : new SubtitleTextBoundaries(line.Text);
         foreach (var span in line.InlineSpans)
         {
-            if (!boundaries.Contains(span.Utf16Start) || !boundaries.Contains(span.Utf16Start + span.Utf16Length))
+            if (!boundaries!.Contains(span.Utf16Start) || !boundaries.Contains(span.Utf16Start + span.Utf16Length))
             {
                 throw new InvalidDataException("ASS 局部样式不能拆开字素。");
             }
@@ -450,14 +451,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         foreach (var segment in line.Karaoke)
         {
-            if (!boundaries.Contains(segment.Utf16Start) || !boundaries.Contains(segment.Utf16Start + segment.Utf16Length))
+            if (!boundaries!.Contains(segment.Utf16Start) || !boundaries.Contains(segment.Utf16Start + segment.Utf16Length))
             {
                 throw new InvalidDataException("ASS 卡拉 OK 标签不能拆开字素。");
             }
-        }
-        if (line.Text.Length > 1000000)
-        {
-            throw new InvalidDataException("ASS 单行文本超过预算。");
         }
         ProjectValidator.ValidateSubtitleStyle(line.Style);
     }

@@ -12,7 +12,6 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
 {
-    private const int MAX_SUBTITLE_FILE_BYTES = 16 * 1024 * 1024;
     private UnavailableProjectMediaBinding? unavailableMediaBinding;
     internal bool IsNewProjectDialogOpen { get; private set; }
     internal async Task<bool> ConfirmDiscardOrSaveAsync()
@@ -703,18 +702,10 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        if (stream.Length > MAX_SUBTITLE_FILE_BYTES)
-        {
-            throw new InvalidDataException(Localization.Get("Workbench.SubtitleFileTooLarge"));
-        }
-        var bytes = new byte[(int)stream.Length];
-        await stream.ReadExactlyAsync(bytes);
-        if (await stream.ReadAsync(new byte[1]) > 0)
-        {
-            throw new InvalidDataException(Localization.Get("Workbench.SubtitleFileTooLarge"));
-        }
-        var offset = bytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF }) ? 3 : 0;
-        return new UTF8Encoding(false, true).GetString(bytes.AsSpan(offset));
+        using var reader = new StreamReader(stream, new UTF8Encoding(false, true),
+            detectEncodingFromByteOrderMarks: false, bufferSize: 8192, leaveOpen: true);
+        var text = await reader.ReadToEndAsync();
+        return text.StartsWith('\uFEFF') ? text[1..] : text;
     }
 
     internal bool IsPreviewBindingSynchronized()
