@@ -366,19 +366,19 @@ Describe 'macOS app icon and disk image publishing' {
         }
     }
 
-    It 'writes the icon before signing and includes a requested DMG in the manifest (<CreateDmg>)' -TestCases @(
-        @{ CreateDmg = $true }
-        @{ CreateDmg = $false }
+    It 'writes the icon before signing and includes a requested DMG in the manifest (<CreateDmg>, relative repository: <RelativeRepository>)' -TestCases @(
+        @{ CreateDmg = $true; RelativeRepository = $false }
+        @{ CreateDmg = $false; RelativeRepository = $true }
     ) {
-        param($CreateDmg)
-        InModuleScope AegiNext.Publish -Parameters @{ Fixture = $TestDrive; CreateDmg = $CreateDmg } {
-            param($Fixture, $CreateDmg)
+        param($CreateDmg, $RelativeRepository)
+        InModuleScope AegiNext.Publish -Parameters @{ Fixture = $TestDrive; CreateDmg = $CreateDmg; RelativeRepository = $RelativeRepository } {
+            param($Fixture, $CreateDmg, $RelativeRepository)
             $root = Join-Path $Fixture "mac publish repository $CreateDmg"
             $ffmpeg = Join-Path $root 'sdk/ffmpeg'
             $sdl = Join-Path $root 'sdk/sdl'
             $native = Join-Path $root 'artifacts/native/osx-arm64/Release'
             $assets = Join-Path $root 'src/AegiNext.Desktop/Assets'
-            $output = Join-Path $Fixture "published mac fixture $CreateDmg"
+            $output = if ($RelativeRepository) { Join-Path $root 'artifacts/publish/osx-arm64/Release' } else { Join-Path $Fixture "published mac fixture $CreateDmg" }
             foreach ($directory in @($root, "$ffmpeg/bin", $sdl, $native, $assets))
             {
                 [IO.Directory]::CreateDirectory($directory) | Out-Null
@@ -447,7 +447,27 @@ Describe 'macOS app icon and disk image publishing' {
                 return $image
             }
 
-            Invoke-AegiNextPublish -RepositoryRoot $root -RuntimeIdentifier osx-arm64 -SkipBuild -CreateDmg:$CreateDmg -OutputDirectory $output
+            $publishArguments = @{ RepositoryRoot = $root; RuntimeIdentifier = 'osx-arm64'; SkipBuild = $true; CreateDmg = $CreateDmg }
+            if ($RelativeRepository)
+            {
+                $publishArguments.RepositoryRoot = [IO.Path]::GetRelativePath((Get-Location).Path, $root)
+            }
+            else
+            {
+                $publishArguments.OutputDirectory = $output
+            }
+            Invoke-AegiNextPublish @publishArguments
+
+            Should -Invoke Copy-AegiNextMacDependencyClosure -Times 1 -Exactly -ParameterFilter {
+                $payloadPath = [IO.Path]::GetFullPath($Payload)
+                $SourcePaths.Count -eq 6 -and
+                $SourcePaths[(Join-Path $payloadPath 'tools/ffmpeg')] -eq (Join-Path $ffmpeg 'bin/ffmpeg') -and
+                $SourcePaths[(Join-Path $payloadPath 'tools/ffprobe')] -eq (Join-Path $ffmpeg 'bin/ffprobe') -and
+                $SourcePaths[(Join-Path $payloadPath 'libaeginext_decode.dylib')] -eq (Join-Path $native 'libaeginext_decode.dylib') -and
+                $SourcePaths[(Join-Path $payloadPath 'libaeginext_audio.dylib')] -eq (Join-Path $native 'libaeginext_audio.dylib') -and
+                $SourcePaths[(Join-Path $payloadPath 'libaeginext_export.dylib')] -eq (Join-Path $native 'libaeginext_export.dylib') -and
+                $SourcePaths[(Join-Path $payloadPath 'libaeginext_media.dylib')] -eq (Join-Path $native 'libaeginext_media.dylib')
+            }
 
             $manifest = Get-Content -LiteralPath (Join-Path $output 'package-manifest.json') -Raw | ConvertFrom-Json
             $paths = @($manifest.Files | ForEach-Object { $_.Path.Replace('\', '/') })
@@ -552,6 +572,134 @@ Describe 'Windows dependency closure boundaries' {
 }
 
 Describe 'Mac closure correctness' {
+    It 'resolves relocated tools and modules from their sources and rewrites the complete <RuntimeIdentifier> closure' -TestCases @(
+        @{ RuntimeIdentifier = 'osx-arm64'; Architecture = 'arm64' }
+        @{ RuntimeIdentifier = 'osx-x64'; Architecture = 'x86_64' }
+    ) {
+        param($RuntimeIdentifier, $Architecture)
+        InModuleScope AegiNext.Publish -Parameters @{ Fixture = $TestDrive; RuntimeIdentifier = $RuntimeIdentifier; Architecture = $Architecture } {
+            param($Fixture, $RuntimeIdentifier, $Architecture)
+            $root = Join-Path $Fixture "relocated Mach-O $RuntimeIdentifier"
+            $sdk = Join-Path $root 'sdk/ffmpeg/9.0.2'
+            $payload = Join-Path $root 'package/AegiNext.app/Contents/MacOS'
+            $frameworks = Join-Path (Split-Path $payload) 'Frameworks'
+            $sourcePaths = @{}
+            $script:macClosureInfo = @{}
+            $definitions = @(
+                @{ Source = (Join-Path $sdk 'bin/ffmpeg'); Destination = (Join-Path $payload 'tools/ffmpeg'); Dependencies = @('@loader_path/../lib/libavdevice.63.dylib') }
+                @{ Source = (Join-Path $sdk 'bin/ffprobe'); Destination = (Join-Path $payload 'tools/ffprobe'); Dependencies = @('@loader_path/../lib/libavcodec.63.dylib') }
+                @{ Source = (Join-Path $root 'native/libaeginext_decode.dylib'); Destination = (Join-Path $payload 'libaeginext_decode.dylib'); Dependencies = @('@loader_path/../sdk/ffmpeg/9.0.2/lib/libavcodec.63.dylib') }
+                @{ Source = (Join-Path $payload 'aegi-next'); Destination = (Join-Path $payload 'aegi-next'); Dependencies = @('/usr/lib/libSystem.B.dylib') }
+                @{ Source = (Join-Path $sdk 'lib/libavdevice.63.dylib'); Destination = (Join-Path $frameworks 'libavdevice.63.dylib'); Dependencies = @('@loader_path/libavcodec.63.dylib') }
+                @{ Source = (Join-Path $sdk 'lib/libavcodec.63.dylib'); Destination = (Join-Path $frameworks 'libavcodec.63.dylib'); Dependencies = @('@loader_path/../../../x264/r3222/lib/libx264.165.dylib') }
+                @{ Source = (Join-Path $root 'sdk/x264/r3222/lib/libx264.165.dylib'); Destination = (Join-Path $frameworks 'libx264.165.dylib'); Dependencies = @('/usr/lib/libSystem.B.dylib') }
+            )
+            foreach ($definition in $definitions)
+            {
+                [IO.Directory]::CreateDirectory((Split-Path $definition.Source)) | Out-Null
+                [IO.File]::WriteAllBytes($definition.Source, [byte[]](0xcf, 0xfa, 0xed, 0xfe) + [Text.Encoding]::UTF8.GetBytes($definition.Source))
+                $identity = if ($definition.Source.EndsWith('.dylib')) { "@rpath/$([IO.Path]::GetFileName($definition.Source))" } else { $null }
+                foreach ($path in @($definition.Source, $definition.Destination) | Select-Object -Unique)
+                {
+                    $script:macClosureInfo[$path] = [pscustomobject]@{
+                        Identity = $identity
+                        Dependencies = @($definition.Dependencies)
+                        RPaths = @((Join-Path $sdk 'lib'))
+                        MinimumOSVersion = [version]'14.0'
+                        Architectures = @($Architecture)
+                    }
+                }
+                if ($definition.Destination.StartsWith($payload + [IO.Path]::DirectorySeparatorChar) -and $definition.Source -ne $definition.Destination)
+                {
+                    [IO.Directory]::CreateDirectory((Split-Path $definition.Destination)) | Out-Null
+                    Copy-Item -LiteralPath $definition.Source -Destination $definition.Destination
+                    $sourcePaths[$definition.Destination] = $definition.Source
+                }
+            }
+            $originalHashes = @{}
+            foreach ($definition in $definitions)
+            {
+                $originalHashes[$definition.Source] = (Get-FileHash -LiteralPath $definition.Source).Hash
+            }
+            Mock Get-AegiNextMacBinaryInfo {
+                param($Path)
+                if (!$script:macClosureInfo.ContainsKey($Path)) { throw "Unexpected Mach-O inspection: $Path" }
+                return $script:macClosureInfo[$Path]
+            }
+            Mock Invoke-AegiNextPublishCommand {
+                param($FilePath, $Arguments)
+                $FilePath | Should -Be '/usr/bin/install_name_tool'
+                $path = $Arguments[-1]
+                $path.StartsWith((Join-Path $root 'package') + [IO.Path]::DirectorySeparatorChar) | Should -BeTrue
+                Test-Path -LiteralPath $path -PathType Leaf | Should -BeTrue
+                $info = $script:macClosureInfo[$path]
+                switch ($Arguments[0])
+                {
+                    '-change' { $info.Dependencies = @($info.Dependencies | ForEach-Object { if ($_ -eq $Arguments[1]) { $Arguments[2] } else { $_ } }) }
+                    '-id' { $info.Identity = $Arguments[1] }
+                    '-delete_rpath' { $info.RPaths = @($info.RPaths | Where-Object { $_ -ne $Arguments[1] }) }
+                    default { throw 'Unexpected Mach-O rewrite.' }
+                }
+                return ''
+            }
+
+            $closure = Copy-AegiNextMacDependencyClosure -Payload $payload -RuntimeIdentifier $RuntimeIdentifier -SourcePaths $sourcePaths
+
+            $closure.Dependencies.Count | Should -Be 7
+            $closure.MinimumOSVersion | Should -Be '14.0'
+            $closure.PackageRoots | Should -Contain $sdk
+            $closure.PackageRoots | Should -Contain (Join-Path $root 'sdk/x264/r3222')
+            foreach ($definition in $definitions)
+            {
+                Test-Path -LiteralPath $definition.Destination -PathType Leaf | Should -BeTrue
+                (Get-FileHash -LiteralPath $definition.Source).Hash | Should -Be $originalHashes[$definition.Source]
+                $record = @($closure.Dependencies | Where-Object Source -eq $definition.Source)
+                $record.Count | Should -Be 1
+                $record[0].Path | Should -Be ([IO.Path]::GetRelativePath($payload, $definition.Destination))
+                $record[0].SourceSha256 | Should -Be $originalHashes[$definition.Source].ToLowerInvariant()
+                $script:macClosureInfo[$definition.Destination].RPaths | Should -BeNullOrEmpty
+                foreach ($reference in $record[0].Dependencies)
+                {
+                    $resolved = Resolve-AegiNextMacDependency $reference $definition.Destination @() $payload $frameworks
+                    if ($resolved)
+                    {
+                        $resolved.StartsWith($frameworks + [IO.Path]::DirectorySeparatorChar) | Should -BeTrue
+                    }
+                }
+                if ($definition.Source -ne $definition.Destination)
+                {
+                    $script:macClosureInfo[$definition.Source].Dependencies | Should -Be $definition.Dependencies
+                    Should -Invoke Get-AegiNextMacBinaryInfo -Times 1 -Exactly -ParameterFilter { $Path -eq $definition.Source }
+                }
+            }
+            $script:macClosureInfo[(Join-Path $payload 'tools/ffmpeg')].Dependencies | Should -Contain '@loader_path/../../Frameworks/libavdevice.63.dylib'
+            $script:macClosureInfo[(Join-Path $payload 'tools/ffprobe')].Dependencies | Should -Contain '@loader_path/../../Frameworks/libavcodec.63.dylib'
+            $script:macClosureInfo[(Join-Path $payload 'libaeginext_decode.dylib')].Dependencies | Should -Contain '@loader_path/../Frameworks/libavcodec.63.dylib'
+        }
+    }
+
+    It 'retains closure support for payload binaries without a source mapping' {
+        InModuleScope AegiNext.Publish -Parameters @{ Fixture = $TestDrive } {
+            param($Fixture)
+            $payload = Join-Path $Fixture 'unmapped/Contents/MacOS'
+            [IO.Directory]::CreateDirectory($payload) | Out-Null
+            $binary = Join-Path $payload 'aegi-next'
+            [IO.File]::WriteAllBytes($binary, [byte[]](0xcf, 0xfa, 0xed, 0xfe))
+            Mock Get-AegiNextMacBinaryInfo {
+                [pscustomobject]@{ Identity = $null; Dependencies = @('/usr/lib/libSystem.B.dylib'); RPaths = @(); MinimumOSVersion = [version]'14.0'; Architectures = @('arm64') }
+            }
+            Mock Invoke-AegiNextPublishCommand { throw 'An unmoved system-only binary needs no rewriting.' }
+
+            $closure = Copy-AegiNextMacDependencyClosure -Payload $payload -RuntimeIdentifier osx-arm64
+
+            $closure.Dependencies.Count | Should -Be 1
+            $closure.Dependencies[0].Source | Should -Be $binary
+            $closure.Dependencies[0].Path | Should -Be 'aegi-next'
+            Should -Invoke Get-AegiNextMacBinaryInfo -Times 2 -Exactly -ParameterFilter { $Path -eq $binary }
+            Should -Invoke Invoke-AegiNextPublishCommand -Times 0 -Exactly
+        }
+    }
+
     It 'resolves both directory and file links without requiring coreutils' -Skip:$IsWindows {
         InModuleScope AegiNext.Publish -Parameters @{ Fixture = $TestDrive } {
             param($Fixture)

@@ -62,7 +62,7 @@ function Resolve-AegiNextCanonicalPath
 
 function Copy-AegiNextMacDependencyClosure
 {
-    param([string] $Payload, [string] $RuntimeIdentifier)
+    param([string] $Payload, [string] $RuntimeIdentifier, [hashtable] $SourcePaths = @{})
     $architecture = if ($RuntimeIdentifier -eq 'osx-arm64') { 'arm64' } else { 'x86_64' }
     $frameworks = Join-Path (Split-Path $Payload) 'Frameworks'
     [IO.Directory]::CreateDirectory($frameworks) | Out-Null
@@ -73,7 +73,8 @@ function Copy-AegiNextMacDependencyClosure
     {
         if ((Get-AegiNextBinaryKind $file.FullName) -eq 'MachO')
         {
-            $item = [pscustomobject]@{ Source = $file.FullName; Destination = $file.FullName; Info = $null; References = @(); SourceSha256 = (Get-FileHash -LiteralPath $file.FullName).Hash }
+            $source = if ($SourcePaths.ContainsKey($file.FullName)) { [IO.Path]::GetFullPath($SourcePaths[$file.FullName]) } else { $file.FullName }
+            $item = [pscustomobject]@{ Source = $source; Destination = $file.FullName; Info = $null; References = @(); SourceSha256 = (Get-FileHash -LiteralPath $source).Hash }
             $binaries.Add($item.Source, $item)
             $destinations[$item.Destination] = $item.Source
             $queue.Enqueue($item)

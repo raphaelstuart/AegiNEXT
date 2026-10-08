@@ -243,20 +243,26 @@ function Invoke-AegiNextPublish
     }
     Write-Information -InformationAction Continue -MessageData '[publish] Copying native modules and FFmpeg tools...'
     $nativeRoot = Join-Path $RepositoryRoot "artifacts/native/$rid/$Configuration"
+    $sourcePaths = @{}
     $modules = @('decode', 'audio', 'export') + $(if ($hostInfo.Platform -eq 'MacOS') { @('media') } else { @() })
     foreach ($module in $modules)
     {
         $filename = if ($hostInfo.Platform -eq 'MacOS') { "libaeginext_$module.dylib" } else { "aeginext_$module.dll" }
         $source = Join-Path $nativeRoot $filename
         if (!(Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing native module for ${rid}: $source" }
-        Copy-Item -LiteralPath $source -Destination (Join-Path $payload $filename) -Force
+        $destination = Join-Path $payload $filename
+        Copy-Item -LiteralPath $source -Destination $destination -Force
+        $sourcePaths[[IO.Path]::GetFullPath($destination)] = [IO.Path]::GetFullPath($source)
     }
     $tools = Join-Path $payload 'tools'
     [IO.Directory]::CreateDirectory($tools) | Out-Null
     foreach ($tool in @('ffmpeg', 'ffprobe'))
     {
         $filename = $tool + $(if ($hostInfo.Platform -eq 'Windows') { '.exe' } else { '' })
-        Copy-Item -LiteralPath (Join-Path $report.NativePrefixes.ffmpeg "bin/$filename") -Destination (Join-Path $tools $filename)
+        $source = Join-Path $report.NativePrefixes.ffmpeg "bin/$filename"
+        $destination = Join-Path $tools $filename
+        Copy-Item -LiteralPath $source -Destination $destination
+        $sourcePaths[[IO.Path]::GetFullPath($destination)] = [IO.Path]::GetFullPath($source)
     }
     $toolSuffix = if ($hostInfo.Platform -eq 'Windows') { '.exe' } else { '' }
     $sourceIdentity = Get-AegiNextSourceIdentity $RepositoryRoot
@@ -266,7 +272,7 @@ function Invoke-AegiNextPublish
     if ($hostInfo.Platform -eq 'MacOS')
     {
         Write-Information -InformationAction Continue -MessageData '[publish] Resolving macOS runtime dependencies and bundle metadata...'
-        $closure = Copy-AegiNextMacDependencyClosure -Payload $payload -RuntimeIdentifier $rid
+        $closure = Copy-AegiNextMacDependencyClosure -Payload $payload -RuntimeIdentifier $rid -SourcePaths $sourcePaths
         $manifest.Dependencies = $closure.Dependencies
         $manifest.MinimumOSVersion = $closure.MinimumOSVersion
         $manifest.OperatingSystemPolicy.ProductMinimumOSVerified = $true
