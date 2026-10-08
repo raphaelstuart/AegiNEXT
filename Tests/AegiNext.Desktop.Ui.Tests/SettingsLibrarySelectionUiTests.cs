@@ -128,10 +128,11 @@ public sealed class SettingsLibrarySelectionUiTests
                 window.ViewModel.Styles.Name = "Changed 样式 123";
                 Assert.Empty(window.ViewModel.Styles.Styles);
             }
-            window.SelectPage(SettingsPage.COLORS);
+            UiTestActions.SelectSettingsPage(window, SettingsPage.COLORS);
             await window.ViewModel.NavigationCompletion;
             Assert.Equal(1, dialogs.PresetConfirmationRequests);
             Assert.Equal(choice == 2 ? originalPage : SettingsPage.COLORS, window.CurrentPage);
+            Assert.Equal(window.CurrentPage, UiTestActions.Find<ListBox>(window, "Navigation").SelectedValue);
             var count = effects ? context.EffectScriptLibrary.Snapshot.Presets.Length : context.StyleLibrary.Snapshot.Presets.Length;
             Assert.Equal(choice == 0 ? 1 : 0, count);
             Assert.Equal(choice == 2, effects ? window.ViewModel.Effects.IsDirty : window.ViewModel.Styles.IsDirty);

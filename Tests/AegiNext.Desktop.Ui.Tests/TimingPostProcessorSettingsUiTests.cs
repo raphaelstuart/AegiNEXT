@@ -772,7 +772,7 @@ public sealed class TimingPostProcessorSettingsUiTests
             window.ViewModel.TimingPostProcessor.UpdateStyles([new(Guid.NewGuid(), "Default", new()), new(Guid.NewGuid(), "对白 中文 ABC 123", new())]);
             window.UpdateLayout();
             Dispatcher.UIThread.RunJobs();
-            Assert.Equal((int)SettingsPage.TIMING_POST_PROCESSOR, UiTestActions.Find<ListBox>(window, "Navigation").SelectedIndex);
+            Assert.Equal(SettingsPage.TIMING_POST_PROCESSOR, UiTestActions.Find<ListBox>(window, "Navigation").SelectedValue);
             var content = UiTestActions.Find<Grid>(window, "TimingPostProcessorContentGrid");
             var stylesCard = UiTestActions.Find<Border>(window, "TimingPostProcessorStylesCard");
             var list = UiTestActions.Find<ListBox>(window, "TimingPostProcessorStylesList");

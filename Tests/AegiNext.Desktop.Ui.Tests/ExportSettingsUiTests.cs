@@ -265,10 +265,11 @@ public sealed class ExportSettingsUiTests
             UiTestActions.SetText(UiTestActions.Find<TextBox>(window, "ExportPresetNameInput"), "Edited name");
             UiTestActions.Find<NumericDraftInput>(window, "CrfInput").RawText = "29";
 
-            window.SelectPage(SettingsPage.APPEARANCE);
+            UiTestActions.SelectSettingsPage(window, SettingsPage.APPEARANCE);
             await window.ViewModel.NavigationCompletion.WaitAsync(TimeSpan.FromSeconds(5));
 
             Assert.Equal(leaves ? SettingsPage.APPEARANCE : SettingsPage.EXPORT_PRESETS, window.CurrentPage);
+            Assert.Equal(window.CurrentPage, UiTestActions.Find<ListBox>(window, "Navigation").SelectedValue);
             Assert.Equal(1, dialogs.Inner.PresetConfirmationRequests);
             var persisted = Assert.Single(context.ExportPresetLibrary.Snapshot.Presets);
             Assert.Equal(saved.Id, persisted.Id);

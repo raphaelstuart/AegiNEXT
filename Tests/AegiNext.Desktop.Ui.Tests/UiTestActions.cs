@@ -14,6 +14,7 @@ using AegiNext.Core.Editing;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Shortcuts;
 
 namespace AegiNext.Desktop.Ui.Tests;
@@ -80,6 +81,20 @@ internal static class UiTestActions
         var selector = Find<ComboBox>(window, "LanguageCombo");
         selector.SelectedItem = selector.Items.OfType<LanguageInfo>()
             .Single(language => string.Equals(language.LanguageID, languageID, StringComparison.OrdinalIgnoreCase));
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    internal static void SelectSettingsPage(Window window, SettingsPage page)
+    {
+        var navigation = Find<ListBox>(window, "Navigation");
+        var item = navigation.Items.Cast<ListBoxItem>().Single(value => Equals(value.DataContext, page));
+        item.BringIntoView();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        var point = item.TranslatePoint(new(item.Bounds.Width / 2, item.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(point, MouseButton.Left);
+        window.MouseUp(point, MouseButton.Left);
         Dispatcher.UIThread.RunJobs();
     }
 
