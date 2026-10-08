@@ -99,7 +99,7 @@ function Test-AegiNextPublishedLocalization
     param([Parameter(Mandatory)][string] $PayloadDirectory)
     $directory = Join-Path $PayloadDirectory 'i18n'
     if (!(Test-Path -LiteralPath $directory -PathType Container)) { throw "Missing published language directory: $directory" }
-    $required = @{ 'en-US.json' = 'en-US'; 'zh-CN.json' = 'zh-CN' }
+    $required = @{ 'en-US.json' = 'en-US'; 'zh-CN.json' = 'zh-CN'; 'ja-JP.json' = 'ja-JP' }
     foreach ($name in $required.Keys)
     {
         if (!(Test-Path -LiteralPath (Join-Path $directory $name) -PathType Leaf)) { throw "Missing published language package: $name" }

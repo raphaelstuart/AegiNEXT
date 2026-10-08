@@ -24,7 +24,7 @@ AegiNext makes subtitle creation easier to learn, supports Aegisub file standard
 
 - **Subtitle creation**: multiple tracks, waveform and spectrogram timing, and ASS/SRT import and export.
 - **Styles and effects**: rich text, karaoke, keyframes, motion paths, masks, and reusable scripts.
-- **Modern workspace**: dockable panels, light and dark themes, a bilingual interface, and custom shortcuts.
+- **Modern workspace**: dockable panels, light and dark themes, English, Simplified Chinese and Japanese interfaces, and custom shortcuts.
 - **Saving and export**: autosave, backup recovery, video encoding in an independent process, and HDR export.
 
 ## Quickstart

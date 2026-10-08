@@ -38,7 +38,7 @@ scoop install nsis
 
 ## Package contents
 
-The complete payload includes self-contained .NET, the desktop app, `aegn-exporter`, FFmpeg/FFprobe, native modules, recursive runtime dependencies, original licenses, and `i18n/en-US.json` plus `i18n/zh-CN.json`.
+The complete payload includes self-contained .NET, the desktop app, `aegn-exporter`, FFmpeg/FFprobe, native modules, recursive runtime dependencies, original licenses, and the entire `i18n/` language-resource directory copied from the publish output.
 
 - `media-runtime.json` selects package-local tools.
 - `package-manifest.json` records version, RID, Git identity/dirty state, runtime/tool versions, dependency/license origins, actual OS requirements, and file hashes.

@@ -38,7 +38,7 @@ scoop install nsis
 
 ## 应用包内容
 
-完整内容包括自包含 .NET、桌面应用、`aegn-exporter`、FFmpeg/FFprobe、原生模块、递归运行时依赖、原始许可证，以及 `i18n/en-US.json` 和 `i18n/zh-CN.json`。
+完整内容包括自包含 .NET、桌面应用、`aegn-exporter`、FFmpeg/FFprobe、原生模块、递归运行时依赖、原始许可证，以及从发布输出整体复制的 `i18n/` 语言资源目录。
 
 - `media-runtime.json` 指定包内工具。
 - `package-manifest.json` 记录版本、RID、Git 身份/脏状态、运行时/工具版本、依赖/许可来源、实际系统要求和文件哈希。

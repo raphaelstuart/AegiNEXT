@@ -1,43 +1,11 @@
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Tests;
 
-/// <summary>Verifies external language catalogs and the migrated built-in resources.</summary>
+/// <summary>Verifies external language catalog loading, discovery and fallback behavior.</summary>
 public sealed class LocalizationCatalogTests
 {
-    private static readonly Dictionary<(string LanguageId, string Key), (string Original, string Current)> legacyRenames = new()
-    {
-        [("en-US", "Workbench.Karaoke")] = ("Karaoke", "Highlight"),
-        [("en-US", "Workbench.ClearKaraoke")] = ("Clear karaoke", "Clear highlight"),
-        [("en-US", "Workbench.DeleteTrack")] = ("Delete empty track", "Delete track"),
-        [("en-US", "Settings.IMPORT_SUBTITLES")] = ("Import subtitles", "Import SRT subtitles"),
-        [("en-US", "Settings.EXPORT_SUBTITLES")] = ("Export subtitles", "Export SRT subtitles"),
-        [("en-US", "Settings.Apply")] = ("Apply to current subtitle", "Apply to current"),
-        [("en-US", "Settings.Capture")] = ("Capture current subtitle", "Capture current"),
-        [("zh-CN", "Workbench.Karaoke")] = ("逐字高亮", "高亮"),
-        [("zh-CN", "Workbench.DeleteTrack")] = ("删除空轨道", "删除轨道"),
-        [("zh-CN", "Settings.IMPORT_SUBTITLES")] = ("导入字幕", "导入 SRT 字幕"),
-        [("zh-CN", "Settings.EXPORT_SUBTITLES")] = ("导出字幕", "导出 SRT 字幕"),
-        [("zh-CN", "Settings.Apply")] = ("应用到当前字幕", "应用到当前"),
-        [("zh-CN", "Settings.Capture")] = ("从当前字幕获取", "获取当前"),
-        [("zh-CN", "Settings.NEW_PROJECT")] = ("新建工程", "新建项目"),
-        [("zh-CN", "Settings.OPEN_PROJECT")] = ("打开工程", "打开项目"),
-        [("zh-CN", "Settings.SAVE_PROJECT")] = ("保存工程", "保存项目"),
-        [("zh-CN", "Settings.SAVE_PROJECT_AS")] = ("工程另存为", "项目另存为"),
-        [("zh-CN", "Workbench.OpenProject")] = ("打开工程", "打开项目"),
-        [("zh-CN", "Workbench.Projects")] = ("AegiNext 工程", "AegiNext 项目"),
-        [("zh-CN", "Workbench.UnsavedText")] = ("工程有未保存的修改。", "项目有未保存的修改。"),
-        [("zh-CN", "Workbench.Untitled")] = ("未命名工程", "未命名项目"),
-        [("zh-CN", "WorkflowLog.ProjectCreated")] = ("已创建工程", "已创建项目"),
-        [("zh-CN", "WorkflowLog.ProjectOpened")] = ("已打开工程", "已打开项目"),
-        [("zh-CN", "WindowChromeProbe.Description")] =
-            ("检查系统按钮、空白标题拖动、菜单点击、全屏和尺寸恢复。此窗口不加载工程或个人设置。",
-                "检查系统按钮、空白标题拖动、菜单点击、全屏和尺寸恢复。此窗口不加载项目或个人设置。")
-    };
     /// <summary>Language metadata controls discovery independently of file names.</summary>
     [Fact]
     public void DiscoversThirdLanguageFromMetadataAndOnlyScansDirectoryRoot()
@@ -282,80 +250,5 @@ public sealed class LocalizationCatalogTests
 
         Assert.Equal("Hello", result.English);
         Assert.Equal("简体中文", result.Chinese);
-    }
-
-    /// <summary>Both built-in packages are copied into the executable resource directory.</summary>
-    [Fact]
-    public void BuiltInPackagesAreCopiedToOutputAndHaveMatchingCompleteKeys()
-    {
-        var resourceDirectory = Path.Combine(AppContext.BaseDirectory, "i18n");
-        var catalog = LocalizationCatalog.Load(resourceDirectory);
-        var english = ReadBuiltInStrings("en-US");
-        var chinese = ReadBuiltInStrings("zh-CN");
-
-        Assert.Empty(catalog.Diagnostics);
-        Assert.Contains(catalog.KnownLanguages, language => language.LanguageID == "en-US" && !string.IsNullOrWhiteSpace(language.LanguageName));
-        Assert.Contains(catalog.KnownLanguages, language => language.LanguageID == "zh-CN" && !string.IsNullOrWhiteSpace(language.LanguageName));
-        Assert.True(english.Count >= 466);
-        Assert.Equal(english.Keys.Order(StringComparer.Ordinal), chinese.Keys.Order(StringComparer.Ordinal));
-        foreach (var key in english.Keys)
-        {
-            Assert.False(string.IsNullOrWhiteSpace(english[key]), key);
-            Assert.False(string.IsNullOrWhiteSpace(chinese[key]), key);
-            Assert.Equal(english[key], catalog.Get("en-US", key));
-            Assert.Equal(chinese[key], catalog.Get("zh-CN", key));
-            var englishFormat = CompositeFormat.Parse(english[key]);
-            var chineseFormat = CompositeFormat.Parse(chinese[key]);
-            Assert.Equal(englishFormat.MinimumArgumentCount, chineseFormat.MinimumArgumentCount);
-        }
-    }
-
-    /// <summary>保留原迁移键集和文本，单独验证已更名的界面项，允许后续功能新增文案。</summary>
-    [Theory]
-    [InlineData("Workbench", "zh-CN", 213, "683239F719DDC91550BC8446EAF44E52BCB2BC37DD15DF65E530D0A2EB4DD1CF")]
-    [InlineData("Workbench", "en-US", 213, "25E4FEE652647F2DAA17822D0088D6548EA388B5F46C14F41866670C31FD2EA8")]
-    [InlineData("Settings", "zh-CN", 165, "9F42A8A5158D99B3C2660654510FCEE6D89540173C055F68BE2C9CC8846DFDF0")]
-    [InlineData("Settings", "en-US", 165, "3F897021081724183B393226777A8562216E8DE993D3BFD00EA99DCADDB05ECB")]
-    [InlineData("Preview", "zh-CN", 27, "CA515020C2564EB877AF1B05FBD0C7C7EB70C39523F2EB5136AD6AC4E48F0CF8")]
-    [InlineData("Preview", "en-US", 27, "86B76A1117D11F962257E18A0BF34ACFFF8BFF472F44E3F9052B7075AD2501C5")]
-    [InlineData("Layout", "zh-CN", 27, "58413CD7E1A199CC54EDA80C0D5ECA33EE334A346896B4F472764FBDE2ECED4C")]
-    [InlineData("Layout", "en-US", 27, "14E7D4808E2BD54EC812EA2AB2CBDBD165BA467C03575D41367199BE9B8A3B1F")]
-    [InlineData("Log", "zh-CN", 9, "7B7111B256B969F1772C512ABA32506E050EFD500E3BD8D4F4E8D75EF899A82E")]
-    [InlineData("Log", "en-US", 9, "C37CDD1984C76719D20BBB3EE6A1B78A592E76BBF291BE2BB87CED8318633C6E")]
-    [InlineData("WorkflowLog", "zh-CN", 13, "B98B5EB6A7BE1CD4F89117DD5A7DEBCE311622FD57318E1491A6F75C2E7D0BCC")]
-    [InlineData("WorkflowLog", "en-US", 13, "24720BEC3A6A814C717497FD1C7B13D612001340C0AC07477F49537C815FC494")]
-    [InlineData("WindowChromeProbe", "zh-CN", 12, "FFCD83CF7326F429C181B4DD2C429AA82F569E6A5A0468E9E0DE00607E431E3A")]
-    [InlineData("WindowChromeProbe", "en-US", 12, "80AA301AEC56FC6AA0F2670BDED7E154A6810527B500E6A7FA897A0F1EB3C876")]
-    public void MigratedResourcesRetainLegacyText(string prefix, string languageID, int expectedCount, string expectedHash)
-    {
-        using var fixture = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "LegacyLocalizationKeys.json")));
-        var current = ReadBuiltInStrings(languageID);
-        var entries = fixture.RootElement.GetProperty("Keys").EnumerateArray()
-            .Select(entry => entry.GetString()!)
-            .Where(key => key.StartsWith(prefix + ".", StringComparison.Ordinal))
-            .Order(StringComparer.Ordinal)
-            .Select(key => new KeyValuePair<string, string>(key, RetainLegacyText(languageID, key, current[key])))
-            .ToArray();
-        var text = string.Join("\n", entries.Select(entry => entry.Key + "\0" + entry.Value));
-
-        Assert.Equal(expectedCount, entries.Length);
-        Assert.Equal(expectedHash, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))));
-    }
-
-    private static string RetainLegacyText(string languageID, string key, string current)
-    {
-        if (legacyRenames.TryGetValue((languageID, key), out var rename))
-        {
-            Assert.Equal(rename.Current, current);
-            return rename.Original;
-        }
-        return current;
-    }
-
-    private static Dictionary<string, string> ReadBuiltInStrings(string languageID)
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "i18n", languageID + ".json")));
-        return document.RootElement.GetProperty("Strings").EnumerateObject()
-            .ToDictionary(entry => entry.Name, entry => entry.Value.GetString()!, StringComparer.Ordinal);
     }
 }

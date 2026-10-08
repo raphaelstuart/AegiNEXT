@@ -149,7 +149,7 @@ public sealed class LocalizationUiTests
             Assert.Equal(1, notifications);
             Assert.Equal("zh-CN", Localization.SelectedLanguageID);
             Assert.Equal("zh-CN", Localization.CurrentLanguageID);
-            Assert.Throws<ArgumentException>(() => Localization.SetLanguage("ja-JP"));
+            Assert.Throws<ArgumentException>(() => Localization.SetLanguage("fr-FR"));
             Assert.Equal(1, notifications);
             Assert.Equal("保存", Localization.Get("Workbench.Save"));
             var backgroundException = await Task.Run(() => Record.Exception(() => Localization.SetLanguage("en-US")));

@@ -29,7 +29,7 @@ public sealed class SettingsStartupUiTests
         using var environment = new UiTestEnvironment();
         var preferences = new WorkbenchPreferences
         {
-            Language = "ja-JP", Theme = WorkbenchTheme.DARK, Volume = 0.375f, WindowMenuOnMac = true
+            Language = "fr-FR", Theme = WorkbenchTheme.DARK, Volume = 0.375f, WindowMenuOnMac = true
         };
         using var store = new WorkbenchPreferencesStore(environment.DirectoryPath);
         await store.SaveAsync(preferences, TestContext.Current.CancellationToken);
@@ -51,7 +51,7 @@ public sealed class SettingsStartupUiTests
             Assert.Null(UiTestActions.Find<ComboBox>(settings, "LanguageCombo").SelectedItem);
             Assert.Equal("Settings", settings.Title);
             UiTestActions.Find<ComboBox>(settings, "ThemeCombo").SelectedIndex = (int)WorkbenchTheme.LIGHT;
-            Assert.Equal("ja-JP", main.Session.Preferences.Language);
+            Assert.Equal("fr-FR", main.Session.Preferences.Language);
             Assert.Equal(0.375f, main.Session.Preferences.Volume);
             Assert.True(main.Session.Preferences.WindowMenuOnMac);
         }
@@ -62,7 +62,7 @@ public sealed class SettingsStartupUiTests
             await main.DisposeAsync();
         }
 
-        Assert.Equal("ja-JP", store.Load().Language);
+        Assert.Equal("fr-FR", store.Load().Language);
         Assert.Null(store.LoadError);
     }
 

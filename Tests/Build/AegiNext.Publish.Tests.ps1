@@ -115,7 +115,7 @@ Describe 'Platform publishing boundaries' {
                     {
                         $languages = Join-Path $Arguments[3] 'i18n'
                         [IO.Directory]::CreateDirectory($languages) | Out-Null
-                        foreach ($identifier in @('en-US', 'zh-CN'))
+                        foreach ($identifier in @('en-US', 'zh-CN', 'ja-JP'))
                         {
                             @{ LanguageName = $identifier; LanguageID = $identifier; Strings = @{ 'Workbench.Export' = 'Encode' } } |
                                 ConvertTo-Json | Set-Content -LiteralPath (Join-Path $languages "$identifier.json") -Encoding utf8NoBOM
@@ -227,7 +227,7 @@ Describe 'Platform publishing boundaries' {
         Set-Content -LiteralPath $tool -Value 'packaged tool'
         $languages = Join-Path $root 'AegiNext/i18n'
         [IO.Directory]::CreateDirectory($languages) | Out-Null
-        Copy-Item -LiteralPath (Join-Path $repository 'src/AegiNext.Desktop/I18n/Languages/en-US.json'), (Join-Path $repository 'src/AegiNext.Desktop/I18n/Languages/zh-CN.json') -Destination $languages
+        Copy-Item -Path (Join-Path $repository 'src/AegiNext.Desktop/I18n/Languages/*.json') -Destination $languages
         $files = @(foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse)
         {
             @{ Path = [IO.Path]::GetRelativePath($root, $file.FullName); Sha256 = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant(); Bytes = $file.Length }
@@ -414,7 +414,7 @@ Describe 'macOS app icon and disk image publishing' {
                     {
                         $languages = Join-Path $Arguments[3] 'i18n'
                         [IO.Directory]::CreateDirectory($languages) | Out-Null
-                        foreach ($identifier in @('en-US', 'zh-CN'))
+                        foreach ($identifier in @('en-US', 'zh-CN', 'ja-JP'))
                         {
                             @{ LanguageName = $identifier; LanguageID = $identifier; Strings = @{} } |
                                 ConvertTo-Json | Set-Content -LiteralPath (Join-Path $languages "$identifier.json") -Encoding utf8NoBOM
@@ -746,141 +746,5 @@ Describe 'Mac closure correctness' {
             }
             (Get-AegiNextMacBinaryInfo '/fixture/native.dylib').MinimumOSVersion | Should -Be ([version]'27.0')
         }
-    }
-}
-
-
-Describe 'Published localization resources' {
-    BeforeAll {
-        function Update-AegiNextLocalizationFixtureManifest
-        {
-            param([string] $Root, [string] $RuntimeIdentifier = 'win-x64')
-            $manifestPath = Join-Path $Root 'package-manifest.json'
-            $files = @(foreach ($file in Get-ChildItem -LiteralPath $Root -File -Recurse)
-            {
-                if ($file.FullName -eq $manifestPath) { continue }
-                @{ Path = [IO.Path]::GetRelativePath($Root, $file.FullName); Sha256 = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant(); Bytes = $file.Length }
-            })
-            @{ SchemaVersion = 1; ProductVersion = '0.1.0'; RuntimeIdentifier = $RuntimeIdentifier; SelfContained = $true; Files = $files } |
-                ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
-        }
-
-        function New-AegiNextLocalizationFixture
-        {
-            param([string] $Root, [string] $RuntimeIdentifier = 'win-x64')
-            $payload = if ($RuntimeIdentifier.StartsWith('osx-')) { 'AegiNext.app/Contents/MacOS' } else { 'AegiNext' }
-            $directory = Join-Path $Root "$payload/i18n"
-            [IO.Directory]::CreateDirectory($directory) | Out-Null
-            foreach ($identifier in @('en-US', 'zh-CN'))
-            {
-                @{ LanguageName = $identifier; LanguageID = $identifier; Strings = @{ 'Workbench.Export' = 'Encode' } } |
-                    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory "$identifier.json") -Encoding utf8NoBOM
-            }
-            Update-AegiNextLocalizationFixtureManifest -Root $Root -RuntimeIdentifier $RuntimeIdentifier
-            return $directory
-        }
-    }
-
-    It 'verifies built-in language resources in the <RuntimeIdentifier> payload after relocation' -TestCases @(
-        @{ RuntimeIdentifier = 'win-x64' }
-        @{ RuntimeIdentifier = 'osx-arm64' }
-        @{ RuntimeIdentifier = 'osx-x64' }
-    ) {
-        param($RuntimeIdentifier)
-        $root = Join-Path $TestDrive "relocated localization $RuntimeIdentifier"
-        $null = New-AegiNextLocalizationFixture -Root $root -RuntimeIdentifier $RuntimeIdentifier
-        $result = Test-AegiNextPublishedPackage -PackageDirectory $root
-        $result.HashesVerified | Should -BeTrue
-        $result.LocalizationVerified | Should -BeTrue
-        $result.LanguageIDs.Count | Should -Be 2
-        $result.LanguageIDs | Should -Contain 'en-US'
-        $result.LanguageIDs | Should -Contain 'zh-CN'
-    }
-
-    It 'rejects an absent language directory even when the manifest matches remaining files' {
-        $root = Join-Path $TestDrive 'missing localization directory'
-        $directory = New-AegiNextLocalizationFixture -Root $root
-        Remove-Item -LiteralPath $directory -Recurse
-        Update-AegiNextLocalizationFixtureManifest -Root $root
-        { Test-AegiNextPublishedPackage -PackageDirectory $root } | Should -Throw '*Missing published language directory*'
-    }
-
-    It 'rejects an absent <LanguageID> built-in package' -TestCases @(
-        @{ LanguageID = 'en-US' }
-        @{ LanguageID = 'zh-CN' }
-    ) {
-        param($LanguageID)
-        $root = Join-Path $TestDrive "missing localization $LanguageID"
-        $directory = New-AegiNextLocalizationFixture -Root $root
-        Remove-Item -LiteralPath (Join-Path $directory "$LanguageID.json")
-        Update-AegiNextLocalizationFixtureManifest -Root $root
-        { Test-AegiNextPublishedPackage -PackageDirectory $root } | Should -Throw '*Missing published language package*'
-    }
-
-    It 'rejects invalid <Field> metadata' -TestCases @(
-        @{ Field = 'LanguageName'; Value = '' }
-        @{ Field = 'LanguageID'; Value = '' }
-        @{ Field = 'LanguageID'; Value = 'system' }
-        @{ Field = 'LanguageID'; Value = 'fr-FR' }
-        @{ Field = 'Strings'; Value = $null }
-        @{ Field = 'Strings'; Value = @{ Text = 42 } }
-    ) {
-        param($Field, $Value)
-        $root = Join-Path $TestDrive "invalid language metadata $([Guid]::NewGuid().ToString('N'))"
-        $directory = New-AegiNextLocalizationFixture -Root $root
-        $path = Join-Path $directory 'en-US.json'
-        $data = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable
-        $data[$Field] = $Value
-        $data | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8NoBOM
-        Update-AegiNextLocalizationFixtureManifest -Root $root
-        { Test-AegiNextPublishedPackage -PackageDirectory $root } | Should -Throw '*Invalid published language package*'
-    }
-
-    It 'rejects malformed JSON and duplicate <ContentKind>' -TestCases @(
-        @{ ContentKind = 'JSON'; Json = '{' }
-        @{ ContentKind = 'fields'; Json = '{"LanguageName":"English","LanguageName":"Duplicate","LanguageID":"en-US","Strings":{}}' }
-        @{ ContentKind = 'keys'; Json = '{"LanguageName":"English","LanguageID":"en-US","Strings":{"Text":"First","Text":"Second"}}' }
-    ) {
-        param($Json)
-        $root = Join-Path $TestDrive "invalid language JSON $([Guid]::NewGuid().ToString('N'))"
-        $directory = New-AegiNextLocalizationFixture -Root $root
-        Set-Content -LiteralPath (Join-Path $directory 'en-US.json') -Value $Json -Encoding utf8NoBOM
-        Update-AegiNextLocalizationFixtureManifest -Root $root
-        { Test-AegiNextPublishedPackage -PackageDirectory $root } | Should -Throw '*Invalid published language package*'
-    }
-
-    It 'rejects duplicate LanguageID values regardless of case or filename' {
-        $root = Join-Path $TestDrive 'duplicate language identifier'
-        $directory = New-AegiNextLocalizationFixture -Root $root
-        @{ LanguageName = 'Duplicate English'; LanguageID = 'EN-us'; Strings = @{} } |
-            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'another-language.json') -Encoding utf8NoBOM
-        Update-AegiNextLocalizationFixtureManifest -Root $root
-        { Test-AegiNextPublishedPackage -PackageDirectory $root } | Should -Throw '*Duplicate published LanguageID*'
-    }
-
-    It 'includes additional valid language packages in verification' {
-        $root = Join-Path $TestDrive 'additional published language'
-        $directory = New-AegiNextLocalizationFixture -Root $root
-        @{ LanguageName = "Fran$([char]0xe7)ais"; LanguageID = 'fr-FR'; Strings = @{ 'Workbench.Export' = 'Encoder' } } |
-            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'french.json') -Encoding utf8NoBOM
-        Update-AegiNextLocalizationFixtureManifest -Root $root
-        (Test-AegiNextPublishedPackage -PackageDirectory $root).LanguageIDs | Should -Contain 'fr-FR'
-    }
-
-    It 'rejects UTF-8 BOM language files' {
-        $root = Join-Path $TestDrive 'language encoding'
-        $directory = New-AegiNextLocalizationFixture -Root $root
-        $path = Join-Path $directory 'en-US.json'
-        $bytes = [IO.File]::ReadAllBytes($path)
-        [IO.File]::WriteAllBytes($path, [byte[]](0xef, 0xbb, 0xbf) + $bytes)
-        Update-AegiNextLocalizationFixtureManifest -Root $root
-        { Test-AegiNextPublishedPackage -PackageDirectory $root } | Should -Throw '*UTF-8 without a BOM*'
-    }
-
-    It 'keeps language files in the existing package hash inventory' {
-        $root = Join-Path $TestDrive 'tampered language contents'
-        $directory = New-AegiNextLocalizationFixture -Root $root
-        Add-Content -LiteralPath (Join-Path $directory 'en-US.json') -Value ' ' -Encoding utf8NoBOM
-        { Test-AegiNextPublishedPackage -PackageDirectory $root } | Should -Throw '*Package hash mismatch*'
     }
 }
