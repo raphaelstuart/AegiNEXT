@@ -812,6 +812,8 @@
     "Tasks.Progress": "{0:P0}",
     "Tasks.Queued": "排队",
     "Tasks.Running": "运行",
+    "Tasks.Yielded": "等待恢复",
+    "Tasks.AudioCacheMigration": "迁移音频缓存",
     "Tasks.Cancelling": "取消中",
     "Tasks.Committing": "提交中",
     "Tasks.Succeeded": "成功",

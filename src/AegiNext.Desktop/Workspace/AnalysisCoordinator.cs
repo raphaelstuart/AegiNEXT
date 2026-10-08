@@ -11,24 +11,30 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed class AnalysisCoordinator : IDisposable
 {
     private readonly WorkbenchSession session;
-    private readonly Func<string, int, MediaTimelineMapping, MediaTime, AudioAnalysisSession> createSession;
+    private readonly Func<string, int, MediaTimelineMapping, MediaTime, string, AudioAnalysisSession> createSession;
     private readonly Lock jobsGate = new();
     private readonly HashSet<Task> jobs = [];
+    private readonly HashSet<AegiTaskHandle> handles = [];
+    private readonly HashSet<AegiTaskHandle> migrationHandles = [];
+    private readonly HashSet<AegiTask> migrationTasks = [];
     private AudioAnalysisSession? analysis;
     private CancellationTokenSource? cancellation;
     private CancellationTokenSource? windowCancellation;
+    private CancellationTokenSource? migrationCancellation;
     private WaveformViewportPlan? desired;
+    private string? desiredCacheRoot;
     private bool desiredWaveform;
     private bool desiredSpectrum;
     private bool isAnalyzing;
+    private bool analysisBatchPending;
     private long epoch;
     private long revision;
-    private bool analysisBatchPending;
+    private long migrationRevision;
 
     public Task Completion => DrainAsync();
 
     internal AnalysisCoordinator(WorkbenchSession session,
-        Func<string, int, MediaTimelineMapping, MediaTime, AudioAnalysisSession>? createSession = null)
+        Func<string, int, MediaTimelineMapping, MediaTime, string, AudioAnalysisSession>? createSession = null)
     {
         this.session = session;
         this.createSession = createSession ?? AudioAnalysisSession.Open;
@@ -40,7 +46,17 @@ internal sealed class AnalysisCoordinator : IDisposable
         epoch++;
         analysisBatchPending = false;
         windowCancellation?.Cancel();
+        migrationCancellation?.Cancel();
         cancellation?.Cancel();
+        AegiTaskHandle[] pending;
+        lock (jobsGate)
+        {
+            pending = [.. handles];
+        }
+        foreach (var handle in pending)
+        {
+            handle.RequestCancel();
+        }
         if (analysis is { } current)
         {
             analysis = null;
@@ -89,111 +105,186 @@ internal sealed class AnalysisCoordinator : IDisposable
         isAnalyzing = plan is not null;
         if (plan is null)
         {
-            timeline.Waveform = null;
-            timeline.Spectrogram = null;
             timeline.AnalysisStatus = string.Empty;
-            return;
         }
-        RefreshLanguage();
-        if (!analysisBatchPending)
+        else
         {
-            analysisBatchPending = true;
-            var task = new AudioAnalysisBatchTask(session, this, current, epoch);
-            if (AegiTaskExecutionContext.Current is { } parent)
-            {
-                parent.ScheduleAfterCompletion(task, handle =>
-                {
-                    if (handle is null)
-                    {
-                        if (ReferenceEquals(analysis, current))
-                        {
-                            analysisBatchPending = false;
-                        }
-                    }
-                    else
-                    {
-                        Track(ObserveBatchAsync(handle, current, task.Epoch));
-                    }
-                });
-            }
-            else
-            {
-                Track(ObserveBatchAsync(session.ApplicationContext.Tasks.Submit(task), current, epoch));
-            }
+            RefreshLanguage();
+            Track(AnalyzeWindowAsync(current, plan.Analysis, desiredWaveform, desiredSpectrum,
+                epoch, revision, immediate, windowCancellation.Token));
+        }
+        if (!analysisBatchPending && !current.IsCacheComplete)
+        {
+            ScheduleBuild(current);
         }
     }
 
-    private async Task ObserveBatchAsync(AegiTaskHandle handle, AudioAnalysisSession current, long requestEpoch)
+    private void ScheduleBuild(AudioAnalysisSession current)
+    {
+        analysisBatchPending = true;
+        var requestEpoch = epoch;
+        var task = new AudioAnalysisBatchTask(session, this, current, requestEpoch);
+        Schedule(task, current, requestEpoch, false);
+    }
+
+    private void Schedule(AegiTask task, AudioAnalysisSession current, long requestEpoch, bool migration)
+    {
+        if (migration)
+        {
+            lock (jobsGate)
+            {
+                migrationTasks.Add(task);
+            }
+        }
+        try
+        {
+            if (AegiTaskExecutionContext.Current is { } parent)
+            {
+                parent.ScheduleAfterCompletion(task, handle => Register(handle, task, current, requestEpoch, migration));
+            }
+            else
+            {
+                Register(session.ApplicationContext.Tasks.Submit(task), task, current, requestEpoch, migration);
+            }
+        }
+        catch
+        {
+            lock (jobsGate)
+            {
+                migrationTasks.Remove(task);
+            }
+            throw;
+        }
+    }
+
+    private void Register(AegiTaskHandle? handle, AegiTask task, AudioAnalysisSession current, long requestEpoch, bool migration)
+    {
+        if (handle is null)
+        {
+            lock (jobsGate)
+            {
+                migrationTasks.Remove(task);
+            }
+            if (!migration && requestEpoch == epoch && ReferenceEquals(analysis, current))
+            {
+                analysisBatchPending = false;
+            }
+            return;
+        }
+        lock (jobsGate)
+        {
+            handles.Add(handle);
+            if (migration)
+            {
+                migrationHandles.Add(handle);
+            }
+        }
+        if (requestEpoch != epoch || !ReferenceEquals(analysis, current) ||
+            task is AudioCacheMigrationTask migrationTask && migrationTask.Revision != migrationRevision)
+        {
+            handle.RequestCancel();
+        }
+        Track(ObserveAsync(handle, task, current, requestEpoch, migration));
+    }
+
+    private async Task ObserveAsync(AegiTaskHandle handle, AegiTask task, AudioAnalysisSession current, long requestEpoch, bool migration)
     {
         await handle.Completion.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        if (handle.Completion.IsCanceled)
+        lock (jobsGate)
         {
-            var disposeCurrent = false;
-            await session.DispatchTaskCompletionAsync(() =>
-            {
-                if (requestEpoch == epoch && ReferenceEquals(analysis, current))
-                {
-                    windowCancellation?.Cancel();
-                    cancellation?.Cancel();
-                    analysis = null;
-                    desired = null;
-                    isAnalyzing = false;
-                    analysisBatchPending = false;
-                    session.ViewModel.Timeline.AnalysisStatus = string.Empty;
-                    disposeCurrent = true;
-                }
-            });
-            if (disposeCurrent)
-            {
-                await current.DisposeAsync();
-            }
+            handles.Remove(handle);
+            migrationHandles.Remove(handle);
+            migrationTasks.Remove(task);
+        }
+        if (!migration && handle.Completion.IsCanceled)
+        {
+            await StopCancelledBuildAsync(current, requestEpoch);
         }
     }
 
     internal async Task ExecuteBatchAsync(AudioAnalysisSession current, long requestEpoch, AegiTaskExecutionContext context)
     {
+        if (!IsCurrent(requestEpoch, context.CancellationToken) || !ReferenceEquals(analysis, current) || cancellation is null)
+        {
+            return;
+        }
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token, context.CancellationToken);
         try
         {
-            while (IsCurrent(requestEpoch, context.CancellationToken) && desired is { } plan && windowCancellation is { } window)
+            context.ReportProgress(new("Tasks.AudioAnalysis"));
+            await current.PrepareCacheAsync(async token =>
             {
-                var requestedRevision = revision;
-                using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(window.Token, context.CancellationToken);
-                context.ReportProgress(new(desiredSpectrum ? "Tasks.Spectrum" : "Tasks.Waveform"));
-                await AnalyzeWindowAsync(current, plan.Analysis, desiredWaveform, desiredSpectrum,
-                    requestEpoch, requestedRevision, false, lifetime.Token);
-                context.CancellationToken.ThrowIfCancellationRequested();
-                if (requestedRevision == revision)
+                await session.DispatchTaskCompletionAsync(() =>
                 {
-                    break;
-                }
-            }
-        }
-        finally
-        {
-            if (requestEpoch == epoch)
-            {
-                analysisBatchPending = false;
-                if (context.CancellationToken.IsCancellationRequested)
-                {
-                    windowCancellation?.Cancel();
-                    cancellation?.Cancel();
-                    if (ReferenceEquals(analysis, current))
+                    if (IsCurrent(requestEpoch, token) && ReferenceEquals(analysis, current))
                     {
-                        analysis = null;
+                        RefreshWindow(true);
                     }
-                    await current.DisposeAsync();
+                });
+                await context.YieldIfWorkIsQueuedAsync();
+            }, new Progress<AudioAnalysisProgress>(progress =>
+            {
+                context.ReportProgress(new("Tasks.AudioAnalysis", (double)progress.Processed.Numerator / progress.Processed.Denominator,
+                    (double)progress.Duration.Numerator / progress.Duration.Denominator));
+            }), lifetime.Token);
+            await session.DispatchTaskCompletionAsync(() =>
+            {
+                if (IsCurrent(requestEpoch, lifetime.Token) && ReferenceEquals(analysis, current))
+                {
+                    analysisBatchPending = false;
+                    RefreshWindow(true);
+                    ScheduleMigration(current, requestEpoch);
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            await StopCancelledBuildAsync(current, requestEpoch);
+            throw;
+        }
+        catch (Exception error)
+        {
+            await session.DispatchTaskCompletionAsync(() =>
+            {
+                if (IsCurrent(requestEpoch, lifetime.Token) && ReferenceEquals(analysis, current))
+                {
+                    analysisBatchPending = false;
                     desired = null;
                     isAnalyzing = false;
-                    session.ViewModel.Timeline.AnalysisStatus = string.Empty;
+                    ReportFailure(error, requestEpoch, lifetime.Token);
                 }
+            });
+            throw;
+        }
+    }
+
+    private async Task StopCancelledBuildAsync(AudioAnalysisSession current, long requestEpoch)
+    {
+        var disposeCurrent = false;
+        await session.DispatchTaskCompletionAsync(() =>
+        {
+            if (requestEpoch == epoch && ReferenceEquals(analysis, current))
+            {
+                windowCancellation?.Cancel();
+                migrationCancellation?.Cancel();
+                cancellation?.Cancel();
+                analysis = null;
+                desired = null;
+                isAnalyzing = false;
+                analysisBatchPending = false;
+                session.ViewModel.Timeline.AnalysisStatus = string.Empty;
+                disposeCurrent = true;
             }
+        });
+        if (disposeCurrent)
+        {
+            await current.DisposeAsync();
         }
     }
 
     private async Task AnalyzeWindowAsync(AudioAnalysisSession current, WaveformAnalysisRequest request, bool waveform, bool spectrum,
         long requestEpoch, long requestRevision, bool immediate, CancellationToken token)
     {
-        var published = false;
         try
         {
             if (!immediate)
@@ -204,50 +295,146 @@ internal sealed class AnalysisCoordinator : IDisposable
             {
                 return;
             }
-            var timeline = session.ViewModel.Timeline;
             if (spectrum)
             {
-                var result = await current.GetLayersAsync(request, false, true, token);
-                if (!IsCurrent(requestEpoch, token) || requestRevision != revision)
+                var result = await current.GetAvailableLayersAsync(request, false, true, token);
+                await session.DispatchTaskCompletionAsync(() =>
                 {
-                    return;
-                }
-                timeline.Spectrogram = result.Spectrogram;
+                    if (IsCurrent(requestEpoch, token) && requestRevision == revision && ReferenceEquals(analysis, current) &&
+                        result.Spectrogram is { } spectrogram)
+                    {
+                        session.ViewModel.Timeline.Spectrogram = spectrogram;
+                    }
+                });
             }
-            if (waveform)
+            var waveformResult = waveform ? await current.GetAvailableLayersAsync(request, true, false, token) : null;
+            await session.DispatchTaskCompletionAsync(() =>
             {
-                var result = await current.GetLayersAsync(request, true, false, token);
-                if (!IsCurrent(requestEpoch, token) || requestRevision != revision)
+                if (!IsCurrent(requestEpoch, token) || requestRevision != revision || !ReferenceEquals(analysis, current))
                 {
                     return;
                 }
-                timeline.Waveform = result.Waveform;
-            }
-            timeline.AnalysisStatus = string.Empty;
-            published = true;
+                var timeline = session.ViewModel.Timeline;
+                if (waveformResult?.Waveform is { } waveformData)
+                {
+                    timeline.Waveform = waveformData;
+                }
+                if (current.IsCacheComplete)
+                {
+                    isAnalyzing = false;
+                    timeline.AnalysisStatus = string.Empty;
+                }
+                else if (analysisBatchPending)
+                {
+                    isAnalyzing = true;
+                    timeline.AnalysisStatus = Localization.Get("Workbench.Analyzing");
+                }
+            });
         }
         catch (OperationCanceledException)
         {
-            if (IsCurrent(requestEpoch, token) && requestRevision == revision)
-            {
-                session.ViewModel.Timeline.AnalysisStatus = string.Empty;
-            }
         }
         catch (Exception error)
         {
-            ReportFailure(error, requestEpoch, token);
-            throw;
-        }
-        finally
-        {
-            if (requestEpoch == epoch && requestRevision == revision)
+            await session.DispatchTaskCompletionAsync(() =>
             {
-                isAnalyzing = false;
-                if (!published)
+                if (requestRevision == revision && IsCurrent(requestEpoch, token) && ReferenceEquals(analysis, current))
                 {
                     desired = null;
+                    isAnalyzing = false;
+                    ReportFailure(error, requestEpoch, token);
+                    if (error is AudioAnalysisCacheCorruptionException && !analysisBatchPending)
+                    {
+                        QueueCacheRebuild(current, requestEpoch, requestRevision, token);
+                    }
                 }
-            }
+            });
+        }
+    }
+
+    private void QueueCacheRebuild(AudioAnalysisSession current, long requestEpoch, long requestRevision, CancellationToken token)
+    {
+        Task rebuild;
+        using (ExecutionContext.SuppressFlow())
+        {
+            rebuild = Task.Run(() => session.DispatchTaskCompletionAsync(() =>
+            {
+                if (requestRevision == revision && IsCurrent(requestEpoch, token) && ReferenceEquals(analysis, current) &&
+                    !analysisBatchPending)
+                {
+                    isAnalyzing = true;
+                    RefreshLanguage();
+                    ScheduleBuild(current);
+                }
+            }), CancellationToken.None);
+        }
+        Track(rebuild);
+    }
+
+    internal void ProjectDirectoryChanged(string directory)
+    {
+        desiredCacheRoot = Path.Combine(directory, "caches", "audio");
+        migrationRevision++;
+        migrationCancellation?.Cancel();
+        migrationCancellation?.Dispose();
+        migrationCancellation = null;
+        AegiTaskHandle[] pending;
+        bool migrationInFlight;
+        lock (jobsGate)
+        {
+            pending = [.. migrationHandles];
+            migrationInFlight = migrationTasks.Count > 0;
+        }
+        foreach (var handle in pending)
+        {
+            handle.RequestCancel();
+        }
+        if (analysis is { IsCacheComplete: true } current && !analysisBatchPending)
+        {
+            ScheduleMigration(current, epoch, migrationInFlight);
+        }
+    }
+
+    private void ScheduleMigration(AudioAnalysisSession current, long requestEpoch, bool migrationInFlight = false)
+    {
+        if (desiredCacheRoot is not { } destination || cancellation is null ||
+            !migrationInFlight && WorkbenchSession.PathsEqual(Path.GetDirectoryName(current.CacheDirectory), destination))
+        {
+            return;
+        }
+        migrationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+        var task = new AudioCacheMigrationTask(session, this, current, requestEpoch, migrationRevision,
+            destination, migrationCancellation.Token);
+        Schedule(task, current, requestEpoch, true);
+    }
+
+    internal async Task ExecuteMigrationAsync(AudioAnalysisSession current, long requestEpoch, long requestMigrationRevision,
+        string destination, AegiTaskExecutionContext context, CancellationToken token)
+    {
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, context.CancellationToken);
+        if (!IsCurrent(requestEpoch, lifetime.Token) || requestMigrationRevision != migrationRevision ||
+            !ReferenceEquals(analysis, current))
+        {
+            return;
+        }
+        try
+        {
+            await current.RelocateCacheAsync(destination, _ => context.YieldIfWorkIsQueuedAsync(), lifetime.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            await session.DispatchTaskCompletionAsync(() =>
+            {
+                if (requestEpoch == epoch && ReferenceEquals(analysis, current))
+                {
+                    session.LogError("Audio cache migration", error);
+                }
+            });
+            throw;
         }
     }
 
@@ -265,9 +452,12 @@ internal sealed class AnalysisCoordinator : IDisposable
         await Completion;
         windowCancellation?.Dispose();
         windowCancellation = null;
+        migrationCancellation?.Dispose();
+        migrationCancellation = null;
         cancellation?.Dispose();
         cancellation = null;
         desired = null;
+        desiredCacheRoot = null;
         isAnalyzing = false;
         var timeline = session.ViewModel.Timeline;
         timeline.Waveform = null;
@@ -288,14 +478,25 @@ internal sealed class AnalysisCoordinator : IDisposable
             return;
         }
         cancellation = new();
-        var current = createSession(path, index, new(media.Start ?? MediaTime.Zero), duration);
+        var token = cancellation.Token;
+        var requestEpoch = epoch;
+        var directory = Path.Combine(session.ProjectDirectory, "caches", "audio");
+        var current = await Task.Run(() => createSession(path, index, new(media.Start ?? MediaTime.Zero), duration, directory), token);
+        if (!IsCurrent(requestEpoch, token))
+        {
+            await current.DisposeAsync();
+            return;
+        }
         analysis = current;
+        desiredCacheRoot = Path.Combine(session.ProjectDirectory, "caches", "audio");
         session.ViewModel.Timeline.AudioDuration = duration;
         RefreshWindow(true);
     }
 
-    private bool IsCurrent(long requestEpoch, CancellationToken token) =>
-        requestEpoch == epoch && !token.IsCancellationRequested && !session.IsClosing;
+    private bool IsCurrent(long requestEpoch, CancellationToken token)
+    {
+        return requestEpoch == epoch && !token.IsCancellationRequested && !session.IsClosing;
+    }
 
     private void ReportFailure(Exception error, long requestEpoch, CancellationToken token)
     {
@@ -317,16 +518,10 @@ internal sealed class AnalysisCoordinator : IDisposable
 
     private async Task ForgetAsync(Task task)
     {
-        try
+        await task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        lock (jobsGate)
         {
-            await task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        }
-        finally
-        {
-            lock (jobsGate)
-            {
-                jobs.Remove(task);
-            }
+            jobs.Remove(task);
         }
     }
 
@@ -337,14 +532,13 @@ internal sealed class AnalysisCoordinator : IDisposable
             Task[] pending;
             lock (jobsGate)
             {
-                jobs.RemoveWhere(task => task.IsCompletedSuccessfully || task.IsCanceled);
-                pending = jobs.ToArray();
+                pending = [.. jobs];
             }
             if (pending.Length == 0)
             {
                 return;
             }
-            await Task.WhenAll(pending);
+            await Task.WhenAll(pending).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }
 
@@ -354,6 +548,7 @@ internal sealed class AnalysisCoordinator : IDisposable
         session.ViewModel.Timeline.PropertyChanged -= OnTimelineChanged;
         Cancel();
         windowCancellation?.Dispose();
+        migrationCancellation?.Dispose();
         cancellation?.Dispose();
     }
 }

@@ -65,25 +65,39 @@ public sealed class FfmpegAudioDecoder : IAudioSampleSource
     public unsafe AudioSampleBlock? Read(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var samples = new float[4096 * Format.Channels];
+        var frames = ReadInto(samples, out var start, cancellationToken);
+        return frames == 0 ? null : new(Format, start, samples.AsSpan(0, checked(frames * Format.Channels)));
+    }
+
+    internal unsafe int ReadInto(Span<float> samples, out MediaTime start, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (samples.Length == 0 || samples.Length % Format.Channels != 0 || samples.Length / Format.Channels > 262144)
+        {
+            throw new ArgumentException("PCM 缓冲必须包含完整声道帧且不超过原生容量。", nameof(samples));
+        }
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(handle.IsClosed, this);
-            var samples = new float[4096 * Format.Channels];
             Span<byte> error = stackalloc byte[NativeAudioMethods.ERROR_CAPACITY];
             error.Clear();
             using var registration = cancellationToken.UnsafeRegister(static state => NativeAudioMethods.Cancel((AudioDecoderHandle)state!), handle);
             fixed (float* data = samples)
             fixed (byte* text = error)
             {
-                var status = NativeAudioMethods.Read(handle, data, 4096, out var frames, out var start, text, (uint)error.Length);
+                var status = NativeAudioMethods.Read(handle, data, samples.Length / Format.Channels, out var frames,
+                    out var firstSample, text, (uint)error.Length);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (status == 1)
                 {
-                    return null;
+                    start = default;
+                    return 0;
                 }
 
                 NativeAudioError.Check(status, error, cancellationToken);
-                return new(Format, new(start, Format.SampleRate), samples.AsSpan(0, checked(frames * Format.Channels)));
+                start = new(firstSample, Format.SampleRate);
+                return frames;
             }
         }
     }

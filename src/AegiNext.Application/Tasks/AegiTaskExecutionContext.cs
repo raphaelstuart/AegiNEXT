@@ -7,6 +7,7 @@ public sealed class AegiTaskExecutionContext
     private readonly object stageGate = new();
     private readonly List<Task> stages = new();
     private bool stagesDrained;
+    private bool yielding;
     private readonly AegiTaskService service;
     private readonly Guid taskId;
     private readonly IReadOnlySet<AegiTaskResource> resources;
@@ -42,6 +43,49 @@ public sealed class AegiTaskExecutionContext
             if (!resources.Contains(resource))
             {
                 throw new InvalidOperationException($"The parent task did not declare resource '{resource.Key}'.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lets queued independent work run before resuming this operation with the same resources and identity.
+    /// Call only at a quiescent boundary after all internal workers and stages finish, before commit or editing leases.
+    /// </summary>
+    public Task YieldIfWorkIsQueuedAsync()
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        lock (stageGate)
+        {
+            if (stagesDrained || yielding || stages.Any(stage => !stage.IsCompleted))
+            {
+                throw new InvalidOperationException("Yielding requires an active operation with no unfinished internal stages.");
+            }
+
+            var pending = service.YieldIfWorkIsQueuedAsync(taskId);
+            if (pending.IsCompletedSuccessfully)
+            {
+                return pending;
+            }
+
+            yielding = true;
+            var completion = AwaitYieldAsync(pending);
+            stages.Add(completion);
+            return completion;
+        }
+    }
+
+    private async Task AwaitYieldAsync(Task pending)
+    {
+        try
+        {
+            await pending;
+            CancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (stageGate)
+            {
+                yielding = false;
             }
         }
     }
@@ -146,9 +190,9 @@ public sealed class AegiTaskExecutionContext
     {
         lock (stageGate)
         {
-            if (stagesDrained)
+            if (stagesDrained || yielding)
             {
-                throw new InvalidOperationException("The parent operation has finished its internal phases.");
+                throw new InvalidOperationException("The parent operation is no longer executing its internal phases.");
             }
 
             stages.Add(stage);

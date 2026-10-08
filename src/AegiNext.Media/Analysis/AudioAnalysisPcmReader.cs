@@ -5,7 +5,9 @@ namespace AegiNext.Media.Analysis;
 
 internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action checkRequest, CancellationToken lifetime)
 {
-    private AudioSampleBlock? block;
+    private ReadOnlyMemory<float> samples;
+    private readonly float[]? readBuffer = source is FfmpegAudioDecoder ? new float[4096] : null;
+    private bool hasBlock;
     private long blockStart;
     private MediaTime? expected;
     private long? lastBlockEnd;
@@ -30,10 +32,10 @@ internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action c
                 sample += silent;
                 continue;
             }
-            var count = (int)Math.Min(Math.Min(destination.Length, 1024), blockStart + block!.FrameCount - sample);
-            var samples = block.Samples.Span.Slice((int)(sample - blockStart), count);
-            AudioAnalysisSampleValidation.EnsureFinite(samples);
-            samples.CopyTo(destination);
+            var count = (int)Math.Min(Math.Min(destination.Length, 1024), blockStart + samples.Length - sample);
+            var part = samples.Span.Slice((int)(sample - blockStart), count);
+            AudioAnalysisSampleValidation.EnsureFinite(part);
+            part.CopyTo(destination);
             destination = destination[count..];
             sample += count;
         }
@@ -41,28 +43,48 @@ internal sealed class AudioAnalysisPcmReader(IAudioSampleSource source, Action c
 
     private bool Prepare(long sample)
     {
-        while (block is null || sample >= blockStart + block.FrameCount)
+        while (!hasBlock || sample >= blockStart + samples.Length)
         {
             if (eof)
             {
                 return false;
             }
             checkRequest();
-            block = source.Read(lifetime);
+            MediaTime start;
+            if (source is FfmpegAudioDecoder decoder)
+            {
+                var count = decoder.ReadInto(readBuffer!, out start, lifetime);
+                samples = readBuffer.AsMemory(0, count);
+            }
+            else if (source.Read(lifetime) is { } block)
+            {
+                if (block.Format != source.Format)
+                {
+                    throw new InvalidDataException("PCM 格式与分析源声明不一致。");
+                }
+                start = block.Start;
+                samples = block.Samples;
+            }
+            else
+            {
+                start = default;
+                samples = default;
+            }
             checkRequest();
-            if (block is null)
+            if (samples.IsEmpty)
             {
                 eof = true;
                 EndSample = lastBlockEnd ?? sample;
                 return false;
             }
-            if (block.Format != source.Format || expected is { } previous && block.Start < previous)
+            if (expected is { } previous && start < previous)
             {
                 throw new InvalidDataException("PCM 格式不一致或时间戳发生重叠、回退。");
             }
-            blockStart = block.Start.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.FLOOR).Value;
-            lastBlockEnd = blockStart + block.FrameCount;
-            expected = block.Start + new MediaTime(block.FrameCount, WaveformAnalyzer.SAMPLE_RATE);
+            hasBlock = true;
+            blockStart = start.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.FLOOR).Value;
+            lastBlockEnd = blockStart + samples.Length;
+            expected = start + new MediaTime(samples.Length, WaveformAnalyzer.SAMPLE_RATE);
         }
         return true;
     }

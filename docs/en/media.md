@@ -42,13 +42,20 @@ SDR conversion borrows the raw frame and produces independent, opaque, top-down 
 
 Controller results check request, media time, project revision, and quality. Select preview quality in the workbench; interaction uses a temporary cap. Measure presented frames and dispatch latency separately from decode duration, especially for long GOP, high resolution, and repeated seeks.
 
-Analysis uses an independent fixed grid: 48 kHz mono waveform min/max, plus low-pass 16 kHz spectrum with 64 ms FFT and 16 ms hop. Request viewport tiles with bounded prefetch/cache, share PCM across layers, and preserve source time. Color/playhead refreshes reuse geometry; hiding/media replacement/close cancels obsolete analysis without consuming playback audio.
+Binding media starts an `AudioAnalysisSession` that builds complete waveform and spectrum pyramids in the project's `caches/audio/<identity>/`. `data.bin` stores uncompressed binary blocks; `index.bin` stores the version, exact rational timeline, level indexes, and SHA-256 checksums. Identity includes the algorithm version, stream index, file size and modification time, and up to 64 KiB each from the beginning, middle, and end. Moving media preserves identity. Complete caches survive reopening; cancelled, failed, or abandoned temporary builds cannot become cache hits.
+
+Analysis uses a fixed grid: 48 kHz mono waveform min/max with a finest persistent level of 512 samples; a 63-tap FIR low-pass to 16 kHz; and 1024-point Hann FFT, 256-sample hop, and 128 logarithmic frequency rows. Normal waveform zoom and every spectrum zoom read existing levels through binary indexes. Coarse spectra select centers on the absolute media grid. Only waveform requests finer than 512 samples open a separate local decoder with a bounded PCM LRU. Viewports never compute FFTs or consume playback audio.
+
+`AudioAnalysisCacheBuilder` decodes sequentially through one source and runs segment FIR/FFT in parallel. The default segment contains 196608 samples (4.096 seconds), with up to four DSP workers. Each segment filters once and reuses overlapping FFT windows. Batch working storage is capped at 48 MiB, and the default combined read-cache cap is 16 MiB. PCM is not persisted. Finished batches publish in order; unfinished intervals remain pending. Hiding layers cancels viewport reads; replacing media or closing cancels and drains the build. Batch checkpoints can cooperatively release the task slot so saving and media replacement can proceed even with a one-slot limit.
+
+After Save As succeeds, `AudioCacheMigrationTask` copies the complete cache in the background. A running build records the latest destination and migrates after completion. Saving waits for neither generation nor copying. Migration owns a destination writer lease and switches data and index together. Cancellation or copy failure retains the original read path; another save can retry.
 
 ## Verify
 
 ```powershell
 dotnet test Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj -c Release --filter 'FullyQualifiedName~Probing'
 dotnet test Tests/AegiNext.Desktop.Tests/AegiNext.Desktop.Tests.csproj -c Release --filter 'FullyQualifiedName~VideoPreview'
+dotnet test Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj -c Release --filter 'FullyQualifiedName~Analysis'
 ```
 
 Native cases need the switches and tool paths in [Building](building.md). Test actual PTS/pixels, seeking, supersession, cancellation, frame lifetime, and faults. Silent system-device tests do not establish speaker latency; Headless presentation does not establish native HDR or GPU acceptance.

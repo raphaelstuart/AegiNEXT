@@ -36,6 +36,8 @@ The shared queue starts tasks in submission order. An unavailable resource at th
 
 A handle supports awaiting completion; cancelling the wait does not cancel its operation. Explicit cancellation keeps resources and editing leases until subprocess exit and cleanup finish. Atomic commit validates cancellation and input first, then disables cancellation. Queued tasks acquire no editing lease. Scope restrictions include that project's floating panels.
 
+Cancellable parallel work may call `YieldIfWorkIsQueuedAsync` at a checkpoint after all internal workers and stages finish, before commit or editing leases. Yielding retains resources, identity, and start time while releasing only the execution slot. Only the queue's consecutive independent parallel prefix runs first; yielding never crosses a blocking task or resource conflict. Cancelling yielded work still drains its original execution stack, callbacks, and cleanup before a barrier can proceed. Started yielded work cannot be replaced by continuous-write coalescing.
+
 Project creation dialogs own cancellation of their submitted task: closing the dialog explicitly requests cancellation and waits for actual completion. Commit rejects cancellation, and the created project still transfers to the workbench. Application exit prevents activating a new window after commit and cleanup finish. Ordinary callers retain the independent wait-cancellation contract.
 
 | Business entry | Policy |
@@ -59,7 +61,7 @@ Use this entry inventory when checking that new business operations use the serv
 | `Workspace` video export | `VideoExportTask`; the export panel and task list cancel the same handle |
 | `Workspace` font / style / effect preparation | `ImportSubtitleFontTask`, `PrepareSubtitleStyleTask`, `ApplySubtitleStyleTask`, `ApplySubtitleTrackStyleTask`, `CaptureSubtitleStyleTask`, `ApplyEffectScriptTask` |
 | `Workspace` personal resource exchange | `ImportStylePresetsTask`, `ExportStylePresetsTask`, `ImportEffectScriptsTask`, `ExportEffectScriptTask` |
-| `Workspace` audio analysis / devices | `AudioAnalysisBatchTask`, `ApplyAudioCalibrationTask`, `RebuildAudioOutputTask` |
+| `Workspace` audio analysis / devices | `AudioAnalysisBatchTask`, `AudioCacheMigrationTask`, `ApplyAudioCalibrationTask`, `RebuildAudioOutputTask` |
 | `Workspace` automatic persistence | `AutomaticProjectPersistenceTask`; backup pruning uses `ProjectPersistenceTask` or a parent stage |
 | `Startup` / `Editing` application services | `ApplicationInitializationTask`, `EnumerateSystemFontsTask`, `PreferencesWriteTask`, `RecentProjectsWriteTask`, `PersonalLibraryTask` |
 | `Layouts` persistence | `LayoutWriteTask`; the coordinator retains layout interaction orchestration |

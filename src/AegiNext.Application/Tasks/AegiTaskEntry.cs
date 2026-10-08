@@ -27,7 +27,15 @@ internal sealed class AegiTaskEntry(AegiTask task, AegiTaskDefinition definition
 
     internal TaskCompletionSource DispatchStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    internal TaskCompletionSource<Task>? Resume { get; set; }
+
+    internal TaskCompletionSource? ResumeDispatchStarted { get; set; }
+
     internal int EditLeases { get; set; }
+
+    internal bool ExecutionStarted { get; set; }
+
+    internal bool OwnsSlot { get; set; }
 
     internal bool OwnsResources { get; set; }
 

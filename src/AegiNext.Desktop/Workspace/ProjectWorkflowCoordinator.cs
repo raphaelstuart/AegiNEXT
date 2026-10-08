@@ -590,6 +590,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
             (finalization || !session.IsClosing) && session.ProjectDirectory == sourceDirectory &&
             (sameDirectory || ReferenceEquals(expectedCurrent, session.Editor.Snapshot))), context.CancellationToken);
         session.SetProjectLocation(destination, directory);
+        session.Analysis.ProjectDirectoryChanged(directory);
         if (sameDirectory)
         {
             session.AcceptProjectSave(snapshot, prepared);

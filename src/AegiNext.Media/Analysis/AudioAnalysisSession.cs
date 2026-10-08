@@ -3,77 +3,146 @@ using AegiNext.Media.Audio;
 
 namespace AegiNext.Media.Analysis;
 
-/// <summary>持有单个 PCM 解码器，以固定时间网格串行分析窗口并保存有界分辨率 tile。</summary>
+/// <summary>管理单次持久缓存构建、只读视口与独立的极细波形解码。</summary>
 public sealed class AudioAnalysisSession : IAsyncDisposable
 {
-    private const int TILE_COLUMNS = 1024;
-    private const int BASE_WAVEFORM_SAMPLES = 512;
-    private const int PREVIEW_WINDOW_SAMPLES = 1024;
-    private const long DEFAULT_CACHE_BYTES = 64L * 1024 * 1024;
+    private const long DEFAULT_CACHE_BYTES = 16L * 1024 * 1024;
     private readonly Lock gate = new();
-    private readonly Func<CancellationToken, IAudioSampleSource> sourceFactory;
-    private readonly MediaTimelineMapping mapping;
-    private readonly AudioAnalysisTileCache cache;
+    private readonly AudioAnalysisCacheStore store;
+    private readonly AudioAnalysisCacheBuilder builder;
+    private readonly AudioWaveformDetailProvider detail;
     private readonly CancellationTokenSource lifetime = new();
-    private readonly SemaphoreSlim signal = new(0);
-    private readonly Task worker;
-    private IAudioSampleSource? source;
-    private AudioAnalysisPcmReader? pcmReader;
-    private AudioAnalysisTile? lastPcmTile;
-    private long pcmReadThrough;
-    private long? confirmedSourceEnd;
-    private AudioAnalysisWorkItem? foreground;
-    private AudioAnalysisWorkItem? overview;
-    private AudioAnalysisWorkItem? active;
+    private readonly HashSet<Task> reads = [];
+    private readonly SemaphoreSlim migrationGate = new(1);
+    private readonly string? temporaryDirectory;
+    private CancellationTokenSource? viewportCancellation;
+    private Task? preparation;
     private Task? closing;
-    private long revision;
     private bool closed;
 
-    /// <summary>由会话工作线程打开并独占 48 kHz 单声道源；关闭会话后才取消与释放解码器。</summary>
+    /// <summary>注入各自独占的扫描与细节源；省略目录时使用随会话清理的临时缓存。</summary>
     public AudioAnalysisSession(Func<CancellationToken, IAudioSampleSource> sourceFactory, MediaTimelineMapping mapping,
-        MediaTime duration, long maximumCachedBytes = DEFAULT_CACHE_BYTES)
+        MediaTime duration, long maximumCachedBytes = DEFAULT_CACHE_BYTES, string? cacheDirectory = null,
+        string? cacheIdentity = null, Func<CancellationToken, IAudioSampleSource>? detailSourceFactory = null,
+        int maximumWorkers = 0)
     {
         ArgumentNullException.ThrowIfNull(sourceFactory);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(duration, MediaTime.Zero);
         ArgumentOutOfRangeException.ThrowIfNegative(maximumCachedBytes);
-        this.sourceFactory = sourceFactory;
-        this.mapping = mapping;
         Duration = duration;
-        cache = new(maximumCachedBytes);
-        worker = Task.Run(RunAsync);
+        if (cacheDirectory is null)
+        {
+            temporaryDirectory = Path.Combine(Path.GetTempPath(), "AegiNext", "audio-analysis", Guid.NewGuid().ToString("N"));
+            cacheDirectory = temporaryDirectory;
+        }
+        var summaryBytes = Math.Min(maximumCachedBytes / 4, 16L * 1024 * 1024);
+        store = new(cacheDirectory, cacheIdentity ?? Guid.NewGuid().ToString("N"), mapping, duration, summaryBytes);
+        builder = new(sourceFactory, mapping, duration, store, maximumWorkers);
+        detail = new(detailSourceFactory ?? sourceFactory, mapping, duration, maximumCachedBytes - summaryBytes);
+        store.Changed += OnCacheChanged;
     }
 
     public MediaTime Duration { get; }
+    public bool IsCacheComplete => store.IsComplete;
+    public string CacheDirectory => store.DirectoryPath;
+    internal long CachedBytes => store.CachedBytes + detail.CachedBytes;
 
-    internal long CachedBytes
+    /// <summary>已提交缓存更新通知，可能来自工作线程。</summary>
+    public event EventHandler? CacheUpdated;
+
+    /// <summary>为独立分析调用创建临时缓存；工程工作区应显式指定缓存目录。</summary>
+    public static AudioAnalysisSession Open(string path, int streamIndex, MediaTimelineMapping mapping, MediaTime duration)
     {
-        get
-        {
-            lock (gate)
-            {
-                return cache.Bytes;
-            }
-        }
+        return OpenCore(path, streamIndex, mapping, duration, null);
     }
 
-    /// <summary>创建独立于播放的分析会话，工程零点由媒体映射确定。</summary>
-    public static AudioAnalysisSession Open(string path, int streamIndex, MediaTimelineMapping mapping, MediaTime duration)
+    /// <summary>打开工程缓存；命中缓存时不创建解码器。</summary>
+    public static AudioAnalysisSession Open(string path, int streamIndex, MediaTimelineMapping mapping, MediaTime duration,
+        string cacheDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheDirectory);
+        return OpenCore(path, streamIndex, mapping, duration, cacheDirectory);
+    }
+
+    private static AudioAnalysisSession OpenCore(string path, int streamIndex, MediaTimelineMapping mapping,
+        MediaTime duration, string? cacheDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentOutOfRangeException.ThrowIfNegative(streamIndex);
-        return new(token => FfmpegAudioDecoder.Open(path, streamIndex, new(WaveformAnalyzer.SAMPLE_RATE, 1), token), mapping, duration);
+        path = Path.GetFullPath(path);
+        var identity = AudioAnalysisCacheIdentity.Create(path, streamIndex, mapping, duration);
+        var session = new AudioAnalysisSession(
+            token => FfmpegAudioDecoder.Open(path, streamIndex, new(WaveformAnalyzer.SAMPLE_RATE, 1), token),
+            mapping, duration, cacheDirectory: cacheDirectory, cacheIdentity: identity);
+        session.store.ValidateSource = () =>
+        {
+            if (AudioAnalysisCacheIdentity.Create(path, streamIndex, mapping, duration) != identity)
+            {
+                throw new IOException("音频缓存构建期间媒体文件发生变化。");
+            }
+        };
+        return session;
     }
 
-    /// <summary>请求最新视口窗口；替换请求立即结束旧任务，但不取消共享解码器。</summary>
+    /// <summary>构建全片缓存，安全批次边界执行宿主检查点；视口取消不终止构建。</summary>
+    public Task PrepareCacheAsync(Func<CancellationToken, Task>? checkpoint = null,
+        IProgress<AudioAnalysisProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return Task.FromCanceled(cancellationToken);
+            }
+            if (store.IsComplete)
+            {
+                progress?.Report(new(Duration, Duration, true));
+                return Task.CompletedTask;
+            }
+            if (preparation is null || preparation.IsCompleted)
+            {
+                store.Reset();
+                preparation = Task.Run(async () =>
+                {
+                    using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellationToken);
+                    await builder.BuildAsync(checkpoint, progress, cancellation.Token).ConfigureAwait(false);
+                }, CancellationToken.None);
+            }
+            return preparation;
+        }
+    }
+
+    /// <summary>读取完整请求窗口，未完成的缓存区间等待后台构建。</summary>
     public Task<AudioAnalysisWindow> GetWindowAsync(WaveformAnalysisRequest request, bool includeSpectrum,
         CancellationToken cancellationToken = default)
     {
         return RequireWaveformAsync(GetLayersAsync(request, true, includeSpectrum, cancellationToken));
     }
 
-    /// <summary>仅请求可见层；普通替换在 PCM 块及 FFT 边界停止旧请求，不终止共享源。</summary>
+    /// <summary>频谱及普通波形从缓存读取，极细波形交由独立解码器。</summary>
     public Task<AudioAnalysisLayers> GetLayersAsync(WaveformAnalysisRequest request, bool includeWaveform, bool includeSpectrum,
         CancellationToken cancellationToken = default)
+    {
+        return ReadAsync(request, includeWaveform, includeSpectrum, false, cancellationToken);
+    }
+
+    /// <summary>返回当前已提交区间，尚无数据的层为null；不启动频谱计算。</summary>
+    public Task<AudioAnalysisLayers> GetAvailableLayersAsync(WaveformAnalysisRequest request, bool includeWaveform,
+        bool includeSpectrum, CancellationToken cancellationToken = default)
+    {
+        return ReadAsync(request, includeWaveform, includeSpectrum, true, cancellationToken);
+    }
+
+    /// <summary>读取全片概览；取消等待不影响构建。</summary>
+    public Task<AudioAnalysisWindow> GetOverviewAsync(WaveformAnalysisRequest request, bool includeSpectrum,
+        CancellationToken cancellationToken = default)
+    {
+        return GetWindowAsync(request, includeSpectrum, cancellationToken);
+    }
+
+    private Task<AudioAnalysisLayers> ReadAsync(WaveformAnalysisRequest request, bool waveform, bool spectrum,
+        bool availableOnly, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         lock (gate)
@@ -83,629 +152,119 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
             {
                 return Task.FromCanceled<AudioAnalysisLayers>(cancellationToken);
             }
-            foreground?.Cancel();
-            if (active is { IsOverview: false })
-            {
-                active.Cancel();
-            }
-            foreground = new(request, includeSpectrum, ++revision, false, cancellationToken, includeWaveform);
-            signal.Release();
-            return foreground.Completion.Task;
+            viewportCancellation?.Cancel();
+            viewportCancellation?.Dispose();
+            viewportCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellationToken);
+            var token = viewportCancellation.Token;
+            var task = Task.Run(() => ReadCoreAsync(request, waveform, spectrum, availableOnly, token), CancellationToken.None);
+            reads.Add(task);
+            _ = ForgetReadAsync(task);
+            return task;
         }
     }
 
-    /// <summary>提交低优先级全片概览；前台视口请求可在 PCM 块或 FFT 边界抢占，已完成 tile 可复用。</summary>
-    public Task<AudioAnalysisWindow> GetOverviewAsync(WaveformAnalysisRequest request, bool includeSpectrum,
-        CancellationToken cancellationToken = default)
+    private async Task<AudioAnalysisLayers> ReadCoreAsync(WaveformAnalysisRequest request, bool waveform, bool spectrum,
+        bool availableOnly, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        lock (gate)
+        cancellationToken.ThrowIfCancellationRequested();
+        using var fineCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var fine = waveform && request.SamplesPerBucket < 512;
+        var fineWaveform = fine ? detail.GetWaveformAsync(request, fineCancellation.Token) : null;
+        if (!availableOnly && (spectrum || waveform && !fine))
         {
-            ObjectDisposedException.ThrowIf(closed, this);
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return Task.FromCanceled<AudioAnalysisWindow>(cancellationToken);
-            }
-            overview?.Cancel();
-            if (active is { IsOverview: true })
-            {
-                active.Cancel();
-            }
-            overview = new(request, includeSpectrum, revision, true, cancellationToken);
-            signal.Release();
-            return RequireWaveformAsync(overview.Completion.Task);
+            _ = PrepareCacheAsync(cancellationToken: lifetime.Token);
         }
-    }
-
-    private static async Task<AudioAnalysisWindow> RequireWaveformAsync(Task<AudioAnalysisLayers> pending)
-    {
-        var result = await pending.ConfigureAwait(false);
-        return new(result.Waveform ?? throw new InvalidOperationException("请求的波形层未返回。"), result.Spectrogram);
-    }
-
-    private async Task RunAsync()
-    {
         try
         {
             while (true)
             {
-                await signal.WaitAsync(lifetime.Token).ConfigureAwait(false);
-                AudioAnalysisWorkItem? work;
-                lock (gate)
-                {
-                    work = foreground ?? overview;
-                    if (work is null)
-                    {
-                        continue;
-                    }
-                    if (ReferenceEquals(work, foreground))
-                    {
-                        foreground = null;
-                    }
-                    else
-                    {
-                        overview = null;
-                    }
-                    active = work;
-                }
+                cancellationToken.ThrowIfCancellationRequested();
+                var observed = store.Revision;
+                WaveformData? peaks;
+                SpectrogramData? levels;
                 try
                 {
-                    Check(work);
-                    var result = ReadLayers(work);
-                    Check(work);
-                    work.Completion.TrySetResult(result);
+                    peaks = waveform && !fine ? store.ReadWaveform(request, availableOnly) : null;
+                    levels = spectrum ? store.ReadSpectrum(request, availableOnly) : null;
                 }
-                catch (OperationCanceledException)
+                catch (InvalidDataException error) when (store.IsComplete)
                 {
-                    ResetPcmCursor();
-                    lock (gate)
+                    store.Invalidate();
+                    throw new AudioAnalysisCacheCorruptionException(error.Message, error);
+                }
+                if (availableOnly || (!waveform || fine || peaks is not null) && (!spectrum || levels is not null))
+                {
+                    if (fineWaveform is not null)
                     {
-                        if (work.IsOverview && !closed && !work.Token.IsCancellationRequested &&
-                            !work.Completion.Task.IsCompleted && overview is null)
-                        {
-                            overview = work;
-                        }
-                        else
-                        {
-                            work.Cancel();
-                        }
+                        peaks = await fineWaveform.ConfigureAwait(false);
                     }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return new(peaks, levels);
                 }
-                catch (Exception error)
-                {
-                    ResetPcmCursor();
-                    work.Completion.TrySetException(error);
-                }
-                finally
-                {
-                    lock (gate)
-                    {
-                        active = null;
-                        if (!closed && (foreground is not null || overview is not null))
-                        {
-                            signal.Release();
-                        }
-                    }
-                }
+                await store.WaitForUpdateAsync(observed, cancellationToken).ConfigureAwait(false);
             }
-        }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-        {
         }
         finally
         {
-            source?.Dispose();
+            if (fineWaveform is not null && !fineWaveform.IsCompletedSuccessfully)
+            {
+                fineCancellation.Cancel();
+                await ((Task)fineWaveform).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
         }
     }
 
-    private void Check(AudioAnalysisWorkItem work)
+    private async Task ForgetReadAsync(Task task)
     {
-        lifetime.Token.ThrowIfCancellationRequested();
-        work.Token.ThrowIfCancellationRequested();
+        await task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         lock (gate)
         {
-            if (closed || work.Completion.Task.IsCompleted ||
-                (work.IsOverview ? foreground is not null : work.Revision != revision))
-            {
-                throw new OperationCanceledException();
-            }
+            reads.Remove(task);
         }
     }
 
-    private AudioAnalysisLayers ReadLayers(AudioAnalysisWorkItem work)
+    private static async Task<AudioAnalysisWindow> RequireWaveformAsync(Task<AudioAnalysisLayers> task)
     {
-        var request = work.Request;
-        var tileSamples = request.Mode == AudioAnalysisMode.PREVIEW
-            ? AudioAnalysisSampleReader.PREVIEW_TILE_SAMPLES : AudioAnalysisSampleReader.TILE_SAMPLES;
-        var pcmTimeBase = new MediaTimeBase(1, WaveformAnalyzer.SAMPLE_RATE);
-        var mediaStart = mapping.Origin.ToTimestamp(pcmTimeBase, MediaTimeRounding.CEILING).Value;
-        var mediaEnd = mapping.ToMediaTime(Duration).ToTimestamp(pcmTimeBase, MediaTimeRounding.CEILING).Value;
-        mediaEnd = Math.Min(mediaEnd, confirmedSourceEnd ?? mediaEnd);
-        var projectStart = request.Start.ToTimestamp(pcmTimeBase, MediaTimeRounding.FLOOR).Value;
-        var projectEnd = (request.End < Duration ? request.End : Duration).ToTimestamp(pcmTimeBase, MediaTimeRounding.CEILING).Value;
-        projectEnd = Math.Min(projectEnd, Math.Max(0, mediaEnd - mediaStart));
-        var waveformResolution = request.Mode == AudioAnalysisMode.PREVIEW ? request.SamplesPerBucket
-            : Math.Min(request.SamplesPerBucket, AudioAnalysisSampleReader.TILE_SAMPLES);
-        var waveformTileColumns = Math.Max(1, Math.Min(TILE_COLUMNS, AudioAnalysisSampleReader.TILE_SAMPLES / waveformResolution));
-        var waveformColumn = projectStart / waveformResolution;
-        var waveformAfter = work.Waveform ? Ceiling(projectEnd, waveformResolution) : waveformColumn;
-        var peaks = work.Waveform ? new float[request.BucketCount * 2] : null;
-        var stride = SpectrogramAnalyzer.HOP_SIZE;
-        while ((long)stride * 2 <= request.SamplesPerBucket / 3)
-        {
-            stride = checked(stride * 2);
-        }
-        var half = stride / 2;
-        var start = mapping.ToMediaTime(request.Start).ToTimestamp(new(1, SpectrogramAnalyzer.SAMPLE_RATE), MediaTimeRounding.FLOOR).Value;
-        var end = mapping.ToMediaTime(request.End).ToTimestamp(new(1, SpectrogramAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
-        var first = AudioSpectrumWindowAnalyzer.Floor(start + half, stride) / stride;
-        var after = AudioSpectrumWindowAnalyzer.Floor(end + half - 1, stride) / stride + 1;
-        var count = checked((int)(after - first));
-        var levels = work.Spectrum ? new byte[checked(count * SpectrogramAnalyzer.FREQUENCY_BINS)] : null;
-        var spectrumColumn = Math.Max(first, Ceiling(mediaStart, stride * 3L));
-        var spectrumAfter = work.Spectrum ? Math.Min(after, Ceiling(mediaEnd, stride * 3L)) : spectrumColumn;
-        var reader = new AudioAnalysisSampleReader(index => ReadPcmTile(index, tileSamples, mediaStart, mediaEnd, work),
-            mediaStart, mediaEnd, tileSamples);
-        while (waveformColumn < waveformAfter || spectrumColumn < spectrumAfter)
-        {
-            Check(work);
-            var waveformTileIndex = waveformColumn / waveformTileColumns;
-            var spectrumTileIndex = AudioSpectrumWindowAnalyzer.Floor(spectrumColumn * stride * 3,
-                tileSamples) / tileSamples;
-            var waveformTileStart = waveformTileIndex * waveformTileColumns * waveformResolution + mediaStart;
-            var spectrumTileStart = spectrumTileIndex * tileSamples;
-            if (waveformColumn < waveformAfter && (spectrumColumn >= spectrumAfter || waveformTileStart <= spectrumTileStart))
-            {
-                var tile = ReadWaveformTile(new(AudioAnalysisTileKind.WAVEFORM, waveformResolution, waveformTileIndex, request.Mode),
-                    waveformTileColumns, mediaStart, reader, work).Waveform!;
-                var tileFirst = waveformTileIndex * waveformTileColumns;
-                var columns = (int)Math.Min(tileFirst + waveformTileColumns - waveformColumn, waveformAfter - waveformColumn);
-                var offset = (int)(waveformColumn - tileFirst);
-                for (var column = 0; column < columns; column++)
-                {
-                    var bucket = (int)(((waveformColumn + column) * waveformResolution - projectStart) / request.SamplesPerBucket);
-                    peaks![bucket * 2] = Math.Min(peaks[bucket * 2], tile.Peaks.Span[(offset + column) * 2]);
-                    peaks[bucket * 2 + 1] = Math.Max(peaks[bucket * 2 + 1], tile.Peaks.Span[(offset + column) * 2 + 1]);
-                }
-                waveformColumn += columns;
-            }
-            else
-            {
-                var tileFirst = Ceiling(spectrumTileStart, stride * 3L);
-                var tileAfter = Ceiling(spectrumTileStart + tileSamples, stride * 3L);
-                var tileColumns = checked((int)(tileAfter - tileFirst));
-                var tile = ReadSpectrumTile(new(AudioAnalysisTileKind.SPECTRUM, stride, spectrumTileIndex, request.Mode), tileFirst,
-                    tileColumns, tileSamples, mediaStart, Math.Min(mediaEnd, confirmedSourceEnd ?? mediaEnd), reader, work).Spectrogram!;
-                var offset = (int)(spectrumColumn - tileFirst);
-                spectrumAfter = Math.Min(spectrumAfter, Ceiling(confirmedSourceEnd ?? mediaEnd, stride * 3L));
-                var columns = (int)Math.Min(tileAfter - spectrumColumn, spectrumAfter - spectrumColumn);
-                columns = Math.Max(0, columns);
-                for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
-                {
-                    tile.Levels.Span.Slice(row * tileColumns + offset, columns)
-                        .CopyTo(levels!.AsSpan(row * count + (int)(spectrumColumn - first), columns));
-                }
-                spectrumColumn += columns;
-            }
-            if (confirmedSourceEnd is { } sourceEnd)
-            {
-                waveformAfter = Math.Min(waveformAfter, Ceiling(Math.Max(0, sourceEnd - mediaStart), waveformResolution));
-                spectrumAfter = Math.Min(spectrumAfter, Ceiling(sourceEnd, stride * 3L));
-            }
-        }
-        return new(peaks is null ? null : new(request, peaks), levels is null ? null :
-            new(count, SpectrogramAnalyzer.FREQUENCY_BINS,
-                mapping.ToProjectTime(new(first * stride - half, SpectrogramAnalyzer.SAMPLE_RATE)),
-                new(stride, SpectrogramAnalyzer.SAMPLE_RATE), levels));
+        var result = await task.ConfigureAwait(false);
+        return new(result.Waveform ?? throw new InvalidOperationException("波形请求没有返回数据。"), result.Spectrogram);
     }
 
-    private AudioAnalysisTile ReadWaveformTile(AudioAnalysisTileKey key, int columns, long mediaStart,
-        AudioAnalysisSampleReader reader, AudioAnalysisWorkItem work)
+    /// <summary>复制完整缓存到新工程缓存根，复制失败不切换当前读句柄。</summary>
+    public Task RelocateCacheAsync(string cacheDirectory, Func<CancellationToken, Task>? checkpoint = null,
+        CancellationToken cancellationToken = default)
     {
-        if (Find(key) is { } cached)
-        {
-            return cached;
-        }
-        if (key.Mode == AudioAnalysisMode.EXACT && key.SamplesPerColumn > BASE_WAVEFORM_SAMPLES)
-        {
-            var basis = ReadWaveformTile(key with { SamplesPerColumn = BASE_WAVEFORM_SAMPLES },
-                AudioAnalysisSampleReader.TILE_SAMPLES / BASE_WAVEFORM_SAMPLES, mediaStart, reader, work);
-            return AggregateWaveformTile(key, columns, basis.Waveform!, work);
-        }
-        if (key.Mode == AudioAnalysisMode.PREVIEW && key.SamplesPerColumn >= BASE_WAVEFORM_SAMPLES)
-        {
-            for (var resolution = key.SamplesPerColumn / 2; resolution >= BASE_WAVEFORM_SAMPLES; resolution /= 2)
-            {
-                if (TryAggregatePreviewWaveformTile(key, columns, resolution, work) is { } reused)
-                {
-                    return reused;
-                }
-            }
-            for (var resolution = (long)key.SamplesPerColumn * 2; resolution <= 1L << 30; resolution *= 2)
-            {
-                if (TryResamplePreviewWaveformTile(key, columns, (int)resolution, work) is { } reused)
-                {
-                    return reused;
-                }
-            }
-        }
-        var first = key.Index * columns * key.SamplesPerColumn;
-        var peaks = new float[columns * 2];
-        var end = Math.Min(first + (long)columns * key.SamplesPerColumn,
-            Duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value);
-        if (confirmedSourceEnd is { } sourceEnd)
-        {
-            end = Math.Min(end, Math.Max(0, sourceEnd - mediaStart));
-        }
-        for (var column = 0; column < columns; column++)
-        {
-            var start = first + (long)column * key.SamplesPerColumn;
-            var after = Math.Min(start + key.SamplesPerColumn, end);
-            if (key.Mode == AudioAnalysisMode.PREVIEW)
-            {
-                var center = start + (after - start) / 2;
-                start = Math.Max(start, center - PREVIEW_WINDOW_SAMPLES / 2);
-                after = Math.Min(after, center + PREVIEW_WINDOW_SAMPLES / 2);
-            }
-            while (start < after)
-            {
-                Check(work);
-                var samples = reader.ReadSpan(mediaStart + start, (int)Math.Min(1024, after - start));
-                var (minimum, maximum) = AudioWaveformPeakReducer.Reduce(samples);
-                peaks[column * 2] = Math.Min(peaks[column * 2], minimum);
-                peaks[column * 2 + 1] = Math.Max(peaks[column * 2 + 1], maximum);
-                start += samples.Length;
-            }
-        }
-        return SaveWaveformTile(key, columns, peaks, work);
-    }
-
-    private AudioAnalysisTile? TryResamplePreviewWaveformTile(AudioAnalysisTileKey key, int columns, int resolution,
-        AudioAnalysisWorkItem work)
-    {
-        var basisColumns = Math.Max(1, Math.Min(TILE_COLUMNS, AudioAnalysisSampleReader.TILE_SAMPLES / resolution));
-        var first = key.Index * columns * key.SamplesPerColumn;
-        var end = Duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
-        var peaks = new float[columns * 2];
-        WaveformData? basis = null;
-        var previousIndex = -1L;
-        for (var column = 0; column < columns; column++)
-        {
-            Check(work);
-            var sample = first + (long)column * key.SamplesPerColumn;
-            if (sample >= end)
-            {
-                break;
-            }
-            var basisColumn = sample / resolution;
-            var tileIndex = basisColumn / basisColumns;
-            if (tileIndex != previousIndex)
-            {
-                basis = Find(key with { SamplesPerColumn = resolution, Index = tileIndex })?.Waveform;
-                previousIndex = tileIndex;
-                if (basis is null)
-                {
-                    return null;
-                }
-            }
-            var offset = checked((int)(basisColumn % basisColumns)) * 2;
-            peaks[column * 2] = basis!.Peaks.Span[offset];
-            peaks[column * 2 + 1] = basis.Peaks.Span[offset + 1];
-        }
-        return SaveWaveformTile(key, columns, peaks, work);
-    }
-
-    private AudioAnalysisTile? TryAggregatePreviewWaveformTile(AudioAnalysisTileKey key, int columns, int resolution,
-        AudioAnalysisWorkItem work)
-    {
-        var basisColumns = Math.Max(1, Math.Min(TILE_COLUMNS, AudioAnalysisSampleReader.TILE_SAMPLES / resolution));
-        var first = key.Index * columns * key.SamplesPerColumn / resolution;
-        var ratio = key.SamplesPerColumn / resolution;
-        var end = Duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
-        var peaks = new float[columns * 2];
-        WaveformData? basis = null;
-        var previousIndex = -1L;
-        for (var column = 0; column < columns; column++)
-        {
-            Check(work);
-            for (var index = 0; index < ratio; index++)
-            {
-                if (index % TILE_COLUMNS == 0)
-                {
-                    Check(work);
-                }
-                var basisColumn = first + (long)column * ratio + index;
-                if (basisColumn * resolution >= end)
-                {
-                    break;
-                }
-                var tileIndex = basisColumn / basisColumns;
-                if (tileIndex != previousIndex)
-                {
-                    var basisKey = key with { SamplesPerColumn = resolution, Index = tileIndex };
-                    basis = (Find(basisKey) ?? Find(basisKey with { Mode = AudioAnalysisMode.EXACT }))?.Waveform;
-                    previousIndex = tileIndex;
-                    if (basis is null)
-                    {
-                        return null;
-                    }
-                }
-                var offset = checked((int)(basisColumn % basisColumns)) * 2;
-                peaks[column * 2] = Math.Min(peaks[column * 2], basis!.Peaks.Span[offset]);
-                peaks[column * 2 + 1] = Math.Max(peaks[column * 2 + 1], basis.Peaks.Span[offset + 1]);
-            }
-        }
-        return SaveWaveformTile(key, columns, peaks, work);
-    }
-
-    private AudioAnalysisTile AggregateWaveformTile(AudioAnalysisTileKey key, int columns, WaveformData basis,
-        AudioAnalysisWorkItem work)
-    {
-        var peaks = new float[columns * 2];
-        var ratio = key.SamplesPerColumn / basis.SamplesPerBucket;
-        for (var column = 0; column < columns; column++)
-        {
-            Check(work);
-            for (var index = column * ratio; index < (column + 1) * ratio; index++)
-            {
-                peaks[column * 2] = Math.Min(peaks[column * 2], basis.Peaks.Span[index * 2]);
-                peaks[column * 2 + 1] = Math.Max(peaks[column * 2 + 1], basis.Peaks.Span[index * 2 + 1]);
-            }
-        }
-        return SaveWaveformTile(key, columns, peaks, work);
-    }
-
-    private AudioAnalysisTile SaveWaveformTile(AudioAnalysisTileKey key, int columns, float[] peaks, AudioAnalysisWorkItem work)
-    {
-        var first = key.Index * columns * key.SamplesPerColumn;
-        var data = new WaveformData(new(new(first, WaveformAnalyzer.SAMPLE_RATE), key.SamplesPerColumn, columns, key.Mode), peaks);
-        var tile = new AudioAnalysisTile(key, data, null);
-        Save(tile, work);
-        return tile;
-    }
-
-    private AudioAnalysisTile ReadSpectrumTile(AudioAnalysisTileKey key, long firstColumn, int columns,
-        int tileSamples, long mediaStart, long mediaEnd, AudioAnalysisSampleReader reader, AudioAnalysisWorkItem work)
-    {
-        if (Find(key) is { } cached)
-        {
-            return cached;
-        }
-        for (var resolution = key.SamplesPerColumn / 2; resolution >= SpectrogramAnalyzer.HOP_SIZE; resolution /= 2)
-        {
-            if (Find(key with { SamplesPerColumn = resolution })?.Spectrogram is not { } basis)
-            {
-                continue;
-            }
-            var levels = new byte[columns * SpectrogramAnalyzer.FREQUENCY_BINS];
-            var firstBasis = Ceiling(key.Index * tileSamples, resolution * 3L);
-            for (var column = 0; column < columns; column++)
-            {
-                Check(work);
-                var sourceColumn = checked((int)((firstColumn + column) * key.SamplesPerColumn / resolution - firstBasis));
-                for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
-                {
-                    levels[row * columns + column] = basis.Levels.Span[row * basis.Width + sourceColumn];
-                }
-            }
-            return SaveSpectrumTile(key, firstColumn, columns, levels, work);
-        }
-        if (key.Mode == AudioAnalysisMode.PREVIEW)
-        {
-            for (var resolution = key.SamplesPerColumn; resolution >= SpectrogramAnalyzer.HOP_SIZE; resolution /= 2)
-            {
-                if (TryReuseExactSpectrumTile(key, firstColumn, columns, resolution, work) is { } reused)
-                {
-                    return reused;
-                }
-            }
-            for (var resolution = (long)key.SamplesPerColumn * 2; resolution <= 1L << 30; resolution *= 2)
-            {
-                if (TryResamplePreviewSpectrumTile(key, firstColumn, columns, (int)resolution,
-                        tileSamples, mediaStart, mediaEnd, work) is { } reused)
-                {
-                    return reused;
-                }
-            }
-        }
-        var data = AudioSpectrumWindowAnalyzer.Analyze(reader.Read, reader.Prepare, mapping.Origin,
-            firstColumn * key.SamplesPerColumn, key.SamplesPerColumn, columns, mediaStart,
-            () => Math.Min(mediaEnd, confirmedSourceEnd ?? mediaEnd), () => Check(work));
-        if (key.Mode == AudioAnalysisMode.EXACT && !work.Waveform &&
-            work.Request.SamplesPerBucket <= AudioAnalysisSampleReader.TILE_SAMPLES)
-        {
-            var projectTile = Math.Max(0, AudioSpectrumWindowAnalyzer.Floor(key.Index * tileSamples - mediaStart,
-                AudioAnalysisSampleReader.TILE_SAMPLES) / AudioAnalysisSampleReader.TILE_SAMPLES);
-            ReadWaveformTile(new(AudioAnalysisTileKind.WAVEFORM, BASE_WAVEFORM_SAMPLES, projectTile),
-                AudioAnalysisSampleReader.TILE_SAMPLES / BASE_WAVEFORM_SAMPLES, mediaStart, reader, work);
-        }
-        var tile = new AudioAnalysisTile(key, null, data);
-        Save(tile, work);
-        return tile;
-    }
-
-    private AudioAnalysisTile? TryReuseExactSpectrumTile(AudioAnalysisTileKey key, long firstColumn, int columns,
-        int resolution, AudioAnalysisWorkItem work)
-    {
-        var levels = new byte[columns * SpectrogramAnalyzer.FREQUENCY_BINS];
-        SpectrogramData? basis = null;
-        var previousIndex = long.MinValue;
-        for (var column = 0; column < columns; column++)
-        {
-            Check(work);
-            var center = (firstColumn + column) * key.SamplesPerColumn;
-            var tileIndex = AudioSpectrumWindowAnalyzer.Floor(center * 3, AudioAnalysisSampleReader.TILE_SAMPLES)
-                            / AudioAnalysisSampleReader.TILE_SAMPLES;
-            if (tileIndex != previousIndex)
-            {
-                basis = Find(key with { SamplesPerColumn = resolution, Index = tileIndex, Mode = AudioAnalysisMode.EXACT })?.Spectrogram;
-                previousIndex = tileIndex;
-                if (basis is null)
-                {
-                    return null;
-                }
-            }
-            var offset = checked((int)(center / resolution
-                - Ceiling(tileIndex * AudioAnalysisSampleReader.TILE_SAMPLES, resolution * 3L)));
-            for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
-            {
-                levels[row * columns + column] = basis!.Levels.Span[row * basis.Width + offset];
-            }
-        }
-        return SaveSpectrumTile(key, firstColumn, columns, levels, work);
-    }
-
-    private AudioAnalysisTile? TryResamplePreviewSpectrumTile(AudioAnalysisTileKey key, long firstColumn, int columns,
-        int resolution, int tileSamples, long mediaStart, long mediaEnd, AudioAnalysisWorkItem work)
-    {
-        var levels = new byte[columns * SpectrogramAnalyzer.FREQUENCY_BINS];
-        var firstBasis = Ceiling(mediaStart, resolution * 3L);
-        var afterBasis = Ceiling(mediaEnd, resolution * 3L);
-        if (firstBasis >= afterBasis)
-        {
-            return null;
-        }
-        SpectrogramData? basis = null;
-        var previousIndex = long.MinValue;
-        for (var column = 0; column < columns; column++)
-        {
-            Check(work);
-            var center = (firstColumn + column) * key.SamplesPerColumn;
-            if (center * 3 < mediaStart || center * 3 >= mediaEnd)
-            {
-                continue;
-            }
-            var basisColumn = Math.Clamp(AudioSpectrumWindowAnalyzer.Floor(center + resolution / 2, resolution) / resolution,
-                firstBasis, afterBasis - 1);
-            var tileIndex = AudioSpectrumWindowAnalyzer.Floor(basisColumn * resolution * 3, tileSamples) / tileSamples;
-            if (tileIndex != previousIndex)
-            {
-                basis = Find(key with { SamplesPerColumn = resolution, Index = tileIndex })?.Spectrogram;
-                previousIndex = tileIndex;
-                if (basis is null)
-                {
-                    return null;
-                }
-            }
-            var offset = checked((int)(basisColumn - Ceiling(tileIndex * tileSamples, resolution * 3L)));
-            for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
-            {
-                levels[row * columns + column] = basis!.Levels.Span[row * basis.Width + offset];
-            }
-        }
-        return SaveSpectrumTile(key, firstColumn, columns, levels, work);
-    }
-
-    private AudioAnalysisTile SaveSpectrumTile(AudioAnalysisTileKey key, long firstColumn, int columns,
-        byte[] levels, AudioAnalysisWorkItem work)
-    {
-        var data = new SpectrogramData(columns, SpectrogramAnalyzer.FREQUENCY_BINS,
-            mapping.ToProjectTime(new(firstColumn * key.SamplesPerColumn - key.SamplesPerColumn / 2,
-                SpectrogramAnalyzer.SAMPLE_RATE)), new(key.SamplesPerColumn, SpectrogramAnalyzer.SAMPLE_RATE), levels);
-        var tile = new AudioAnalysisTile(key, null, data);
-        Save(tile, work);
-        return tile;
-    }
-
-    private AudioAnalysisTile ReadPcmTile(long index, int tileSamples, long mediaStart, long mediaEnd, AudioAnalysisWorkItem work)
-    {
-        var key = new AudioAnalysisTileKey(AudioAnalysisTileKind.PCM, tileSamples, index, work.Request.Mode);
-        if (Find(key) is { } cached)
-        {
-            return cached;
-        }
-        Check(work);
-        var first = index * tileSamples - AudioAnalysisSampleReader.PADDING;
-        var samples = new float[tileSamples + AudioAnalysisSampleReader.PADDING * 2];
-        var start = Math.Max(first, mediaStart);
-        var end = Math.Min(first + samples.Length, Math.Min(mediaEnd, confirmedSourceEnd ?? mediaEnd));
-        if (start >= end)
-        {
-            var silent = new AudioAnalysisTile(key, null, null, samples);
-            Save(silent, work);
-            return silent;
-        }
-        if (source is null)
-        {
-            var opened = sourceFactory(lifetime.Token);
-            lock (gate)
-            {
-                source = opened;
-                if (closed)
-                {
-                    source.Cancel();
-                }
-            }
-        }
-        Check(work);
-        if (source.Format.SampleRate != WaveformAnalyzer.SAMPLE_RATE || source.Format.Channels != 1)
-        {
-            throw new InvalidDataException("分析会话要求 48 kHz 单声道 PCM。");
-        }
-        if (pcmReader is not null && lastPcmTile is { } previous && previous.Key.SamplesPerColumn == tileSamples &&
-            previous.Key.Mode == work.Request.Mode && previous.Key.Index + 1 == index)
-        {
-            var previousFirst = previous.Key.Index * tileSamples - AudioAnalysisSampleReader.PADDING;
-            var overlapEnd = Math.Min(end, pcmReadThrough);
-            if (overlapEnd > start)
-            {
-                var length = checked((int)(overlapEnd - start));
-                previous.Samples.Span.Slice((int)(start - previousFirst), length).CopyTo(samples.AsSpan((int)(start - first), length));
-                start = overlapEnd;
-            }
-        }
-        else
-        {
-            source.Seek(new(start, WaveformAnalyzer.SAMPLE_RATE), lifetime.Token);
-            Check(work);
-            pcmReader = new(source, CheckActiveRequest, lifetime.Token);
-        }
-        pcmReader.CopyTo(start, samples.AsSpan((int)(start - first), checked((int)(end - start))));
-        if (pcmReader.EndSample is { } sourceEnd)
-        {
-            confirmedSourceEnd = Math.Min(sourceEnd, confirmedSourceEnd ?? sourceEnd);
-        }
-        var tile = new AudioAnalysisTile(key, null, null, samples);
-        Save(tile, work);
-        lastPcmTile = tile;
-        pcmReadThrough = Math.Min(end, confirmedSourceEnd ?? end);
-        return tile;
-    }
-
-    private void ResetPcmCursor()
-    {
-        pcmReader = null;
-        lastPcmTile = null;
-    }
-
-    private void CheckActiveRequest()
-    {
-        Check(active ?? throw new OperationCanceledException());
-    }
-
-    private static long Ceiling(long value, long step)
-    {
-        return -AudioSpectrumWindowAnalyzer.Floor(-value, step) / step;
-    }
-
-    private AudioAnalysisTile? Find(AudioAnalysisTileKey key)
-    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheDirectory);
         lock (gate)
         {
-            return cache.Find(key);
+            ObjectDisposedException.ThrowIf(closed, this);
+            var task = RelocateCoreAsync(cacheDirectory, checkpoint, cancellationToken);
+            reads.Add(task);
+            _ = ForgetReadAsync(task);
+            return task;
         }
     }
 
-    private void Save(AudioAnalysisTile tile, AudioAnalysisWorkItem work)
+    private async Task RelocateCoreAsync(string cacheDirectory, Func<CancellationToken, Task>? checkpoint,
+        CancellationToken cancellationToken)
     {
-        Check(work);
-        lock (gate)
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellationToken);
+        await migrationGate.WaitAsync(cancellation.Token).ConfigureAwait(false);
+        try
         {
-            cache.Add(tile);
+            await store.RelocateAsync(cacheDirectory, checkpoint, cancellation.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            migrationGate.Release();
         }
     }
 
-    /// <summary>终止请求、取消阻塞解码并等待工作线程退出后释放会话资源。</summary>
+    private void OnCacheChanged(object? sender, EventArgs args)
+    {
+        CacheUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>取消并排空构建、读取和迁移，然后释放源、文件及临时缓存。</summary>
     public ValueTask DisposeAsync()
     {
         lock (gate)
@@ -713,10 +272,7 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
             if (closing is null)
             {
                 closed = true;
-                foreground?.Cancel();
-                overview?.Cancel();
-                active?.Cancel();
-                source?.Cancel();
+                viewportCancellation?.Cancel();
                 lifetime.Cancel();
                 closing = CloseAsync();
             }
@@ -726,12 +282,21 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
 
     private async Task CloseAsync()
     {
-        await worker.ConfigureAwait(false);
+        await detail.DisposeAsync().ConfigureAwait(false);
+        Task[] pending;
         lock (gate)
         {
-            cache.Clear();
+            pending = [.. reads, preparation ?? Task.CompletedTask];
         }
-        signal.Dispose();
+        await Task.WhenAll(pending).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        store.Changed -= OnCacheChanged;
+        store.Dispose();
+        viewportCancellation?.Dispose();
+        migrationGate.Dispose();
         lifetime.Dispose();
+        if (temporaryDirectory is { } directory && Directory.Exists(directory))
+        {
+            Directory.Delete(directory, true);
+        }
     }
 }

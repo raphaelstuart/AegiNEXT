@@ -3,12 +3,13 @@ using AegiNext.Media.Analysis;
 using AegiNext.Media.Audio;
 using AegiNext.Media.Tests.Audio;
 using AegiNext.Media.Tests.Decoding;
+using Xunit.Abstractions;
 
 namespace AegiNext.Media.Tests.Analysis;
 
 /// <summary>验证压缩音频在全片低分辨率分析中保留首尾数据和连续 PCM 时间。</summary>
 [Collection(nameof(NativeDecoderTestGroup))]
-public sealed class AudioAnalysisFullRangeTests
+public sealed class AudioAnalysisFullRangeTests(ITestOutputHelper output)
 {
     /// <summary>五分钟 AAC 从 44.1 kHz 重采样到 48 kHz 后保持连续时间，直到真实文件末尾。</summary>
     [AudioFact]
@@ -160,23 +161,30 @@ public sealed class AudioAnalysisFullRangeTests
         Assert.True(maximumAmplitude > 0.05);
     }
 
-    private static void AssertToneCoverage(SpectrogramData spectrum, MediaTime duration)
+    private void AssertToneCoverage(SpectrogramData spectrum, MediaTime duration)
     {
         Assert.True(spectrum.Start <= MediaTime.Zero);
         Assert.True(spectrum.End >= duration);
         var row = (int)(Math.Log(1000.0 / 40) / Math.Log(8000.0 / 40) * spectrum.Height);
+        var halfWindow = new MediaTime(SpectrogramAnalyzer.FFT_SIZE / 2, SpectrogramAnalyzer.SAMPLE_RATE);
+        var firstCompleteCenter = halfWindow + new MediaTime(1024, 44100);
         var coveredColumns = 0;
+        var lastCoveredCenter = MediaTime.Zero;
+        output.WriteLine($"First cached center={spectrum.Start + spectrum.ColumnDuration / 2}, 1 kHz level={spectrum.Levels.Span[row * spectrum.Width]}.");
         for (var column = 0; column < spectrum.Width; column++)
         {
             var center = spectrum.Start + spectrum.ColumnDuration * column + spectrum.ColumnDuration / 2;
-            if (center < MediaTime.Zero || center >= duration)
+            if (center < firstCompleteCenter || center > duration - halfWindow)
             {
                 continue;
             }
             Assert.True(spectrum.Levels.Span[row * spectrum.Width + column] > 100,
                 $"第 {column} 列（{center}）缺少 1 kHz 谱能量。");
             coveredColumns++;
+            lastCoveredCenter = center;
         }
+        output.WriteLine($"Complete FFT windows with 1 kHz energy: {coveredColumns}/{spectrum.Width}; last center={lastCoveredCenter}, duration={duration}.");
         Assert.True(coveredColumns > spectrum.Width * 0.99);
+        Assert.True(lastCoveredCenter > duration - new MediaTime(1));
     }
 }

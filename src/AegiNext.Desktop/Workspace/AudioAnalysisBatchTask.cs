@@ -10,6 +10,10 @@ internal sealed class AudioAnalysisBatchTask(WorkbenchSession session, AnalysisC
     public override string Name => "Tasks.AudioAnalysis";
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
-    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.Named("analysis:" + session.TaskScope)];
-    protected override Task ExecuteAsync(AegiTaskExecutionContext context) => coordinator.ExecuteBatchAsync(analysis, Epoch, context);
+    public override IReadOnlyCollection<AegiTaskResource> Resources =>
+    [AegiTaskResource.Named("analysis:" + session.TaskScope), AegiTaskResource.StoragePath(analysis.CacheDirectory)];
+    protected override Task ExecuteAsync(AegiTaskExecutionContext context)
+    {
+        return coordinator.ExecuteBatchAsync(analysis, Epoch, context);
+    }
 }

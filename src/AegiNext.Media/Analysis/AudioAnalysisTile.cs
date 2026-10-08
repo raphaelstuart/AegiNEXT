@@ -1,8 +1,6 @@
 namespace AegiNext.Media.Analysis;
 
-internal sealed record AudioAnalysisTile(AudioAnalysisTileKey Key, WaveformData? Waveform, SpectrogramData? Spectrogram,
-    ReadOnlyMemory<float> Samples = default)
+internal sealed record AudioAnalysisTile(AudioAnalysisTileKey Key, ReadOnlyMemory<float> Samples)
 {
-    internal long Bytes => (long)((Waveform?.Peaks.Length ?? 0) + Samples.Length) * sizeof(float) +
-                           (Spectrogram?.Levels.Length ?? 0);
+    internal long Bytes => (long)Samples.Length * sizeof(float);
 }

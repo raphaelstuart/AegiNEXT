@@ -812,6 +812,8 @@
     "Tasks.Progress": "{0:P0}",
     "Tasks.Queued": "Queued",
     "Tasks.Running": "Running",
+    "Tasks.Yielded": "Waiting to resume",
+    "Tasks.AudioCacheMigration": "Relocate audio cache",
     "Tasks.Cancelling": "Cancelling",
     "Tasks.Committing": "Committing",
     "Tasks.Succeeded": "Succeeded",

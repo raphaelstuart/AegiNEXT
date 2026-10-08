@@ -73,3 +73,4 @@ packages*.lock.json
 artifacts/
 .dependencies/
 /testResults.xml
+**/caches/audio/

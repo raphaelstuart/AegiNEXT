@@ -36,6 +36,8 @@ Core 不依赖 Avalonia、Dock、FFmpeg、Skia 或文件系统。Application 负
 
 提交返回可等待的句柄；取消调用方的等待不取消任务，任务取消必须显式请求。任务进入取消中后，直到子进程退出与清理结束才释放资源及编辑租约。原子提交前检查取消和输入有效性，提交中关闭取消入口。排队不锁住工程，短时编辑租约默认只限制所属工程及其浮动面板。
 
+可取消并行任务可在内部 worker／阶段全部完成且未进入提交或取得编辑租约的检查点调用 `YieldIfWorkIsQueuedAsync`。让出时保留资源、任务身份与开始时间，只释放执行位；仅让队首连续的无冲突并行任务先执行，不跨越阻断任务或资源冲突。取消已让出任务仍须等待原执行栈、取消回调和清理完成，屏障不能越过未完成的执行。已启动的让出任务不能被连续写入合并替换。
+
 工程创建对话框拥有其提交任务的取消权：关闭对话框会显式请求取消，并等待实际任务完成；提交中拒绝取消，已创建的工程继续交给工作台。应用退出在提交和清理完成后阻止新窗口激活。普通调用方的等待取消契约保持独立。
 
 | 业务入口 | 任务策略 |
@@ -59,7 +61,7 @@ Core 不依赖 Avalonia、Dock、FFmpeg、Skia 或文件系统。Application 负
 | `Workspace` 视频导出 | `VideoExportTask`；导出面板和任务列表取消同一句柄 |
 | `Workspace` 字体／样式／效果准备 | `ImportSubtitleFontTask`、`PrepareSubtitleStyleTask`、`ApplySubtitleStyleTask`、`ApplySubtitleTrackStyleTask`、`CaptureSubtitleStyleTask`、`ApplyEffectScriptTask` |
 | `Workspace` 个人资源交换 | `ImportStylePresetsTask`、`ExportStylePresetsTask`、`ImportEffectScriptsTask`、`ExportEffectScriptTask` |
-| `Workspace` 音频分析／设备 | `AudioAnalysisBatchTask`、`ApplyAudioCalibrationTask`、`RebuildAudioOutputTask` |
+| `Workspace` 音频分析／设备 | `AudioAnalysisBatchTask`、`AudioCacheMigrationTask`、`ApplyAudioCalibrationTask`、`RebuildAudioOutputTask` |
 | `Workspace` 自动持久化 | `AutomaticProjectPersistenceTask`；备份清理通过 `ProjectPersistenceTask` 或父任务阶段执行 |
 | `Startup`／`Editing` 应用服务 | `ApplicationInitializationTask`、`EnumerateSystemFontsTask`、`PreferencesWriteTask`、`RecentProjectsWriteTask`、`PersonalLibraryTask` |
 | `Layouts` 布局持久化 | `LayoutWriteTask`；保留协调器对布局交互的编排 |

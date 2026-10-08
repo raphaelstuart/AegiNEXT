@@ -20,139 +20,89 @@ using Dock.Model.Controls;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
-/// <summary>验证播放中的真实缩放先发布频谱，再发布较慢波形，并复用完整视口的数据。</summary>
+/// <summary>验证播放中的缓存缩放、独立细波形解码及双层发布顺序。</summary>
 public sealed class TimelineAnalysisLayerPublicationUiTests
 {
-    private const int MEDIA_SECONDS = 300;
+    private const int MEDIA_SECONDS = 60;
 
-    /// <summary>波形解码仍在等待时全片频谱可用，取消旧波形请求不会覆盖下一次缩放的频谱。</summary>
+    /// <summary>独立细波形解码仍在等待时先发布缓存频谱，后续缩放拒绝旧波形结果。</summary>
     [AvaloniaFact]
-    public async Task PlayingZoomPublishesSpectrumBeforeBlockedWaveformAndKeepsTheLatestRevision()
+    public async Task PlayingFineZoomPublishesSpectrumBeforeBlockedWaveformAndKeepsTheLatestRevision()
     {
-        const int DURATION_SECONDS = 7200;
-        const int SOURCE_BLOCK_FRAMES = 4096;
         var playback = new UiAuditionAudioSource();
         var output = new UiAuditionAudioOutput();
-        var video = new PreviewTestSource(1, 0, DURATION_SECONDS * 1000L);
-        await using var context = CreateContext(playback, output, video, DURATION_SECONDS);
+        var video = new PreviewTestSource(1, 0, MEDIA_SECONDS * 1000L);
+        await using var context = CreateContext(playback, output, video);
         await context.Controller.OpenAsync("layer-publication.media", TestContext.Current.CancellationToken);
         context.Session.Tick();
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         var model = context.ViewModel.Timeline;
-        model.Viewport = timeline.Viewport with { StartSeconds = 0, PixelsPerSecond = timeline.Viewport.Width / 8 };
-        var source = new UiRapidZoomAudioSource(DURATION_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE);
+        model.Viewport = timeline.Viewport with { StartSeconds = 0, PixelsPerSecond = timeline.Viewport.Width / 32 };
+        var source = new UiRapidZoomAudioSource(MEDIA_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE);
+        var detail = new UiRapidZoomAudioSource(MEDIA_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE);
         using var release = new ManualResetEventSlim();
-        using var coordinator = new AnalysisCoordinator(context.Session,
-            (_, _, mapping, duration) => new(_ => source, mapping, duration, 8L * 1024 * 1024));
-        var firstSpectrum = new TaskCompletionSource<SpectrogramData>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var latestSpectrum = new TaskCompletionSource<SpectrogramData>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var enteredWaveformRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var blockWaveform = 0;
-        var blocked = 0;
-        SpectrogramData? previousFullSpectrum = null;
-        void OnModelChanged(object? sender, PropertyChangedEventArgs args)
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        detail.BeforeRead = token =>
         {
-            if (args.PropertyName != nameof(TimelinePanelViewModel.Spectrogram) || model.Spectrogram is not { } spectrum ||
-                spectrum.Start > MediaTime.Zero || spectrum.End < new MediaTime(DURATION_SECONDS))
-            {
-                return;
-            }
-
-            if (!firstSpectrum.Task.IsCompleted)
-            {
-                Interlocked.Exchange(ref blockWaveform, 1);
-                firstSpectrum.TrySetResult(spectrum);
-            }
-            else if (previousFullSpectrum is { } previous && !ReferenceEquals(previous, spectrum))
-            {
-                latestSpectrum.TrySetResult(spectrum);
-            }
-        }
-
+            entered.TrySetResult();
+            release.Wait(token);
+        };
+        using var coordinator = new AnalysisCoordinator(context.Session,
+            (path, _, mapping, duration, directory) => new(_ => source, mapping, duration,
+                cacheDirectory: directory, cacheIdentity: path, detailSourceFactory: _ => detail));
         try
         {
             await coordinator.StartAsync("synthetic-layer-publication.media");
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
             await context.Session.ExecuteCommandAsync(WorkbenchCommand.PLAY_PAUSE);
             Assert.Equal(VideoPlaybackState.PLAYING, context.Controller.Snapshot.State);
-            Assert.True(model.IsPlaybackFollowEnabled);
-            var pointer = GraphPointer(context, timeline);
-            context.Window.MouseWheel(pointer, new(0, 2), RawInputModifiers.Control);
-            Assert.False(model.IsPlaybackFollowEnabled);
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-            var narrowWaveform = Assert.IsType<WaveformData>(model.Waveform);
+            var previousWaveform = Assert.IsType<WaveformData>(model.Waveform);
+            var previousSpectrum = Assert.IsType<SpectrogramData>(model.Spectrogram);
             var document = context.Session.DocumentSnapshot;
             var playbackSeeks = playback.SeekCount;
             var videoSeeks = video.SeekCount;
             var warmFrames = source.FramesRead;
-            model.PropertyChanged += OnModelChanged;
-            source.BeforeRead = token =>
-            {
-                if (Volatile.Read(ref blockWaveform) != 0 && Interlocked.CompareExchange(ref blocked, 1, 0) == 0)
-                {
-                    enteredWaveformRead.TrySetResult();
-                    release.Wait(token);
-                }
-            };
-
-            ZoomOutToWholeMedia(context, timeline, pointer, DURATION_SECONDS);
-            var firstPlan = Assert.IsType<WaveformViewportPlan>(
-                WaveformViewportPlanner.Create(timeline.Viewport, model.RenderScaling, new(DURATION_SECONDS)));
-            Assert.Equal(AudioAnalysisMode.PREVIEW, firstPlan.Analysis.Mode);
-            previousFullSpectrum = await firstSpectrum.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-            Assert.Same(narrowWaveform, model.Waveform);
-            AssertToneEnergy(previousFullSpectrum, DURATION_SECONDS);
-            await enteredWaveformRead.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            var analysisSeeks = source.SeekCount;
+            var pointer = GraphPointer(context, timeline);
+            context.Window.MouseWheel(pointer, new(0, 8), RawInputModifiers.Control);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            var finePlan = Assert.IsType<WaveformViewportPlan>(
+                WaveformViewportPlanner.Create(timeline.Viewport, model.RenderScaling, new(MEDIA_SECONDS)));
+            Assert.True(finePlan.Analysis.SamplesPerBucket < 512);
+            Assert.Same(previousWaveform, model.Waveform);
+            Assert.NotSame(previousSpectrum, model.Spectrogram);
+            AssertToneEnergy(Assert.IsType<SpectrogramData>(model.Spectrogram));
             Assert.False(coordinator.Completion.IsCompleted);
-            var position = context.Session.ProjectPosition;
             await AdvancePlaybackAsync(context, output);
-            Assert.True(context.Session.ProjectPosition > position);
-            Assert.Same(previousFullSpectrum, model.Spectrogram);
-            Assert.Same(narrowWaveform, model.Waveform);
-
-            context.Window.MouseWheel(pointer, new(0, -6), RawInputModifiers.Control);
-            var finalPlan = Assert.IsType<WaveformViewportPlan>(
-                WaveformViewportPlanner.Create(timeline.Viewport, model.RenderScaling, new(DURATION_SECONDS)));
-            Assert.Equal(AudioAnalysisMode.PREVIEW, finalPlan.Analysis.Mode);
-            Assert.Equal(MediaTime.Zero, finalPlan.Visible.Start);
-            Assert.True(finalPlan.Visible.End >= new MediaTime(DURATION_SECONDS));
+            ZoomOutToWholeMedia(context, timeline, pointer);
             release.Set();
-            var newestSpectrum = await latestSpectrum.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-            Assert.True(newestSpectrum.ColumnDuration > previousFullSpectrum.ColumnDuration);
-            AssertToneEnergy(newestSpectrum, DURATION_SECONDS);
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-            Assert.Same(newestSpectrum, model.Spectrogram);
-            var waveform = Assert.IsType<WaveformData>(model.Waveform);
-            Assert.Equal(finalPlan.Analysis, waveform.Request);
-            Assert.Contains(waveform.Peaks.ToArray(), value => value > 0.7F);
-            Assert.Contains(waveform.Peaks.ToArray(), value => value < -0.7F);
-            Assert.Equal(string.Empty, model.AnalysisStatus);
-            Assert.Equal(VideoPlaybackState.PLAYING, context.Controller.Snapshot.State);
-            Assert.False(model.IsPlaybackFollowEnabled);
+            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            var finalPlan = Assert.IsType<WaveformViewportPlan>(
+                WaveformViewportPlanner.Create(timeline.Viewport, model.RenderScaling, new(MEDIA_SECONDS)));
+            Assert.Equal(finalPlan.Analysis, Assert.IsType<WaveformData>(model.Waveform).Request);
+            Assert.True(model.Waveform!.SamplesPerBucket >= 512);
+            AssertToneEnergy(Assert.IsType<SpectrogramData>(model.Spectrogram));
+            Assert.Equal(warmFrames, source.FramesRead);
+            Assert.Equal(analysisSeeks, source.SeekCount);
             Assert.Equal(playbackSeeks, playback.SeekCount);
             Assert.Equal(videoSeeks, video.SeekCount);
             Assert.Same(document, context.Session.DocumentSnapshot);
-            var tileFrames = AudioAnalysisSampleReader.PREVIEW_TILE_SAMPLES + AudioAnalysisSampleReader.PADDING * 2;
-            var maximumFramesPerWindow = (tileFrames + SOURCE_BLOCK_FRAMES - 1) / SOURCE_BLOCK_FRAMES * SOURCE_BLOCK_FRAMES;
-            var sparseFrameBudget = (long)(previousFullSpectrum.Width + newestSpectrum.Width + finalPlan.Analysis.BucketCount + 1) *
-                                    maximumFramesPerWindow;
-            Assert.True(sparseFrameBudget < DURATION_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE / 5,
-                "两个预览 revision 的窗口预算仍须明显低于全片解码量。");
-            Assert.InRange(source.FramesRead - warmFrames, 1, sparseFrameBudget);
-            Assert.Equal(0, source.CancelCount);
+            Assert.Equal(VideoPlaybackState.PLAYING, context.Controller.Snapshot.State);
+            Assert.False(model.IsPlaybackFollowEnabled);
+            Assert.Equal(string.Empty, model.AnalysisStatus);
         }
         finally
         {
             release.Set();
-            model.PropertyChanged -= OnModelChanged;
             await coordinator.ClearAsync();
         }
         Assert.Equal(1, source.DisposeCount);
+        Assert.Equal(1, detail.DisposeCount);
     }
 
-    /// <summary>播放中的全片视口重复缩小后继续发布能量，复用已缓存 PCM 且不 seek 播放源。</summary>
+    /// <summary>播放中的全片视口连续缩小只读取缓存，不读取分析解码器或 seek 播放源。</summary>
     [AvaloniaFact]
-    public async Task RepeatedWholeMediaZoomWhilePlayingReusesPcmAndDoesNotSeekPlayback()
+    public async Task RepeatedWholeMediaZoomWhilePlayingReadsTheCacheAndDoesNotSeekPlayback()
     {
         var playback = new UiAuditionAudioSource();
         var output = new UiAuditionAudioOutput();
@@ -162,21 +112,19 @@ public sealed class TimelineAnalysisLayerPublicationUiTests
         context.Session.Tick();
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         var model = context.ViewModel.Timeline;
-        model.Viewport = timeline.Viewport with { StartSeconds = 0, PixelsPerSecond = timeline.Viewport.Width / 8 };
+        model.Viewport = timeline.Viewport with { StartSeconds = 0, PixelsPerSecond = timeline.Viewport.Width / 32 };
         var source = new UiRapidZoomAudioSource(MEDIA_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE);
         using var coordinator = new AnalysisCoordinator(context.Session,
-            (_, _, mapping, duration) => new(_ => source, mapping, duration, 64L * 1024 * 1024));
+            (path, _, mapping, duration, directory) => new(_ => source, mapping, duration,
+                cacheDirectory: directory, cacheIdentity: path));
         try
         {
             await coordinator.StartAsync("synthetic-cached-layer-publication.media");
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
             await context.Session.ExecuteCommandAsync(WorkbenchCommand.PLAY_PAUSE);
-            Assert.True(model.IsPlaybackFollowEnabled);
             var pointer = GraphPointer(context, timeline);
-            context.Window.MouseWheel(pointer, new(0, 2), RawInputModifiers.Control);
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             ZoomOutToWholeMedia(context, timeline, pointer);
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             AssertToneEnergy(Assert.IsType<SpectrogramData>(model.Spectrogram));
             var warmFrames = source.FramesRead;
             var analysisSeeks = source.SeekCount;
@@ -186,7 +134,7 @@ public sealed class TimelineAnalysisLayerPublicationUiTests
             for (var iteration = 0; iteration < 6; iteration++)
             {
                 context.Window.MouseWheel(pointer, new(0, -2), RawInputModifiers.Control);
-                await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+                await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
                 AssertToneEnergy(Assert.IsType<SpectrogramData>(model.Spectrogram));
                 var plan = Assert.IsType<WaveformViewportPlan>(
                     WaveformViewportPlanner.Create(timeline.Viewport, model.RenderScaling, new(MEDIA_SECONDS)));
@@ -195,9 +143,9 @@ public sealed class TimelineAnalysisLayerPublicationUiTests
                 Assert.Equal(VideoPlaybackState.PLAYING, context.Controller.Snapshot.State);
                 Assert.False(model.IsPlaybackFollowEnabled);
             }
+            Assert.Equal(MEDIA_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE, warmFrames);
             Assert.Equal(warmFrames, source.FramesRead);
             Assert.Equal(analysisSeeks, source.SeekCount);
-            Assert.Equal(0, source.CancelCount);
             Assert.Equal(playbackSeeks, playback.SeekCount);
             Assert.Equal(videoSeeks, video.SeekCount);
             Assert.Same(document, context.Session.DocumentSnapshot);
@@ -210,151 +158,59 @@ public sealed class TimelineAnalysisLayerPublicationUiTests
         Assert.Equal(1, source.DisposeCount);
     }
 
-    /// <summary>真实缩放从冷缓存进入粗预览，局部精确分析后恢复同一预览不再读取媒体。</summary>
+    /// <summary>工程缓存重开无需解码，完整视口先发布频谱，再发布缓存波形。</summary>
     [AvaloniaFact]
-    public async Task PlayingColdPreviewPublishesSpectrumFirstAndRestoresItsCacheAfterLocalExactZoom()
+    public async Task CompletedCacheReopensWithoutDecoderAndPublishesSpectrumBeforeWaveform()
     {
-        const int DURATION_SECONDS = 7200;
-        const int SOURCE_BLOCK_FRAMES = 4096;
         var playback = new UiAuditionAudioSource();
         var output = new UiAuditionAudioOutput();
-        var video = new PreviewTestSource(1, 0, DURATION_SECONDS * 1000L);
-        await using var context = CreateContext(playback, output, video, DURATION_SECONDS);
-        await context.Controller.OpenAsync("cold-preview-layer-publication.media", TestContext.Current.CancellationToken);
+        var video = new PreviewTestSource(1, 0, MEDIA_SECONDS * 1000L);
+        await using var context = CreateContext(playback, output, video);
+        await context.Controller.OpenAsync("reopened-layer-publication.media", TestContext.Current.CancellationToken);
         context.Session.Tick();
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         var model = context.ViewModel.Timeline;
-        model.Viewport = timeline.Viewport with { StartSeconds = 0, PixelsPerSecond = timeline.Viewport.Width / 8 };
-        var source = new UiRapidZoomAudioSource(DURATION_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE);
-        using var coordinator = new AnalysisCoordinator(context.Session,
-            (_, _, mapping, duration) => new(_ => source, mapping, duration, 8L * 1024 * 1024));
-        var publishedSpectrum = new TaskCompletionSource<(SpectrogramData Spectrum, WaveformData? Waveform)>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        model.Viewport = timeline.Viewport with { StartSeconds = 0, PixelsPerSecond = timeline.Viewport.Width / MEDIA_SECONDS };
+        var source = new UiRapidZoomAudioSource(MEDIA_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE);
+        using (var first = new AnalysisCoordinator(context.Session,
+                   (path, _, mapping, duration, directory) => new(_ => source, mapping, duration,
+                       cacheDirectory: directory, cacheIdentity: path)))
+        {
+            await first.StartAsync("synthetic-reopened-layer-publication.media");
+            await first.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+            AssertToneEnergy(Assert.IsType<SpectrogramData>(model.Spectrogram));
+            await first.ClearAsync();
+        }
         var publications = new List<string>();
-        WaveformViewportPlan? previewPlan = null;
         void OnModelChanged(object? sender, PropertyChangedEventArgs args)
         {
-            if (previewPlan is not { } expected)
-            {
-                return;
-            }
-            if (args.PropertyName == nameof(TimelinePanelViewModel.Spectrogram) && model.Spectrogram is { } spectrum &&
-                spectrum.Start <= expected.Visible.Start && spectrum.End >= expected.Visible.End)
+            if (args.PropertyName == nameof(TimelinePanelViewModel.Spectrogram) && model.Spectrogram is not null)
             {
                 publications.Add("Spectrum");
-                publishedSpectrum.TrySetResult((spectrum, model.Waveform));
             }
-            else if (args.PropertyName == nameof(TimelinePanelViewModel.Waveform) && model.Waveform is { } waveform &&
-                     waveform.Request == expected.Analysis)
+            else if (args.PropertyName == nameof(TimelinePanelViewModel.Waveform) && model.Waveform is not null)
             {
                 publications.Add("Waveform");
             }
         }
-
+        using var reopened = new AnalysisCoordinator(context.Session,
+            (path, _, mapping, duration, directory) => new(_ => throw new InvalidOperationException("A completed cache must not open a decoder."),
+                mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {
-            await coordinator.StartAsync("synthetic-cold-preview-layer-publication.media");
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-            await context.Session.ExecuteCommandAsync(WorkbenchCommand.PLAY_PAUSE);
-            Assert.Equal(VideoPlaybackState.PLAYING, context.Controller.Snapshot.State);
-            Assert.True(model.IsPlaybackFollowEnabled);
-            var pointer = GraphPointer(context, timeline);
-            context.Window.MouseWheel(pointer, new(0, 2), RawInputModifiers.Control);
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-            var narrowWaveform = Assert.IsType<WaveformData>(model.Waveform);
-            Assert.Equal(AudioAnalysisMode.EXACT, narrowWaveform.Request.Mode);
-            var document = context.Session.DocumentSnapshot;
-            var playbackSeeks = playback.SeekCount;
-            var videoSeeks = video.SeekCount;
-            var warmFrames = source.FramesRead;
-            var warmSeeks = source.SeekCount;
             model.PropertyChanged += OnModelChanged;
-            var zoomEvents = 0;
-            do
-            {
-                Assert.True(zoomEvents++ < 50);
-                context.Window.MouseWheel(pointer, new(0, -2), RawInputModifiers.Control);
-                previewPlan = Assert.IsType<WaveformViewportPlan>(
-                    WaveformViewportPlanner.Create(timeline.Viewport, model.RenderScaling, new(DURATION_SECONDS)));
-            }
-            while (previewPlan.Analysis.Mode != AudioAnalysisMode.PREVIEW || timeline.VisibleDuration < DURATION_SECONDS);
-            Assert.Equal(MediaTime.Zero, previewPlan.Visible.Start);
-            Assert.True(previewPlan.Visible.End >= new MediaTime(DURATION_SECONDS));
-            var firstPublication = await publishedSpectrum.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-            Assert.Same(narrowWaveform, firstPublication.Waveform);
-            AssertToneEnergy(firstPublication.Spectrum, DURATION_SECONDS);
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-            model.PropertyChanged -= OnModelChanged;
+            await reopened.StartAsync("synthetic-reopened-layer-publication.media");
+            await reopened.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             Assert.Collection(publications, value => Assert.Equal("Spectrum", value), value => Assert.Equal("Waveform", value));
-            var preview = Assert.IsType<WaveformData>(model.Waveform);
-            var previewSpectrum = Assert.IsType<SpectrogramData>(model.Spectrogram);
-            Assert.Equal(previewPlan.Analysis, preview.Request);
-            Assert.Equal(AudioAnalysisMode.PREVIEW, preview.Request.Mode);
-            Assert.True(preview.Start <= previewPlan.Visible.Start && preview.End >= previewPlan.Visible.End);
-            Assert.True(previewSpectrum.Start <= previewPlan.Visible.Start && previewSpectrum.End >= previewPlan.Visible.End);
-            Assert.Contains(preview.Peaks.ToArray(), value => value > 0.7F);
-            Assert.Contains(preview.Peaks.ToArray(), value => value < -0.7F);
-            var tileFrames = AudioAnalysisSampleReader.PREVIEW_TILE_SAMPLES + AudioAnalysisSampleReader.PADDING * 2;
-            var maximumFramesPerWindow = (tileFrames + SOURCE_BLOCK_FRAMES - 1) / SOURCE_BLOCK_FRAMES * SOURCE_BLOCK_FRAMES;
-            var sparseFrameBudget = (long)(previewPlan.Analysis.BucketCount + previewSpectrum.Width) * maximumFramesPerWindow;
-            var mediaSamples = DURATION_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE;
-            Assert.True(sparseFrameBudget < mediaSamples / 5, "冷预览窗口预算必须明显低于全片解码量。");
-            Assert.InRange(source.FramesRead - warmFrames, 1, sparseFrameBudget);
-            Assert.InRange(source.SeekCount - warmSeeks, 1, previewPlan.Analysis.BucketCount + previewSpectrum.Width + 2);
-            var previewPeaks = preview.Peaks.ToArray();
-            var previewLevels = previewSpectrum.Levels.ToArray();
-            await AdvancePlaybackAsync(context, output);
-
-            var localFrames = source.FramesRead;
-            var localSeeks = source.SeekCount;
-            var zoomInEvents = 0;
-            WaveformViewportPlan localPlan;
-            do
-            {
-                Assert.True(zoomInEvents++ < 50);
-                context.Window.MouseWheel(pointer, new(0, 2), RawInputModifiers.Control);
-                localPlan = Assert.IsType<WaveformViewportPlan>(
-                    WaveformViewportPlanner.Create(timeline.Viewport, model.RenderScaling, new(DURATION_SECONDS)));
-            }
-            while (localPlan.Analysis.Mode != AudioAnalysisMode.EXACT || timeline.VisibleDuration > 8);
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-            var exact = Assert.IsType<WaveformData>(model.Waveform);
-            Assert.Equal(localPlan.Analysis, exact.Request);
-            Assert.Equal(AudioAnalysisMode.EXACT, exact.Request.Mode);
-            Assert.True(exact.Start <= localPlan.Visible.Start && exact.End >= localPlan.Visible.End);
-            AssertToneEnergy(Assert.IsType<SpectrogramData>(model.Spectrogram), DURATION_SECONDS);
-            var localSamples = localPlan.Analysis.Duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
-            Assert.InRange(source.FramesRead - localFrames, 1, localSamples * 2 + 8L * WaveformAnalyzer.SAMPLE_RATE);
-            Assert.InRange(source.SeekCount - localSeeks, 1, 4);
-            var restoreFrames = source.FramesRead;
-            var restoreSeeks = source.SeekCount;
-            for (var index = 0; index < zoomInEvents; index++)
-            {
-                context.Window.MouseWheel(pointer, new(0, -2), RawInputModifiers.Control);
-            }
-            var restoredPlan = Assert.IsType<WaveformViewportPlan>(
-                WaveformViewportPlanner.Create(timeline.Viewport, model.RenderScaling, new(DURATION_SECONDS)));
-            Assert.Equal(previewPlan, restoredPlan);
-            await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-            var restored = Assert.IsType<WaveformData>(model.Waveform);
-            var restoredSpectrum = Assert.IsType<SpectrogramData>(model.Spectrogram);
-            Assert.Equal(previewPlan.Analysis, restored.Request);
-            Assert.Equal(previewPeaks, restored.Peaks.ToArray());
-            Assert.Equal(previewLevels, restoredSpectrum.Levels.ToArray());
-            Assert.Equal(restoreFrames, source.FramesRead);
-            Assert.Equal(restoreSeeks, source.SeekCount);
-            Assert.Equal(0, source.CancelCount);
-            Assert.Equal(playbackSeeks, playback.SeekCount);
-            Assert.Equal(videoSeeks, video.SeekCount);
-            Assert.Same(document, context.Session.DocumentSnapshot);
-            Assert.Equal(VideoPlaybackState.PLAYING, context.Controller.Snapshot.State);
-            Assert.False(model.IsPlaybackFollowEnabled);
+            Assert.NotNull(model.Waveform);
+            AssertToneEnergy(Assert.IsType<SpectrogramData>(model.Spectrogram));
             Assert.Equal(string.Empty, model.AnalysisStatus);
+            Assert.Equal(MEDIA_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE, source.FramesRead);
         }
         finally
         {
             model.PropertyChanged -= OnModelChanged;
-            await coordinator.ClearAsync();
+            await reopened.ClearAsync();
         }
         Assert.Equal(1, source.DisposeCount);
     }

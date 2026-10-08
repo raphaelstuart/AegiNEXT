@@ -47,6 +47,7 @@ public sealed class TaskRowViewModelTests
 
     [Theory]
     [InlineData(AegiTaskState.Queued)]
+    [InlineData(AegiTaskState.Yielded)]
     [InlineData(AegiTaskState.Cancelling)]
     [InlineData(AegiTaskState.Committing)]
     [InlineData(AegiTaskState.Succeeded)]
@@ -59,6 +60,26 @@ public sealed class TaskRowViewModelTests
         var row = new TaskRowViewModel(snapshot, _ => { });
         Assert.Equal(row.Status, row.SecondaryTitle);
         Assert.DoesNotContain("Fixture", row.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void YieldedProgressAndCancellationRemainAttachedToTheSameRowOnResume()
+    {
+        var snapshot = new AegiTaskSnapshot(Guid.NewGuid(), 1, "Scan", null, null,
+            AegiTaskMode.Parallel, AegiTaskState.Running, true, new("Calculation", 3, 4), DateTimeOffset.UtcNow);
+        var cancellations = new List<Guid>();
+        var row = new TaskRowViewModel(snapshot, cancellations.Add);
+        row.Update(snapshot with { State = AegiTaskState.Yielded });
+        Assert.Equal(row.Status, row.SecondaryTitle);
+        Assert.Equal(75, row.ProgressValue);
+        Assert.True(row.ShowsCancel);
+        Assert.True(row.CancelCommand.CanExecute(null));
+        row.CancelCommand.Execute(null);
+        Assert.Equal(snapshot.Id, Assert.Single(cancellations));
+        row.Update(snapshot);
+        Assert.Equal(snapshot.Id, row.Id);
+        Assert.Equal("Calculation", row.SecondaryTitle);
+        Assert.Equal(75, row.ProgressValue);
     }
 
     [Theory]

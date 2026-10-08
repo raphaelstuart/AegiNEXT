@@ -42,13 +42,20 @@ SDR 转换借用原始帧，输出独立、不透明、从上到下的 sRGB BGRA
 
 控制器结果检查请求、媒体时间、工程修订和画质。工作台选择预览画质，交互时临时限制。呈现帧与派发延迟应和解码耗时分开测量，尤其是长 GOP、高分辨率和反复定位。
 
-分析使用独立固定网格：48 kHz 单声道 min/max 波形，低通至 16 kHz、64 ms FFT、16 ms hop 的语谱。按视口请求 tile、有界预取/缓存，各图层共享 PCM 并保留源时间。颜色/播放头刷新复用几何；隐藏、更换媒体或关闭取消过期分析，不占用播放音频。
+绑定媒体后，`AudioAnalysisSession` 在工程 `caches/audio/<identity>/` 构建完整波形与频谱金字塔。`data.bin` 保存无压缩二进制块，`index.bin` 保存版本、精确有理时间、各层索引与 SHA-256 校验。指纹包含算法版本、流索引、文件大小和修改时间及首／中／尾各最多 64 KiB 的内容，媒体移动不改变身份。完整缓存跨启动复用；取消、失败或崩溃留下的临时构建不作为完整缓存使用。
+
+分析使用独立固定网格：48 kHz 单声道 min/max 波形，最细持久层为 512 样本；63-tap FIR 低通至 16 kHz，1024 点 Hann FFT、256 样本 hop、128 对数频率行。普通波形和全部频谱缩放通过二分索引读取既有层。粗谱保留绝对媒体网格上的中心列子集。仅细于 512 样本的波形请求使用独立、按需开启的局部解码器及有界 PCM LRU，不生成视口 FFT，不占用播放音频。
+
+`AudioAnalysisCacheBuilder` 单路顺序解码，分段并行 FIR／FFT；默认每段 196608 个样本（4.096 秒），自动使用最多 4 个 DSP worker。每段先完成一次低通滤波，再复用重叠 FFT 窗口。批次工作内存限额为 48 MiB，默认读缓存合计限额为 16 MiB；不持久保存 PCM。完成的批次按顺序发布，未完成区间保持待分析。隐藏图层仅取消视口读取；更换媒体或关闭则取消并排空构建。每个批次检查点可协作让出任务执行位，使单执行位下保存、切换媒体等工作仍能运行。
+
+另存为成功后由 `AudioCacheMigrationTask` 后台复制完整缓存；构建中只记录最新目标，完成后迁移。保存不等待生成或复制。迁移持有目标写入租约，数据与索引一起切换；取消或复制失败保留原读取路径，下次保存可重试。
 
 ## 验证
 
 ```powershell
 dotnet test Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj -c Release --filter 'FullyQualifiedName~Probing'
 dotnet test Tests/AegiNext.Desktop.Tests/AegiNext.Desktop.Tests.csproj -c Release --filter 'FullyQualifiedName~VideoPreview'
+dotnet test Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj -c Release --filter 'FullyQualifiedName~Analysis'
 ```
 
 原生用例所需开关和工具路径见[构建](building.md)。验证实际 PTS/像素、定位、替代、取消、帧生命周期和故障。静音设备测试不证明扬声器延迟，Headless 呈现不证明原生 HDR 或 GPU 验收。

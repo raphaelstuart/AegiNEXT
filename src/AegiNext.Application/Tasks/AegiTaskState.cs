@@ -10,4 +10,5 @@ public enum AegiTaskState
     Succeeded,
     Cancelled,
     Failed,
+    Yielded,
 }

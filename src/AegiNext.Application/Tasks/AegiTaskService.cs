@@ -14,6 +14,7 @@ public sealed class AegiTaskService : IAegiTaskService
     private long submissionSequence;
     private int maximumConcurrentTasks = 4;
     private int runningCount;
+    private int unfinishedStartedExecutionCount;
     private int globalEditLeases;
     private bool blockingRunning;
     private bool accepting = true;
@@ -217,6 +218,10 @@ public sealed class AegiTaskService : IAegiTaskService
             }
             else
             {
+                if (entry.Snapshot.State == AegiTaskState.Yielded)
+                {
+                    queue.Remove(entry);
+                }
                 entry.CancellationCallbacks = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 Update(entry, entry.Snapshot with { State = AegiTaskState.Cancelling, CanCancel = false });
                 runningCancellation = entry;
@@ -365,6 +370,70 @@ public sealed class AegiTaskService : IAegiTaskService
         return new(() => ReleaseEditLease(taskId));
     }
 
+    internal Task YieldIfWorkIsQueuedAsync(Guid taskId)
+    {
+        TaskCompletionSource<Task> resume;
+        TaskCompletionSource resumeDispatchStarted;
+        CancellationToken token;
+        lock (gate)
+        {
+            var entry = GetRunningEntry(taskId);
+            token = entry.Cancellation.Token;
+            token.ThrowIfCancellationRequested();
+            if (entry.Snapshot.Mode != AegiTaskMode.Parallel || entry.Snapshot.State != AegiTaskState.Running ||
+                !entry.Snapshot.CanCancel || entry.EditLeases != 0)
+            {
+                throw new InvalidOperationException("Only cancellable parallel work before commit and without editing leases may yield.");
+            }
+
+            var boundary = queue.First;
+            while (boundary is not null && boundary.Value.Snapshot.Mode != AegiTaskMode.Blocking &&
+                   !boundary.Value.Resources.Overlaps(entry.Resources))
+            {
+                boundary = boundary.Next;
+            }
+            if (queue.First == boundary)
+            {
+                return Task.CompletedTask;
+            }
+
+            resume = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            resumeDispatchStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            entry.Resume = resume;
+            entry.ResumeDispatchStarted = resumeDispatchStarted;
+            entry.OwnsSlot = false;
+            runningCount--;
+            Update(entry, entry.Snapshot with { State = AegiTaskState.Yielded });
+            if (boundary is null)
+            {
+                queue.AddLast(entry);
+            }
+            else
+            {
+                queue.AddBefore(boundary, entry);
+            }
+        }
+
+        NotifyChanged();
+        Pump();
+        return AwaitResumeAsync(resume.Task, resumeDispatchStarted, token);
+    }
+
+    private static async Task AwaitResumeAsync(Task<Task> resume, TaskCompletionSource dispatchStarted,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var prerequisite = await resume.WaitAsync(cancellationToken);
+            await prerequisite.WaitAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            dispatchStarted.TrySetResult();
+        }
+    }
+
     internal void EnterCommit(Guid taskId)
     {
         lock (gate)
@@ -486,7 +555,7 @@ public sealed class AegiTaskService : IAegiTaskService
                 && entry.EditRestriction == definition.EditRestriction
                 && entry.RestrictEditingDuringExecution == definition.RestrictEditingDuringExecution
                 && entry.Resources.SetEquals(resources);
-            if (sameGroup)
+            if (sameGroup && !entry.ExecutionStarted)
             {
                 return entry;
             }
@@ -515,6 +584,8 @@ public sealed class AegiTaskService : IAegiTaskService
         while (true)
         {
             AegiTaskEntry entry;
+            TaskCompletionSource<Task>? resume;
+            Task prerequisite;
             lock (gate)
             {
                 if (blockingRunning || runningCount >= maximumConcurrentTasks || queue.First is not { } first)
@@ -524,8 +595,8 @@ public sealed class AegiTaskService : IAegiTaskService
                 }
 
                 entry = first.Value;
-                if ((entry.Snapshot.Mode == AegiTaskMode.Blocking && runningCount != 0)
-                    || occupiedResources.Overlaps(entry.Resources))
+                if ((entry.Snapshot.Mode == AegiTaskMode.Blocking && unfinishedStartedExecutionCount != 0)
+                    || (!entry.OwnsResources && occupiedResources.Overlaps(entry.Resources)))
                 {
                     pumping = false;
                     return;
@@ -533,19 +604,45 @@ public sealed class AegiTaskService : IAegiTaskService
 
                 queue.RemoveFirst();
                 runningCount++;
+                entry.OwnsSlot = true;
                 blockingRunning = entry.Snapshot.Mode == AegiTaskMode.Blocking;
-                occupiedResources.UnionWith(entry.Resources);
-                entry.OwnsResources = true;
-                entry.StartPrerequisite = lastDispatchStarted;
-                lastDispatchStarted = entry.DispatchStarted.Task;
-                Update(entry, entry.Snapshot with { State = AegiTaskState.Running, StartedAt = DateTimeOffset.UtcNow });
-                if (entry.RestrictEditingDuringExecution)
+                prerequisite = lastDispatchStarted;
+                resume = entry.Resume;
+                if (resume is null)
                 {
-                    AcquireEditingUnderLock(entry);
+                    occupiedResources.UnionWith(entry.Resources);
+                    entry.OwnsResources = true;
+                    entry.ExecutionStarted = true;
+                    unfinishedStartedExecutionCount++;
+                    entry.StartPrerequisite = prerequisite;
+                    lastDispatchStarted = entry.DispatchStarted.Task;
+                    if (entry.RestrictEditingDuringExecution)
+                    {
+                        AcquireEditingUnderLock(entry);
+                    }
                 }
+                else
+                {
+                    lastDispatchStarted = entry.ResumeDispatchStarted!.Task;
+                    entry.Resume = null;
+                    entry.ResumeDispatchStarted = null;
+                }
+
+                Update(entry, entry.Snapshot with
+                {
+                    State = AegiTaskState.Running,
+                    StartedAt = entry.Snapshot.StartedAt ?? DateTimeOffset.UtcNow
+                });
             }
 
-            Start(entry);
+            if (resume is null)
+            {
+                Start(entry);
+            }
+            else
+            {
+                resume.TrySetResult(prerequisite);
+            }
             NotifyChanged();
         }
     }
@@ -760,16 +857,25 @@ public sealed class AegiTaskService : IAegiTaskService
 
     private void FinishUnderLock(AegiTaskEntry entry, AegiTaskState state, string? errorSummary)
     {
-        if (entry.OwnsResources)
+        if (entry.OwnsSlot)
         {
-            occupiedResources.ExceptWith(entry.Resources);
             runningCount--;
             if (entry.Snapshot.Mode == AegiTaskMode.Blocking)
             {
                 blockingRunning = false;
             }
 
+            entry.OwnsSlot = false;
+        }
+        if (entry.OwnsResources)
+        {
+            occupiedResources.ExceptWith(entry.Resources);
             entry.OwnsResources = false;
+        }
+        if (entry.ExecutionStarted)
+        {
+            unfinishedStartedExecutionCount--;
+            entry.ExecutionStarted = false;
         }
 
         ReleaseAllEditingUnderLock(entry);
@@ -871,7 +977,7 @@ public sealed class AegiTaskService : IAegiTaskService
 
     private AegiTaskEntry GetRunningEntry(Guid taskId)
     {
-        if (!entries.TryGetValue(taskId, out var entry) || entry.Snapshot.State == AegiTaskState.Queued)
+        if (!entries.TryGetValue(taskId, out var entry) || !entry.OwnsSlot)
         {
             throw new InvalidOperationException("The operation is not executing.");
         }
@@ -974,6 +1080,8 @@ public sealed class AegiTaskService : IAegiTaskService
         entry.FollowUps.Clear();
         entry.Task = null;
         entry.SynchronizationContext = null;
+        entry.Resume = null;
+        entry.ResumeDispatchStarted = null;
         entry.Cancellation.Dispose();
     }
 }

@@ -19,7 +19,7 @@ using SkiaSharp;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
-/// <summary>通过真实滚轮输入验证长媒体快速缩小后的最终分析发布和 Skia 像素覆盖。</summary>
+/// <summary>通过真实滚轮输入验证持久化缓存缩放后的双层发布和 Skia 像素覆盖。</summary>
 public sealed class TimelineRapidZoomAnalysisUiTests
 {
     private static JsonSerializerOptions CaptureJsonOptions { get; } = new()
@@ -27,14 +27,14 @@ public sealed class TimelineRapidZoomAnalysisUiTests
         WriteIndented = true
     };
 
-    /// <summary>短片和两三小时媒体从窄视口连续缩小到全片，在普通和高 DPI 宽矮时间线中完整绘制双层。</summary>
+    /// <summary>不同片长从窄视口连续缩小到全片，在普通和高 DPI 宽矮时间线中完整绘制缓存双层。</summary>
     [AvaloniaTheory]
-    [InlineData(300, 1d)]
-    [InlineData(7200, 1d)]
-    [InlineData(10800, 1d)]
-    [InlineData(300, 2d)]
-    [InlineData(7200, 2d)]
-    [InlineData(10800, 2d)]
+    [InlineData(30, 1d)]
+    [InlineData(60, 1d)]
+    [InlineData(120, 1d)]
+    [InlineData(30, 2d)]
+    [InlineData(60, 2d)]
+    [InlineData(120, 2d)]
     public async Task RapidControlWheelZoomOutPublishesBothCompleteLayersWithoutSeekingOrEditing(int duration, double scaling)
     {
         var playback = new UiAuditionAudioSource();
@@ -69,13 +69,14 @@ public sealed class TimelineRapidZoomAnalysisUiTests
         model.Viewport = timeline.Viewport with
         {
             StartSeconds = duration / 2.0,
-            PixelsPerSecond = timeline.Viewport.Width / 8
+            PixelsPerSecond = timeline.Viewport.Width / 32
         };
         model.SuspendPlaybackFollow();
         var source = new UiRapidZoomAudioSource((long)duration * WaveformAnalyzer.SAMPLE_RATE);
-        using var release = new ManualResetEventSlim();
         using var coordinator = new AnalysisCoordinator(context.Session,
-            (_, _, mapping, mediaDuration) => new(_ => source, mapping, mediaDuration, 8L * 1024 * 1024));
+            (path, _, mapping, mediaDuration, directory) => new(_ => source, mapping, mediaDuration, 8L * 1024 * 1024,
+                cacheDirectory: directory, cacheIdentity: path,
+                detailSourceFactory: _ => new UiRapidZoomAudioSource((long)duration * WaveformAnalyzer.SAMPLE_RATE)));
         try
         {
             await coordinator.StartAsync("synthetic-48k-mono.media");
@@ -89,33 +90,16 @@ public sealed class TimelineRapidZoomAnalysisUiTests
             var warmFramesRead = source.FramesRead;
             var pointer = timeline.TranslatePoint(new Point(timeline.HeaderWidth + timeline.Viewport.Width / 2,
                 timeline.RulerHeight + timeline.Viewport.Height * 0.85), context.Window)!.Value;
-            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var blocked = 0;
-            source.BeforeRead = token =>
-            {
-                if (Interlocked.CompareExchange(ref blocked, 1, 0) == 0)
-                {
-                    entered.TrySetResult();
-                    release.Wait(token);
-                }
-            };
+            var analysisSeeks = source.SeekCount;
             var wheelEvents = 1;
-            try
+            context.Window.MouseWheel(pointer, new(0, -6), RawInputModifiers.Control);
+            while (timeline.VisibleDuration < duration)
             {
-                context.Window.MouseWheel(pointer, new(0, -6), RawInputModifiers.Control);
-                await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-                while (timeline.VisibleDuration < duration)
-                {
-                    Assert.True(wheelEvents < 40, "真实 Ctrl+滚轮没有按预期扩大视口。");
-                    var scale = timeline.PixelsPerSecond;
-                    context.Window.MouseWheel(pointer, new(0, -2), RawInputModifiers.Control);
-                    Assert.True(timeline.PixelsPerSecond < scale);
-                    wheelEvents++;
-                }
-            }
-            finally
-            {
-                release.Set();
+                Assert.True(wheelEvents < 40, "真实 Ctrl+滚轮没有按预期扩大视口。");
+                var scale = timeline.PixelsPerSecond;
+                context.Window.MouseWheel(pointer, new(0, -2), RawInputModifiers.Control);
+                Assert.True(timeline.PixelsPerSecond < scale);
+                wheelEvents++;
             }
             var finalViewport = timeline.Viewport;
             var finalPlan = Assert.IsType<WaveformViewportPlan>(WaveformViewportPlanner.Create(finalViewport, model.RenderScaling, new(duration)));
@@ -158,8 +142,9 @@ public sealed class TimelineRapidZoomAnalysisUiTests
             Assert.Equal(playbackSeeks, playback.SeekCount);
             Assert.Equal(videoSeeks, video.SeekCount);
             Assert.Same(originalDocument, context.Session.DocumentSnapshot);
-            var boundedSamples = finalPlan.Analysis.Duration.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
-            Assert.InRange(source.FramesRead - warmFramesRead, 1, boundedSamples + 16L * WaveformAnalyzer.SAMPLE_RATE);
+            Assert.Equal((long)duration * WaveformAnalyzer.SAMPLE_RATE, warmFramesRead);
+            Assert.Equal(warmFramesRead, source.FramesRead);
+            Assert.Equal(analysisSeeks, source.SeekCount);
             Assert.Equal(0, source.CancelCount);
             timeline.SetAudioGraphPalette(new()
             {
@@ -181,7 +166,6 @@ public sealed class TimelineRapidZoomAnalysisUiTests
         }
         finally
         {
-            release.Set();
             await coordinator.ClearAsync();
         }
         Assert.Equal(1, source.DisposeCount);
