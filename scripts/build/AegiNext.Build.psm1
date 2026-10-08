@@ -603,11 +603,11 @@ function Get-AegiNextBuildPlan
         }
         $plan.Add([pscustomobject]@{
             Label = 'Restore managed'; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-            Arguments = [string[]](@('restore', $solution) + $restoreRuntimeArguments)
+            Arguments = [string[]](@('restore', $solution, '--disable-build-servers') + $restoreRuntimeArguments)
         })
         $plan.Add([pscustomobject]@{
             Label = 'Build managed'; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-            Arguments = [string[]](@('build', $solution, '--configuration', $Configuration, '--no-restore') + $(if ($useRuntime) { @("-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
+            Arguments = [string[]](@('build', $solution, '--configuration', $Configuration, '--no-restore', '--disable-build-servers') + $(if ($useRuntime) { @("-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
         })
         if ($RunTests)
         {
@@ -618,7 +618,7 @@ function Get-AegiNextBuildPlan
                 {
                     $plan.Add([pscustomobject]@{
                         Label = "Restore test $project"; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-                        Arguments = [string[]](@('restore', $testProject) + $restoreRuntimeArguments)
+                        Arguments = [string[]](@('restore', $testProject, '--disable-build-servers') + $restoreRuntimeArguments)
                     })
                 }
                 $testEnvironment = @{}
@@ -629,7 +629,7 @@ function Get-AegiNextBuildPlan
                 $plan.Add([pscustomobject]@{
                     Label = "Test $project"; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = $testEnvironment
                     Arguments = [string[]](@('test', $testProject,
-                        '--configuration', $Configuration, '--no-restore') + $(if ($useRuntime) { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
+                        '--configuration', $Configuration, '--no-restore', '--disable-build-servers') + $(if ($useRuntime) { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
                 })
             }
         }
@@ -709,11 +709,7 @@ function Invoke-AegiNextBuild
     foreach ($step in $plan)
     {
         Write-Information -InformationAction Continue -MessageData "[$($step.Label)]"
-        $result = Invoke-AegiNextCommand -FilePath $step.FilePath -Arguments $step.Arguments -WorkingDirectory $step.WorkingDirectory -Environment $step.Environment
-        if ($result.Output)
-        {
-            Write-Information -InformationAction Continue -MessageData $result.Output
-        }
+        $result = Invoke-AegiNextCommand -FilePath $step.FilePath -Arguments $step.Arguments -WorkingDirectory $step.WorkingDirectory -Environment $step.Environment -StreamOutput
         if ($result.ExitCode -ne 0)
         {
             $commandFailure = [InvalidOperationException]::new("$($step.Label) failed (exit $($result.ExitCode)).")
