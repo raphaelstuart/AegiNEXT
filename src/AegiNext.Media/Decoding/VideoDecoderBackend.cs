@@ -5,5 +5,6 @@ public enum VideoDecoderBackend
 {
     Software = 0,
     VideoToolbox = 1,
-    D3D11VA = 2
+    D3D11VA = 2,
+    Vulkan = 3
 }

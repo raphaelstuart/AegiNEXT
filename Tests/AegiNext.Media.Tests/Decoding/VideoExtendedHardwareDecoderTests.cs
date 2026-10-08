@@ -105,6 +105,6 @@ public sealed class VideoExtendedHardwareDecoderTests
         Assert.False(frame.Info.IsCorrupt);
         Assert.Equal(0u, frame.Info.DecodeErrorFlags);
         Assert.DoesNotContain("Film grain parameters", frame.Info.SideDataTypes);
-        VideoHardwareFrameAssertions.AssertReferenceSamples(fixture, frame, index);
+        VideoHardwareFrameAssertions.AssertReferenceSamples(fixture, frame, index, allowProResRounding: true);
     }
 }

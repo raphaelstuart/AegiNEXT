@@ -224,7 +224,7 @@ public sealed class VideoDecoderCompatibilityTests
             Assert.Equal(checked(plane.RowBytes * plane.Height), pixels.Length);
             planeOffset += pixels.Length;
         }
-        VideoHardwareFrameAssertions.AssertReferenceSamples(fixture, frame, index);
+        VideoHardwareFrameAssertions.AssertReferenceSamples(fixture, frame, index, allowProResRounding: allowHardwareLayout);
         if (frame.Info.PixelFormat == fixture.PixelFormat)
         {
             Assert.Equal(fixture.FrameByteCount, planeOffset);
@@ -277,7 +277,7 @@ public sealed class VideoDecoderCompatibilityTests
         else
         {
             Assert.Equal(VideoDecodeMode.Auto, mode);
-            Assert.Contains(decoder.SessionInfo.ActiveBackend, new[] { VideoDecoderBackend.VideoToolbox, VideoDecoderBackend.D3D11VA });
+            Assert.Contains(decoder.SessionInfo.ActiveBackend, new[] { VideoDecoderBackend.VideoToolbox, VideoDecoderBackend.D3D11VA, VideoDecoderBackend.Vulkan });
             Assert.True(decoder.SessionInfo.HardwareConfirmed);
             Assert.Empty(decoder.SessionInfo.FallbackReason);
         }

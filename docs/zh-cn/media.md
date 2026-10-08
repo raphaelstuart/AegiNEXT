@@ -24,7 +24,7 @@
 
 先定位关键帧，再选择显示区间 `Time <= target < NextFrameTime`。显示时间优先原始 PTS，再用 FFmpeg best-effort 时间戳；两者都缺失时，可以用上一帧有效时长推导下一帧时间，必要时仅在声明的平均与名义帧率一致时推导时长。首次顺序读取可用流起点锚定首帧。推导时间显式记录依据，不覆盖原始 PTS 或 best-effort 事实。缺少依据或显示时间倒退时拒绝，重复时间选择最后解码帧。VFR 保持有理时间；缓存限制帧数/字节预算，命中后仍须将顺序播放连接到逻辑下一帧。
 
-自动解码优先 macOS VideoToolbox 或 Windows D3D11VA，硬件不支持的格式在首次交付前回退 CPU。“GPU（严格）”要求确认真实加速，不回退 CPU；需要广泛兼容时选择“自动”或“CPU”。取消、损坏输入和后续错误不静默回退。macOS 选择具备实际 VideoToolbox 配置的解码器，并协商保留源格式的输出；支持设备可加速 HEVC 4:2:2/4:4:4、AV1、VP9、ProRes 422/4444。硬件读回保留色度、分量精度、Alpha、尺寸与帧元数据，12-bit ProRes 可使用 16-bit 输出容器。Windows 读回仍限定为具备 D3D11VA 解码配置的不透明 4:2:0 NV12／P010 输出。加速取决于设备、系统、编码 profile 与尺寸，而非 MKV／MOV 容器；VideoToolbox 软件会话不会标为 GPU 解码。
+自动解码优先 macOS VideoToolbox 或 Windows D3D11VA，硬件不支持的格式在首次交付前回退 CPU。“GPU（严格）”要求确认真实加速，不回退 CPU；需要广泛兼容时选择“自动”或“CPU”。取消、损坏输入和后续错误不静默回退。macOS 选择具备实际 VideoToolbox 配置的解码器，并协商保留源格式的输出；支持设备可加速 HEVC 4:2:2/4:4:4、AV1、VP9、ProRes 422/4444。硬件读回保留色度、分量精度、Alpha、尺寸与帧元数据，12-bit ProRes 可使用 16-bit 输出容器。Windows D3D11VA 读回支持不透明 4:2:0 NV12／P010；ProRes 4444／4444 XQ（有／无 Alpha）及 D3D11VA 读回无法保真的扩展 HEVC 采样／精度使用 Vulkan。Vulkan 设备匹配 Windows 硬件适配器，排除软件适配器；取得真实 Vulkan 帧并完成保真读回后才报告加速。ProRes 使用 GPU 计算着色器，HEVC 使用设备支持的 Vulkan Video profile。锁定 SDK 的 Vulkan ProRes 422 样本差异超出兼容性验收范围，因此这些 profile 在自动模式使用 CPU，严格 GPU 模式拒绝。加速取决于设备、驱动、系统、编码 profile 与尺寸，而非 MKV／MOV 容器；VideoToolbox 软件会话不会标为 GPU 解码。
 
 兼容性测试覆盖 H.264 10-bit/RGB、HEVC 10-bit 4:2:2/4:4:4、VP8、VP9/AV1 10-bit、MPEG-2/4、MJPEG、ProRes 422 Proxy/LT/422/HQ 与 4444/4444 XQ（有／无 Alpha）、FFV1 16-bit，以及 MKV、MP4、MOV、WebM、AVI、MPEG-TS 容器。AV1 在硬件支持时使用原生解码器，软件模式使用 dav1d，film grain 由解码器合成。具体素材仍需具备有效流信息和受支持的色彩解释。
 

@@ -32,7 +32,7 @@ private:
 };
 enum class DecodeMode : uint32_t { Auto = 0, Software = 1, Hardware = 2 };
 enum class DecodeWorkload : uint32_t { Interactive = 0, Offline = 1 };
-enum class DecoderBackend : uint32_t { Software = 0, VideoToolbox = 1, D3D11VA = 2 };
+enum class DecoderBackend : uint32_t { Software = 0, VideoToolbox = 1, D3D11VA = 2, Vulkan = 3 };
 struct DecodeOptions { DecodeMode mode = DecodeMode::Auto; DecodeWorkload workload = DecodeWorkload::Interactive; };
 struct DecoderSessionInfo
 {

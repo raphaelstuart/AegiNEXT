@@ -6,12 +6,41 @@ internal static class VideoHardwareFrameAssertions
 {
     private static readonly string[] supportedFormats = ["nv12", "p010le", "p210le", "p410le", "p216le", "p416le", "ayuv64le"];
 
-    internal static void AssertReferenceSamples(VideoCompatibilityFixture fixture, IVideoFrame frame, int index)
+    internal static void AssertReferenceSamples(VideoCompatibilityFixture fixture, IVideoFrame frame, int index,
+        bool allowProResRounding = false)
     {
         if (frame.Info.PixelFormat == fixture.PixelFormat)
         {
             var bytes = Enumerable.Range(0, frame.Info.PlaneCount).SelectMany(frame.CopyPlane).ToArray();
-            Assert.Equal(fixture.RawFrames.AsSpan(index * fixture.FrameByteCount, fixture.FrameByteCount).ToArray(), bytes);
+            var expected = fixture.RawFrames.AsSpan(index * fixture.FrameByteCount, fixture.FrameByteCount).ToArray();
+            if (allowProResRounding && Path.GetExtension(fixture.MediaPath) == ".mov")
+            {
+                var planarOffset = 0;
+                for (var component = 0; component < frame.Info.PlaneCount; component++)
+                {
+                    var plane = frame.GetPlaneInfo(component);
+                    var length = plane.RowBytes * plane.Height;
+                    var maximum = 0;
+                    var total = 0L;
+                    for (var sample = planarOffset; sample < planarOffset + length; sample += 2)
+                    {
+                        var error = Math.Abs(BitConverter.ToUInt16(expected, sample) - BitConverter.ToUInt16(bytes, sample));
+                        maximum = Math.Max(maximum, error);
+                        total += error;
+                    }
+                    // The existing ProRes IDCT bounds also apply when GPU readback
+                    // keeps the original planar layout. Alpha must remain exact.
+                    Assert.True(maximum <= (component == 3 ? 0 : 4), $"{frame.Info.PixelFormat} component {component}: maximum error {maximum}.");
+                    Assert.True(total / (length / 2.0) <= (component == 3 ? 0 : 0.3),
+                        $"{frame.Info.PixelFormat} component {component}: mean error {total / (length / 2.0)}.");
+                    planarOffset += length;
+                }
+                Assert.Equal(expected.Length, planarOffset);
+            }
+            else
+            {
+                Assert.Equal(expected, bytes);
+            }
             return;
         }
 

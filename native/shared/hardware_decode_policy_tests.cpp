@@ -27,6 +27,12 @@ void HardwareDecoderUsesAnActualConfiguration()
 #else
     Require(FindHardwareDecoder(AV_CODEC_ID_H264, AV_HWDEVICE_TYPE_D3D11VA, AV_PIX_FMT_D3D11) != nullptr,
         "Pinned SDK lacks a selectable H.264 D3D11 configuration.");
+    Require(FindHardwareDecoder(AV_CODEC_ID_PRORES, AV_HWDEVICE_TYPE_D3D11VA, AV_PIX_FMT_D3D11) == nullptr,
+        "ProRes unexpectedly selected D3D11 decoding.");
+    Require(FindHardwareDecoder(AV_CODEC_ID_PRORES, AV_HWDEVICE_TYPE_VULKAN, AV_PIX_FMT_VULKAN) != nullptr,
+        "Pinned SDK lacks a selectable ProRes Vulkan configuration.");
+    Require(FindHardwareDecoder(AV_CODEC_ID_HEVC, AV_HWDEVICE_TYPE_VULKAN, AV_PIX_FMT_VULKAN) != nullptr,
+        "Pinned SDK lacks a selectable HEVC Vulkan configuration.");
 #endif
     Require(FindHardwareDecoder(AV_CODEC_ID_NONE, AV_HWDEVICE_TYPE_NONE, AV_PIX_FMT_NONE) == nullptr,
         "Missing codec was accepted.");

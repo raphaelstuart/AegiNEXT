@@ -217,7 +217,7 @@ void DecoderSession::OpenAttempt(bool hardware)
         info_.activeBackend = DecoderBackend::VideoToolbox;
         RegisterVideoToolboxDecoders();
 #elif defined(_WIN32)
-        constexpr auto deviceType = AV_HWDEVICE_TYPE_D3D11VA;
+        auto deviceType = AV_HWDEVICE_TYPE_D3D11VA;
         hardwareFormat_ = AV_PIX_FMT_D3D11;
         info_.activeBackend = DecoderBackend::D3D11VA;
 #else
@@ -225,8 +225,34 @@ void DecoderSession::OpenAttempt(bool hardware)
         throw CoreError(ErrorCode::Unsupported, "Hardware decoding is unavailable on this platform.", true);
 #endif
         decoder = FindHardwareDecoder(stream->codecpar->codec_id, deviceType, hardwareFormat_);
-        if (!decoder) { throw CoreError(ErrorCode::Unsupported, "The pinned FFmpeg codec has no decoder configuration for the requested hardware backend.", true); }
-        CheckAv(av_hwdevice_ctx_create(&device_, deviceType, nullptr, nullptr, 0), ErrorCode::Unsupported, "av_hwdevice_ctx_create", true);
+#ifdef _WIN32
+        const auto *sourceDescriptor = av_pix_fmt_desc_get(colorContext_.sourcePixelFormat);
+        const auto extendedHevc = stream->codecpar->codec_id == AV_CODEC_ID_HEVC && sourceDescriptor &&
+            (sourceDescriptor->log2_chroma_w != 1 || sourceDescriptor->log2_chroma_h != 1 || sourceDescriptor->comp[0].depth > 10);
+        // D3D11 readback supports only NV12/P010 here. Vulkan can preserve HEVC
+        // 4:2:2/4:4:4 samples when the actual GPU and driver support that profile.
+        if (extendedHevc) { decoder = nullptr; }
+        // The pinned Vulkan ProRes 422 implementation does not meet source-sample
+        // parity; enable only the validated 12-bit 4444 profiles (including Alpha).
+        const auto proRes4444 = stream->codecpar->codec_id == AV_CODEC_ID_PRORES &&
+            (stream->codecpar->profile == AV_PROFILE_PRORES_4444 || stream->codecpar->profile == AV_PROFILE_PRORES_XQ);
+        if (!decoder && (extendedHevc || proRes4444))
+        {
+            deviceType = AV_HWDEVICE_TYPE_VULKAN;
+            hardwareFormat_ = AV_PIX_FMT_VULKAN;
+            info_.activeBackend = DecoderBackend::Vulkan;
+            decoder = FindHardwareDecoder(stream->codecpar->codec_id, deviceType, hardwareFormat_);
+        }
+#endif
+        if (!decoder)
+        { throw CoreError(ErrorCode::Unsupported, std::string("No configured hardware decoder for codec '") +
+            avcodec_get_name(stream->codecpar->codec_id) + "' in the pinned FFmpeg SDK. Choose Auto or CPU decoding.", true); }
+#ifdef _WIN32
+        if (deviceType == AV_HWDEVICE_TYPE_VULKAN)
+        { CheckAv(CreateVulkanHardwareDevice(&device_), ErrorCode::Unsupported, "Vulkan hardware adapter creation", true); }
+        else
+#endif
+        { CheckAv(av_hwdevice_ctx_create(&device_, deviceType, nullptr, nullptr, 0), ErrorCode::Unsupported, "av_hwdevice_ctx_create", true); }
     }
     else
     {
@@ -375,7 +401,7 @@ FramePointer DecoderSession::ReadOutput(int64_t timestamp)
             colorContext_.hdrEvidence |= HasHdrEvidence(frame.get());
             ++info_.deliveredFrames;
             if (info_.deliveredFrames == 1)
-            { av_log(codec_, AV_LOG_INFO, "AegiNext actual decoder=%s; hardwareConfirmed=%d\n", info_.activeBackend == DecoderBackend::Software ? "software" : info_.activeBackend == DecoderBackend::VideoToolbox ? "videotoolbox" : "d3d11va", info_.hardwareConfirmed); }
+            { av_log(codec_, AV_LOG_INFO, "AegiNext actual decoder=%s; hardwareConfirmed=%d\n", info_.activeBackend == DecoderBackend::Software ? "software" : info_.activeBackend == DecoderBackend::VideoToolbox ? "videotoolbox" : info_.activeBackend == DecoderBackend::Vulkan ? "vulkan" : "d3d11va", info_.hardwareConfirmed); }
         }
         return frame;
     }
@@ -422,7 +448,7 @@ FramePointer DecoderSession::Download(FramePointer frame)
 #endif
     const auto *frames = reinterpret_cast<const AVHWFramesContext *>(frame->hw_frames_ctx->data);
 #ifdef _WIN32
-    if (frames->sw_format != AV_PIX_FMT_NV12 && frames->sw_format != AV_PIX_FMT_P010)
+    if (info_.activeBackend == DecoderBackend::D3D11VA && frames->sw_format != AV_PIX_FMT_NV12 && frames->sw_format != AV_PIX_FMT_P010)
     { throw CoreError(ErrorCode::Unsupported, "Hardware readback requires NV12 or P010LE.", true); }
 #endif
     const auto sourceFormat = codec_->sw_pix_fmt != AV_PIX_FMT_NONE ? codec_->sw_pix_fmt : colorContext_.sourcePixelFormat;

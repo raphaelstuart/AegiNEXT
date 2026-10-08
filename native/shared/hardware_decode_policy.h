@@ -10,4 +10,7 @@ const AVCodec *FindHardwareDecoder(AVCodecID codec, AVHWDeviceType device, AVPix
 const char *HardwareReadbackFailure(AVPixelFormat source, AVPixelFormat output) noexcept;
 bool HardwareReadbackAlphaIsOpaque(const AVFrame *frame) noexcept;
 bool IsHardwareSetupFailure(int result) noexcept;
+#ifdef _WIN32
+int CreateVulkanHardwareDevice(AVBufferRef **device);
+#endif
 }

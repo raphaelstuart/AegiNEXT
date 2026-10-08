@@ -81,7 +81,7 @@ public sealed class VideoCompatibilityExportTests
                 else
                 {
                     Assert.Equal(VideoDecodeMode.Auto, mode);
-                    Assert.Contains(result.Decoder.ActiveBackend, new[] { VideoDecoderBackend.VideoToolbox, VideoDecoderBackend.D3D11VA });
+                    Assert.Contains(result.Decoder.ActiveBackend, new[] { VideoDecoderBackend.VideoToolbox, VideoDecoderBackend.D3D11VA, VideoDecoderBackend.Vulkan });
                     Assert.True(result.Decoder.HardwareConfirmed);
                     Assert.Empty(result.Decoder.FallbackReason);
                 }

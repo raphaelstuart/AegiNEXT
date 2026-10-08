@@ -19,6 +19,7 @@ public sealed class VideoHardwareDecoderTests
         Assert.Equal(0, (int)VideoDecodeMode.Auto);
         Assert.Equal(1, (int)VideoDecodeMode.Software);
         Assert.Equal(2, (int)VideoDecodeMode.Hardware);
+        Assert.Equal(3, (int)VideoDecoderBackend.Vulkan);
     }
 
     /// <summary>比较可视样本及帧属性，允许 VT 已裁掉编码 padding 的真实下载布局；1080p 覆盖编码高度 1088。</summary>
