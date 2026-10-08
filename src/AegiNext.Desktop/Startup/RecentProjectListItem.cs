@@ -1,14 +1,19 @@
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Styling;
 using Avalonia.Media;
-using CommunityToolkit.Mvvm.ComponentModel;
+using Material.Icons;
 
 namespace AegiNext.Desktop.Startup;
 
-internal sealed class RecentProjectListItem(RecentProjectEntry entry) : ObservableObject
+internal sealed class RecentProjectListItem(RecentProjectEntry entry) : WelcomeListItem
 {
     private readonly RecentProjectIcon icon = new(entry.Name, entry.Path);
 
     internal RecentProjectEntry Entry { get; } = entry;
+    public override bool IsProject => true;
+    public bool IsPinned => Entry.IsPinned;
+    public string PinActionLabel => Localization.Get(IsPinned ? "Welcome.UnpinProject" : "Welcome.PinProject");
+    public MaterialIconKind PinIconKind => WorkbenchIcon.ResolveKind(IsPinned ? "Unpin" : "Pin");
     public string Name => Entry.Name;
     public string Path => Entry.Path;
     public string IconInitials => icon.Initials;
@@ -23,5 +28,6 @@ internal sealed class RecentProjectListItem(RecentProjectEntry entry) : Observab
         OnPropertyChanged(nameof(IconBackground));
         OnPropertyChanged(nameof(IconForeground));
         OnPropertyChanged(nameof(Availability));
+        OnPropertyChanged(nameof(PinActionLabel));
     }
 }

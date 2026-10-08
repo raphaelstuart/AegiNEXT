@@ -8,7 +8,7 @@ namespace AegiNext.Desktop.Startup;
 
 internal sealed class RecentProjectService : IAsyncDisposable
 {
-    private const int MAX_ENTRIES = 20;
+    private const int MAX_RECENT_ENTRIES = 20;
     private const int MAX_FILE_BYTES = 65536;
     private static readonly StringComparer pathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
@@ -84,9 +84,34 @@ internal sealed class RecentProjectService : IAsyncDisposable
         lock (stateGate)
         {
             ObjectDisposedException.ThrowIf(disposing, this);
-            var value = new RecentProjectEntry(fullPath, Path.GetFileNameWithoutExtension(fullPath), DateTimeOffset.UtcNow);
-            entries = Array.AsReadOnly(entries.Where(entry => !pathComparer.Equals(entry.Path, fullPath))
-                .Prepend(value).OrderByDescending(entry => entry.LastUsedUtc).Take(MAX_ENTRIES).ToArray());
+            var existing = entries.FirstOrDefault(entry => pathComparer.Equals(entry.Path, fullPath));
+            var value = new RecentProjectEntry(fullPath, Path.GetFileNameWithoutExtension(fullPath),
+                DateTimeOffset.UtcNow, existing?.IsPinned ?? false);
+            entries = NormalizeEntries(entries.Where(entry => !pathComparer.Equals(entry.Path, fullPath)).Prepend(value));
+            snapshot = entries;
+        }
+
+        Changed?.Invoke(this, EventArgs.Empty);
+        return QueueWrite(snapshot);
+    }
+
+    internal Task SetPinnedAsync(string path, bool isPinned)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var fullPath = Path.GetFullPath(path);
+        IReadOnlyList<RecentProjectEntry> snapshot;
+        lock (stateGate)
+        {
+            ObjectDisposedException.ThrowIf(disposing, this);
+            var existing = entries.FirstOrDefault(entry => pathComparer.Equals(entry.Path, fullPath));
+            if (existing is null || existing.IsPinned == isPinned)
+            {
+                return Task.CompletedTask;
+            }
+
+            entries = NormalizeEntries(entries.Select(entry => pathComparer.Equals(entry.Path, fullPath)
+                ? entry with { IsPinned = isPinned }
+                : entry));
             snapshot = entries;
         }
 
@@ -154,17 +179,27 @@ internal sealed class RecentProjectService : IAsyncDisposable
 
                 var fullPath = Path.GetFullPath(entry.Path);
                 normalized.Add(new(fullPath, Path.GetFileNameWithoutExtension(fullPath),
-                    entry.LastUsedUtc.ToUniversalTime()));
+                    entry.LastUsedUtc.ToUniversalTime(), entry.IsPinned));
             }
 
-            entries = Array.AsReadOnly(normalized.OrderByDescending(entry => entry.LastUsedUtc)
-                .DistinctBy(entry => entry.Path, pathComparer).Take(MAX_ENTRIES).ToArray());
+            lock (stateGate)
+            {
+                entries = NormalizeEntries(normalized);
+            }
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException
                                           or ArgumentException or NotSupportedException)
         {
             LastError = error;
         }
+    }
+
+    private static ReadOnlyCollection<RecentProjectEntry> NormalizeEntries(IEnumerable<RecentProjectEntry> values)
+    {
+        var ordered = values.OrderByDescending(entry => entry.LastUsedUtc)
+            .DistinctBy(entry => entry.Path, pathComparer).ToArray();
+        return Array.AsReadOnly(ordered.Where(entry => entry.IsPinned)
+            .Concat(ordered.Where(entry => !entry.IsPinned).Take(MAX_RECENT_ENTRIES)).ToArray());
     }
 
     internal async Task PersistAsync(IReadOnlyList<RecentProjectEntry> snapshot)

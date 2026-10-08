@@ -9,6 +9,7 @@ internal sealed class WelcomeViewModel : ObservableObject, IDisposable
     private readonly RecentProjectService history;
     private string searchText = string.Empty;
     private RecentProjectListItem[] projects = [];
+    private WelcomeListItem[] items = [];
     private RecentProjectListItem? selectedProject;
     private bool isBusy;
     private string? error;
@@ -30,6 +31,13 @@ internal sealed class WelcomeViewModel : ObservableObject, IDisposable
                 await history.RemoveAsync(item.Path);
             }
         }, item => CanStart() && item is not null);
+        ToggleProjectPinCommand = new(async item =>
+        {
+            if (item is not null)
+            {
+                await history.SetPinnedAsync(item.Path, !item.IsPinned);
+            }
+        }, item => CanStart() && item is not null);
         history.Changed += OnHistoryChanged;
         Localization.LanguageChanged += OnLanguageChanged;
         RefreshProjects();
@@ -40,7 +48,9 @@ internal sealed class WelcomeViewModel : ObservableObject, IDisposable
     public AsyncRelayCommand OpenSelectedProjectCommand { get; }
     public AsyncRelayCommand SettingsCommand { get; }
     public AsyncRelayCommand<RecentProjectListItem> RemoveProjectCommand { get; }
+    public AsyncRelayCommand<RecentProjectListItem> ToggleProjectPinCommand { get; }
     public IReadOnlyList<RecentProjectListItem> Projects => projects;
+    public IReadOnlyList<WelcomeListItem> Items => items;
     public bool HasProjects => projects.Length > 0;
     public bool IsEmpty => !HasProjects;
     public string Title => title;
@@ -68,7 +78,24 @@ internal sealed class WelcomeViewModel : ObservableObject, IDisposable
         {
             if (SetProperty(ref selectedProject, value))
             {
+                OnPropertyChanged(nameof(SelectedItem));
                 OpenSelectedProjectCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public WelcomeListItem? SelectedItem
+    {
+        get => SelectedProject;
+        set
+        {
+            if (value is null or RecentProjectListItem)
+            {
+                SelectedProject = value as RecentProjectListItem;
+            }
+            else
+            {
+                OnPropertyChanged(nameof(SelectedItem));
             }
         }
     }
@@ -86,6 +113,7 @@ internal sealed class WelcomeViewModel : ObservableObject, IDisposable
                 OpenSelectedProjectCommand.NotifyCanExecuteChanged();
                 SettingsCommand.NotifyCanExecuteChanged();
                 RemoveProjectCommand.NotifyCanExecuteChanged();
+                ToggleProjectPinCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -122,11 +150,27 @@ internal sealed class WelcomeViewModel : ObservableObject, IDisposable
                 entry.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 entry.Path.Contains(query, StringComparison.OrdinalIgnoreCase))
             .Select(entry => new RecentProjectListItem(entry)).ToArray();
+        var rows = new List<WelcomeListItem>(projects.Length + 2);
+        AppendSection(rows, "Welcome.PinnedProjects", projects.Where(project => project.IsPinned).ToArray());
+        AppendSection(rows, "Welcome.RecentProjects", projects.Where(project => !project.IsPinned).ToArray());
+        items = rows.ToArray();
         OnPropertyChanged(nameof(Projects));
+        OnPropertyChanged(nameof(Items));
         OnPropertyChanged(nameof(HasProjects));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(EmptyTitle));
         SelectedProject = projects.FirstOrDefault(item => item.Path == selectedPath) ?? projects.FirstOrDefault();
+    }
+
+    private static void AppendSection(List<WelcomeListItem> rows, string titleKey, RecentProjectListItem[] section)
+    {
+        if (section.Length == 0)
+        {
+            return;
+        }
+
+        rows.Add(new WelcomeProjectSection(titleKey));
+        rows.AddRange(section);
     }
 
     private void OnLanguageChanged(object? sender, EventArgs e)
@@ -134,6 +178,10 @@ internal sealed class WelcomeViewModel : ObservableObject, IDisposable
         title = Localization.Get("Welcome.Title");
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(EmptyTitle));
+        foreach (var section in items.OfType<WelcomeProjectSection>())
+        {
+            section.RefreshLanguage();
+        }
         RefreshAvailability();
     }
 

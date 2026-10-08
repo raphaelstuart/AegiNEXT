@@ -2,16 +2,19 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:common="using:AegiNext.Desktop.Controls.Common"
         xmlns:startup="using:AegiNext.Desktop.Startup"
+        xmlns:materialIcons="using:Material.Icons.Avalonia"
         x:Class="AegiNext.Desktop.Views.WelcomeWindow" x:DataType="startup:WelcomeViewModel"
         Classes="business-surface" Title="{Binding Title}"
         Width="960" Height="640" MinWidth="800" MinHeight="520"
         WindowStartupLocation="CenterScreen" Background="{DynamicResource PreviewBackground}">
   <Window.Styles>
-    <Style Selector="ListBoxItem">
-      <Setter Property="Padding" Value="12,10" />
+    <Style Selector="ListBoxItem" x:DataType="startup:WelcomeListItem">
+      <Setter Property="Padding" Value="0" />
       <Setter Property="Margin" Value="0,0,0,4" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="IsEnabled" Value="{Binding IsProject}" />
+      <Setter Property="Focusable" Value="{Binding IsProject}" />
     </Style>
     <Style Selector="TextBlock.project-path">
       <Setter Property="Foreground" Value="{DynamicResource PreviewMuted}" />
@@ -42,36 +45,51 @@
         </Button>
       </Grid>
       <Border Grid.Row="1" Height="1" Background="{DynamicResource PreviewBorder}" />
-      <ListBox Grid.Row="2" Name="RecentProjectList" ItemsSource="{Binding Projects}"
-               SelectedItem="{Binding SelectedProject, Mode=TwoWay}" IsVisible="{Binding HasProjects}"
+      <ListBox Grid.Row="2" Name="RecentProjectList" ItemsSource="{Binding Items}"
+               SelectedItem="{Binding SelectedItem, Mode=TwoWay}" IsVisible="{Binding HasProjects}"
                IsEnabled="{Binding CanInteract}" Background="Transparent" BorderThickness="0"
                Tapped="OnProjectTapped" KeyDown="OnProjectKeyDown"
                AutomationProperties.Name="{Loc Key=Welcome.RecentProjects}">
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="startup:RecentProjectListItem">
-            <Grid Classes="project-entry" Classes.unavailable="{Binding IsUnavailable}"
-                  ColumnDefinitions="40,*" ColumnSpacing="12">
-              <Border Name="ProjectIcon" Width="40" Height="40" CornerRadius="8" VerticalAlignment="Top"
-                      Background="{Binding IconBackground}">
-                <TextBlock Name="ProjectIconInitials" Text="{Binding IconInitials}" Foreground="{Binding IconForeground}"
-                           FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-              </Border>
-              <StackPanel Grid.Column="1" Spacing="3">
-                <TextBlock Classes="project-name" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                <TextBlock Classes="project-path" Text="{Binding Path}" TextTrimming="CharacterEllipsis"
-                           ToolTip.Tip="{Binding Path}" />
-                <TextBlock Text="{Binding Availability}" IsVisible="{Binding IsUnavailable}"
-                           Foreground="{DynamicResource PreviewMuted}" FontSize="12" />
-              </StackPanel>
-              <Grid.ContextMenu>
-                <ContextMenu>
-                  <MenuItem Header="{Loc Key=Welcome.RemoveFromRecent}"
-                            Click="OnRemoveProject" CommandParameter="{Binding}" />
-                </ContextMenu>
-              </Grid.ContextMenu>
-            </Grid>
+        <ListBox.DataTemplates>
+          <DataTemplate DataType="startup:WelcomeProjectSection" x:DataType="startup:WelcomeProjectSection">
+            <TextBlock Text="{Binding Title}" Margin="12,8,12,4" FontWeight="SemiBold"
+                       Foreground="{DynamicResource PreviewMuted}" />
           </DataTemplate>
-        </ListBox.ItemTemplate>
+          <DataTemplate DataType="startup:RecentProjectListItem" x:DataType="startup:RecentProjectListItem">
+            <Border Background="Transparent" Padding="12,10">
+              <Grid Classes="project-entry" Classes.unavailable="{Binding IsUnavailable}"
+                    ColumnDefinitions="40,*" ColumnSpacing="12">
+                <Border Name="ProjectIcon" Width="40" Height="40" CornerRadius="8" VerticalAlignment="Top"
+                        Background="{Binding IconBackground}">
+                  <TextBlock Name="ProjectIconInitials" Text="{Binding IconInitials}" Foreground="{Binding IconForeground}"
+                             FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel Grid.Column="1" Spacing="3">
+                  <TextBlock Classes="project-name" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="project-path" Text="{Binding Path}" TextTrimming="CharacterEllipsis"
+                             ToolTip.Tip="{Binding Path}" />
+                  <TextBlock Text="{Binding Availability}" IsVisible="{Binding IsUnavailable}"
+                             Foreground="{DynamicResource PreviewMuted}" FontSize="12" />
+                </StackPanel>
+              </Grid>
+              <Border.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="{Binding PinActionLabel}" Click="OnToggleProjectPin" CommandParameter="{Binding}">
+                    <MenuItem.Icon>
+                      <materialIcons:MaterialIcon Kind="{Binding PinIconKind}" Width="16" Height="16" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="{Loc Key=Welcome.RemoveProject}"
+                            Click="OnRemoveProject" CommandParameter="{Binding}">
+                    <MenuItem.Icon>
+                      <materialIcons:MaterialIcon Kind="Delete" Width="16" Height="16" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                </ContextMenu>
+              </Border.ContextMenu>
+            </Border>
+          </DataTemplate>
+        </ListBox.DataTemplates>
       </ListBox>
       <TextBlock Grid.Row="2" Name="WelcomeEmptyState" Text="{Binding EmptyTitle}"
                  IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center"

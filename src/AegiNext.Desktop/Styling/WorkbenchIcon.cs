@@ -111,6 +111,8 @@ internal static class WorkbenchIcon
             "Volume" => MaterialIconKind.VolumeHigh,
             "Mute" => MaterialIconKind.VolumeOff,
             "Keyboard" or "Record" or "Shortcuts" => MaterialIconKind.Keyboard,
+            "Pin" => MaterialIconKind.PinOutline,
+            "Unpin" => MaterialIconKind.PinOffOutline,
             "Duplicate" => MaterialIconKind.ContentDuplicate,
             "ValidateScript" => MaterialIconKind.FileCheckOutline,
             "ResetPosition" or "ResetAutomaticPosition" => MaterialIconKind.CrosshairsGps,

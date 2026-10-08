@@ -69,6 +69,15 @@ public sealed partial class WelcomeWindow : Window
         }
     }
 
+    private void OnToggleProjectPin(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { CommandParameter: RecentProjectListItem item } &&
+            ViewModel.ToggleProjectPinCommand.CanExecute(item))
+        {
+            ViewModel.ToggleProjectPinCommand.Execute(item);
+        }
+    }
+
     private void OnClosed(object? sender, EventArgs e)
     {
         Activated -= OnActivated;
