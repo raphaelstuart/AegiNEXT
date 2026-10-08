@@ -134,4 +134,77 @@ public sealed class AudioAnalysisCacheStoreTests
             Directory.Delete(directory, true);
         }
     }
+
+    [Fact]
+    public async Task SourceRebuildDuringMigrationCannotMixOldPayloadAndNewIndex()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "AegiNext-cache-test", Guid.NewGuid().ToString("N"));
+        var sourceRoot = Path.Combine(directory, "source");
+        var destinationRoot = Path.Combine(directory, "destination");
+        try
+        {
+            using var original = new AudioAnalysisCacheStore(sourceRoot, "snapshot", new(MediaTime.Zero), new(1024, 48000), 0);
+            original.AppendWaveform(512, 0, [-0.4F, 0.8F]);
+            original.AppendWaveform(512, 1, [-0.2F, 0.6F]);
+            original.Complete(1024);
+            var replaced = false;
+            await original.RelocateAsync(destinationRoot, _ =>
+            {
+                if (!replaced)
+                {
+                    using var rebuild = new AudioAnalysisCacheStore(sourceRoot, "snapshot", new(MediaTime.Zero), new(1024, 48000));
+                    rebuild.Invalidate();
+                    rebuild.AppendWaveform(512, 0, [-0.1F, 0.2F, -0.3F, 0.4F]);
+                    rebuild.Complete(1024);
+                    replaced = true;
+                }
+                return Task.CompletedTask;
+            }, CancellationToken.None);
+            using var reopened = new AudioAnalysisCacheStore(destinationRoot, "snapshot", new(MediaTime.Zero), new(1024, 48000));
+            Assert.True(replaced);
+            Assert.True(reopened.IsComplete);
+            var request = new WaveformAnalysisRequest(MediaTime.Zero, 512, 2);
+            Assert.Equal(new[] { -0.4F, 0.8F, -0.2F, 0.6F }, reopened.ReadWaveform(request, false)!.Peaks.ToArray());
+            Assert.Equal(original.ReadWaveform(request, false)!.Peaks.ToArray(), reopened.ReadWaveform(request, false)!.Peaks.ToArray());
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public async Task OpeningDuringReplacementWaitsForTheCommittedIndexAndDataPair()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "AegiNext-cache-test", Guid.NewGuid().ToString("N"));
+        var mapping = new MediaTimelineMapping(MediaTime.Zero);
+        var duration = new MediaTime(512, 48000);
+        try
+        {
+            using var rebuild = new AudioAnalysisCacheStore(directory, "open-pair", mapping, duration);
+            rebuild.AppendWaveform(512, 0, [-0.1F, 0.2F]);
+            rebuild.Complete(512);
+            rebuild.Invalidate();
+            rebuild.AppendWaveform(512, 0, [-0.4F, 0.8F]);
+            using var reader = new AudioAnalysisCacheStore(directory, "open-pair", mapping, duration);
+            Assert.False(reader.IsComplete);
+            var waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var builder = new AudioAnalysisCacheBuilder(_ => throw new InvalidOperationException("Committed cache should be reused"),
+                mapping, duration, reader);
+            var pending = builder.BuildAsync(_ =>
+            {
+                waiting.TrySetResult();
+                return Task.CompletedTask;
+            });
+            await waiting.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            rebuild.Complete(512);
+            await pending.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(reader.IsComplete);
+            Assert.Equal(0.8F, reader.ReadWaveform(new(MediaTime.Zero, 512, 1), false)!.Peaks.Span[1]);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
 }

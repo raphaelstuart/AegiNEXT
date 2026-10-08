@@ -11,6 +11,7 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
     private readonly AudioAnalysisCacheStore store;
     private readonly AudioAnalysisCacheBuilder builder;
     private readonly AudioWaveformDetailProvider detail;
+    private AudioAnalysisOptions options;
     private readonly CancellationTokenSource lifetime = new();
     private readonly HashSet<Task> reads = [];
     private readonly SemaphoreSlim migrationGate = new(1);
@@ -24,11 +25,20 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
     public AudioAnalysisSession(Func<CancellationToken, IAudioSampleSource> sourceFactory, MediaTimelineMapping mapping,
         MediaTime duration, long maximumCachedBytes = DEFAULT_CACHE_BYTES, string? cacheDirectory = null,
         string? cacheIdentity = null, Func<CancellationToken, IAudioSampleSource>? detailSourceFactory = null,
-        int maximumWorkers = 0)
+        int maximumWorkers = 0, AudioAnalysisOptions? options = null, AudioAnalysisWorkerBudget? workerBudget = null)
     {
         ArgumentNullException.ThrowIfNull(sourceFactory);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(duration, MediaTime.Zero);
         ArgumentOutOfRangeException.ThrowIfNegative(maximumCachedBytes);
+        this.options = options ?? new()
+        {
+            Execution = new() { MaximumWorkers = maximumWorkers }
+        };
+        this.options.Validate();
+        if (options is not null)
+        {
+            maximumCachedBytes = options.Execution.ReadCacheBytes;
+        }
         Duration = duration;
         if (cacheDirectory is null)
         {
@@ -36,15 +46,26 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
             cacheDirectory = temporaryDirectory;
         }
         var summaryBytes = Math.Min(maximumCachedBytes / 4, 16L * 1024 * 1024);
-        store = new(cacheDirectory, cacheIdentity ?? Guid.NewGuid().ToString("N"), mapping, duration, summaryBytes);
-        builder = new(sourceFactory, mapping, duration, store, maximumWorkers);
-        detail = new(detailSourceFactory ?? sourceFactory, mapping, duration, maximumCachedBytes - summaryBytes);
+        store = new(cacheDirectory, cacheIdentity ?? Guid.NewGuid().ToString("N"), mapping, duration, summaryBytes, this.options.Recipe);
+        builder = new(sourceFactory, mapping, duration, store, maximumWorkers, options: this.options, budget: workerBudget);
+        detail = new(detailSourceFactory ?? sourceFactory, mapping, duration, maximumCachedBytes - summaryBytes, workerBudget);
         store.Changed += OnCacheChanged;
     }
 
     public MediaTime Duration { get; }
     public bool IsCacheComplete => store.IsComplete;
     public string CacheDirectory => store.DirectoryPath;
+    public AudioAnalysisOptions Options
+    {
+        get
+        {
+            lock (gate)
+            {
+                return options;
+            }
+        }
+    }
+    public int EffectiveWorkers => builder.EffectiveWorkers;
     internal long CachedBytes => store.CachedBytes + detail.CachedBytes;
 
     /// <summary>已提交缓存更新通知，可能来自工作线程。</summary>
@@ -64,24 +85,64 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
         return OpenCore(path, streamIndex, mapping, duration, cacheDirectory);
     }
 
+    /// <summary>按已验证配置打开工程缓存，并共享应用的分析 CPU 预算。</summary>
+    public static AudioAnalysisSession Open(string path, int streamIndex, MediaTimelineMapping mapping, MediaTime duration,
+        string cacheDirectory, AudioAnalysisOptions options, AudioAnalysisWorkerBudget? workerBudget = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheDirectory);
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        return OpenCore(path, streamIndex, mapping, duration, cacheDirectory, options, workerBudget);
+    }
+
     private static AudioAnalysisSession OpenCore(string path, int streamIndex, MediaTimelineMapping mapping,
-        MediaTime duration, string? cacheDirectory)
+        MediaTime duration, string? cacheDirectory, AudioAnalysisOptions? options = null, AudioAnalysisWorkerBudget? workerBudget = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentOutOfRangeException.ThrowIfNegative(streamIndex);
         path = Path.GetFullPath(path);
-        var identity = AudioAnalysisCacheIdentity.Create(path, streamIndex, mapping, duration);
+        var identity = AudioAnalysisCacheIdentity.Create(path, streamIndex, mapping, duration, options?.Recipe);
         var session = new AudioAnalysisSession(
             token => FfmpegAudioDecoder.Open(path, streamIndex, new(WaveformAnalyzer.SAMPLE_RATE, 1), token),
-            mapping, duration, cacheDirectory: cacheDirectory, cacheIdentity: identity);
+            mapping, duration, cacheDirectory: cacheDirectory, cacheIdentity: identity, options: options, workerBudget: workerBudget);
         session.store.ValidateSource = () =>
         {
-            if (AudioAnalysisCacheIdentity.Create(path, streamIndex, mapping, duration) != identity)
+            if (AudioAnalysisCacheIdentity.Create(path, streamIndex, mapping, duration, options?.Recipe) != identity)
             {
                 throw new IOException("音频缓存构建期间媒体文件发生变化。");
             }
         };
         return session;
+    }
+
+    /// <summary>更新执行预算；DSP 在当前批次排空后采用新配置，缓存内容保持相同。</summary>
+    public void UpdateExecutionOptions(AudioAnalysisExecutionOptions value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        value.Validate();
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            options = options with { Execution = value };
+            builder.UpdateExecutionOptions(value);
+            var summaryBytes = Math.Min(value.ReadCacheBytes / 4, 16L * 1024 * 1024);
+            store.SetMaximumCachedBytes(summaryBytes);
+            detail.SetMaximumCachedBytes(value.ReadCacheBytes - summaryBytes);
+        }
+    }
+
+    /// <summary>显式使空闲缓存失效，供用户重新生成；运行中的构建须先取消并排空。</summary>
+    public void InvalidateCache()
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            if (preparation is { IsCompleted: false })
+            {
+                throw new InvalidOperationException("运行中的音频缓存须先取消并排空。");
+            }
+            store.Invalidate();
+        }
     }
 
     /// <summary>构建全片缓存，安全批次边界执行宿主检查点；视口取消不终止构建。</summary>
@@ -168,7 +229,7 @@ public sealed class AudioAnalysisSession : IAsyncDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var fineCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var fine = waveform && request.SamplesPerBucket < 512;
+        var fine = waveform && request.SamplesPerBucket < options.Recipe.WaveformBaseSamples;
         var fineWaveform = fine ? detail.GetWaveformAsync(request, fineCancellation.Token) : null;
         if (!availableOnly && (spectrum || waveform && !fine))
         {

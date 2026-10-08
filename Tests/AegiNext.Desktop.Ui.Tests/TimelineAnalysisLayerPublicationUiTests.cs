@@ -48,7 +48,7 @@ public sealed class TimelineAnalysisLayerPublicationUiTests
             release.Wait(token);
         };
         using var coordinator = new AnalysisCoordinator(context.Session,
-            (path, _, mapping, duration, directory) => new(_ => source, mapping, duration,
+            (path, _, mapping, duration, directory, options, budget) => new(_ => source, mapping, duration,
                 cacheDirectory: directory, cacheIdentity: path, detailSourceFactory: _ => detail));
         try
         {
@@ -115,7 +115,7 @@ public sealed class TimelineAnalysisLayerPublicationUiTests
         model.Viewport = timeline.Viewport with { StartSeconds = 0, PixelsPerSecond = timeline.Viewport.Width / 32 };
         var source = new UiRapidZoomAudioSource(MEDIA_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE);
         using var coordinator = new AnalysisCoordinator(context.Session,
-            (path, _, mapping, duration, directory) => new(_ => source, mapping, duration,
+            (path, _, mapping, duration, directory, options, budget) => new(_ => source, mapping, duration,
                 cacheDirectory: directory, cacheIdentity: path));
         try
         {
@@ -173,7 +173,7 @@ public sealed class TimelineAnalysisLayerPublicationUiTests
         model.Viewport = timeline.Viewport with { StartSeconds = 0, PixelsPerSecond = timeline.Viewport.Width / MEDIA_SECONDS };
         var source = new UiRapidZoomAudioSource(MEDIA_SECONDS * (long)WaveformAnalyzer.SAMPLE_RATE);
         using (var first = new AnalysisCoordinator(context.Session,
-                   (path, _, mapping, duration, directory) => new(_ => source, mapping, duration,
+                   (path, _, mapping, duration, directory, options, budget) => new(_ => source, mapping, duration,
                        cacheDirectory: directory, cacheIdentity: path)))
         {
             await first.StartAsync("synthetic-reopened-layer-publication.media");
@@ -194,7 +194,7 @@ public sealed class TimelineAnalysisLayerPublicationUiTests
             }
         }
         using var reopened = new AnalysisCoordinator(context.Session,
-            (path, _, mapping, duration, directory) => new(_ => throw new InvalidOperationException("A completed cache must not open a decoder."),
+            (path, _, mapping, duration, directory, options, budget) => new(_ => throw new InvalidOperationException("A completed cache must not open a decoder."),
                 mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {

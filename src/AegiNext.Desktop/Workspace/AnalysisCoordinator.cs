@@ -11,7 +11,7 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed class AnalysisCoordinator : IDisposable
 {
     private readonly WorkbenchSession session;
-    private readonly Func<string, int, MediaTimelineMapping, MediaTime, string, AudioAnalysisSession> createSession;
+    private readonly Func<string, int, MediaTimelineMapping, MediaTime, string, AudioAnalysisOptions, AudioAnalysisWorkerBudget?, AudioAnalysisSession> createSession;
     private readonly Lock jobsGate = new();
     private readonly HashSet<Task> jobs = [];
     private readonly HashSet<AegiTaskHandle> handles = [];
@@ -21,8 +21,10 @@ internal sealed class AnalysisCoordinator : IDisposable
     private CancellationTokenSource? cancellation;
     private CancellationTokenSource? windowCancellation;
     private CancellationTokenSource? migrationCancellation;
+    private CancellationTokenSource? rebuildCancellation;
     private WaveformViewportPlan? desired;
     private string? desiredCacheRoot;
+    private string? mediaPath;
     private bool desiredWaveform;
     private bool desiredSpectrum;
     private bool isAnalyzing;
@@ -34,7 +36,7 @@ internal sealed class AnalysisCoordinator : IDisposable
     public Task Completion => DrainAsync();
 
     internal AnalysisCoordinator(WorkbenchSession session,
-        Func<string, int, MediaTimelineMapping, MediaTime, string, AudioAnalysisSession>? createSession = null)
+        Func<string, int, MediaTimelineMapping, MediaTime, string, AudioAnalysisOptions, AudioAnalysisWorkerBudget?, AudioAnalysisSession>? createSession = null)
     {
         this.session = session;
         this.createSession = createSession ?? AudioAnalysisSession.Open;
@@ -47,6 +49,7 @@ internal sealed class AnalysisCoordinator : IDisposable
         analysisBatchPending = false;
         windowCancellation?.Cancel();
         migrationCancellation?.Cancel();
+        rebuildCancellation?.Cancel();
         cancellation?.Cancel();
         AegiTaskHandle[] pending;
         lock (jobsGate)
@@ -458,6 +461,7 @@ internal sealed class AnalysisCoordinator : IDisposable
         cancellation = null;
         desired = null;
         desiredCacheRoot = null;
+        mediaPath = null;
         isAnalyzing = false;
         var timeline = session.ViewModel.Timeline;
         timeline.Waveform = null;
@@ -481,15 +485,87 @@ internal sealed class AnalysisCoordinator : IDisposable
         var token = cancellation.Token;
         var requestEpoch = epoch;
         var directory = Path.Combine(session.ProjectDirectory, "caches", "audio");
-        var current = await Task.Run(() => createSession(path, index, new(media.Start ?? MediaTime.Zero), duration, directory), token);
+        var preferences = session.Preferences.AudioAnalysis;
+        var options = new AudioAnalysisOptions { Recipe = preferences.Recipe, Execution = preferences.Execution };
+        var current = await Task.Run(() => createSession(path, index, new(media.Start ?? MediaTime.Zero), duration, directory,
+            options, session.ApplicationContext.AudioAnalysisBudget), token);
         if (!IsCurrent(requestEpoch, token))
         {
             await current.DisposeAsync();
             return;
         }
         analysis = current;
+        mediaPath = path;
         desiredCacheRoot = Path.Combine(session.ProjectDirectory, "caches", "audio");
         session.ViewModel.Timeline.AudioDuration = duration;
+        RefreshWindow(true);
+    }
+
+    internal void UpdateExecutionOptions(AudioAnalysisExecutionOptions options)
+    {
+        analysis?.UpdateExecutionOptions(options);
+    }
+
+    internal Task RebuildAsync(AudioAnalysisOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        if (mediaPath is not { } path || session.IsClosing)
+        {
+            return Task.CompletedTask;
+        }
+        var media = session.Controller.MediaInfo;
+        if (media?.AudioStreamIndex is not { } index || media.Duration is not { } duration || duration <= MediaTime.Zero)
+        {
+            return Task.CompletedTask;
+        }
+        Cancel();
+        Task[] previous;
+        lock (jobsGate)
+        {
+            previous = [.. jobs];
+        }
+        rebuildCancellation?.Dispose();
+        rebuildCancellation = new();
+        var completion = RebuildAfterDrainAsync(previous, path, index, new(media.Start ?? MediaTime.Zero), duration,
+            options, epoch, rebuildCancellation.Token);
+        Track(completion);
+        return completion;
+    }
+
+    private async Task RebuildAfterDrainAsync(Task[] previous, string path, int index, MediaTimelineMapping mapping,
+        MediaTime duration, AudioAnalysisOptions options, long requestEpoch, CancellationToken token)
+    {
+        await Task.WhenAll(previous).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+        if (!IsCurrent(requestEpoch, token))
+        {
+            return;
+        }
+        var directory = desiredCacheRoot ?? Path.Combine(session.ProjectDirectory, "caches", "audio");
+        var current = await Task.Run(() => createSession(path, index, mapping, duration, directory,
+            options, session.ApplicationContext.AudioAnalysisBudget), token);
+        if (!IsCurrent(requestEpoch, token))
+        {
+            await current.DisposeAsync();
+            return;
+        }
+        try
+        {
+            current.InvalidateCache();
+        }
+        catch
+        {
+            await current.DisposeAsync();
+            throw;
+        }
+        cancellation?.Dispose();
+        cancellation = new();
+        analysis = current;
+        desired = null;
+        desiredCacheRoot ??= directory;
+        analysisBatchPending = true;
+        session.ViewModel.Timeline.AudioDuration = duration;
+        Schedule(new RebuildAudioAnalysisTask(session, this, current, requestEpoch), current, requestEpoch, false);
         RefreshWindow(true);
     }
 
@@ -549,6 +625,7 @@ internal sealed class AnalysisCoordinator : IDisposable
         Cancel();
         windowCancellation?.Dispose();
         migrationCancellation?.Dispose();
+        rebuildCancellation?.Dispose();
         cancellation?.Dispose();
     }
 }

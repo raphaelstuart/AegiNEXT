@@ -74,7 +74,7 @@ public sealed class TimelineRapidZoomAnalysisUiTests
         model.SuspendPlaybackFollow();
         var source = new UiRapidZoomAudioSource((long)duration * WaveformAnalyzer.SAMPLE_RATE);
         using var coordinator = new AnalysisCoordinator(context.Session,
-            (path, _, mapping, mediaDuration, directory) => new(_ => source, mapping, mediaDuration, 8L * 1024 * 1024,
+            (path, _, mapping, mediaDuration, directory, options, budget) => new(_ => source, mapping, mediaDuration, 8L * 1024 * 1024,
                 cacheDirectory: directory, cacheIdentity: path,
                 detailSourceFactory: _ => new UiRapidZoomAudioSource((long)duration * WaveformAnalyzer.SAMPLE_RATE)));
         try

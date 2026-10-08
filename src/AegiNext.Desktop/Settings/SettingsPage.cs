@@ -14,5 +14,6 @@ public enum SettingsPage
     TIMING_POST_PROCESSOR,
     EXPORT_PRESETS,
     TRANSFER,
-    TASKS
+    TASKS,
+    AUDIO_ANALYSIS
 }

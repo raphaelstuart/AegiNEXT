@@ -4,8 +4,10 @@ using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Layouts;
 using AegiNext.Application.Tasks;
 using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Settings.AudioAnalysis;
 using AegiNext.Desktop.Settings.Transfer;
 using AegiNext.Desktop.Workspace;
+using AegiNext.Media.Analysis;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
@@ -36,6 +38,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         Tasks.MaximumConcurrentTasks = preferences.MaximumConcurrentTasks;
         fonts = new(Tasks);
         preferences.Validate();
+        AudioAnalysisBudget = new(preferences.AudioAnalysis.Execution.MaximumWorkers);
         preferencesLoadError = PreferencesStore.LoadError;
         SettingsRestore = new(PreferencesStore.DirectoryPath);
         StyleLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "subtitle-styles.aegistyles"));
@@ -51,6 +54,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     }
 
     internal event EventHandler? PreferencesChanged;
+    internal event Func<AudioAnalysisOptions, Task>? AudioAnalysisRebuildRequested;
     internal event EventHandler? StylesChanged;
     internal event EventHandler? EffectsChanged;
     internal event EventHandler? ExportPresetsChanged;
@@ -63,6 +67,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     internal UserSettingsRestoreService SettingsRestore { get; }
     internal RecentProjectService RecentProjects { get; }
     internal AegiTaskService Tasks { get; }
+    internal AudioAnalysisWorkerBudget AudioAnalysisBudget { get; }
     internal SubtitleFontSelectionService Fonts => fonts;
     internal IReadOnlyCollection<AegiTaskResource> SettingsResources =>
     [
@@ -127,6 +132,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         try
         {
             Tasks.MaximumConcurrentTasks = value.MaximumConcurrentTasks;
+            AudioAnalysisBudget.UpdateMaximumWorkers(value.AudioAnalysis.Execution.MaximumWorkers);
             ApplyAppearance(value, languageChanged);
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -142,6 +148,17 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
                 _ = Tasks.Submit(new PreferencesWriteTask(this, value)).Completion;
             }
         }
+    }
+
+    internal Task RebuildAudioAnalysisAsync(AudioAnalysisPreferences value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        value.Validate();
+        UpdatePreferences(current => current with { AudioAnalysis = value });
+        var options = new AudioAnalysisOptions { Recipe = value.Recipe, Execution = value.Execution };
+        var subscribers = AudioAnalysisRebuildRequested?.GetInvocationList()
+            .Cast<Func<AudioAnalysisOptions, Task>>().ToArray() ?? [];
+        return Task.WhenAll(subscribers.Select(subscriber => subscriber(options)));
     }
 
     internal Task RunStyleOperationAsync(Func<Task> operation)
@@ -241,6 +258,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
             preferencesLoadError = PreferencesStore.LoadError;
         }
         Tasks.MaximumConcurrentTasks = loaded.MaximumConcurrentTasks;
+        AudioAnalysisBudget.UpdateMaximumWorkers(loaded.AudioAnalysis.Execution.MaximumWorkers);
         ApplyAppearance(loaded);
         PreferencesChanged?.Invoke(this, EventArgs.Empty);
         await RecentProjects.InitializeAsync();
@@ -443,6 +461,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
             Tasks.RequestCancel(task.Id);
         }
         await Tasks.DisposeAsync();
+        AudioAnalysisBudget.Dispose();
         RecentProjects.ErrorChanged -= OnRecentProjectsError;
         await RecentProjects.DisposeAsync();
         StyleLibrary.Dispose();
@@ -451,6 +470,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         SettingsRestore.Dispose();
         PreferencesStore.Dispose();
         PreferencesChanged = null;
+        AudioAnalysisRebuildRequested = null;
         StylesChanged = null;
         EffectsChanged = null;
         ExportPresetsChanged = null;

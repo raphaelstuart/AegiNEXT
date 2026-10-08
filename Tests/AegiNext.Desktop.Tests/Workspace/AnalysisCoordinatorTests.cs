@@ -97,7 +97,7 @@ public sealed class AnalysisCoordinatorTests
             }
         };
         var newSource = new AnalysisBudgetSource(8L * WaveformAnalyzer.SAMPLE_RATE);
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             new(_ => path == "old-analysis.mkv" ? oldSource : newSource, mapping, duration,
                 cacheDirectory: directory, cacheIdentity: path));
         try
@@ -278,7 +278,7 @@ public sealed class AnalysisCoordinatorTests
         context.Session.ViewModel.Timeline.Viewport = new(0, 80, Width: 640);
         var source = new AnalysisBudgetSource(8L * WaveformAnalyzer.SAMPLE_RATE);
         AudioAnalysisSession? current = null;
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             current = new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {
@@ -314,7 +314,7 @@ public sealed class AnalysisCoordinatorTests
         var source = new AnalysisBudgetSource(8L * WaveformAnalyzer.SAMPLE_RATE);
         AudioAnalysisSession? current = null;
         var deferred = new DeferredAnalysisSynchronizationContext();
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             current = new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {
@@ -367,7 +367,7 @@ public sealed class AnalysisCoordinatorTests
         context.Session.ViewModel.Timeline.Viewport = new(0, 80, Width: 640);
         var source = new AnalysisBudgetSource(8L * WaveformAnalyzer.SAMPLE_RATE);
         AudioAnalysisSession? current = null;
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             current = new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {
@@ -409,7 +409,7 @@ public sealed class AnalysisCoordinatorTests
         context.Session.ViewModel.Timeline.Viewport = new(0, 80, Width: 640);
         var source = new AnalysisBudgetSource(8L * WaveformAnalyzer.SAMPLE_RATE);
         AudioAnalysisSession? current = null;
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             current = new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         await coordinator.StartAsync("queued-migrate-analysis.mkv");
         await coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(10));
@@ -461,7 +461,7 @@ public sealed class AnalysisCoordinatorTests
             }
         };
         AudioAnalysisSession? current = null;
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             current = new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {
@@ -491,7 +491,7 @@ public sealed class AnalysisCoordinatorTests
 
     private static AnalysisCoordinator CreateCoordinator(WorkspaceSessionTestContext context, AnalysisBudgetSource source)
     {
-        return new(context.Session, (path, _, mapping, duration, directory) =>
+        return new(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
     }
 

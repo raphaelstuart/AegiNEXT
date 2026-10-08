@@ -6,6 +6,7 @@ using AegiNext.Media.Decoding;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.TimingPostProcessor;
 using AegiNext.Desktop.Settings.Media;
+using AegiNext.Desktop.Settings.AudioAnalysis;
 
 namespace AegiNext.Desktop.Settings;
 
@@ -18,6 +19,7 @@ public sealed record WorkbenchPreferences
     public WorkbenchTheme Theme { get; init; }
     public string AccentColor { get; init; } = "#5273E8";
     public AudioGraphPalette AudioGraph { get; init; } = new();
+    public AudioAnalysisPreferences AudioAnalysis { get; init; } = new();
     public TimelineClipPalette TimelineClips { get; init; } = new();
     public ImmutableArray<ShortcutBinding> ShortcutBindings { get; init; } = ShortcutDefaults.CreateBindings();
     public float Volume { get; init; } = 1;
@@ -41,12 +43,13 @@ public sealed record WorkbenchPreferences
         if (Version != 1 || !IsValidLanguage(Language) ||
             !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !Enum.IsDefined(PreviewDecodeMode) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
             SubtitleAuditionMilliseconds < 1 || MaximumConcurrentTasks is < 1 or > 32 || AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
-            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || TimelineClips is null || Projects is null || TimingPostProcessor is null)
+            AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || AudioAnalysis is null || TimelineClips is null || Projects is null || TimingPostProcessor is null)
         {
             throw new InvalidDataException("桌面偏好无效或版本不受支持。");
         }
 
         AudioGraph.Validate();
+        AudioAnalysis.Validate();
         TimelineClips.Validate();
         Projects.Validate();
         TimingPostProcessor.Validate();
@@ -92,7 +95,7 @@ public sealed record WorkbenchPreferences
     public bool Equals(WorkbenchPreferences? other)
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
-               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && TimelineClips == other.TimelineClips && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
+               AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && AudioAnalysis == other.AudioAnalysis && TimelineClips == other.TimelineClips && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
                SubtitleAuditionMilliseconds == other.SubtitleAuditionMilliseconds && MaximumConcurrentTasks == other.MaximumConcurrentTasks && TimelineClassicTimingEnabled == other.TimelineClassicTimingEnabled &&
                TimelineSnapEnabled == other.TimelineSnapEnabled && TimelineStepEnabled == other.TimelineStepEnabled &&
                TimelineSpectrumVisible == other.TimelineSpectrumVisible && TimelineWaveformVisible == other.TimelineWaveformVisible &&
@@ -110,6 +113,7 @@ public sealed record WorkbenchPreferences
         hash.Add(Theme);
         hash.Add(AccentColor);
         hash.Add(AudioGraph);
+        hash.Add(AudioAnalysis);
         hash.Add(TimelineClips);
         hash.Add(Volume);
         hash.Add(WindowMenuOnMac);

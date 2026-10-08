@@ -1,0 +1,135 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:audio="using:AegiNext.Desktop.Settings.AudioAnalysis"
+             xmlns:inputs="using:AegiNext.Desktop.Controls"
+             x:Class="AegiNext.Desktop.Settings.AudioAnalysis.AudioAnalysisSettingsView"
+             x:DataType="audio:AudioAnalysisSettingsViewModel" Classes="business-surface">
+  <ScrollViewer Name="AudioAnalysisPage">
+    <StackPanel Spacing="16">
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="heading" Text="{Loc Key=Settings.AudioPerformance}" />
+          <CheckBox Name="AutomaticWorkersCheckBox" Content="{Loc Key=Settings.AudioWorkersAutomatic}"
+                    IsChecked="{Binding UseAutomaticWorkers, Mode=TwoWay}" />
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioMaximumWorkers}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="MaximumWorkersInput" Grid.Column="1" RawText="{Binding MaximumWorkersText, Mode=TwoWay}"
+                Minimum="1" Maximum="{Binding MaximumWorkersLimit}" Increment="1" FormatString="0.###" PreserveDoublePrecision="True" IsEnabled="{Binding CanEditMaximumWorkers}"
+                AutomationProperties.Name="{Loc Key=Settings.AudioMaximumWorkers}" />
+          </Grid>
+          <TextBlock Text="{Binding WorkersDescription}" Classes="field" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioMemoryBudget}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="MemoryBudgetInput" Grid.Column="1" RawText="{Binding MemoryBudgetText, Mode=TwoWay}"
+                Minimum="32" Maximum="512" Increment="16" FormatString="0.###" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.AudioMemoryBudget}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="heading" Text="{Loc Key=Settings.AudioDisplay}" />
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioWaveformGain}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="WaveformGainInput" Grid.Column="1" RawText="{Binding WaveformGainText, Mode=TwoWay}"
+                Minimum="0.25" Maximum="8" Increment="0.25" FormatString="0.###" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.AudioWaveformGain}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioSpectrumBrightness}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="SpectrumBrightnessInput" Grid.Column="1" RawText="{Binding SpectrumBrightnessText, Mode=TwoWay}"
+                Minimum="0.25" Maximum="4" Increment="0.25" FormatString="0.###" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.AudioSpectrumBrightness}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioSpectrumContrast}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="SpectrumContrastInput" Grid.Column="1" RawText="{Binding SpectrumContrastText, Mode=TwoWay}"
+                Minimum="0.25" Maximum="4" Increment="0.25" FormatString="0.###" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.AudioSpectrumContrast}" />
+          </Grid>
+          <TextBlock Classes="field" Text="{Loc Key=Settings.AudioDisplayHelp}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+      <CheckBox Name="AudioAdvancedCheckBox" Content="{Loc Key=Settings.AudioAdvanced}" IsChecked="{Binding AdvancedMode, Mode=TwoWay}" />
+      <Border Classes="card" IsVisible="{Binding AdvancedMode}">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="heading" Text="{Loc Key=Settings.AudioRecipe}" />
+          <TextBlock Classes="field" Text="{Loc Key=Settings.AudioRecipeHelp}" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioSegmentSamples}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <ComboBox Name="SegmentSamplesCombo" Grid.Column="1" ItemsSource="{Binding SegmentSizes}"
+                      SelectedItem="{Binding SegmentSamples, Mode=TwoWay}"
+                      AutomationProperties.Name="{Loc Key=Settings.AudioSegmentSamples}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioSpectrumSampleRate}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <ComboBox Name="SpectrumSampleRateCombo" Grid.Column="1" ItemsSource="{Binding SampleRates}"
+                      SelectedItem="{Binding SpectrumSampleRate, Mode=TwoWay}"
+                      AutomationProperties.Name="{Loc Key=Settings.AudioSpectrumSampleRate}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioFftSize}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <ComboBox Name="FftSizeCombo" Grid.Column="1" ItemsSource="{Binding FftSizes}"
+                      SelectedItem="{Binding FftSize, Mode=TwoWay}"
+                      AutomationProperties.Name="{Loc Key=Settings.AudioFftSize}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioHopDivisor}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <ComboBox Name="HopDivisorCombo" Grid.Column="1" ItemsSource="{Binding HopDivisors}"
+                      SelectedItem="{Binding HopDivisor, Mode=TwoWay}"
+                      AutomationProperties.Name="{Loc Key=Settings.AudioHopDivisor}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioFrequencyBins}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <ComboBox Name="FrequencyBinsCombo" Grid.Column="1" ItemsSource="{Binding FrequencyBinChoices}"
+                      SelectedItem="{Binding FrequencyBins, Mode=TwoWay}"
+                      AutomationProperties.Name="{Loc Key=Settings.AudioFrequencyBins}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioWaveformBaseSamples}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <ComboBox Name="WaveformBaseSamplesCombo" Grid.Column="1" ItemsSource="{Binding WaveformBaseChoices}"
+                      SelectedItem="{Binding WaveformBaseSamples, Mode=TwoWay}"
+                      AutomationProperties.Name="{Loc Key=Settings.AudioWaveformBaseSamples}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioMinimumFrequency}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="MinimumFrequencyInput" Grid.Column="1" RawText="{Binding MinimumFrequencyText, Mode=TwoWay}"
+                Minimum="10" Maximum="{Binding MaximumFrequencyLimit}" Increment="1" FormatString="0.###" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.AudioMinimumFrequency}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioMaximumFrequency}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="MaximumFrequencyInput" Grid.Column="1" RawText="{Binding MaximumFrequencyText, Mode=TwoWay}"
+                Minimum="10" Maximum="{Binding MaximumFrequencyLimit}" Increment="1" FormatString="0.###" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.AudioMaximumFrequency}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioMinimumDecibels}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="MinimumDecibelsInput" Grid.Column="1" RawText="{Binding MinimumDecibelsText, Mode=TwoWay}"
+                Minimum="-160" Maximum="-10" Increment="1" FormatString="0.###" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.AudioMinimumDecibels}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioMaximumDecibels}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDraftInput Name="MaximumDecibelsInput" Grid.Column="1" RawText="{Binding MaximumDecibelsText, Mode=TwoWay}"
+                Minimum="-40" Maximum="20" Increment="1" FormatString="0.###" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.AudioMaximumDecibels}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.AudioWindow}" VerticalAlignment="Center" />
+            <ComboBox Name="AudioWindowCombo" Grid.Column="1" ItemsSource="{Binding WindowChoices}"
+                      SelectedItem="{Binding SelectedWindow, Mode=TwoWay}" AutomationProperties.Name="{Loc Key=Settings.AudioWindow}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="audio:AudioSpectrumWindowChoice"><TextBlock Text="{Binding Label}" /></DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+          <TextBlock Text="{Binding RecipeDescription}" Classes="field" TextWrapping="Wrap" />
+          <TextBlock Text="{Loc Key=Settings.AudioRecipeRangeHelp}" Classes="field" TextWrapping="Wrap" />
+          <Button Name="ApplyAudioRecipeButton" Content="{Loc Key=Settings.AudioApplyRecipe}" Command="{Binding ApplyCommand}" HorizontalAlignment="Left" />
+        </StackPanel>
+      </Border>
+      <Button Name="ResetAudioAnalysisButton" Content="{Loc Key=Settings.AudioReset}" Command="{Binding ResetCommand}" HorizontalAlignment="Left" />
+      <TextBlock Classes="field" Text="{Loc Key=Settings.AudioResetHelp}" TextWrapping="Wrap" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

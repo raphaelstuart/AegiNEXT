@@ -2,9 +2,9 @@ namespace AegiNext.Media.Analysis;
 
 internal sealed class AudioWaveformCacheReducer
 {
-    internal const int BASE_SAMPLES = 512;
     private readonly AudioAnalysisCacheStore store;
     private readonly AudioWaveformCacheLevel[] levels;
+    private readonly int baseSamples;
     private int samplesInBucket;
     private float minimum;
     private float maximum;
@@ -12,20 +12,22 @@ internal sealed class AudioWaveformCacheReducer
     internal AudioWaveformCacheReducer(AudioAnalysisCacheStore store)
     {
         this.store = store;
-        levels = Enumerable.Range(9, 22).Select(exponent => new AudioWaveformCacheLevel(1 << exponent)).ToArray();
+        baseSamples = store.Recipe.WaveformBaseSamples;
+        var firstExponent = System.Numerics.BitOperations.Log2((uint)baseSamples);
+        levels = Enumerable.Range(firstExponent, 31 - firstExponent).Select(exponent => new AudioWaveformCacheLevel(1 << exponent)).ToArray();
     }
 
     internal void Append(ReadOnlySpan<float> samples)
     {
         while (!samples.IsEmpty)
         {
-            var count = Math.Min(BASE_SAMPLES - samplesInBucket, samples.Length);
+            var count = Math.Min(baseSamples - samplesInBucket, samples.Length);
             var (low, high) = AudioWaveformPeakReducer.Reduce(samples[..count]);
             minimum = Math.Min(minimum, low);
             maximum = Math.Max(maximum, high);
             samplesInBucket += count;
             samples = samples[count..];
-            if (samplesInBucket == BASE_SAMPLES)
+            if (samplesInBucket == baseSamples)
             {
                 Emit(0, minimum, maximum);
                 samplesInBucket = 0;

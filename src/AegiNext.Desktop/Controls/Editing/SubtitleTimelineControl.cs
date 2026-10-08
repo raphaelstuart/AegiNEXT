@@ -36,6 +36,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private SpectrogramData? spectrumOverview;
     private WriteableBitmap? spectrumOverviewBitmap;
     private AudioGraphPalette audioGraphPalette = new();
+    private AudioAnalysisDisplayOptions audioAnalysisDisplay = new();
     private TimelineDrawingPalette drawingPalette = new(false);
     private Color[] spectrumColors = AudioGraphColorRamp.Create(new());
     private IBrush waveformBrush = new SolidColorBrush(AudioGraphColorRamp.Parse(new AudioGraphPalette().Waveform));
@@ -319,6 +320,29 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         RefreshAudioGraph();
     }
 
+    /// <summary>更新缓存数据的显示增益和能量映射，保留时间线及分析数据。</summary>
+    public void SetAudioAnalysisDisplay(AudioAnalysisDisplayOptions value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        value.Validate();
+        if (audioAnalysisDisplay == value)
+        {
+            return;
+        }
+
+        var spectrumChanged = !audioAnalysisDisplay.SpectrumBrightness.Equals(value.SpectrumBrightness) ||
+            !audioAnalysisDisplay.SpectrumContrast.Equals(value.SpectrumContrast);
+        waveformGeometryDirty |= !audioAnalysisDisplay.WaveformGain.Equals(value.WaveformGain);
+        audioAnalysisDisplay = value;
+        if (spectrumChanged)
+        {
+            RefreshSpectrumColors();
+            RebuildSpectrogramBitmap();
+        }
+        audioDrawing.Dispose();
+        InvalidateVisual();
+    }
+
     private void RefreshTheme()
     {
         drawingPalette = new(ActualThemeVariant == ThemeVariant.Dark);
@@ -329,11 +353,25 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private void RefreshAudioGraph()
     {
         var effective = AudioGraphPalettes.Resolve(audioGraphPalette, ActualThemeVariant != ThemeVariant.Dark);
-        spectrumColors = AudioGraphColorRamp.Create(effective);
+        RefreshSpectrumColors();
         waveformBrush = new SolidColorBrush(AudioGraphColorRamp.Parse(effective.Waveform));
         RebuildSpectrogramBitmap();
         InvalidateSceneDrawing();
         InvalidateVisual();
+    }
+
+    private void RefreshSpectrumColors()
+    {
+        var effective = AudioGraphPalettes.Resolve(audioGraphPalette, ActualThemeVariant != ThemeVariant.Dark);
+        var ramp = AudioGraphColorRamp.Create(effective);
+        spectrumColors = new Color[ramp.Length];
+        for (var index = 0; index < ramp.Length; index++)
+        {
+            var level = Math.Pow(index / (double)(ramp.Length - 1), audioAnalysisDisplay.SpectrumContrast) *
+                audioAnalysisDisplay.SpectrumBrightness;
+            var mapped = (int)Math.Round(Math.Clamp(level, 0, 1) * (ramp.Length - 1));
+            spectrumColors[index] = ramp[mapped];
+        }
     }
 
     private void RebuildSpectrogramBitmap()

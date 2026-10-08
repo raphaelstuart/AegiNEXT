@@ -15,6 +15,7 @@ using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace.Diagnostics;
 using AegiNext.Media.Playback;
+using AegiNext.Media.Analysis;
 using Avalonia.Threading;
 using Avalonia.OpenGL;
 
@@ -74,7 +75,9 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         WorkbenchPreferences? initialPreferences = null,
         DesktopApplicationContext? applicationContext = null,
         TimeProvider? persistenceTimeProvider = null, IProjectPersistenceStorage? persistenceStorage = null,
-        Func<string, int, MediaTime, CancellationToken, Task<VideoTimingIndex>>? videoTimingProbe = null)
+        Func<string, int, MediaTime, CancellationToken, Task<VideoTimingIndex>>? videoTimingProbe = null,
+        Func<string, int, MediaTimelineMapping, MediaTime, string, AudioAnalysisOptions, AudioAnalysisWorkerBudget?, AudioAnalysisSession>?
+            analysisSessionFactory = null)
     {
         this.dialogs = dialogs;
         this.videoTimingProbe = videoTimingProbe ?? ProbeVideoTimingAsync;
@@ -100,7 +103,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         workflow = new(this, dialogs);
         Details = new(this);
         Details.Changed += OnSubtitleDetailsChanged;
-        analysis = new(this);
+        analysis = new(this, analysisSessionFactory);
         export = new(this, dialogs, exportService ?? new VideoWorkbenchExportService(new AegiNext.Media.Encoding.VideoExporter()));
         exportPresets = new(this);
         styles = new(this, dialogs);
@@ -116,6 +119,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         this.applicationContext.Tasks.Changed += OnTaskStateChanged;
         this.applicationContext.Fonts.Changed += OnFontsChanged;
         this.applicationContext.PreferencesChanged += OnApplicationPreferencesChanged;
+        this.applicationContext.AudioAnalysisRebuildRequested += OnAudioAnalysisRebuildRequested;
         this.applicationContext.StylesChanged += OnApplicationStylesChanged;
         this.applicationContext.BusyChanged += OnTimingLibrariesBusyChanged;
         this.applicationContext.EffectsChanged += OnApplicationEffectsChanged;
@@ -247,10 +251,16 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
         ApplyPreferences();
         QueueAudioCalibrationPreferences(previousPreferences, value);
+        analysis.UpdateExecutionOptions(value.AudioAnalysis.Execution);
         if (qualityChanged)
         {
             _ = RunCommandAsync(controller.RefreshPausedPreviewAsync);
         }
+    }
+
+    private Task OnAudioAnalysisRebuildRequested(AudioAnalysisOptions options)
+    {
+        return closing ? Task.CompletedTask : analysis.RebuildAsync(options);
     }
 
     private void OnApplicationStylesChanged(object? sender, EventArgs e)
@@ -524,6 +534,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         await audioCalibrationCompletion.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
         await persistence.DisposeAsync();
         applicationContext.PreferencesChanged -= OnApplicationPreferencesChanged;
+        applicationContext.AudioAnalysisRebuildRequested -= OnAudioAnalysisRebuildRequested;
         applicationContext.StylesChanged -= OnApplicationStylesChanged;
         applicationContext.BusyChanged -= OnTimingLibrariesBusyChanged;
         styles.BusyChanged -= OnTimingLibrariesBusyChanged;

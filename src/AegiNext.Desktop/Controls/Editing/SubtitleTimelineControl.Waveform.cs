@@ -106,8 +106,8 @@ public sealed partial class SubtitleTimelineControl
                 continue;
             }
 
-            var top = center - Math.Clamp(maximum, -1, 1) * body.Height * 0.4;
-            var bottom = center - Math.Clamp(minimum, -1, 1) * body.Height * 0.4;
+            var top = center - Math.Clamp(maximum * audioAnalysisDisplay.WaveformGain, -1, 1) * body.Height * 0.4;
+            var bottom = center - Math.Clamp(minimum * audioAnalysisDisplay.WaveformGain, -1, 1) * body.Height * 0.4;
             if (bottom - top < 1 / renderScaling)
             {
                 var middle = (top + bottom) / 2;

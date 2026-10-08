@@ -7,13 +7,14 @@ namespace AegiNext.Media.Analysis;
 internal sealed class AudioAnalysisCacheStore : IDisposable
 {
     private const long MAGIC = 0x4145474941554431;
-    private const int VERSION = 1;
+    private const int VERSION = 2;
     private const int MAX_INDEX_BYTES = 64 * 1024 * 1024;
     private readonly Lock gate = new();
-    private readonly string identity;
+    private readonly byte[] identityDigest;
+    private readonly AudioAnalysisRecipe recipe;
     private readonly MediaTimelineMapping mapping;
     private readonly MediaTime duration;
-    private readonly long maximumCachedBytes;
+    private long maximumCachedBytes;
     private readonly Dictionary<(AudioAnalysisTileKind Kind, int Resolution), List<AudioAnalysisCacheEntry>> entries = [];
     private readonly Dictionary<long, LinkedListNode<KeyValuePair<long, byte[]>>> payloads = [];
     private readonly LinkedList<KeyValuePair<long, byte[]>> lru = new();
@@ -31,22 +32,30 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
     private bool disposed;
 
     internal AudioAnalysisCacheStore(string storeDirectory, string identity, MediaTimelineMapping mapping,
-        MediaTime duration, long maximumCachedBytes = 16L * 1024 * 1024)
+        MediaTime duration, long maximumCachedBytes = 16L * 1024 * 1024, AudioAnalysisRecipe? recipe = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storeDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(identity);
         ArgumentOutOfRangeException.ThrowIfNegative(maximumCachedBytes);
-        this.identity = identity;
+        this.recipe = recipe ?? new();
+        this.recipe.Validate();
+        using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+        {
+            hash.AppendData(System.Text.Encoding.UTF8.GetBytes(identity));
+            hash.AppendData(this.recipe.GetDigest());
+            identityDigest = hash.GetHashAndReset();
+        }
         this.mapping = mapping;
         this.duration = duration;
         this.maximumCachedBytes = maximumCachedBytes;
         rootDirectory = Path.GetFullPath(storeDirectory);
-        DirectoryPath = Path.Combine(rootDirectory, Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity))));
+        DirectoryPath = Path.Combine(rootDirectory, Convert.ToHexStringLower(identityDigest));
         throughSample = MediaStart;
         TryOpen();
     }
 
     internal event EventHandler? Changed;
+    internal AudioAnalysisRecipe Recipe => recipe;
     internal Action? ValidateSource { get; set; }
     internal string DirectoryPath { get; private set; }
     internal long MediaStart => mapping.Origin.ToTimestamp(new(1, WaveformAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
@@ -113,14 +122,14 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
 
     internal void AppendSpectrum(int samplesPerColumn, long firstColumn, int columns, ReadOnlySpan<byte> levels)
     {
-        if (columns <= 0 || levels.Length != checked(columns * SpectrogramAnalyzer.FREQUENCY_BINS))
+        if (columns <= 0 || levels.Length != checked(columns * recipe.FrequencyBins))
         {
             throw new ArgumentException("频谱缓存块尺寸无效。", nameof(levels));
         }
-        Append(AudioAnalysisTileKind.SPECTRUM, samplesPerColumn, firstColumn, columns, levels.ToArray());
+        Append(AudioAnalysisTileKind.SPECTRUM, samplesPerColumn, firstColumn, columns, levels);
     }
 
-    private void Append(AudioAnalysisTileKind kind, int resolution, long firstColumn, int columns, byte[] payload)
+    private void Append(AudioAnalysisTileKind kind, int resolution, long firstColumn, int columns, ReadOnlySpan<byte> payload)
     {
         if (resolution <= 0 || (resolution & (resolution - 1)) != 0)
         {
@@ -315,23 +324,23 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             ThrowIfFailed();
-            var stride = SpectrogramAnalyzer.HOP_SIZE;
-            while ((long)stride * 2 <= request.SamplesPerBucket / 3)
+            var stride = recipe.HopSize;
+            while ((long)stride * 2 <= request.SamplesPerBucket / recipe.Decimation)
             {
                 stride = checked(stride * 2);
             }
-            var start = mapping.ToMediaTime(request.Start).ToTimestamp(new(1, SpectrogramAnalyzer.SAMPLE_RATE), MediaTimeRounding.FLOOR).Value;
-            var end = mapping.ToMediaTime(request.End).ToTimestamp(new(1, SpectrogramAnalyzer.SAMPLE_RATE), MediaTimeRounding.CEILING).Value;
+            var start = mapping.ToMediaTime(request.Start).ToTimestamp(new(1, recipe.SpectrumSampleRate), MediaTimeRounding.FLOOR).Value;
+            var end = mapping.ToMediaTime(request.End).ToTimestamp(new(1, recipe.SpectrumSampleRate), MediaTimeRounding.CEILING).Value;
             var first = AudioSpectrumWindowAnalyzer.Floor(start + stride / 2, stride) / stride;
             var after = AudioSpectrumWindowAnalyzer.Floor(end + stride / 2 - 1, stride) / stride + 1;
             var width = checked((int)(after - first));
-            var levels = new byte[checked(width * SpectrogramAnalyzer.FREQUENCY_BINS)];
+            var levels = new byte[checked(width * recipe.FrequencyBins)];
             var count = 0;
             AudioAnalysisCacheEntry? previous = null;
             byte[]? payload = null;
             for (; count < width; count++)
             {
-                var center = checked((first + count) * stride * 3);
+                var center = checked((first + count) * stride * recipe.Decimation);
                 if (center < MediaStart || complete && center >= Math.Min(MediaEnd, ConfirmedSourceEnd ?? MediaEnd))
                 {
                     continue;
@@ -355,7 +364,7 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
                     payload = ReadPayload(entry);
                     previous = entry;
                 }
-                for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
+                for (var row = 0; row < recipe.FrequencyBins; row++)
                 {
                     levels[row * width + count] = payload![row * entry.Columns + offset];
                 }
@@ -366,16 +375,16 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
             }
             if (count != width)
             {
-                var cropped = new byte[count * SpectrogramAnalyzer.FREQUENCY_BINS];
-                for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
+                var cropped = new byte[count * recipe.FrequencyBins];
+                for (var row = 0; row < recipe.FrequencyBins; row++)
                 {
                     levels.AsSpan(row * width, count).CopyTo(cropped.AsSpan(row * count));
                 }
                 levels = cropped;
             }
-            return new(count, SpectrogramAnalyzer.FREQUENCY_BINS,
-                mapping.ToProjectTime(new(first * stride - stride / 2, SpectrogramAnalyzer.SAMPLE_RATE)),
-                new(stride, SpectrogramAnalyzer.SAMPLE_RATE), levels);
+            return new(count, recipe.FrequencyBins,
+                mapping.ToProjectTime(new(first * stride - stride / 2, recipe.SpectrumSampleRate)),
+                new(stride, recipe.SpectrumSampleRate), levels);
         }
     }
 
@@ -443,6 +452,21 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
             cachedBytes += bytes.Length;
         }
         return bytes;
+    }
+
+    internal void SetMaximumCachedBytes(long value)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(value);
+        lock (gate)
+        {
+            maximumCachedBytes = value;
+            while (cachedBytes > value && lru.Last is { } oldest)
+            {
+                cachedBytes -= oldest.Value.Value.Length;
+                payloads.Remove(oldest.Value.Key);
+                lru.RemoveLast();
+            }
+        }
     }
 
     private List<AudioAnalysisCacheEntry> GetLevel(AudioAnalysisTileKind kind, int resolution)
@@ -536,12 +560,20 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
 
     private void WriteIndex(string directory)
     {
+        using var output = new FileStream(Path.Combine(directory, "index.bin"), FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        output.Write(CreateIndex());
+        output.Flush(true);
+    }
+
+    private byte[] CreateIndex()
+    {
         using var memory = new MemoryStream();
         using (var writer = new BinaryWriter(memory, System.Text.Encoding.UTF8, true))
         {
             writer.Write(MAGIC);
             writer.Write(VERSION);
-            writer.Write(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity)));
+            writer.Write(identityDigest);
+            writer.Write(recipe.GetDigest());
             writer.Write(mapping.Origin.Numerator);
             writer.Write(mapping.Origin.Denominator);
             writer.Write(duration.Numerator);
@@ -561,10 +593,8 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
             }
         }
         var content = memory.ToArray();
-        using var output = new FileStream(Path.Combine(directory, "index.bin"), FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        output.Write(content);
-        output.Write(SHA256.HashData(content));
-        output.Flush(true);
+        memory.Write(SHA256.HashData(content));
+        return memory.ToArray();
     }
 
     private void TryOpen()
@@ -576,8 +606,13 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
         }
         try
         {
+            using var openingLease = writerLease is null ? TryAcquireWriterLease(DirectoryPath) : null;
+            if (writerLease is null && openingLease is null)
+            {
+                return;
+            }
             var length = new FileInfo(indexPath).Length;
-            if (length < 128 || length > MAX_INDEX_BYTES)
+            if (length < 160 || length > MAX_INDEX_BYTES)
             {
                 throw new InvalidDataException("音频缓存索引尺寸无效。");
             }
@@ -588,7 +623,8 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
             }
             using var reader = new BinaryReader(new MemoryStream(bytes, 0, bytes.Length - 32), System.Text.Encoding.UTF8);
             if (reader.ReadInt64() != MAGIC || reader.ReadInt32() != VERSION ||
-                !reader.ReadBytes(32).AsSpan().SequenceEqual(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity))) ||
+                !reader.ReadBytes(32).AsSpan().SequenceEqual(identityDigest) ||
+                !reader.ReadBytes(32).AsSpan().SequenceEqual(recipe.GetDigest()) ||
                 new MediaTime(reader.ReadInt64(), reader.ReadInt64()) != mapping.Origin ||
                 new MediaTime(reader.ReadInt64(), reader.ReadInt64()) != duration)
             {
@@ -615,7 +651,7 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
                 var digest = reader.ReadBytes(32);
                 if (kind is not (AudioAnalysisTileKind.WAVEFORM or AudioAnalysisTileKind.SPECTRUM) ||
                     resolution <= 0 || (resolution & (resolution - 1)) != 0 || columns <= 0 ||
-                    payloadLength != checked(columns * (kind == AudioAnalysisTileKind.WAVEFORM ? 8 : SpectrogramAnalyzer.FREQUENCY_BINS)) ||
+                    payloadLength != checked(columns * (kind == AudioAnalysisTileKind.WAVEFORM ? 8 : recipe.FrequencyBins)) ||
                     offset != expectedOffset || payloadLength > dataLength - offset || digest.Length != 32)
                 {
                     throw new InvalidDataException("音频缓存块描述无效。");
@@ -649,6 +685,7 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
     {
         string source;
         string destination;
+        AudioAnalysisCacheSnapshot captured;
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
@@ -658,33 +695,46 @@ internal sealed class AudioAnalysisCacheStore : IDisposable
             }
             source = DirectoryPath;
             destination = Path.Combine(Path.GetFullPath(directory), Path.GetFileName(source));
+            if (string.Equals(source, destination, StringComparison.Ordinal))
+            {
+                return;
+            }
+            captured = new(data!.SafeFileHandle, data.Length, CreateIndex());
         }
-        if (string.Equals(source, destination, StringComparison.Ordinal))
-        {
-            return;
-        }
+        using var snapshot = captured;
         Directory.CreateDirectory(directory);
         using var destinationLease = await AcquireMigrationLeaseAsync(destination, checkpoint, cancellationToken).ConfigureAwait(false);
         var temporary = destination + "-" + Guid.NewGuid().ToString("N") + ".copying";
         Directory.CreateDirectory(temporary);
         try
         {
-            foreach (var name in new[] { "data.bin", "index.bin" })
+            await using (var output = new FileStream(Path.Combine(temporary, "data.bin"), FileMode.CreateNew, FileAccess.Write,
+                             FileShare.None, 65536, FileOptions.Asynchronous))
             {
-                await using var input = new FileStream(Path.Combine(source, name), FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
-                    65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
-                await using var output = new FileStream(Path.Combine(temporary, name), FileMode.CreateNew, FileAccess.Write, FileShare.None,
-                    65536, FileOptions.Asynchronous);
                 var buffer = new byte[1024 * 1024];
-                int read;
-                while ((read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) != 0)
+                long offset = 0;
+                while (offset < snapshot.Length)
                 {
+                    var count = (int)Math.Min(buffer.Length, snapshot.Length - offset);
+                    var read = await RandomAccess.ReadAsync(snapshot.Handle, buffer.AsMemory(0, count), offset, cancellationToken).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        throw new InvalidDataException("音频缓存迁移期间数据已截断。");
+                    }
                     await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    offset += read;
                     if (checkpoint is not null)
                     {
                         await checkpoint(cancellationToken).ConfigureAwait(false);
                     }
                 }
+                await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+                output.Flush(true);
+            }
+            await using (var output = new FileStream(Path.Combine(temporary, "index.bin"), FileMode.CreateNew, FileAccess.Write,
+                             FileShare.None, 65536, FileOptions.Asynchronous))
+            {
+                await output.WriteAsync(snapshot.Index, cancellationToken).ConfigureAwait(false);
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
                 output.Flush(true);
             }

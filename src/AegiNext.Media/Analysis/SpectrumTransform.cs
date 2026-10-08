@@ -5,9 +5,9 @@ namespace AegiNext.Media.Analysis;
 internal sealed class SpectrumTransform
 {
     private readonly Complex[] values;
-    private readonly double[] window;
+    private readonly SpectrumTransformPlan plan;
 
-    internal SpectrumTransform(int size)
+    internal SpectrumTransform(int size, AudioSpectrumWindow window = AudioSpectrumWindow.HANN)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(size);
         if ((size & (size - 1)) != 0)
@@ -16,11 +16,7 @@ internal sealed class SpectrumTransform
         }
 
         values = new Complex[size];
-        window = new double[size];
-        for (var index = 0; index < size; index++)
-        {
-            window[index] = 0.5 - 0.5 * Math.Cos(2 * Math.PI * index / (size - 1));
-        }
+        plan = new(size, window);
     }
 
     internal void Power(ReadOnlySpan<float> samples, Span<double> destination)
@@ -32,39 +28,30 @@ internal sealed class SpectrumTransform
 
         for (var index = 0; index < values.Length; index++)
         {
-            values[index] = new(samples[index] * window[index], 0);
+            values[index] = new(samples[index] * plan.Window[index], 0);
         }
 
-        var reversed = 0;
         for (var index = 1; index < values.Length; index++)
         {
-            var bit = values.Length >> 1;
-            while ((reversed & bit) != 0)
-            {
-                reversed ^= bit;
-                bit >>= 1;
-            }
-
-            reversed ^= bit;
+            var reversed = plan.Reversed[index];
             if (index < reversed)
             {
                 (values[index], values[reversed]) = (values[reversed], values[index]);
             }
         }
 
+        var stage = 0;
         for (var size = 2; size <= values.Length; size <<= 1)
         {
-            var step = Complex.FromPolarCoordinates(1, -2 * Math.PI / size);
+            var factors = plan.Factors[stage++];
             for (var start = 0; start < values.Length; start += size)
             {
-                var factor = Complex.One;
                 for (var offset = 0; offset < size / 2; offset++)
                 {
                     var even = values[start + offset];
-                    var odd = factor * values[start + offset + size / 2];
+                    var odd = factors[offset] * values[start + offset + size / 2];
                     values[start + offset] = even + odd;
                     values[start + offset + size / 2] = even - odd;
-                    factor *= step;
                 }
             }
         }

@@ -76,6 +76,10 @@ dotnet_diagnostic.CA1707.severity = none
 # 草稿字段身份遵循项目 ALL_UPPER 命名。
 dotnet_diagnostic.CA1707.severity = none
 
+[src/AegiNext.Desktop/Settings/AudioAnalysis/AudioAnalysisSettingsField.cs]
+# 草稿字段身份遵循项目 ALL_UPPER 命名。
+dotnet_diagnostic.CA1707.severity = none
+
 [src/AegiNext.Media/Encoding/Presets/VideoExportPresetCollection.cs]
 # 版本化预设集合与既有公共合同一致，预算常量遵循 ALL_UPPER 命名。
 dotnet_diagnostic.CA1711.severity = none

@@ -51,7 +51,7 @@ public sealed class AudioAnalysisPipelineBenchmarks(ITestOutputHelper output)
                 watch.Restart();
                 var actual = await AnalyzeSegmentsAsync(samples, FIRST_SAMPLE, COLUMNS, workers);
                 watch.Stop();
-                output.WriteLine($"Iteration {iteration}: new segment FIR, workers={workers}: {watch.Elapsed.TotalMilliseconds:F2} ms, {GC.GetTotalAllocatedBytes(true) - allocated:N0} allocated bytes.");
+                output.WriteLine($"Iteration {iteration}: new segment FIR with reusable output, workers={workers}: {watch.Elapsed.TotalMilliseconds:F2} ms, {GC.GetTotalAllocatedBytes(true) - allocated:N0} allocated bytes.");
                 Assert.Equal(expected, actual);
             }
         }
@@ -64,14 +64,15 @@ public sealed class AudioAnalysisPipelineBenchmarks(ITestOutputHelper output)
         await Task.WhenAll(Enumerable.Range(0, workers).Select(worker => Task.Run(() =>
         {
             var processor = new AudioSpectrumSegmentProcessor();
+            var levels = new byte[SEGMENT_COLUMNS * SpectrogramAnalyzer.FREQUENCY_BINS];
             for (var first = worker * SEGMENT_COLUMNS; first < columns; first += workers * SEGMENT_COLUMNS)
             {
                 var count = Math.Min(SEGMENT_COLUMNS, columns - first);
-                var part = processor.Analyze(samples, firstSample, (long)first * SpectrogramAnalyzer.HOP_SIZE,
-                    count, CancellationToken.None);
+                processor.AnalyzeInto(samples, firstSample, (long)first * SpectrogramAnalyzer.HOP_SIZE,
+                    count, levels.AsSpan(0, count * SpectrogramAnalyzer.FREQUENCY_BINS), CancellationToken.None);
                 for (var row = 0; row < SpectrogramAnalyzer.FREQUENCY_BINS; row++)
                 {
-                    part.AsSpan(row * count, count).CopyTo(result.AsSpan(row * columns + first, count));
+                    levels.AsSpan(row * count, count).CopyTo(result.AsSpan(row * columns + first, count));
                 }
             }
         })));

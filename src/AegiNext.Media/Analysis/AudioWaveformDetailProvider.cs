@@ -11,6 +11,7 @@ internal sealed class AudioWaveformDetailProvider : IAsyncDisposable
     private readonly MediaTimelineMapping mapping;
     private readonly MediaTime duration;
     private readonly AudioAnalysisTileLruCache cache;
+    private readonly AudioAnalysisWorkerBudget? budget;
     private readonly CancellationTokenSource lifetime = new();
     private readonly SemaphoreSlim signal = new(0);
     private readonly Task worker;
@@ -26,11 +27,12 @@ internal sealed class AudioWaveformDetailProvider : IAsyncDisposable
     private bool closed;
 
     internal AudioWaveformDetailProvider(Func<CancellationToken, IAudioSampleSource> sourceFactory,
-        MediaTimelineMapping mapping, MediaTime duration, long maximumCachedBytes)
+        MediaTimelineMapping mapping, MediaTime duration, long maximumCachedBytes, AudioAnalysisWorkerBudget? budget = null)
     {
         this.sourceFactory = sourceFactory;
         this.mapping = mapping;
         this.duration = duration;
+        this.budget = budget;
         cache = new(maximumCachedBytes);
         tileSamples = (int)Math.Clamp(maximumCachedBytes / sizeof(float), 1, MAX_TILE_SAMPLES);
         worker = Task.Run(RunAsync);
@@ -44,6 +46,14 @@ internal sealed class AudioWaveformDetailProvider : IAsyncDisposable
             {
                 return cache.Bytes;
             }
+        }
+    }
+
+    internal void SetMaximumCachedBytes(long value)
+    {
+        lock (gate)
+        {
+            cache.SetMaximumBytes(value);
         }
     }
 
@@ -93,6 +103,9 @@ internal sealed class AudioWaveformDetailProvider : IAsyncDisposable
                 }
                 try
                 {
+                    using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(work.Token, lifetime.Token);
+                    using var lease = budget is null ? null : await budget.AcquireAsync(this, true, cancellation.Token).ConfigureAwait(false);
+                    Check(work);
                     var waveform = ReadWaveform(work);
                     Check(work);
                     work.Completion.TrySetResult(new(waveform, null));

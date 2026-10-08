@@ -28,7 +28,7 @@ public sealed class AnalysisCoordinatorRecoveryTests
                 }
             }
         };
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {
@@ -64,7 +64,7 @@ public sealed class AnalysisCoordinatorRecoveryTests
         var source = new AnalysisBudgetSource(8L * WaveformAnalyzer.SAMPLE_RATE);
         AudioAnalysisSession? firstSession = null;
         string cacheDirectory;
-        using (var first = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using (var first = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
                    firstSession = new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path)))
         {
             await first.StartAsync("corrupt-analysis-cache.mkv");
@@ -81,7 +81,7 @@ public sealed class AnalysisCoordinatorRecoveryTests
         await File.WriteAllBytesAsync(payloadPath, bytes);
         var replacement = new AnalysisBudgetSource(8L * WaveformAnalyzer.SAMPLE_RATE);
         AudioAnalysisSession? current = null;
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             current = new(_ => replacement, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {
@@ -123,7 +123,7 @@ public sealed class AnalysisCoordinatorRecoveryTests
                 release.Wait(token);
             }
         };
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path,
                 detailSourceFactory: _ => detail));
         try
@@ -163,7 +163,7 @@ public sealed class AnalysisCoordinatorRecoveryTests
         timeline.Viewport = new(0, 80, Width: 640);
         var source = new AnalysisBudgetSource(8L * WaveformAnalyzer.SAMPLE_RATE);
         var deferred = new DeferredAnalysisSynchronizationContext();
-        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory) =>
+        using var coordinator = new AnalysisCoordinator(context.Session, (path, _, mapping, duration, directory, options, budget) =>
             new(_ => source, mapping, duration, cacheDirectory: directory, cacheIdentity: path));
         try
         {

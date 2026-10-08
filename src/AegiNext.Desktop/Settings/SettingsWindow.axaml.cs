@@ -8,6 +8,7 @@ using AegiNext.Desktop.Settings.Effects;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.Preview;
 using AegiNext.Desktop.Settings.Tasks;
+using AegiNext.Desktop.Settings.AudioAnalysis;
 using AegiNext.Desktop.Settings.TimingPostProcessor;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
@@ -47,6 +48,8 @@ public sealed partial class SettingsWindow : Window
         viewModel.Projects.Changed += OnProjectsChanged;
         viewModel.Preview.Changed += OnPreviewChanged;
         viewModel.Tasks.Changed += OnTasksChanged;
+        viewModel.AudioAnalysis.Changed += OnAudioAnalysisChanged;
+        viewModel.AudioAnalysis.RebuildRequested += OnAudioAnalysisRebuildRequested;
         viewModel.TimingPostProcessor.Changed += OnTimingPreferencesChanged;
         viewModel.TimingPostProcessor.AssociateRequested += OnTimingAssociateRequested;
         viewModel.TimingPostProcessor.UnlinkRequested += OnTimingUnlinkRequested;
@@ -75,6 +78,8 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler<ProjectPreferencesChangedEventArgs>? ProjectsChanged;
     public event EventHandler<PreviewSettingsChangedEventArgs>? PreviewChanged;
     public event EventHandler<TaskSettingsChangedEventArgs>? TasksChanged;
+    public event EventHandler<AudioAnalysisPreferencesChangedEventArgs>? AudioAnalysisChanged;
+    public event EventHandler<AudioAnalysisRebuildRequestedEventArgs>? AudioAnalysisRebuildRequested;
     public event EventHandler<TimingPostProcessorPreferencesChangedEventArgs>? TimingPreferencesChanged;
     public event EventHandler<TimingPostProcessorAssociationEventArgs>? TimingAssociateRequested;
     public event EventHandler<TimingPostProcessorAssociationEventArgs>? TimingUnlinkRequested;
@@ -122,6 +127,7 @@ public sealed partial class SettingsWindow : Window
         ViewModel.Projects.UpdatePreferences(value.Projects);
         ViewModel.Preview.UpdatePreferences(value);
         ViewModel.Tasks.UpdatePreferences(value);
+        ViewModel.AudioAnalysis.UpdatePreferences(value);
         ViewModel.TimingPostProcessor.UpdatePreferences(value);
         RefreshLanguage();
     }
@@ -200,6 +206,8 @@ public sealed partial class SettingsWindow : Window
         ViewModel.Projects.Changed -= OnProjectsChanged;
         ViewModel.Preview.Changed -= OnPreviewChanged;
         ViewModel.Tasks.Changed -= OnTasksChanged;
+        ViewModel.AudioAnalysis.Changed -= OnAudioAnalysisChanged;
+        ViewModel.AudioAnalysis.RebuildRequested -= OnAudioAnalysisRebuildRequested;
         ViewModel.TimingPostProcessor.Changed -= OnTimingPreferencesChanged;
         ViewModel.TimingPostProcessor.AssociateRequested -= OnTimingAssociateRequested;
         ViewModel.TimingPostProcessor.UnlinkRequested -= OnTimingUnlinkRequested;
@@ -253,6 +261,16 @@ public sealed partial class SettingsWindow : Window
     private void OnTasksChanged(object? sender, TaskSettingsChangedEventArgs e)
     {
         TasksChanged?.Invoke(this, e);
+    }
+
+    private void OnAudioAnalysisChanged(object? sender, AudioAnalysisPreferencesChangedEventArgs e)
+    {
+        AudioAnalysisChanged?.Invoke(this, e);
+    }
+
+    private void OnAudioAnalysisRebuildRequested(object? sender, AudioAnalysisRebuildRequestedEventArgs e)
+    {
+        AudioAnalysisRebuildRequested?.Invoke(this, e);
     }
 
     private void OnTimingPreferencesChanged(object? sender, TimingPostProcessorPreferencesChangedEventArgs e)

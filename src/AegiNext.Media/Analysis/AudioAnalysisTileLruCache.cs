@@ -2,6 +2,7 @@ namespace AegiNext.Media.Analysis;
 
 internal sealed class AudioAnalysisTileLruCache(long maximumBytes)
 {
+    private long capacityBytes = maximumBytes;
     private readonly LinkedList<AudioAnalysisTile> entries = new();
     private readonly Dictionary<AudioAnalysisTileKey, LinkedListNode<AudioAnalysisTile>> byKey = [];
     internal long Bytes { get; private set; }
@@ -19,7 +20,7 @@ internal sealed class AudioAnalysisTileLruCache(long maximumBytes)
 
     internal void Add(AudioAnalysisTile tile, long? availableBytes = null)
     {
-        var capacity = Math.Min(maximumBytes, availableBytes ?? maximumBytes);
+        var capacity = Math.Min(capacityBytes, availableBytes ?? capacityBytes);
         if (tile.Bytes > capacity)
         {
             return;
@@ -50,5 +51,12 @@ internal sealed class AudioAnalysisTileLruCache(long maximumBytes)
         entries.Clear();
         byKey.Clear();
         Bytes = 0;
+    }
+
+    internal void SetMaximumBytes(long value)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(value);
+        capacityBytes = value;
+        TrimTo(value);
     }
 }

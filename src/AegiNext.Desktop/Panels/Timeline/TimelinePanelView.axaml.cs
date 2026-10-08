@@ -53,6 +53,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         DataContext = viewModel;
         timeline = this.FindControl<SubtitleTimelineControl>("Timeline")!;
         timeline.SetAudioGraphPalette(session.Preferences.AudioGraph);
+        timeline.SetAudioAnalysisDisplay(session.Preferences.AudioAnalysis.Display);
         timeline.SetClipPalette(session.Preferences.TimelineClips);
         overview = this.FindControl<TimelineOverviewControl>("TimelineMinimap")!;
         snapButton = this.FindControl<ToolbarToggleButton>("TimelineSnapButton")!;
@@ -475,6 +476,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
     private void OnPreferencesChanged(object? sender, EventArgs e)
     {
         timeline.SetAudioGraphPalette(session.Preferences.AudioGraph);
+        timeline.SetAudioAnalysisDisplay(session.Preferences.AudioAnalysis.Display);
         timeline.SetClipPalette(session.Preferences.TimelineClips);
         timeline.InvalidateVisual();
     }

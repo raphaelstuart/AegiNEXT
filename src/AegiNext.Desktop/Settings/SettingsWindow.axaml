@@ -14,6 +14,7 @@
         xmlns:mediaPages="using:AegiNext.Desktop.Settings.Media"
         xmlns:projectPages="using:AegiNext.Desktop.Settings.Projects"
         xmlns:previewPages="using:AegiNext.Desktop.Settings.Preview"
+        xmlns:audioPages="using:AegiNext.Desktop.Settings.AudioAnalysis"
         xmlns:taskPages="using:AegiNext.Desktop.Settings.Tasks"
         xmlns:timingPages="using:AegiNext.Desktop.Settings.TimingPostProcessor"
         xmlns:materialIcons="using:Material.Icons.Avalonia"
@@ -72,9 +73,9 @@
     <controls:WindowTitleBar Name="SettingsTitleBar" Title="{Binding Title}" />
     <Grid Grid.Row="1" ColumnDefinitions="184,*">
       <Border BorderBrush="{DynamicResource SettingsBorder}" BorderThickness="0,0,1,0" Padding="12,16">
-        <StackPanel Spacing="16">
+        <Grid RowDefinitions="Auto,*" RowSpacing="16">
           <TextBlock Classes="heading" Text="{Loc Key=Settings.Settings}" Margin="12,0" FontSize="20" FontWeight="SemiBold" />
-          <ListBox Name="Navigation" IsEnabled="{Binding IsNavigationAvailable}" Background="Transparent" SelectedIndex="{Binding PageIndex, Mode=TwoWay}">
+          <ListBox Name="Navigation" Grid.Row="1" IsEnabled="{Binding IsNavigationAvailable}" Background="Transparent" SelectedIndex="{Binding PageIndex, Mode=TwoWay}">
             <ListBoxItem>
               <StackPanel Orientation="Horizontal" Spacing="12">
                 <materialIcons:MaterialIcon Width="18" Height="18" Kind="ThemeLightDark" />
@@ -149,8 +150,14 @@
                 <TextBlock Text="{Loc Key=Settings.Tasks}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Waveform" />
+                <TextBlock Text="{Loc Key=Settings.AudioAnalysis}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
           </ListBox>
-        </StackPanel>
+        </Grid>
       </Border>
       <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" Margin="24,20" RowSpacing="16">
         <TextBlock Name="PageTitle" Classes="heading" Text="{Binding PageTitle}" FontSize="22" FontWeight="SemiBold" />
@@ -201,6 +208,10 @@
         <Grid Grid.Row="1" IsVisible="{Binding IsTasksVisible}">
           <taskPages:TaskSettingsView Name="TasksView" DataContext="{Binding Tasks}"
                                      IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsAudioAnalysisVisible}">
+          <audioPages:AudioAnalysisSettingsView Name="AudioAnalysisView" DataContext="{Binding AudioAnalysis}"
+                                               IsVisible="{Binding $parent[Grid].IsVisible}" />
         </Grid>
         <TextBlock Name="SettingsError" Grid.Row="2" Text="{Binding Error}"
                    Foreground="{DynamicResource SettingsError}" IsVisible="{Binding HasError}" TextWrapping="Wrap"

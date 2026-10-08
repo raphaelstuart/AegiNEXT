@@ -6,6 +6,7 @@ using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace;
+using AegiNext.Media.Analysis;
 
 namespace AegiNext.Desktop.Tests.Workspace;
 
@@ -18,7 +19,9 @@ internal sealed class WorkspaceSessionTestContext : IAsyncDisposable
     internal WorkspaceSessionTestContext(ProjectDocument? document = null, TimeProvider? persistenceTimeProvider = null,
         IProjectPersistenceStorage? persistenceStorage = null,
         Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory = null,
-        DesktopApplicationContext? applicationContext = null)
+        DesktopApplicationContext? applicationContext = null,
+        Func<string, int, MediaTimelineMapping, MediaTime, string, AudioAnalysisOptions, AudioAnalysisWorkerBudget?, AudioAnalysisSession>?
+            analysisSessionFactory = null)
     {
         Editor = new(document);
         Session = new(Dialogs,
@@ -27,7 +30,7 @@ internal sealed class WorkspaceSessionTestContext : IAsyncDisposable
             applicationContext is null ? new WorkbenchPreferencesStore(directory.Path) : null,
             initialPreferences: new() { Projects = new() { WorkspaceRoot = Path.Combine(directory.Path, "workspace") } },
             persistenceTimeProvider: persistenceTimeProvider, persistenceStorage: persistenceStorage,
-            applicationContext: applicationContext);
+            applicationContext: applicationContext, analysisSessionFactory: analysisSessionFactory);
     }
 
     internal string DirectoryPath => directory.Path;

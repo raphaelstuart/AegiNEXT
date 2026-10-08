@@ -6,9 +6,10 @@ namespace AegiNext.Media.Analysis;
 internal static class AudioAnalysisCacheIdentity
 {
     private const int SAMPLE_BYTES = 65536;
-    private const string ALGORITHM = "48k-mono-abi2-fir63-hann1024-hop256-log128-db80-wave512-v1";
+    private const string ALGORITHM = "48k-mono-abi2-fir63-configurable-spectrum-wave-v2";
 
-    internal static string Create(string path, int streamIndex, MediaTimelineMapping mapping, MediaTime duration)
+    internal static string Create(string path, int streamIndex, MediaTimelineMapping mapping, MediaTime duration,
+        AudioAnalysisRecipe? recipe = null)
     {
         var information = new FileInfo(path);
         var length = information.Length;
@@ -27,6 +28,7 @@ internal static class AudioAnalysisCacheIdentity
             writer.Write(duration.Denominator);
         }
         hash.AppendData(metadata.ToArray());
+        hash.AppendData((recipe ?? new()).GetDigest());
         using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, SAMPLE_BYTES, FileOptions.RandomAccess);
         var buffer = new byte[SAMPLE_BYTES];
         foreach (var offset in new[] { 0, Math.Max(0, (length - SAMPLE_BYTES) / 2), Math.Max(0, length - SAMPLE_BYTES) }.Distinct())
