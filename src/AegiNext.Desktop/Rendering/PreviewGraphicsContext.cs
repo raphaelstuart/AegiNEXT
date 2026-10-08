@@ -27,7 +27,6 @@ internal sealed class PreviewGraphicsContext : IDisposable
 
     internal GRContext Context { get; }
     internal string? Description => platformContext.GlInterface.Renderer;
-    internal bool IsLost => platformContext.IsLost || Context.IsAbandoned;
 
     internal static PreviewGraphicsContext? TryCreate(IOpenGlTextureSharingRenderInterfaceContextFeature? graphics)
     {
@@ -87,7 +86,7 @@ internal sealed class PreviewGraphicsContext : IDisposable
         }
         finally
         {
-            if (platform is IGlContext gl && context is not null && !gl.IsLost)
+            if (platform is IGlContext gl && context is not null && !context.IsAbandoned)
             {
                 try
                 {
@@ -127,9 +126,8 @@ internal sealed class PreviewGraphicsContext : IDisposable
     internal IDisposable? MakeCurrentForDisposal()
     {
         CheckOwner();
-        if (IsLost)
+        if (Context.IsAbandoned)
         {
-            Context.AbandonContext();
             return null;
         }
         try
