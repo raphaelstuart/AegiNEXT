@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "recipeRevision": 1,
+  "minimumMacOS": "14.0",
+  "sources": {
+    "ffmpeg": {
+      "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+      "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+      "archive": "ffmpeg.tar.xz"
+    },
+    "x265": {
+      "url": "https://github.com/Multicorewareinc/x265/releases/download/4.3/x265_4.3.tar.gz",
+      "sha256": "83c53e4c8bbb8f1e33ed59e10a7d621d1d7801ca853910c3eb41f038b8ffb121",
+      "archive": "x265.tar.gz"
+    },
+    "shaderc": {
+      "url": "https://github.com/google/shaderc/archive/refs/tags/v2026.4.tar.gz",
+      "sha256": "f06ce5bcca94e5df7f34e115743597d0ad2e13c5fe9213c67dc8c76031241947",
+      "archive": "shaderc.tar.gz"
+    },
+    "x264": {
+      "url": "https://github.com/mirror/x264/archive/b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz",
+      "sha256": "cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9",
+      "archive": "x264.tar.gz"
+    },
+    "sdl3": {
+      "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz",
+      "sha256": "7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68",
+      "archive": "sdl3.tar.gz"
+    },
+    "vulkan-headers": {
+      "url": "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.357.tar.gz",
+      "sha256": "7dc0dbcf1d49dd3d7da3761c251c6097dfbaac475321a4a8a99269d3d5abecdc",
+      "archive": "vulkan-headers.tar.gz"
+    },
+    "vulkan-loader": {
+      "url": "https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/tags/v1.4.357.tar.gz",
+      "sha256": "54fa49715782b919092c8353a8a7656180cad1a1b6879b61845e77c261edb2e7",
+      "archive": "vulkan-loader.tar.gz"
+    },
+    "libplacebo": {
+      "url": "https://github.com/haasn/libplacebo/archive/refs/tags/v7.360.1.tar.gz",
+      "sha256": "d05fdf90bea2f629eaa2d115e909fd356388ac639e54f77b87a018a6d76224bd",
+      "archive": "libplacebo.tar.gz"
+    },
+    "fast-float": {
+      "url": "https://github.com/fastfloat/fast_float/archive/refs/tags/v8.3.1.tar.gz",
+      "sha256": "7ff47ad261068517561beb0a7c1d57131f71b8be19bdbac2857c6a517a2eb53c",
+      "archive": "fast-float.tar.gz"
+    },
+    "glslang": {
+      "url": "https://github.com/KhronosGroup/glslang/archive/e1b562a8bed273a02f30b59b66a5d499793cede5.tar.gz",
+      "sha256": "907174a24713c6202c146f164bf81783f1fbc79c8cb821a30f18f159eb980312",
+      "archive": "glslang.tar.gz"
+    },
+    "spirv-headers": {
+      "url": "https://github.com/KhronosGroup/SPIRV-Headers/archive/04fd3caa1e8267e4d95c806cad901181728e1006.tar.gz",
+      "sha256": "392f4801409aad9c4f1b77745f179952fd6264e4c8bd0fc1bc45dfa6807bf6d0",
+      "archive": "spirv-headers.tar.gz"
+    },
+    "spirv-tools": {
+      "url": "https://github.com/KhronosGroup/SPIRV-Tools/archive/ef96ed763b43b59b33b31b362f09a02b729fa1c9.tar.gz",
+      "sha256": "82c62146083fd558735a3171cf97cfc47903ca7d368482e87f94bd44883c0f00",
+      "archive": "spirv-tools.tar.gz"
+    },
+    "molten-vk": {
+      "url": "https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-macos-privateapi.tar",
+      "sha256": "282099b522f2371a5fc1c2f0956daffb7235ee3bb28a2d0c65d8dc00397b6c1a",
+      "archive": "molten-vk.tar"
+    },
+    "jinja2": {
+      "url": "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz",
+      "sha256": "0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d",
+      "archive": "jinja2.tar.gz"
+    },
+    "markupsafe": {
+      "url": "https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz",
+      "sha256": "722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698",
+      "archive": "markupsafe.tar.gz"
+    },
+    "little-cms2": {
+      "url": "https://github.com/mm2/Little-CMS/releases/download/lcms2.19.1/lcms2-2.19.1.tar.gz",
+      "sha256": "bfc54f7bab59fbc921012014a8032e4cba4abd46db47d46b76416a8c0b2815c8",
+      "archive": "little-cms2.tar.gz"
+    },
+    "ffmpeg-windows": {
+      "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-full_build-shared.7z",
+      "sha256": "4d2060a8b34a940aa47d785142055bb92a63053781e55f2ace4546edd519a8f5",
+      "archive": "ffmpeg-windows.7z"
+    },
+    "sdl3-windows": {
+      "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-devel-3.4.16-mingw.zip",
+      "sha256": "9828bb735cf8a007bcf0ac5aa9f01f3fcb54b7ca67c932e775c905c5d5053a60",
+      "archive": "sdl3-windows.zip"
+    }
+  },
+  "packages": {
+    "ffmpeg": {
+      "version": "9.0.2",
+      "recipe": "ffmpeg",
+      "dependencies": [
+        "x264",
+        "x265"
+      ],
+      "sources": [
+        "ffmpeg"
+      ],
+      "requiredFiles": [
+        "include/libavcodec/avcodec.h",
+        "include/libavformat/avformat.h",
+        "lib/libavcodec.dylib",
+        "lib/libavformat.dylib",
+        "bin/ffmpeg",
+        "bin/ffprobe"
+      ],
+      "windows": {
+        "source": "ffmpeg-windows",
+        "archiveRoot": "ffmpeg-9.0.2-full_build-shared",
+        "requiredFiles": [
+          "include/libavcodec/avcodec.h",
+          "bin/avcodec-63.dll",
+          "bin/ffmpeg.exe",
+          "bin/ffprobe.exe"
+        ]
+      },
+      "configureOptions": [
+        "--enable-shared",
+        "--disable-static",
+        "--disable-autodetect",
+        "--disable-ffplay",
+        "--disable-doc",
+        "--enable-gpl",
+        "--enable-libx264",
+        "--enable-libx265",
+        "--enable-pthreads",
+        "--enable-zlib",
+        "--enable-bzlib",
+        "--enable-iconv",
+        "--enable-securetransport",
+        "--enable-videotoolbox",
+        "--enable-audiotoolbox",
+        "--extra-libs=-liconv"
+      ]
+    },
+    "sdl3": {
+      "version": "3.4.16",
+      "recipe": "cmake",
+      "dependencies": [],
+      "sources": [
+        "sdl3"
+      ],
+      "requiredFiles": [
+        "include/SDL3/SDL_version.h",
+        "lib/libSDL3.dylib",
+        "lib/cmake/SDL3/SDL3Config.cmake"
+      ],
+      "windows": {
+        "source": "sdl3-windows",
+        "archiveRoot": "SDL3-3.4.16/x86_64-w64-mingw32",
+        "requiredFiles": [
+          "include/SDL3/SDL_version.h",
+          "lib/libSDL3.dll.a",
+          "bin/SDL3.dll",
+          "lib/cmake/SDL3/SDL3Config.cmake"
+        ]
+      }
+    },
+    "x264": {
+      "version": "r3222",
+      "recipe": "configure",
+      "dependencies": [],
+      "sources": [
+        "x264"
+      ],
+      "requiredFiles": [
+        "include/x264.h",
+        "lib/libx264.dylib",
+        "lib/pkgconfig/x264.pc"
+      ]
+    },
+    "x265": {
+      "version": "4.3",
+      "recipe": "x265",
+      "dependencies": [],
+      "sources": [
+        "x265"
+      ],
+      "requiredFiles": [
+        "include/x265.h",
+        "lib/libx265.dylib",
+        "lib/pkgconfig/x265.pc"
+      ]
+    },
+    "vulkan-headers": {
+      "version": "1.4.357.0",
+      "recipe": "cmake",
+      "dependencies": [],
+      "sources": [
+        "vulkan-headers"
+      ],
+      "requiredFiles": [
+        "include/vulkan/vulkan_core.h",
+        "share/vulkan/registry/vk.xml"
+      ]
+    },
+    "vulkan-loader": {
+      "version": "1.4.357.0",
+      "recipe": "cmake",
+      "dependencies": [
+        "vulkan-headers"
+      ],
+      "sources": [
+        "vulkan-loader"
+      ],
+      "requiredFiles": [
+        "lib/libvulkan.dylib",
+        "lib/pkgconfig/vulkan.pc"
+      ],
+      "headerPackage": "vulkan-headers"
+    },
+    "shaderc": {
+      "version": "2026.4",
+      "recipe": "shaderc",
+      "dependencies": [],
+      "sources": [
+        "shaderc",
+        "glslang",
+        "spirv-headers",
+        "spirv-tools"
+      ],
+      "requiredFiles": [
+        "include/shaderc/shaderc.h",
+        "lib/libshaderc_shared.dylib",
+        "lib/pkgconfig/shaderc.pc"
+      ]
+    },
+    "little-cms2": {
+      "version": "2.19.1",
+      "recipe": "configure",
+      "dependencies": [],
+      "sources": [
+        "little-cms2"
+      ],
+      "requiredFiles": [
+        "include/lcms2.h",
+        "lib/liblcms2.dylib",
+        "lib/pkgconfig/lcms2.pc"
+      ]
+    },
+    "libplacebo": {
+      "version": "7.360.1",
+      "recipe": "meson",
+      "dependencies": [
+        "vulkan-headers",
+        "vulkan-loader",
+        "shaderc",
+        "little-cms2"
+      ],
+      "sources": [
+        "libplacebo",
+        "fast-float",
+        "jinja2",
+        "markupsafe"
+      ],
+      "requiredFiles": [
+        "include/libplacebo/config.h",
+        "lib/libplacebo.dylib",
+        "lib/pkgconfig/libplacebo.pc"
+      ]
+    },
+    "molten-vk": {
+      "version": "1.4.2",
+      "recipe": "molten-vk",
+      "dependencies": [],
+      "sources": [
+        "molten-vk"
+      ],
+      "requiredFiles": [
+        "include/MoltenVK/mvk_private_api.h",
+        "lib/libMoltenVK.dylib"
+      ]
+    }
+  }
+}

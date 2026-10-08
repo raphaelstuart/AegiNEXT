@@ -71,4 +71,5 @@ packages*.lock.json
 
 ### Local verification artifacts
 artifacts/
+.dependencies/
 /testResults.xml

@@ -68,14 +68,14 @@ Install the .NET SDK and PowerShell required by the repository. Run the followin
 
 ### Install dependencies
 
-Dependency installation uses Homebrew on macOS and Scoop on Windows. For Windows release packaging, also install NSIS:
+Native SDKs are installed into the ignored project `.dependencies/` directory with locked versions and SHA256 verification. Build tools use Homebrew on macOS and Scoop on Windows. For Windows release packaging, also install NSIS:
 
 ```powershell
 scoop bucket add extras
 scoop install nsis
 ```
 
-Install missing build dependencies and build the workbench:
+Prepare locked project SDKs, install missing build tools, and build the workbench:
 
 ```powershell
 pwsh -NoProfile -File ./build.ps1 -Target Workbench -InstallDependencies

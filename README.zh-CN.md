@@ -68,14 +68,14 @@ ASS 中不支持的标签或动画会在导入时提示转换确认，`\move` �
 
 ### 安装依赖
 
-macOS 使用 Homebrew，Windows 使用 Scoop。Windows 生成发布安装包还需要安装 NSIS：
+原生 SDK 按锁定版本与 SHA256 校验安装到项目 `.dependencies/`，不提交 Git。构建工具在 macOS 使用 Homebrew、Windows 使用 Scoop。Windows 生成发布安装包还需要安装 NSIS：
 
 ```powershell
 scoop bucket add extras
 scoop install nsis
 ```
 
-安装缺失的构建依赖并构建工作台：
+准备锁定的项目 SDK、安装缺失的构建工具并构建工作台：
 
 ```powershell
 pwsh -NoProfile -File ./build.ps1 -Target Workbench -InstallDependencies

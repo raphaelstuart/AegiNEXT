@@ -8,6 +8,20 @@ Use .NET SDK **10.0.401** (stable patches in the same feature band) and **PowerS
 
 Native builds need CMake, Ninja, a compiler, the shared FFmpeg SDK, and SDL3. macOS uses Homebrew and the Apple SDK; Windows uses Scoop and x64 MinGW. Versions are defined in `ffmpeg-toolchain.json` and native dependency manifests; a CLI-only FFmpeg distribution is insufficient. Current media locks are FFmpeg 9.0.2 and SDL3 3.4.16.
 
+Use `-InstallDependencies` to prepare locked SDKs in `.dependencies/<RID>/<name>/<version>/`, where RID is `osx-arm64`, `osx-x64`, or `win-x64`. macOS builds FFmpeg, SDL3, libplacebo, Vulkan-Headers, Vulkan-Loader, shaderc, LittleCMS, x264, and x265 from sources locked in `native/sdk-dependencies.json`, and downloads the official MoltenVK SDK. Windows downloads the pinned FFmpeg shared development SDK and SDL3 MinGW SDK. Build tools remain system installations; missing supported tools are installed through Homebrew/Scoop.
+
+```powershell
+# Both platforms: prepare media SDKs and build the Debug workbench
+pwsh ./build-debug-native.ps1 -InstallDependencies
+# macOS: prepare rendering SDKs and build the optional HDR module
+pwsh ./build.ps1 -Target Native -InstallDependencies
+```
+
+The first source build downloads and compiles dependencies; `-Jobs` controls parallelism. Archives are verified against SHA256 and cached in `.dependencies/downloads/`. Installation receipts record recipe fingerprints and file checksums. Repeated installs reuse valid SDKs and repair managed SDKs when damaged or outdated. Staging, backups, validation, and rollback protect existing SDKs; retry recovers interrupted replacements. Failed build logs and sources remain under `.dependencies/.work/`. Unmanaged SDK directories and system library installations are preserved. The entire `.dependencies/` tree is ignored by Git.
+
+The macOS FFmpeg recipe enables x264, x265 (8/10 bit), AAC, MP4/Matroska, and system media, TLS, compression, and character conversion support, with third-party autodetection disabled. It does not include every optional codec library in the full Homebrew recipe; select a compatible custom SDK explicitly when additional features are needed. Project dynamic libraries link only project dependencies and system frameworks. Publishing continues to collect runtime dependency closure and license notices.
+
+
 Run from the repository root:
 
 ```powershell
@@ -15,7 +29,7 @@ pwsh -NoProfile -File ./build.ps1 -Target Workbench -CheckEnvironment
 pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Release
 ```
 
-If recognized packages are missing, explicitly add `-InstallDependencies`. The check does not install, restore, or build. Invalid installed versions are not automatically replaced. The actual minimum macOS version depends on collected native libraries, even when the project deployment target is lower.
+`-CheckEnvironment` only checks: it does not install, restore, or build. `-InstallDependencies` aligns project SDKs. Explicit SDK parameters are preserved; incompatible selections fail validation. Project SDKs take precedence over package-manager environment variables; use `-FfmpegRoot` or `-SdlRoot` to select a custom SDK.
 
 ## Launch
 
@@ -53,9 +67,9 @@ Then run `AegiNext.Desktop` in Debug. Ordinary dotnet/Rider builds copy existing
 | `-WithMediaTools` | Check PATH FFmpeg/FFprobe for a managed build |
 | `-ReportPath` | Save an environment report |
 
-FFmpeg SDK resolution: explicit root → `FFMPEG_DIR` → package-manager prefix. SDL uses explicit root → `SDL3_DIR` → package-manager prefix. Invalid explicit paths fail. Development tools use absolute `AEGINEXT_FFMPEG_PATH`/`AEGINEXT_FFPROBE_PATH` or PATH; complete packages use their own tools.
+FFmpeg SDK resolution: explicit root → project SDK → `FFMPEG_DIR` → package-manager prefix. SDL uses explicit root → project SDK → `SDL3_DIR` → package-manager prefix. Invalid explicit paths fail. Development tools use absolute `AEGINEXT_FFMPEG_PATH`/`AEGINEXT_FFPROBE_PATH` or PATH; complete packages use their own tools.
 
-Native output is `artifacts/native/<RID>/<Configuration>/`; intermediate managed files use `obj/<RID>`. NuGet versions live in `Directory.Packages.props`, with ordinary restore and no package lock files. Release builds use `AegiNext.Product.slnf`; Debug uses `AegiNext.sln`.
+Native output is `artifacts/native/<RID>/<Configuration>/`; intermediate managed files use `obj/<RID>`. Workbench restores, builds, and tests for the host target RID by default, keeping the media TestHost consistent with native output. NuGet versions live in `Directory.Packages.props`, with ordinary restore and no package lock files. Release builds use `AegiNext.Product.slnf`; Debug uses `AegiNext.sln`.
 
 ## Run focused tests
 

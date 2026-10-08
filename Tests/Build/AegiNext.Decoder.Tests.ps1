@@ -186,13 +186,13 @@ Describe 'Decoder environment checks verify the selected development SDK' {
         Should -Invoke Invoke-AegiNextCommand -ModuleName AegiNext.Build -Times 0 -Exactly -ParameterFilter { $FilePath -eq 'fixture-scoop' }
     }
 
-    It 'maps a missing Windows SDK to ffmpeg-shared rather than the CLI-only package' {
+    It 'maps a missing Windows SDK to the locked project shared SDK' {
         Mock Invoke-AegiNextCommand -ModuleName AegiNext.Build { [pscustomobject]@{ ExitCode = 1; Output = '' } } -ParameterFilter { $FilePath -eq 'fixture-scoop' }
         $report = Get-AegiNextEnvironment -RepositoryRoot $repository -Target Decoder -HostInfo $hostInfo
         $check = $report.Checks | Where-Object Id -eq 'FfmpegSdk'
         $check.Status | Should -Be 'Missing'
-        $check.Package | Should -Be 'main/ffmpeg-shared'
-        $check.Manager | Should -Be 'scoop'
+        $check.Package | Should -Be 'ffmpeg'
+        $check.Manager | Should -Be 'project'
     }
 
     It 'rejects an SDK missing <RelativePath>' -TestCases @(
@@ -286,7 +286,7 @@ Describe 'Decoder environment checks verify the selected development SDK' {
         $check.Package | Should -BeNullOrEmpty
     }
 
-    It 'maps missing macOS development packages to Homebrew ffmpeg' {
+    It 'maps missing macOS development packages to the project installer' {
         $hostInfo.Platform = 'MacOS'
         Mock Invoke-AegiNextCommand -ModuleName AegiNext.Build { [pscustomobject]@{ ExitCode = 0; Output = '14.5' } } -ParameterFilter { $FilePath -eq '/usr/bin/sw_vers' }
         Mock Invoke-AegiNextCommand -ModuleName AegiNext.Build { [pscustomobject]@{ ExitCode = 1; Output = '' } } -ParameterFilter { $FilePath -eq 'fixture-brew' }
@@ -294,7 +294,7 @@ Describe 'Decoder environment checks verify the selected development SDK' {
         $check = $report.Checks | Where-Object Id -eq 'FfmpegSdk'
         $check.Status | Should -Be 'Missing'
         $check.Package | Should -Be 'ffmpeg'
-        $check.Manager | Should -Be 'brew'
+        $check.Manager | Should -Be 'project'
     }
 
     It 'allows Windows arm64 hosts with verified x64 compilers and runtime packages' {
@@ -330,7 +330,7 @@ Describe 'Decoder environment checks verify the selected development SDK' {
         Invoke-AegiNextBuild -RepositoryRoot $repository -Target Decoder -InstallDependencies | Should -Be 0
 
         Should -Invoke Install-AegiNextDependency -ModuleName AegiNext.Build -Times 1 -Exactly -ParameterFilter {
-            @($Report.Checks | Where-Object { $_.Id -eq 'FfmpegSdk' -and $_.Status -eq 'Missing' -and $_.Package -eq 'main/ffmpeg-shared' }).Count -eq 1
+            @($Report.Checks | Where-Object { $_.Id -eq 'FfmpegSdk' -and $_.Status -eq 'Missing' -and $_.Package -eq 'ffmpeg' -and $_.Manager -eq 'project' }).Count -eq 1
         }
         Should -Invoke Get-AegiNextBuildPlan -ModuleName AegiNext.Build -Times 1 -Exactly -ParameterFilter { $NativePrefixes.ffmpeg -eq $script:decoderSdk }
     }

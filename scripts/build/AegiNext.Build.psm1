@@ -1,5 +1,9 @@
 #Requires -Version 7.2
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'AegiNext.Dependencies.ps1')
+. (Join-Path $PSScriptRoot 'AegiNext.SdkInstall.ps1')
+. (Join-Path $PSScriptRoot 'AegiNext.SdkRecipes.ps1')
+. (Join-Path $PSScriptRoot 'AegiNext.SdkMacPaths.ps1')
 . (Join-Path $PSScriptRoot 'AegiNext.Decoder.ps1')
 . (Join-Path $PSScriptRoot 'AegiNext.Audio.ps1')
 . (Join-Path $PSScriptRoot 'AegiNext.Export.ps1')
@@ -260,12 +264,7 @@ function Get-AegiNextEnvironment
             'Windows' { 'Scoop not found. Install from https://scoop.sh and reopen PowerShell.' }
             default { 'Automatic dependency installation is only supported with macOS Homebrew or Windows Scoop.' }
         }
-        $needsBrew = $HostInfo.Platform -eq 'MacOS' -and
-            ($Target -in @('Native', 'All') -or
-                ($Target -in @('Decoder', 'Audio', 'Export', 'Workbench') -and !$FfmpegRoot -and !$env:FFMPEG_DIR) -or
-                ($Target -in @('Audio', 'Workbench') -and !$SdlRoot -and !$env:SDL3_DIR))
-        $status = if ($needsBrew) { 'Missing' } else { 'Optional' }
-        $checks.Add((Get-AegiNextCheck 'PackageManager' $status $hint))
+        $checks.Add((Get-AegiNextCheck 'PackageManager' 'Optional' $hint))
     }
 
     if ($Target -in @('Decoder', 'Audio', 'Export', 'Workbench') -and !$problem)
@@ -415,80 +414,39 @@ function Get-AegiNextEnvironment
         }
 
         $dependencies = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'native/dependencies.json') -Raw | ConvertFrom-Json
-        foreach ($dependency in @(
-            @{ Package = 'libplacebo'; Version = $dependencies.directDependencies.libplacebo.version; Files = @('lib/libplacebo.dylib', 'include/libplacebo/config.h', 'lib/pkgconfig/libplacebo.pc') },
-            @{ Package = 'molten-vk'; Version = $dependencies.directDependencies.MoltenVK.version; Files = @('lib/libMoltenVK.dylib', 'include/MoltenVK/mvk_private_api.h') },
-            @{ Package = 'vulkan-headers'; Version = $dependencies.directDependencies.'Vulkan-Headers'.version; Files = @('include/vulkan/vulkan_core.h') }
-        ))
+        $manifest = Get-AegiNextDependencyManifest
+        foreach ($name in @('libplacebo', 'molten-vk', 'vulkan-headers'))
         {
-            if (!$managerCommand)
+            $root = Find-AegiNextProjectSdk $RepositoryRoot $HostInfo $name
+            if (!$root -and $managerCommand)
             {
-                $checks.Add((Get-AegiNextCheck $dependency.Package 'Missing' "Homebrew is required to locate $($dependency.Version)." $dependency.Package 'brew'))
+                $prefix = Invoke-AegiNextCommand $managerCommand @('--prefix', $name) $RepositoryRoot
+                if ($prefix.ExitCode -eq 0 -and ![string]::IsNullOrWhiteSpace($prefix.Output))
+                {
+                    $root = $prefix.Output.Trim()
+                }
+            }
+            if (!$root -or !(Test-Path -LiteralPath $root -PathType Container))
+            {
+                $checks.Add((Get-AegiNextCheck $name 'Missing' "Requires locked project SDK $($manifest.packages[$name].version); use -InstallDependencies." $name 'project'))
                 continue
             }
-
-            $installed = Invoke-AegiNextCommand $managerCommand @('list', '--versions', $dependency.Package) $RepositoryRoot
-            if ($installed.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($installed.Output))
+            try
             {
-                $checks.Add((Get-AegiNextCheck $dependency.Package 'Missing' "Requires locked version $($dependency.Version)." $dependency.Package 'brew'))
-                continue
+                Test-AegiNextPreparedSdk $root $RepositoryRoot $HostInfo $manifest $name
+                $prefixes[$name] = $root
+                $checks.Add((Get-AegiNextCheck $name 'Ready' "$($manifest.packages[$name].version) at $root"))
             }
-
-            $prefix = Invoke-AegiNextCommand $managerCommand @('--prefix', $dependency.Package) $RepositoryRoot
-            if ($prefix.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($prefix.Output))
+            catch
             {
-                $checks.Add((Get-AegiNextCheck $dependency.Package 'Invalid' "Homebrew could not resolve its prefix. $($prefix.Output)"))
-                continue
-            }
-
-            $missingFiles = @($dependency.Files | Where-Object { !(Test-Path -LiteralPath (Join-Path $prefix.Output.Trim() $_) -PathType Leaf) })
-            if ($missingFiles.Count)
-            {
-                $checks.Add((Get-AegiNextCheck $dependency.Package 'Invalid' 'Homebrew package is installed but its development files are unavailable.'))
-                continue
-            }
-
-            $prefixes[$dependency.Package] = $prefix.Output.Trim()
-            if ($dependency.Version -notin ($installed.Output.Trim() -split '\s+'))
-            {
-                $checks.Add((Get-AegiNextCheck $dependency.Package 'Invalid' "Requires exactly $($dependency.Version); found $($installed.Output.Trim()). Restore the locked version; the build will not silently upgrade it."))
-            }
-            else
-            {
-                $activeVersion = $dependency.Version
-                if ($dependency.Package -eq 'molten-vk')
-                {
-                    $header = Get-Content -LiteralPath (Join-Path $prefix.Output.Trim() 'include/MoltenVK/mvk_private_api.h') -Raw
-                    $parts = foreach ($part in @('MAJOR', 'MINOR', 'PATCH'))
-                    {
-                        [regex]::Match($header, "(?m)^#define MVK_VERSION_$part\s+(\d+)").Groups[1].Value
-                    }
-                    $activeVersion = $parts -join '.'
-                }
-                elseif ($dependency.Package -eq 'vulkan-headers')
-                {
-                    $header = Get-Content -LiteralPath (Join-Path $prefix.Output.Trim() 'include/vulkan/vulkan_core.h') -Raw
-                    $headerPatch = [regex]::Match($header, '(?m)^#define VK_HEADER_VERSION\s+(\d+)').Groups[1].Value
-                    $headerVersion = [regex]::Match($header, 'VK_HEADER_VERSION_COMPLETE\s+VK_MAKE_API_VERSION\(0,\s*(\d+),\s*(\d+),\s*VK_HEADER_VERSION\)')
-                    $activeVersion = "$($headerVersion.Groups[1].Value).$($headerVersion.Groups[2].Value).$headerPatch.0"
-                }
-
-                if ($activeVersion -ne $dependency.Version)
-                {
-                    $checks.Add((Get-AegiNextCheck $dependency.Package 'Invalid' "Active headers are $activeVersion; requires $($dependency.Version). Select the matching Homebrew version."))
-                }
-                else
-                {
-                    $checks.Add((Get-AegiNextCheck $dependency.Package 'Ready' "$($dependency.Version) at $($prefix.Output.Trim())"))
-                }
+                $checks.Add((Get-AegiNextCheck $name 'Invalid' $_.Exception.Message $name 'project'))
             }
         }
 
         $pkgConfig = Find-AegiNextCommand 'pkg-config'
         if ($pkgConfig -and $prefixes.ContainsKey('libplacebo'))
         {
-            $pkgPath = Join-Path $prefixes['libplacebo'] 'lib/pkgconfig'
-            $pkgEnvironment = @{ PKG_CONFIG_PATH = $pkgPath + [IO.Path]::PathSeparator + $env:PKG_CONFIG_PATH }
+            $pkgEnvironment = Get-AegiNextNativePkgEnvironment $RepositoryRoot $HostInfo $prefixes
             $version = Invoke-AegiNextCommand $pkgConfig @('--modversion', 'libplacebo') $RepositoryRoot $pkgEnvironment
             $features = $dependencies.directDependencies.libplacebo.requiredFeatures
             $invalid = $version.ExitCode -ne 0 -or $version.Output.Trim() -ne $dependencies.directDependencies.libplacebo.version
@@ -515,8 +473,22 @@ function Get-AegiNextEnvironment
 function Install-AegiNextDependency
 {
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object] $Report, [Parameter(Mandatory)][string] $RepositoryRoot)
-    $missing = @($Report.Checks | Where-Object { $_.Status -eq 'Missing' -and $_.Package })
+    param([Parameter(Mandatory)][object] $Report, [Parameter(Mandatory)][string] $RepositoryRoot,
+        [string] $FfmpegRoot, [string] $SdlRoot, [ValidateRange(1, 128)][int] $Jobs = 2)
+    $projectNames = [Collections.Generic.List[string]]::new()
+    foreach ($check in $Report.Checks)
+    {
+        switch ($check.Id)
+        {
+            'FfmpegSdk' { if (!$FfmpegRoot) { $projectNames.Add('ffmpeg') } }
+            'SdlSdk' { if (!$SdlRoot) { $projectNames.Add('sdl3') } }
+            'libplacebo' { $projectNames.Add('libplacebo') }
+            'molten-vk' { $projectNames.Add('molten-vk') }
+            'vulkan-headers' { $projectNames.Add('vulkan-headers') }
+        }
+    }
+    $sdkIds = @('FfmpegSdk', 'SdlSdk', 'libplacebo', 'molten-vk', 'vulkan-headers')
+    $missing = @($Report.Checks | Where-Object { $_.Status -eq 'Missing' -and $_.Package -and $_.Id -notin $sdkIds })
     foreach ($dependency in ($missing | Sort-Object Manager, Package -Unique))
     {
         $manager = Find-AegiNextCommand $dependency.Manager
@@ -537,6 +509,10 @@ function Install-AegiNextDependency
             $commandFailure.Data['ExitCode'] = $result.ExitCode
             throw $commandFailure
         }
+    }
+    if ($projectNames.Count)
+    {
+        Install-AegiNextProjectSdk -RepositoryRoot $RepositoryRoot -HostInfo $Report.HostInfo -Names ($projectNames.ToArray() | Select-Object -Unique) -Jobs $Jobs
     }
 }
 
@@ -590,7 +566,7 @@ function Get-AegiNextBuildPlan
         $cmakeArchitecture = if ($architecture -eq 'arm64') { 'arm64' } else { 'x86_64' }
         $directory = Join-Path $RepositoryRoot "artifacts/native/build-macos-$architecture-$($Configuration.ToLowerInvariant())"
         $nativeOutput = Join-Path $RepositoryRoot "artifacts/native/osx-$architecture/$Configuration"
-        $environment = @{ PKG_CONFIG_PATH = (Join-Path $NativePrefixes['libplacebo'] 'lib/pkgconfig') + [IO.Path]::PathSeparator + $env:PKG_CONFIG_PATH }
+        $environment = Get-AegiNextNativePkgEnvironment $RepositoryRoot $HostInfo $NativePrefixes
         $plan.Add([pscustomobject]@{
             Label = 'Configure native'; FilePath = 'cmake'; WorkingDirectory = $RepositoryRoot; Environment = $environment
             Arguments = [string[]]@('-S', (Join-Path $RepositoryRoot 'native'), '-B', $directory, '-G', 'Ninja',
@@ -620,7 +596,8 @@ function Get-AegiNextBuildPlan
         $isRelease = $Configuration -eq 'Release'
         $solution = Join-Path $RepositoryRoot $(if ($isRelease) { 'AegiNext.Product.slnf' } else { 'AegiNext.sln' })
         $restoreRuntimeArguments = [string[]]@()
-        if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows')
+        $useRuntime = $RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows' -or $Target -eq 'Workbench'
+        if ($useRuntime)
         {
             $restoreRuntimeArguments = [string[]]@('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid")
         }
@@ -630,7 +607,7 @@ function Get-AegiNextBuildPlan
         })
         $plan.Add([pscustomobject]@{
             Label = 'Build managed'; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
-            Arguments = [string[]](@('build', $solution, '--configuration', $Configuration, '--no-restore') + $(if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows') { @("-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
+            Arguments = [string[]](@('build', $solution, '--configuration', $Configuration, '--no-restore') + $(if ($useRuntime) { @("-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
         })
         if ($RunTests)
         {
@@ -647,7 +624,7 @@ function Get-AegiNextBuildPlan
                 $plan.Add([pscustomobject]@{
                     Label = "Test $project"; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
                     Arguments = [string[]](@('test', $testProject,
-                        '--configuration', $Configuration, '--no-restore') + $(if ($RuntimeIdentifier -or $HostInfo.Platform -eq 'Windows') { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
+                        '--configuration', $Configuration, '--no-restore') + $(if ($useRuntime) { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
                 })
             }
         }
@@ -694,7 +671,7 @@ function Invoke-AegiNextBuild
     $report = Get-AegiNextEnvironment @environmentArguments
     if ($InstallDependencies -and !@($report.Checks | Where-Object Status -EQ 'Unsupported').Count)
     {
-        Install-AegiNextDependency -Report $report -RepositoryRoot $RepositoryRoot
+        Install-AegiNextDependency -Report $report -RepositoryRoot $RepositoryRoot -FfmpegRoot $FfmpegRoot -SdlRoot $SdlRoot -Jobs $Jobs
         $report = Get-AegiNextEnvironment @environmentArguments
     }
 
@@ -708,7 +685,7 @@ function Invoke-AegiNextBuild
 
     if (!$report.Ready)
     {
-        Write-Information -InformationAction Continue -MessageData 'Environment is not ready. Resolve the listed items; -InstallDependencies installs missing packages only.'
+        Write-Information -InformationAction Continue -MessageData 'Environment is not ready. Resolve the listed items; -InstallDependencies prepares locked project SDKs and installs missing tools. Explicit SDK roots are never replaced.'
         return 2
     }
 

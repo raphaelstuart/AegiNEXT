@@ -8,6 +8,19 @@
 
 原生构建需要 CMake、Ninja、编译器、共享 FFmpeg SDK 和 SDL3。macOS 使用 Homebrew 与 Apple SDK，Windows 使用 Scoop 和 x64 MinGW。版本由 `ffmpeg-toolchain.json` 及原生依赖清单定义，只有命令行工具的 FFmpeg 包不够；当前媒体锁定 FFmpeg 9.0.2、SDL3 3.4.16。
 
+使用 `-InstallDependencies` 自动在项目的 `.dependencies/<RID>/<库名>/<版本>/` 准备锁定 SDK；RID 为 `osx-arm64`、`osx-x64` 或 `win-x64`。macOS 按 `native/sdk-dependencies.json` 中锁定的源码构建 FFmpeg、SDL3、libplacebo、Vulkan-Headers、Vulkan-Loader、shaderc、LittleCMS、x264 和 x265，并下载官方 MoltenVK SDK。Windows 下载固定版本的 FFmpeg 共享开发包和 SDL3 MinGW 开发包。CMake、Ninja、Meson、pkgconf、编译器等构建工具继续使用系统安装，缺失且可自动安装的工具由 Homebrew/Scoop 补齐。
+
+```powershell
+# 两个平台：安装媒体 SDK，并构建 Debug 工作台
+pwsh ./build-debug-native.ps1 -InstallDependencies
+# macOS：安装渲染 SDK，并构建可选 HDR 原生模块
+pwsh ./build.ps1 -Target Native -InstallDependencies
+```
+
+首次源码构建需要下载和编译，`-Jobs` 控制并行数。下载包按 SHA256 校验后保存在 `.dependencies/downloads/`，安装记录保存配方指纹和文件校验值；重复执行复用有效 SDK，受管理的损坏或过期 SDK 会重新准备。安装采用临时目录、替换前备份和验证失败回滚，中断后重试可恢复已有备份；失败日志和源码保留在 `.dependencies/.work/`。不覆盖未带项目安装记录的手动 SDK，也不卸载或切换系统库版本。整个 `.dependencies/` 不提交 Git。
+
+macOS 的 FFmpeg 显式启用 x264、x265（8/10 bit）、AAC、MP4/Matroska 及系统音视频、TLS、压缩和字符转换支持，关闭系统第三方库自动探测；不包含 Homebrew 完整配方中的全部可选编解码库。需要额外功能时，可显式选择自行准备的兼容 FFmpeg SDK。项目动态库只链接项目依赖和系统框架，发布继续收集运行时依赖闭包及许可证。
+
 在仓库根目录执行：
 
 ```powershell
@@ -15,7 +28,7 @@ pwsh -NoProfile -File ./build.ps1 -Target Workbench -CheckEnvironment
 pwsh -NoProfile -File ./build.ps1 -Target Workbench -Configuration Release
 ```
 
-缺少已识别的软件包时，显式使用 `-InstallDependencies`。环境检查不安装、不还原、不构建；已有错误版本不会自动替换。macOS 最低版本取决于实际收集的原生库，不能仅看工程部署目标。
+使用 `-CheckEnvironment` 只检查，不安装、不还原、不构建。`-InstallDependencies` 对齐项目 SDK；显式参数指定的 SDK 始终保留，版本不匹配会报错。项目 SDK 优先于包管理器设置的环境变量；自定义 SDK 请使用 `-FfmpegRoot` 或 `-SdlRoot`。
 
 ## 启动
 
@@ -53,9 +66,9 @@ pwsh -NoProfile -File ./build-debug-native.ps1 -RuntimeIdentifier win-x64
 | `-WithMediaTools` | 托管构建时检查 PATH FFmpeg/FFprobe |
 | `-ReportPath` | 保存环境报告 |
 
-FFmpeg SDK 按显式路径 → `FFMPEG_DIR` → 包管理器前缀解析；SDL 按显式路径 → `SDL3_DIR` → 包管理器前缀解析。显式路径无效即失败。开发工具使用绝对 `AEGINEXT_FFMPEG_PATH`/`AEGINEXT_FFPROBE_PATH` 或 PATH，完整应用包使用包内工具。
+FFmpeg SDK 按显式路径 → 项目 SDK → `FFMPEG_DIR` → 包管理器前缀解析；SDL 按显式路径 → 项目 SDK → `SDL3_DIR` → 包管理器前缀解析。显式路径无效即失败。开发工具使用绝对 `AEGINEXT_FFMPEG_PATH`/`AEGINEXT_FFPROBE_PATH` 或 PATH，完整应用包使用包内工具。
 
-原生产物位于 `artifacts/native/<RID>/<Configuration>/`，托管中间文件使用 `obj/<RID>`。NuGet 版本集中在 `Directory.Packages.props`，普通还原且不维护 lock 文件。Release 构建使用 `AegiNext.Product.slnf`，Debug 使用 `AegiNext.sln`。
+原生产物位于 `artifacts/native/<RID>/<Configuration>/`，托管中间文件使用 `obj/<RID>`。Workbench 默认按本机目标 RID 还原、构建和测试，确保媒体 TestHost 与原生产物一致。NuGet 版本集中在 `Directory.Packages.props`，普通还原且不维护 lock 文件。Release 构建使用 `AegiNext.Product.slnf`，Debug 使用 `AegiNext.sln`。
 
 ## 定向测试
 

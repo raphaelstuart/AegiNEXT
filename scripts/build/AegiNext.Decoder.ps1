@@ -214,9 +214,17 @@ function Get-AegiNextDecoderEnvironment
     }
 
     $package = if ($platform -eq 'Windows') { 'main/ffmpeg-shared' } else { 'ffmpeg' }
-    $root = if ($FfmpegRoot) { $FfmpegRoot } else { $env:FFMPEG_DIR }
+    $root = $FfmpegRoot
     $explicitRoot = ![string]::IsNullOrWhiteSpace($root)
-    if (!$explicitRoot -and $ManagerCommand)
+    if (!$explicitRoot)
+    {
+        $root = Find-AegiNextProjectSdk $RepositoryRoot $HostInfo 'ffmpeg'
+    }
+    if (!$root)
+    {
+        $root = $env:FFMPEG_DIR
+    }
+    if (!$root -and $ManagerCommand)
     {
         $arguments = if ($platform -eq 'Windows') { @('prefix', 'ffmpeg-shared') } else { @('--prefix', 'ffmpeg') }
         $resolved = Invoke-AegiNextCommand $ManagerCommand $arguments $RepositoryRoot
@@ -227,18 +235,27 @@ function Get-AegiNextDecoderEnvironment
     }
     if (!$root -or !(Test-Path -LiteralPath $root -PathType Container))
     {
-        if ($explicitRoot)
+        if ($explicitRoot -or $root)
         {
             $checks.Add((Get-AegiNextCheck 'FfmpegSdk' 'Invalid' "The selected FFmpeg SDK directory does not exist: $root. Correct -FfmpegRoot or FFMPEG_DIR."))
         }
         else
         {
-            $checks.Add((Get-AegiNextCheck 'FfmpegSdk' 'Missing' 'Requires the locked FFmpeg shared development package, including headers, link libraries and runtime libraries.' $package $manager))
+            $checks.Add((Get-AegiNextCheck 'FfmpegSdk' 'Missing' 'Requires the locked FFmpeg shared development package; use -InstallDependencies to prepare it in the project.' 'ffmpeg' 'project'))
         }
     }
     else
     {
         $root = (Resolve-Path -LiteralPath $root).Path
+        try
+        {
+            Assert-AegiNextSdkReceipt $root $RepositoryRoot $HostInfo 'ffmpeg'
+        }
+        catch
+        {
+            $checks.Add((Get-AegiNextCheck 'FfmpegSdk' 'Invalid' $_.Exception.Message))
+            return [pscustomobject]@{ Checks = $checks.ToArray(); NativePrefixes = $prefixes }
+        }
         $toolchain = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'src/AegiNext.Media/Probing/ffmpeg-toolchain.json') -Raw | ConvertFrom-Json
         $check = Get-AegiNextFfmpegSdkCheck $root $RepositoryRoot $platform $toolchain
         $checks.Add($check)

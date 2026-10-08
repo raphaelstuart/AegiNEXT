@@ -1,11 +1,15 @@
 {
-  "purpose": "Step 1.3 macOS development HDR verification; not a redistributable app bundle",
-  "platform": "Product deployment target macOS 14 or newer; local Homebrew dependencies have a separate minimum-system boundary",
+  "purpose": "macOS development HDR verification; project SDK recipes and archive hashes are locked in sdk-dependencies.json",
+  "platform": "Product deployment target macOS 14 or newer; project SDKs are built for the selected macOS architecture",
   "directDependencies": {
     "libplacebo": {
       "version": "7.360.1",
       "license": "LGPL-2.1-or-later",
-      "requiredFeatures": ["vulkan", "vk_proc_addr", "shaderc"],
+      "requiredFeatures": [
+        "vulkan",
+        "vk_proc_addr",
+        "shaderc"
+      ],
       "checks": "Exact pkg-config version, compile-time API 360, runtime patch 1"
     },
     "MoltenVK": {
@@ -24,8 +28,12 @@
     "CMake": "4.4.3 installed; minimum supported 3.25",
     "Ninja": "1.13.2 installed",
     "pkgconf": "3.0.7 installed",
-    "shaderc": "2026.4, transitive through the selected libplacebo package"
+    "shaderc": "2026.4, built from locked source with libplacebo; see sdk-dependencies.json"
   },
-  "appleFrameworks": ["AppKit", "QuartzCore", "Metal"],
-  "packagingBoundary": "The dylib retains local Homebrew linkage, including transitive dependencies. Dependency copying, license notices, signing, and notarization require a later release packaging step. No system Vulkan ICD is used to choose the renderer."
+  "appleFrameworks": [
+    "AppKit",
+    "QuartzCore",
+    "Metal"
+  ],
+  "packagingBoundary": "Project SDKs include their locked runtime dependencies and license files. Publishing collects dependency closure, copies notices, rewrites Mach-O paths, and signs the app. No system Vulkan ICD is used to choose the renderer."
 }

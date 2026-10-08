@@ -62,12 +62,27 @@ Describe 'SDL SDK selection and validation' {
         }
     }
 
-    It 'reports the pinned project Scoop manifest only for a missing SDK' {
+    It 'reports a missing SDK for the project installer' {
         InModuleScope AegiNext.Build -Parameters @{ Repository = $repository } {
             param($Repository)
             $result = Get-AegiNextSdlEnvironment -RepositoryRoot $Repository -HostInfo ([pscustomobject]@{ Platform = 'Windows' })
             $result.Check.Status | Should -Be 'Missing'
-            $result.Check.Package | Should -Be (Join-Path $Repository 'scripts/build/scoop/aeginext-sdl3.json')
+            $result.Check.Package | Should -Be 'sdl3'
+            $result.Check.Manager | Should -Be 'project'
+        }
+    }
+
+    It 'selects the locked project SDK ahead of package-manager environment variables' {
+        $project = Join-Path $TestDrive 'project SDK priority'
+        $root = Join-Path $project '.dependencies/win-x64/sdl3/3.4.16'
+        New-SdlSdkFixture $root
+        $env:SDL3_DIR = Join-Path $TestDrive 'incompatible system SDK'
+        InModuleScope AegiNext.Build -Parameters @{ Repository = $project; Root = $root } {
+            param($Repository, $Root)
+            Mock Invoke-AegiNextCommand { throw 'A project SDK must not query the package manager.' }
+            $result = Get-AegiNextSdlEnvironment -RepositoryRoot $Repository -HostInfo ([pscustomobject]@{ Platform = 'Windows' }) -ManagerCommand 'manager'
+            $result.Check.Status | Should -Be 'Ready'
+            $result.Root | Should -Be $Root
         }
     }
 }
