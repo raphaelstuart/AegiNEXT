@@ -1,6 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
-             xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
+             xmlns:icons="using:Material.Icons.Avalonia"
+             xmlns:editing="using:AegiNext.Desktop.Editing"
              xmlns:projects="using:AegiNext.Core.Projects"
              xmlns:vm="using:AegiNext.Desktop.Panels.Subtitles" x:DataType="vm:SubtitlesPanelViewModel"
              x:Class="AegiNext.Desktop.Panels.Subtitles.SubtitlesPanelView" Classes="business-surface">
@@ -14,8 +14,6 @@
           BorderThickness="0" CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
     <Grid RowDefinitions="Auto,*">
       <WrapPanel Name="SubtitleToolbar" Margin="12,8,12,4">
-        <TextBlock Name="PreviewLabel" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"
-                   Margin="0,0,12,4" Text="{Loc Key=Workbench.Subtitles}" />
         <ComboBox Name="SubtitleTrackCombo" Width="160" Margin="0,0,8,4" ItemsSource="{Binding Tracks}"
                   SelectedItem="{Binding SelectedTrack, Mode=OneWay}">
           <ComboBox.ItemTemplate>
@@ -24,20 +22,25 @@
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>
-        <Button Name="AddCueButton" Margin="0,0,8,4" Command="{Binding AddCueCommand}">
-          <controlsCommon:IconText IconKey="Add" Text="{Loc Key=Workbench.Add}" />
+        <Button Name="AddCueButton" Classes="icon-button" Margin="0,0,8,4" Command="{Binding AddCueCommand}"
+                ToolTip.Tip="{Loc Key=Workbench.Add}" AutomationProperties.Name="{Loc Key=Workbench.Add}">
+          <icons:MaterialIcon Kind="Plus" Width="16" Height="16" />
         </Button>
-        <Button Name="DeleteCueButton" Margin="0,0,8,4" Command="{Binding DeleteCueCommand}">
-          <controlsCommon:IconText IconKey="Delete" Text="{Loc Key=Workbench.Delete}" />
+        <Button Name="DeleteCueButton" Classes="icon-button" Margin="0,0,8,4" Command="{Binding DeleteCueCommand}"
+                ToolTip.Tip="{Loc Key=Workbench.Delete}" AutomationProperties.Name="{Loc Key=Workbench.Delete}">
+          <icons:MaterialIcon Kind="Delete" Width="16" Height="16" />
         </Button>
-        <Button Name="SplitCueButton" Margin="0,0,8,4" Command="{Binding SplitCueCommand}">
-          <controlsCommon:IconText IconKey="Split" Text="{Loc Key=Workbench.Split}" />
+        <Button Name="SplitCueButton" Classes="icon-button" Margin="0,0,8,4" Command="{Binding SplitCueCommand}"
+                ToolTip.Tip="{Loc Key=Workbench.Split}" AutomationProperties.Name="{Loc Key=Workbench.Split}">
+          <icons:MaterialIcon Kind="CallSplit" Width="16" Height="16" />
         </Button>
-        <Button Name="MergeCueButton" Margin="0,0,8,4" Command="{Binding MergeCueCommand}">
-          <controlsCommon:IconText IconKey="Merge" Text="{Loc Key=Workbench.Merge}" />
+        <Button Name="MergeCueButton" Classes="icon-button" Margin="0,0,8,4" Command="{Binding MergeCueCommand}"
+                ToolTip.Tip="{Loc Key=Workbench.Merge}" AutomationProperties.Name="{Loc Key=Workbench.Merge}">
+          <icons:MaterialIcon Kind="CallMerge" Width="16" Height="16" />
         </Button>
-        <Button Name="SubtitleDetailsButton" Margin="0,0,0,4" Command="{Binding DetailsCommand}">
-          <controlsCommon:IconText IconKey="OPEN_SUBTITLE_DETAILS" Text="{Loc Key=Workbench.SubtitleDetails}" />
+        <Button Name="SubtitleDetailsButton" Classes="icon-button" Margin="0,0,0,4" Command="{Binding DetailsCommand}"
+                ToolTip.Tip="{Loc Key=Workbench.SubtitleDetails}" AutomationProperties.Name="{Loc Key=Workbench.SubtitleDetails}">
+          <icons:MaterialIcon Kind="TextBoxEditOutline" Width="16" Height="16" />
         </Button>
       </WrapPanel>
       <Grid Grid.Row="1" RowDefinitions="Auto,*" Margin="12,0">
