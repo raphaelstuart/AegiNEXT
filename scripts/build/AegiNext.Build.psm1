@@ -621,8 +621,13 @@ function Get-AegiNextBuildPlan
                         Arguments = [string[]](@('restore', $testProject) + $restoreRuntimeArguments)
                     })
                 }
+                $testEnvironment = @{}
+                if ($Target -eq 'Workbench' -and $HostInfo.Platform -eq 'Windows' -and $project -eq 'Media')
+                {
+                    $testEnvironment.AEGINEXT_RUN_NATIVE_RUNTIME_TESTS = '1'
+                }
                 $plan.Add([pscustomobject]@{
-                    Label = "Test $project"; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = @{}
+                    Label = "Test $project"; FilePath = 'dotnet'; WorkingDirectory = $RepositoryRoot; Environment = $testEnvironment
                     Arguments = [string[]](@('test', $testProject,
                         '--configuration', $Configuration, '--no-restore') + $(if ($useRuntime) { @('-r', $rid, "-p:AegiNextRuntimeIdentifier=$rid") } else { @() }))
                 })
