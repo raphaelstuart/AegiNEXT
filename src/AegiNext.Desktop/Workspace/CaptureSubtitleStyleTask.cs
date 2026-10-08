@@ -12,6 +12,6 @@ internal sealed class CaptureSubtitleStyleTask(WorkbenchSession session, StyleLi
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [session.ApplicationContext.GetLibraryResource(PersonalLibraryKind.STYLE), AegiTaskResource.StoragePath(directory)];
+        [session.ApplicationContext.GetLibraryResource(PersonalLibraryKind.STYLE), AegiTaskResource.DeferredStoragePath(directory)];
     protected override Task ExecuteAsync(AegiTaskExecutionContext context) => coordinator.CaptureCoreAsync(cue, captured, directory, context);
 }

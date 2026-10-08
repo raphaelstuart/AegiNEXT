@@ -15,11 +15,11 @@ internal sealed class SettingsEffectExportTask(DesktopApplicationContext owner, 
     public override string Name => "Tasks.ExportEffectScript";
 
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. paths.Select(AegiTaskResource.StoragePath)];
+        [.. paths.Select(AegiTaskResource.DeferredStoragePath)];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)
     {
-        var libraryResource = owner.GetLibraryResource(PersonalLibraryKind.EFFECT);
+        var libraryResource = owner.GetCanonicalLibraryResource(PersonalLibraryKind.EFFECT);
         if (paths.Any(path => AegiTaskResource.StoragePath(path) == libraryResource))
         {
             throw new InvalidDataException("导出位置不能是正在使用的效果库文件。");

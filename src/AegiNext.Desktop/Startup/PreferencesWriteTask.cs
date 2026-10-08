@@ -9,7 +9,7 @@ internal sealed class PreferencesWriteTask(DesktopApplicationContext owner, Work
     public override bool CanCancel => false;
     public override string CoalescingKey => owner.PreferencesStore.DirectoryPath;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [AegiTaskResource.StoragePath(Path.Combine(owner.PreferencesStore.DirectoryPath, "preferences.json"))];
+        [AegiTaskResource.DeferredStoragePath(Path.Combine(owner.PreferencesStore.DirectoryPath, "preferences.json"))];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)
     {

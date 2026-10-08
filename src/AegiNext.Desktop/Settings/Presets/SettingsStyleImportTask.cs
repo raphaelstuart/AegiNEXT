@@ -10,7 +10,7 @@ internal sealed class SettingsStyleImportTask(DesktopApplicationContext owner, I
     public override string Name => "Tasks.ImportStyles";
 
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [owner.GetLibraryResource(PersonalLibraryKind.STYLE), .. inputs.Select(AegiTaskResource.StoragePath)];
+        [owner.GetLibraryResource(PersonalLibraryKind.STYLE), .. inputs.Select(AegiTaskResource.DeferredStoragePath)];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)
     {

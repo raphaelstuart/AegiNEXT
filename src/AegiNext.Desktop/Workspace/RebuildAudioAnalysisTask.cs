@@ -10,7 +10,7 @@ internal sealed class RebuildAudioAnalysisTask(WorkbenchSession session, Analysi
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-    [AegiTaskResource.Named("analysis:" + session.TaskScope), AegiTaskResource.StoragePath(analysis.CacheDirectory)];
+    [AegiTaskResource.Named("analysis:" + session.TaskScope), AegiTaskResource.DeferredStoragePath(analysis.CacheDirectory)];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)
     {

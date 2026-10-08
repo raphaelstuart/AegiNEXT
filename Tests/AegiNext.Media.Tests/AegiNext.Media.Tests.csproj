@@ -18,6 +18,7 @@
     <ProjectReference Include="../../src/AegiNext.Application/AegiNext.Application.csproj" />
     <Using Include="Xunit" />
     <None Include="../AegiNext.Rendering.Tests/Fixtures/NotoSans.ttf" Link="Fixtures/NotoSans.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures/VideoCompatibility/**/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="CopyProbeProcessTestHost" AfterTargets="Build">

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "frame_owner.h"
+#include "source_alpha_compositor.h"
 
 extern "C"
 {
@@ -27,5 +28,6 @@ private:
     SwsContext *resampler_ = nullptr;
     FramePointer converted_;
     FramePointer output_;
+    aeginext::media::SourceAlphaCompositor sourceAlpha_;
 };
 }

@@ -9,10 +9,10 @@ internal sealed class ExportEffectScriptTask(WorkbenchSession session, string pa
     public override string Name => "Tasks.ExportEffectScript";
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
-    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.StoragePath(path)];
+    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.DeferredStoragePath(path)];
     protected override async Task ExecuteAsync(AegiTaskExecutionContext context)
     {
-        if (AegiTaskResource.StoragePath(path) == session.ApplicationContext.GetLibraryResource(PersonalLibraryKind.EFFECT))
+        if (AegiTaskResource.StoragePath(path) == session.ApplicationContext.GetCanonicalLibraryResource(PersonalLibraryKind.EFFECT))
         {
             throw new InvalidDataException("导出位置不能是正在使用的效果库文件。");
         }

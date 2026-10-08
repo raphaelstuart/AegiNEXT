@@ -128,7 +128,7 @@ public sealed class VideoFrameNavigatorTests
     }
 
     [Fact]
-    public void MissingRawPtsCannotBeReplacedByBestEffortTimestamp()
+    public void MissingRawPtsUsesBestEffortForNavigationAndKeepsTheOriginalFactMissing()
     {
         var decoder = new FakeVideoDecoder(0, null)
         {
@@ -136,7 +136,13 @@ public sealed class VideoFrameNavigatorTests
         };
         using (var navigator = new VideoFrameNavigator(_ => decoder))
         {
-            Assert.Throws<InvalidDataException>(() => navigator.SeekFrame(new(20, 1000)));
+            using var selected = Assert.IsType<PositionedVideoFrame>(navigator.SeekFrame(new(40, 1000)));
+            Assert.Equal(new MediaTime(40, 1000), selected.Time);
+            Assert.Null(selected.Frame.Info.PresentationTimestamp);
+            Assert.Equal(new MediaTimestamp(40, new(1, 1000)), selected.Frame.Info.BestEffortTimestamp);
+            Assert.Equal(VideoDisplayTimingEvidence.BestEffortTimestamp, selected.Frame.Info.DisplayTiming!.Evidence);
+            Assert.False(selected.Frame.Info.DisplayTiming.IsDerived);
+            Assert.True(selected.ReachedEnd);
         }
 
         Assert.All(decoder.IssuedFrames, frame => Assert.Equal(1, frame.DisposeCount));

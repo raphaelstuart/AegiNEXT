@@ -8,7 +8,7 @@ namespace AegiNext.Desktop.Controllers;
 internal static class VideoPreviewProbe
 {
     private static readonly string[] unsupportedSideData =
-        ["dynamic", "dovi", "dolby", "stereo", "icc", "raw color", "film grain", "ambient", "display matrix"];
+        ["dynamic", "dovi", "dolby", "stereo", "icc", "raw color", "ambient", "display matrix"];
 
     internal static async Task<VideoPreviewMedia> ProbeAsync(string filePath, CancellationToken cancellationToken)
     {

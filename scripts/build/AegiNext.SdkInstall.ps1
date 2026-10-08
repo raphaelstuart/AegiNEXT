@@ -108,16 +108,16 @@ function Install-AegiNextSdkTool
     else
     {
         $result = @{ cmake = 'cmake'; ninja = 'ninja' }
-        if ('ffmpeg' -in $Names -or 'libplacebo' -in $Names)
+        if ('ffmpeg' -in $Names -or 'libplacebo' -in $Names -or 'dav1d' -in $Names)
         {
             $result['pkg-config'] = 'pkgconf'
         }
-        if ('libplacebo' -in $Names)
+        if ('libplacebo' -in $Names -or 'dav1d' -in $Names)
         {
             $result['meson'] = 'meson'
             $result['python3'] = 'python@3.14'
         }
-        if ($HostInfo.Architecture -eq 'X64' -and 'ffmpeg' -in $Names)
+        if ($HostInfo.Architecture -eq 'X64' -and ('ffmpeg' -in $Names -or 'dav1d' -in $Names))
         {
             $result['nasm'] = 'nasm'
         }
@@ -286,7 +286,7 @@ function Install-AegiNextProjectSdk
             Write-Information -InformationAction Continue -MessageData "Locked project SDKs are ready: $rid."
             return
         }
-        Install-AegiNextSdkTool $HostInfo $Names $RepositoryRoot
+        Install-AegiNextSdkTool $HostInfo $order $RepositoryRoot
         foreach ($name in $pending)
         {
             $root = Get-AegiNextProjectSdkRoot $RepositoryRoot $HostInfo $name

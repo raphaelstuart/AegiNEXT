@@ -8,7 +8,7 @@
 
 原生构建需要 CMake、Ninja、编译器、共享 FFmpeg SDK 和 SDL3。macOS 使用 Homebrew 与 Apple SDK，Windows 使用 Scoop 和 x64 MinGW。版本由 `ffmpeg-toolchain.json` 及原生依赖清单定义，只有命令行工具的 FFmpeg 包不够；当前媒体锁定 FFmpeg 9.0.2、SDL3 3.4.16。
 
-使用 `-InstallDependencies` 自动在项目的 `.dependencies/<RID>/<库名>/<版本>/` 准备锁定 SDK；RID 为 `osx-arm64`、`osx-x64` 或 `win-x64`。macOS 按 `native/sdk-dependencies.json` 中锁定的源码构建 FFmpeg、SDL3、libplacebo、Vulkan-Headers、Vulkan-Loader、shaderc、LittleCMS、x264 和 x265，并下载官方 MoltenVK SDK。Windows 下载固定版本的 FFmpeg 共享开发包和 SDL3 MinGW 开发包。CMake、Ninja、Meson、pkgconf、编译器等构建工具继续使用系统安装，缺失且可自动安装的工具由 Homebrew/Scoop 补齐。
+使用 `-InstallDependencies` 自动在项目的 `.dependencies/<RID>/<库名>/<版本>/` 准备锁定 SDK；RID 为 `osx-arm64`、`osx-x64` 或 `win-x64`。macOS 按 `native/sdk-dependencies.json` 中锁定的源码构建 FFmpeg、SDL3、libplacebo、Vulkan-Headers、Vulkan-Loader、shaderc、LittleCMS、x264、x265 和 dav1d，并下载官方 MoltenVK SDK。Windows 下载固定版本的 FFmpeg 共享开发包和 SDL3 MinGW 开发包。CMake、Ninja、Meson、pkgconf、编译器等构建工具继续使用系统安装，缺失且可自动安装的工具由 Homebrew/Scoop 补齐。
 
 ```powershell
 # 两个平台：安装媒体 SDK，并构建 Debug 工作台
@@ -19,7 +19,7 @@ pwsh ./build.ps1 -Target Native -InstallDependencies
 
 首次源码构建需要下载和编译，`-Jobs` 控制并行数。下载包按 SHA256 校验后保存在 `.dependencies/downloads/`，安装记录保存配方指纹和文件校验值；重复执行复用有效 SDK，受管理的损坏或过期 SDK 会重新准备。安装采用临时目录、替换前备份和验证失败回滚，中断后重试可恢复已有备份；失败日志和源码保留在 `.dependencies/.work/`。不覆盖未带项目安装记录的手动 SDK，也不卸载或切换系统库版本。整个 `.dependencies/` 不提交 Git。
 
-macOS 的 FFmpeg 显式启用 x264、x265（8/10 bit）、AAC、MP4/Matroska 及系统音视频、TLS、压缩和字符转换支持，关闭系统第三方库自动探测；不包含 Homebrew 完整配方中的全部可选编解码库。需要额外功能时，可显式选择自行准备的兼容 FFmpeg SDK。项目动态库只链接项目依赖和系统框架，发布继续收集运行时依赖闭包及许可证。
+macOS 的 FFmpeg 显式启用 x264、x265（8/10 bit）、dav1d 软件 AV1 解码、AAC、MP4/Matroska 及系统音视频、TLS、压缩和字符转换支持，关闭系统第三方库自动探测。内置解码器还覆盖 ProRes、VP8/VP9、MPEG-2/4、MJPEG、FFV1 等格式。两个平台的环境检查均要求所选 SDK 提供实际可用的 `libdav1d` 解码器。项目动态库只链接项目依赖和系统框架，发布收集包括 dav1d 在内的运行时依赖闭包及许可证。
 
 在仓库根目录执行：
 

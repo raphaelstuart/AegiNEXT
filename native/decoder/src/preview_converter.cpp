@@ -98,14 +98,15 @@ void ValidateSource(const AVFrame *frame, const an_preview_request &request)
     const auto format = static_cast<AVPixelFormat>(frame->format);
     const auto *descriptor = av_pix_fmt_desc_get(format);
     constexpr auto rejectedFlags = AV_PIX_FMT_FLAG_FLOAT | AV_PIX_FMT_FLAG_HWACCEL |
-        AV_PIX_FMT_FLAG_ALPHA | AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_BAYER |
+        AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_BAYER |
         AV_PIX_FMT_FLAG_BITSTREAM | AV_PIX_FMT_FLAG_XYZ;
-    if (!descriptor || descriptor->nb_components != 3 || (descriptor->flags & rejectedFlags) != 0 ||
+    if (!descriptor || descriptor->nb_components != ((descriptor->flags & AV_PIX_FMT_FLAG_ALPHA) ? 4 : 3) ||
+        (descriptor->flags & rejectedFlags) != 0 ||
         frame->hw_frames_ctx || !sws_test_format(format, 0))
     {
-        throw Error(AN_DECODE_UNSUPPORTED, "Preview requires a supported opaque three-component integer RGB or YUV format.");
+        throw Error(AN_DECODE_UNSUPPORTED, "Preview requires supported integer RGB or YUV with optional alpha.");
     }
-    for (int component = 0; component < 3; ++component)
+    for (int component = 0; component < descriptor->nb_components; ++component)
     {
         if (descriptor->comp[component].depth < 8 || descriptor->comp[component].depth > 16)
         {
@@ -207,7 +208,7 @@ PreviewConverter::PreviewConverter() : PreviewConverter(std::clamp(av_cpu_count(
 {
 }
 
-PreviewConverter::PreviewConverter(int threadBudget)
+PreviewConverter::PreviewConverter(int threadBudget) : sourceAlpha_(threadBudget)
 {
     if (threadBudget < 1 || threadBudget > 4)
     {
@@ -267,13 +268,14 @@ void PreviewConverter::Convert(const FrameOwner &owner, const an_preview_request
         av_frame_remove_side_data(source.get(), AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
     }
     source->crop_left = source->crop_top = source->crop_right = source->crop_bottom = 0;
+    const auto *opaqueSource = sourceAlpha_.Composite(source.get());
     if (!converted_ || converted_->width != source->width || converted_->height != source->height)
     {
         converted_ = MakeBgraFrame(source->width, source->height);
     }
     CheckAv(av_frame_make_writable(converted_.get()), AN_DECODE_NATIVE_FAILURE, "av_frame_make_writable(preview CMS)");
-    CheckAv(sws_frame_setup(cms_, converted_.get(), source.get()), AN_DECODE_UNSUPPORTED, "sws_frame_setup(preview CMS)");
-    CheckAv(sws_scale_frame(cms_, converted_.get(), source.get()), AN_DECODE_NATIVE_FAILURE, "sws_scale_frame(preview CMS)");
+    CheckAv(sws_frame_setup(cms_, converted_.get(), opaqueSource), AN_DECODE_UNSUPPORTED, "sws_frame_setup(preview CMS)");
+    CheckAv(sws_scale_frame(cms_, converted_.get(), opaqueSource), AN_DECODE_NATIVE_FAILURE, "sws_scale_frame(preview CMS)");
     const auto visibleWidth = original->width - static_cast<int>(original->crop_left + original->crop_right);
     const auto visibleHeight = original->height - static_cast<int>(original->crop_top + original->crop_bottom);
     const uint8_t *croppedData[4]{converted_->data[0] + original->crop_top * converted_->linesize[0] + original->crop_left * 4};

@@ -16,11 +16,11 @@ internal sealed class SettingsStyleExportTask(DesktopApplicationContext owner, I
     public override string Name => "Tasks.ExportStyles";
 
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. paths.Select(AegiTaskResource.StoragePath)];
+        [.. paths.Select(AegiTaskResource.DeferredStoragePath)];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)
     {
-        var libraryResource = owner.GetLibraryResource(PersonalLibraryKind.STYLE);
+        var libraryResource = owner.GetCanonicalLibraryResource(PersonalLibraryKind.STYLE);
         if (paths.Any(path => AegiTaskResource.StoragePath(path) == libraryResource))
         {
             throw new InvalidDataException("导出位置不能是正在使用的样式库文件。");

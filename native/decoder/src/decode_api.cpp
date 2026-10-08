@@ -16,6 +16,8 @@ static_assert(offsetof(an_decoder_session_info, fallback_reason) == 64);
 static_assert(sizeof(an_resolved_color) == 40);
 static_assert(sizeof(an_decode_backend_info) == 64);
 static_assert(sizeof(an_frame_info) == 600);
+static_assert(sizeof(an_frame_display_timing) == 32);
+static_assert(offsetof(an_frame_display_timing, timestamp) == 16);
 static_assert(offsetof(an_frame_info, pts) == 128);
 static_assert(offsetof(an_frame_info, pixel_format_name) == 152);
 static_assert(sizeof(an_frame_plane_info) == 32);
@@ -115,7 +117,7 @@ void ValidateInfo(T *info)
 }
 
 uint32_t AN_DECODE_CALL an_decode_abi_version(void) { return AN_DECODE_ABI_VERSION; }
-uint32_t AN_DECODE_CALL an_decode_features(void) { return AN_DECODE_FEATURE_SEEK | AN_DECODE_FEATURE_SDR_PREVIEW | AN_DECODE_FEATURE_MEDIA_CORE | AN_DECODE_FEATURE_SEEK_SELECTION; }
+uint32_t AN_DECODE_CALL an_decode_features(void) { return AN_DECODE_FEATURE_SEEK | AN_DECODE_FEATURE_SDR_PREVIEW | AN_DECODE_FEATURE_MEDIA_CORE | AN_DECODE_FEATURE_SEEK_SELECTION | AN_DECODE_FEATURE_DISPLAY_TIMING; }
 uint32_t AN_DECODE_CALL an_decode_live_decoders(void) { return decoderCount.load(); }
 uint32_t AN_DECODE_CALL an_decode_live_frames(void) { return frameCount.load(); }
 uint32_t AN_DECODE_CALL an_preview_live_converters(void) { return previewCount.load(); }
@@ -335,6 +337,16 @@ int32_t AN_DECODE_CALL an_frame_get_plane_info(void *frame, uint32_t plane, an_f
     {
         ValidateInfo(info);
         *info = Frame(frame)->Plane(plane);
+        return AN_DECODE_OK;
+    });
+}
+
+int32_t AN_DECODE_CALL an_frame_get_display_timing(void *frame, an_frame_display_timing *info, char *error, uint32_t capacity)
+{
+    return Boundary(error, capacity, [&]() -> int32_t
+    {
+        ValidateInfo(info);
+        *info = Frame(frame)->DisplayTiming();
         return AN_DECODE_OK;
     });
 }

@@ -784,6 +784,82 @@ void ExecutorWorkersParticipateAndJoinBeforeRethrowing()
         }
     }
 }
+
+void SourceAlphaUsesLinearMatteBeforeSubtitleComposition()
+{
+    for (const auto transfer : {AVCOL_TRC_BT709, AVCOL_TRC_SMPTE2084, AVCOL_TRC_ARIB_STD_B67})
+    {
+        auto source = Source(AV_PIX_FMT_YUVA444P12LE, AVCOL_RANGE_MPEG, transfer, 0, 0, 6, 4);
+        source->alpha_mode = AVALPHA_MODE_STRAIGHT;
+        const auto *descriptor = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(source->format));
+        const auto maximum = (1u << descriptor->comp[3].depth) - 1;
+        for (int y = 0; y < source->height; ++y)
+        {
+            for (int x = 0; x < source->width; ++x)
+            {
+                reinterpret_cast<uint16_t *>(source->data[0] + y * source->linesize[0])[x] = 3012;
+                reinterpret_cast<uint16_t *>(source->data[1] + y * source->linesize[1])[x] = 1944;
+                reinterpret_cast<uint16_t *>(source->data[2] + y * source->linesize[2])[x] = 2232;
+                reinterpret_cast<uint16_t *>(source->data[3] + y * source->linesize[3])[x] = static_cast<uint16_t>((x / 2) * maximum / 2);
+            }
+        }
+        const auto original = SnapshotBuffers(source.get());
+        const auto facts = SnapshotFacts(source.get());
+        ColorPipeline color(source->colorspace, source->color_primaries, source->color_trc);
+        YuvFramePipeline pipeline(source.get(), 6, 4, AV_PIX_FMT_YUV444P16LE);
+        auto output = Allocate(AV_PIX_FMT_YUV444P16LE, 6, 4);
+        auto checks = 0;
+        auto cancelled = false;
+        try
+        {
+            pipeline.Upsample(source.get(), [&]()
+            {
+                if (++checks == 2)
+                {
+                    throw CoreError(ErrorCode::Cancelled, "controlled export alpha cancellation");
+                }
+            });
+        }
+        catch (const CoreError &error)
+        {
+            cancelled = error.Code() == ErrorCode::Cancelled;
+        }
+        Require(cancelled && pipeline.Downsample(output.get()) < 0 && original == SnapshotBuffers(source.get()),
+            "Export alpha cancellation did not invalidate partial output or preserved raw source incorrectly");
+        for (const auto overlayAlpha : {0.0f, 0.4f})
+        {
+            std::vector<float> layer(6 * 4 * 4);
+            const std::array<float, 4> foreground{0.1f * overlayAlpha, 0.25f * overlayAlpha, 0.05f * overlayAlpha, overlayAlpha};
+            for (size_t offset = 0; offset < layer.size(); offset += 4)
+            {
+                std::copy(foreground.begin(), foreground.end(), layer.begin() + offset);
+            }
+            Check(pipeline.Upsample(source.get()), "alpha pipeline upsample");
+            pipeline.Composite(source.get(), layer, color, 203, []() {});
+            Check(pipeline.Downsample(output.get()), "alpha pipeline downsample");
+            for (int x = 0; x < source->width; ++x)
+            {
+                auto expected = color.Decode({(3012.0 * 16 - 4096) / 56064,
+                    (1944.0 * 16 - 32768) / 57344, (2232.0 * 16 - 32768) / 57344});
+                const auto alpha = static_cast<double>((x / 2) * maximum / 2) / maximum;
+                for (auto &component : expected)
+                {
+                    component *= alpha;
+                }
+                const auto matte = color.Encode(expected);
+                expected = color.Composite(matte, foreground, 203);
+                for (int plane = 0; plane < 3; ++plane)
+                {
+                    const auto reference = expected[plane] * (plane ? 57344 : 56064) + (plane ? 32768 : 4096);
+                    const auto actual = reinterpret_cast<const uint16_t *>(output->data[plane])[x];
+                    Require(std::abs(actual - reference) <= 3, "Export alpha matte or subsequent subtitle differs from high-precision source-domain reference");
+                }
+            }
+            Require(original == SnapshotBuffers(source.get()) && facts == SnapshotFacts(source.get()) &&
+                source->alpha_mode == AVALPHA_MODE_STRAIGHT, "Export source alpha bytes or metadata were changed");
+        }
+    }
+}
 }
 
 int main()
@@ -800,6 +876,7 @@ int main()
         CancelledAndFailedCompositionRequireFreshUpsample();
         ExecutorVisitsEachRowOnceWithinItsBudget();
         ExecutorWorkersParticipateAndJoinBeforeRethrowing();
+        SourceAlphaUsesLinearMatteBeforeSubtitleComposition();
         std::cout << "PASS " << comparisons << " bit-exact legacy comparisons: NV12/P010/4208/42010/44416, full/limited, "
             "SDR/PQ/HLG, crop/negative stride/padding, alpha, reuse, cancellation, exceptions and bounded row workers\n";
         return 0;

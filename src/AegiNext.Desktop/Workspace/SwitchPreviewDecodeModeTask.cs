@@ -12,7 +12,7 @@ internal sealed class SwitchPreviewDecodeModeTask(WorkbenchSession session, Vide
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
     [
         AegiTaskResource.Project(session.TaskScope), AegiTaskResource.Named("media:" + session.TaskScope),
-        AegiTaskResource.StoragePath(Path.Combine(session.PreferencesStore.DirectoryPath, "preferences.json"))
+        AegiTaskResource.DeferredStoragePath(Path.Combine(session.PreferencesStore.DirectoryPath, "preferences.json"))
     ];
     protected override Task<bool> ExecuteResultAsync(AegiTaskExecutionContext context) =>
         session.SwitchPreviewDecodeModeCoreAsync(mode, context);

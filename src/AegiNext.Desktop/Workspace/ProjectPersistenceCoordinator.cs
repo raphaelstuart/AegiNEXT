@@ -84,7 +84,7 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
             projectVersion++;
             var state = capture();
             resources = state is null ? [AegiTaskResource.Project(scopeId)] :
-                [AegiTaskResource.Project(scopeId), AegiTaskResource.StoragePath(state.ProjectPath)];
+                [AegiTaskResource.Project(scopeId), AegiTaskResource.DeferredStoragePath(state.ProjectPath)];
             active = true;
             autoSaveFingerprint = null;
             backupFingerprint = null;

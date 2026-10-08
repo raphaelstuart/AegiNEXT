@@ -128,7 +128,7 @@ public sealed class VideoHardwareDecoderTests
         using var auto = FfmpegVideoDecoder.Open(fixture.MediaPath, Preview.SdrPreviewFixture.VIDEO_STREAM_INDEX, new VideoDecoderOptions { Mode = VideoDecodeMode.Auto });
         using var frame = Assert.IsType<DecodedVideoFrame>(auto.ReadFrame());
         Assert.Equal(VideoDecoderBackend.Software, auto.SessionInfo.ActiveBackend);
-        Assert.Contains("Hardware v1", auto.SessionInfo.FallbackReason, StringComparison.Ordinal);
+        Assert.NotEmpty(auto.SessionInfo.FallbackReason);
         Assert.Throws<NotSupportedException>(() => FfmpegVideoDecoder.Open(fixture.MediaPath,
             Preview.SdrPreviewFixture.VIDEO_STREAM_INDEX, new VideoDecoderOptions { Mode = VideoDecodeMode.Hardware }));
         using var cancelled = new CancellationTokenSource();

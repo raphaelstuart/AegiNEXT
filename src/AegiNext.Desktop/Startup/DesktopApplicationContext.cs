@@ -71,11 +71,11 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     internal SubtitleFontSelectionService Fonts => fonts;
     internal IReadOnlyCollection<AegiTaskResource> SettingsResources =>
     [
-        AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, "preferences.json")),
+        AegiTaskResource.DeferredStoragePath(Path.Combine(PreferencesStore.DirectoryPath, "preferences.json")),
         GetLibraryResource(PersonalLibraryKind.STYLE), GetLibraryResource(PersonalLibraryKind.EFFECT),
         GetLibraryResource(PersonalLibraryKind.EXPORT),
-        AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, "recent-projects.json")),
-        AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, "layouts.json")),
+        AegiTaskResource.DeferredStoragePath(Path.Combine(PreferencesStore.DirectoryPath, "recent-projects.json")),
+        AegiTaskResource.DeferredStoragePath(Path.Combine(PreferencesStore.DirectoryPath, "layouts.json")),
         AegiTaskResource.Named("settings-restore:" + PreferencesStore.DirectoryPath)
     ];
     internal Task Initialization { get; }
@@ -141,7 +141,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
             if (AegiTaskExecutionContext.Current is { } stage)
             {
                 _ = stage.RunStageAsync("Tasks.PreferencesSave", _ => SavePreferencesAsync(value),
-                    [AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, "preferences.json"))]);
+                    [AegiTaskResource.DeferredStoragePath(Path.Combine(PreferencesStore.DirectoryPath, "preferences.json"))]);
             }
             else
             {
@@ -204,6 +204,16 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
 
     internal AegiTaskResource GetLibraryResource(PersonalLibraryKind kind)
     {
+        return AegiTaskResource.DeferredStoragePath(GetLibraryResourcePath(kind));
+    }
+
+    internal AegiTaskResource GetCanonicalLibraryResource(PersonalLibraryKind kind)
+    {
+        return AegiTaskResource.StoragePath(GetLibraryResourcePath(kind));
+    }
+
+    private string GetLibraryResourcePath(PersonalLibraryKind kind)
+    {
         var name = kind switch
         {
             PersonalLibraryKind.STYLE => "subtitle-styles.aegistyles",
@@ -211,7 +221,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
             PersonalLibraryKind.EXPORT => "export-presets.aegiexports",
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
-        return AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, name));
+        return Path.Combine(PreferencesStore.DirectoryPath, name);
     }
 
     private async Task InitializeAndLoadFontsAsync(Task initialization)

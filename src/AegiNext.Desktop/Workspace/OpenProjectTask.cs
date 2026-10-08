@@ -10,7 +10,7 @@ internal sealed class OpenProjectTask(WorkbenchSession session, ProjectWorkflowC
     public override string Name => "Tasks.OpenProject";
     internal ProjectOpenResult? Outcome { get; private set; }
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. base.Resources, AegiTaskResource.StoragePath(path)];
+        [.. base.Resources, AegiTaskResource.DeferredStoragePath(path)];
     protected override async Task<ProjectOpenResult> ExecuteResultAsync(AegiTaskExecutionContext context)
     {
         context.CancellationToken.ThrowIfCancellationRequested();

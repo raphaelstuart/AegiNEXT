@@ -5,7 +5,7 @@ namespace AegiNext.Desktop.Workspace;
 internal static class VideoFileTypes
 {
     private static ImmutableArray<string> Extensions { get; } =
-        [".mkv", ".mp4", ".mov", ".webm", ".avi", ".m4v", ".ts", ".m2ts"];
+        [".mkv", ".mp4", ".mov", ".webm", ".avi", ".m4v", ".ts", ".m2ts", ".mts", ".mpg", ".mpeg", ".m2v", ".vob", ".wmv", ".flv"];
 
     internal static string[] Patterns => [.. Extensions.Select(extension => "*" + extension)];
 

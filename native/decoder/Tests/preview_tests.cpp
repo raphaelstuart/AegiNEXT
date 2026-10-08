@@ -11,6 +11,7 @@ extern "C"
 {
 #include <libavutil/mastering_display_metadata.h>
 #include <libavutil/cpu.h>
+#include <libavutil/csp.h>
 }
 
 using namespace aeginext::decode;
@@ -392,7 +393,7 @@ void InvalidRequestsAndUnsupportedSourcesFail()
     request = Request(owner);
     request.flags = 1;
     ExpectError(AN_DECODE_INVALID_ARGUMENT, [&]() { converter.Convert(owner, request, output.data(), output.size()); });
-    for (const auto format : {AV_PIX_FMT_RGBA, AV_PIX_FMT_GBRPF32LE, AV_PIX_FMT_GRAY8, AV_PIX_FMT_PAL8})
+    for (const auto format : {AV_PIX_FMT_YA8, AV_PIX_FMT_GBRPF32LE, AV_PIX_FMT_GRAY8, AV_PIX_FMT_PAL8})
     {
         FrameOwner unsupported(MakeFrame(format), {1, 25});
         const auto args = Request(unsupported);
@@ -467,6 +468,54 @@ void PreviewAbiAndLifecycle()
     Require(an_preview_converter_create(nullptr, error.data(), 1) == AN_DECODE_INVALID_ARGUMENT && error[0] == '\0',
         "Bounded preview error buffer failed.");
 }
+
+void SourceAlphaDisplaysLinearBlackMatteAndKeepsRawBytes()
+{
+    for (const auto mode : {AVALPHA_MODE_UNSPECIFIED, AVALPHA_MODE_STRAIGHT, AVALPHA_MODE_PREMULTIPLIED})
+    {
+        auto source = MakeFrame(AV_PIX_FMT_RGBA64LE, 3, 2);
+        source->alpha_mode = mode;
+        const std::array<double, 3> encoded{1, 0.25, 0.125};
+        const std::array<uint16_t, 3> alpha{0, 32768, 65535};
+        for (int y = 0; y < source->height; ++y)
+        {
+            auto *row = reinterpret_cast<uint16_t *>(source->data[0] + y * source->linesize[0]);
+            for (int x = 0; x < source->width; ++x)
+            {
+                for (int component = 0; component < 3; ++component)
+                {
+                    const auto factor = mode == AVALPHA_MODE_PREMULTIPLIED ? alpha[x] / 65535.0 : 1;
+                    row[x * 4 + component] = static_cast<uint16_t>(std::lround(encoded[component] * factor * 65535));
+                }
+                row[x * 4 + 3] = alpha[x];
+            }
+        }
+        const std::vector<uint8_t> original(source->buf[0]->data, source->buf[0]->data + source->buf[0]->size);
+        FrameOwner owner(std::move(source), {1, 25});
+        PreviewConverter converter;
+        const auto actual = Convert(converter, owner);
+        for (int x = 0; x < owner.NativeFrame()->width; ++x)
+        {
+            auto expected = encoded;
+            av_csp_itu_eotf(AVCOL_TRC_IEC61966_2_1)(203, 0, expected.data());
+            for (auto &component : expected)
+            {
+                component *= alpha[x] / 65535.0;
+            }
+            av_csp_itu_eotf_inv(AVCOL_TRC_IEC61966_2_1)(203, 0, expected.data());
+            for (int component = 0; component < 3; ++component)
+            {
+                Require(std::abs(actual[x * 4 + 2 - component] - expected[component] * 255) <= 2,
+                    "Source alpha preview differs from linear-light colored black matte.");
+            }
+            Require(actual[x * 4 + 3] == 255, "Source alpha preview must produce opaque SDR output.");
+        }
+        Require(actual[6] > 180 && actual[6] < 195, "Half-transparent red was multiplied in encoded light.");
+        Require(owner.NativeFrame()->alpha_mode == mode &&
+            std::memcmp(original.data(), owner.NativeFrame()->buf[0]->data, original.size()) == 0,
+            "Source alpha preview changed raw association or any source byte.");
+    }
+}
 }
 
 int main()
@@ -479,7 +528,8 @@ int main()
         {"subsampled colors preserve uniform row hue", SubsampledColorsDoNotAcquireAlternatingRowHues},
         {"CMS thread budgets preserve pixels", CmsThreadBudgetsAreBoundedAndPreservePixels},
         {"invalid requests and unsupported sources", InvalidRequestsAndUnsupportedSourcesFail},
-        {"preview ABI and lifecycle", PreviewAbiAndLifecycle}
+        {"preview ABI and lifecycle", PreviewAbiAndLifecycle},
+        {"source alpha linear black matte and immutable raw bytes", SourceAlphaDisplaysLinearBlackMatteAndKeepsRawBytes}
     };
     int failures = 0;
     for (const auto &[name, test] : tests)

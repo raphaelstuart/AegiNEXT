@@ -4,7 +4,8 @@ using AegiNext.Core.Timing;
 namespace AegiNext.Media.Decoding;
 
 /// <summary>
-/// 根据原始 PTS 选择显示帧；重复时间取最后一帧，缺失或倒退时间明确报错。
+/// 根据独立显示时间选择帧；原始 PTS、best-effort 与明确推导依据保持可追溯。
+/// 重复时间取最后一帧，无有效显示时间或倒退时间明确报错。
 /// </summary>
 public sealed class VideoFrameNavigator : IVideoFrameSource
 {
@@ -211,7 +212,18 @@ public sealed class VideoFrameNavigator : IVideoFrameSource
                     atFileStart = false;
                     reachedEnd = false;
                     lastRawTime = null;
-                    candidate = ReadGroup(linked.Token, isSuperseded, target);
+                    try
+                    {
+                        candidate = ReadGroup(linked.Token, isSuperseded, target);
+                    }
+                    catch (VideoDisplayTimingUnavailableException)
+                    {
+                        faulted = true;
+                        linked.Token.ThrowIfCancellationRequested();
+                        ThrowIfSuperseded(isSuperseded);
+                        Restart(linked.Token);
+                        candidate = ReadGroup(linked.Token, isSuperseded);
+                    }
                 }
 
                 if (candidate is null || candidate.Time > target)
@@ -366,7 +378,7 @@ public sealed class VideoFrameNavigator : IVideoFrameSource
 
     private bool CanScanForward(MediaTime target)
     {
-        if (lookahead?.Info.PresentationTimestamp is not { } timestamp)
+        if (lookahead?.Info.DisplayTiming?.Timestamp is not { } timestamp)
         {
             return false;
         }
@@ -397,11 +409,11 @@ public sealed class VideoFrameNavigator : IVideoFrameSource
 
     private MediaTime ReadTime(IVideoFrame frame)
     {
-        var timestamp = frame.Info.PresentationTimestamp ?? throw new InvalidDataException("时间线不可用：视频帧缺少原始 PTS 或时基。");
+        var timestamp = frame.Info.DisplayTiming?.Timestamp ?? throw new InvalidDataException("时间线不可用：视频帧缺少有效时间戳及显示时间推导依据。");
         var time = timestamp.ToMediaTime();
         if (lastRawTime is { } previous && time < previous)
         {
-            throw new InvalidDataException("时间线不可用：解码显示顺序中的原始 PTS 倒退。");
+            throw new InvalidDataException("时间线不可用：解码显示顺序中的显示时间倒退。");
         }
 
         lastRawTime = time;

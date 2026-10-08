@@ -6,6 +6,7 @@ namespace AegiNext.Desktop.Tests.Workspace;
 internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
 {
     internal string? OpenPath { get; set; }
+    internal string[]? OpenFilePatterns { get; private set; }
     internal string? SavePath { get; set; }
     internal ProjectCreationRequest? NewProjectRequest { get; set; }
     internal ProjectOpenResult? LastCreationResult { get; private set; }
@@ -83,6 +84,7 @@ internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
 
     public Task<string?> OpenFileAsync(string title, string typeName, string[] patterns)
     {
+        OpenFilePatterns = [.. patterns];
         return Task.FromResult(OpenPath);
     }
 

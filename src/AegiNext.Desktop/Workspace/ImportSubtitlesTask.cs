@@ -11,7 +11,7 @@ internal sealed class ImportSubtitlesTask(WorkbenchSession session, ProjectWorkf
     public override string Name => "Tasks.ImportSubtitles";
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
     [.. base.Resources, Session.ApplicationContext.GetLibraryResource(PersonalLibraryKind.STYLE),
-        AegiTaskResource.StoragePath(Path.Combine(Session.PreferencesStore.DirectoryPath, "preferences.json"))];
+        AegiTaskResource.DeferredStoragePath(Path.Combine(Session.PreferencesStore.DirectoryPath, "preferences.json"))];
     protected override async Task<bool> ExecuteResultAsync(AegiTaskExecutionContext context)
     {
         await coordinator.ImportSubtitlesCoreAsync(path, ass, captured, inputRevision, trackId, presetId, context);

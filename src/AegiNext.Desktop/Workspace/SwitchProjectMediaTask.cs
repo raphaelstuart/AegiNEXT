@@ -9,7 +9,7 @@ internal sealed class SwitchProjectMediaTask(WorkbenchSession session, ProjectWo
     private readonly AegiNext.Core.Projects.ProjectDocument captured = session.Editor.Snapshot;
     public override string Name => "Tasks.SwitchMedia";
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. base.Resources, AegiTaskResource.StoragePath(path)];
+        [.. base.Resources, AegiTaskResource.DeferredStoragePath(path)];
     protected override async Task<bool> ExecuteResultAsync(AegiTaskExecutionContext context)
     {
         context.CancellationToken.ThrowIfCancellationRequested();

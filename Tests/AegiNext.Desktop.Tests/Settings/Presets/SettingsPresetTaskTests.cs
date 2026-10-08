@@ -26,9 +26,9 @@ public sealed class SettingsPresetTaskTests
         var styleTask = new SettingsStyleImportTask(owner, [stylePath]);
         var effectTask = new SettingsEffectImportTask(owner, [scriptPath]);
 
-        Assert.Contains(AegiTaskResource.StoragePath(stylePath), styleTask.Resources);
+        Assert.Contains(AegiTaskResource.DeferredStoragePath(stylePath), styleTask.Resources);
         Assert.Contains(owner.GetLibraryResource(PersonalLibraryKind.STYLE), styleTask.Resources);
-        Assert.Contains(AegiTaskResource.StoragePath(scriptPath), effectTask.Resources);
+        Assert.Contains(AegiTaskResource.DeferredStoragePath(scriptPath), effectTask.Resources);
         var styles = owner.Tasks.Submit(styleTask);
         var effects = owner.Tasks.Submit(effectTask);
         await Task.WhenAll(styles.Completion, effects.Completion);
@@ -73,13 +73,57 @@ public sealed class SettingsPresetTaskTests
         var paths = PresetBatchExporter.GetStyleDestinations(selection, outputDirectory.Path);
         var task = new SettingsStyleExportTask(owner, selection, outputDirectory.Path, true);
         Assert.Equal(2, paths.Count);
-        Assert.All(paths, path => Assert.Contains(AegiTaskResource.StoragePath(path), task.Resources));
+        Assert.All(paths, path => Assert.Contains(AegiTaskResource.DeferredStoragePath(path), task.Resources));
 
         await owner.Tasks.Submit(task).Completion;
 
         Assert.All(paths, path => Assert.True(File.Exists(path)));
         Assert.Empty(Directory.EnumerateDirectories(outputDirectory.Path));
         Assert.Equal(2, Directory.EnumerateFiles(outputDirectory.Path).Count());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ExportCannotOverwriteTheLiveLibraryThroughItsPathOrSymbolicLink(bool effects, bool symbolicLink)
+    {
+        using var settingsDirectory = new TemporaryWorkbenchDirectory();
+        using var outputDirectory = new TemporaryWorkbenchDirectory();
+        await using var owner = new DesktopApplicationContext(new(settingsDirectory.Path), new());
+        await owner.Initialization;
+        var bundle = UserSettingsTransferTestData.CreateBundle();
+        var libraryPath = Path.Combine(settingsDirectory.Path,
+            effects ? "effect-scripts.json" : "subtitle-styles.aegistyles");
+        if (effects)
+        {
+            await EffectScriptPresetStore.SaveAsync(bundle.Effects, libraryPath);
+        }
+        else
+        {
+            await SubtitleStylePresetStore.SaveAsync(bundle.Styles, libraryPath);
+        }
+
+        var original = await File.ReadAllBytesAsync(libraryPath);
+        var destination = libraryPath;
+        if (symbolicLink)
+        {
+            destination = Path.Combine(outputDirectory.Path, effects ? "alias.aegifx" : "alias.aegistyles");
+            File.CreateSymbolicLink(destination, libraryPath);
+        }
+
+        AegiTask task = effects
+            ? new SettingsEffectExportTask(owner, bundle.Effects.Presets, destination, false)
+            : new SettingsStyleExportTask(owner, bundle.Styles.Presets, destination, false);
+        var handle = owner.Tasks.Submit(task);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => handle.Completion);
+
+        Assert.Equal(original, await File.ReadAllBytesAsync(libraryPath));
+        Assert.Equal(AegiTaskState.Failed, handle.Snapshot.State);
+        Assert.Empty(owner.StyleLibrary.Snapshot.Presets);
+        Assert.Empty(owner.EffectScriptLibrary.Snapshot.Presets);
     }
 
     [Fact]

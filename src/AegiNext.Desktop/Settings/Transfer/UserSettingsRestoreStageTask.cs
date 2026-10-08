@@ -8,7 +8,7 @@ internal sealed class UserSettingsRestoreStageTask(DesktopApplicationContext own
     public override string Name => "Tasks.SettingsRestoreStage";
 
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. owner.SettingsResources, AegiTaskResource.StoragePath(Path.Combine(owner.PreferencesStore.DirectoryPath,
+        [.. owner.SettingsResources, AegiTaskResource.DeferredStoragePath(Path.Combine(owner.PreferencesStore.DirectoryPath,
             ".settings-restore", "pending.aegisettings"))];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)

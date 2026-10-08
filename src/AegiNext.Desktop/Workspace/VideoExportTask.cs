@@ -11,7 +11,7 @@ internal sealed class VideoExportTask(WorkbenchSession session, ExportCoordinato
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [AegiTaskResource.StoragePath(request.OutputPath)];
+        [AegiTaskResource.DeferredStoragePath(request.OutputPath)];
 
     protected override Task<VideoExportResult> ExecuteResultAsync(AegiTaskExecutionContext context) =>
         coordinator.RunAsync(request, context, duration);

@@ -11,6 +11,7 @@ public sealed class AegiTaskService : IAegiTaskService
     private readonly HashSet<AegiTaskResource> occupiedResources = new();
     private readonly LinkedList<AegiTaskSnapshot> history = new();
     private readonly Timer progressTimer;
+    private readonly Func<AegiTaskResource, Task<AegiTaskResource>> resolveResourceAsync;
     private long submissionSequence;
     private int maximumConcurrentTasks = 4;
     private int runningCount;
@@ -23,8 +24,14 @@ public sealed class AegiTaskService : IAegiTaskService
     private Task lastDispatchStarted = Task.CompletedTask;
 
     /// <summary>Creates the service with the default four execution slots.</summary>
-    public AegiTaskService()
+    public AegiTaskService() : this(static resource => Task.FromResult(resource.Resolve()))
     {
+    }
+
+    internal AegiTaskService(Func<AegiTaskResource, Task<AegiTaskResource>> resolveResourceAsync)
+    {
+        ArgumentNullException.ThrowIfNull(resolveResourceAsync);
+        this.resolveResourceAsync = resolveResourceAsync;
         progressTimer = new(_ => FlushProgress(), null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(100));
     }
 
@@ -387,7 +394,7 @@ public sealed class AegiTaskService : IAegiTaskService
             }
 
             var boundary = queue.First;
-            while (boundary is not null && boundary.Value.Snapshot.Mode != AegiTaskMode.Blocking &&
+            while (boundary is not null && boundary.Value.ResourcesResolved && boundary.Value.Snapshot.Mode != AegiTaskMode.Blocking &&
                    !boundary.Value.Resources.Overlaps(entry.Resources))
             {
                 boundary = boundary.Next;
@@ -554,13 +561,14 @@ public sealed class AegiTaskService : IAegiTaskService
                 && entry.Snapshot.Mode == definition.Mode && entry.Snapshot.CanCancel == definition.CanCancel
                 && entry.EditRestriction == definition.EditRestriction
                 && entry.RestrictEditingDuringExecution == definition.RestrictEditingDuringExecution
-                && entry.Resources.SetEquals(resources);
+                && entry.DeclaredResources.SetEquals(resources);
             if (sameGroup && !entry.ExecutionStarted)
             {
                 return entry;
             }
 
-            if (entry.Resources.Overlaps(resources))
+            if (!entry.ResourcesResolved || resources.Any(resource => resource.DeferredPath is not null)
+                || entry.Resources.Overlaps(resources))
             {
                 break;
             }
@@ -588,13 +596,30 @@ public sealed class AegiTaskService : IAegiTaskService
             Task prerequisite;
             lock (gate)
             {
-                if (blockingRunning || runningCount >= maximumConcurrentTasks || queue.First is not { } first)
+                if (blockingRunning || queue.First is not { } first)
                 {
                     pumping = false;
                     return;
                 }
 
                 entry = first.Value;
+                if (!entry.ResourcesResolved)
+                {
+                    var prepare = !entry.ResourcePreparationStarted;
+                    entry.ResourcePreparationStarted = true;
+                    pumping = false;
+                    if (prepare)
+                    {
+                        ThreadPool.QueueUserWorkItem(_ => _ = PrepareResourcesAsync(entry));
+                    }
+                    return;
+                }
+
+                if (runningCount >= maximumConcurrentTasks)
+                {
+                    pumping = false;
+                    return;
+                }
                 if ((entry.Snapshot.Mode == AegiTaskMode.Blocking && unfinishedStartedExecutionCount != 0)
                     || (!entry.OwnsResources && occupiedResources.Overlaps(entry.Resources)))
                 {
@@ -647,6 +672,68 @@ public sealed class AegiTaskService : IAegiTaskService
         }
     }
 
+    private async Task PrepareResourcesAsync(AegiTaskEntry entry)
+    {
+        var resolved = new HashSet<AegiTaskResource>();
+        Exception? error = null;
+        try
+        {
+            foreach (var resource in entry.DeclaredResources)
+            {
+                lock (gate)
+                {
+                    if (!IsQueuedUnderLock(entry))
+                    {
+                        return;
+                    }
+                }
+
+                var identity = resource.DeferredPath is null ? resource : await resolveResourceAsync(resource).ConfigureAwait(false);
+                if (identity.DeferredPath is not null || string.IsNullOrWhiteSpace(identity.Key))
+                {
+                    throw new InvalidOperationException("Storage resource preparation must return a resolved identity.");
+                }
+                resolved.Add(identity);
+            }
+        }
+        catch (Exception exception)
+        {
+            error = exception;
+        }
+
+        lock (gate)
+        {
+            if (!IsQueuedUnderLock(entry))
+            {
+                return;
+            }
+
+            if (error is null)
+            {
+                entry.Resources = resolved;
+                entry.ResourcesResolved = true;
+            }
+            else
+            {
+                queue.Remove(entry);
+                FinishUnderLock(entry, AegiTaskState.Failed, GetErrorSummary(error));
+            }
+        }
+
+        if (error is not null)
+        {
+            entry.Completion.TrySetException(error);
+            ReleaseEntryReferences(entry);
+        }
+
+        NotifyChanged();
+        Pump();
+    }
+
+    private bool IsQueuedUnderLock(AegiTaskEntry entry) =>
+        entries.TryGetValue(entry.Snapshot.Id, out var currentEntry) && ReferenceEquals(currentEntry, entry)
+        && entry.Snapshot.State == AegiTaskState.Queued;
+
     private void Start(AegiTaskEntry entry)
     {
         try
@@ -669,7 +756,9 @@ public sealed class AegiTaskService : IAegiTaskService
 
     private async Task RunEntryAsync(AegiTaskEntry entry)
     {
-        var executionContext = new AegiTaskExecutionContext(this, entry.Snapshot.Id, entry.Resources, entry.Cancellation.Token);
+        var resources = new HashSet<AegiTaskResource>(entry.Resources);
+        resources.UnionWith(entry.DeclaredResources);
+        var executionContext = new AegiTaskExecutionContext(this, entry.Snapshot.Id, resources, entry.Cancellation.Token);
         var previous = AegiTaskExecutionContext.SetCurrent(executionContext);
         object? result = null;
         Exception? error = null;

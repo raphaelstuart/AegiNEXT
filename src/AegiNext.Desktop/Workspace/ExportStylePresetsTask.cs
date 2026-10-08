@@ -10,10 +10,10 @@ internal sealed class ExportStylePresetsTask(WorkbenchSession session, string pa
     public override string Name => "Tasks.ExportStyles";
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
-    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.StoragePath(path)];
+    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.DeferredStoragePath(path)];
     protected override async Task ExecuteAsync(AegiTaskExecutionContext context)
     {
-        if (AegiTaskResource.StoragePath(path) == session.ApplicationContext.GetLibraryResource(PersonalLibraryKind.STYLE))
+        if (AegiTaskResource.StoragePath(path) == session.ApplicationContext.GetCanonicalLibraryResource(PersonalLibraryKind.STYLE))
         {
             throw new InvalidDataException("导出位置不能是正在使用的样式库文件。");
         }

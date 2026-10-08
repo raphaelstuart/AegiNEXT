@@ -15,12 +15,14 @@ public sealed class DecodedVideoFrame : IVideoFrame
         this.handle = handle;
         var info = new NativeDecodedFrameInfo { structSize = (uint)sizeof(NativeDecodedFrameInfo), abiVersion = NativeDecodeMethods.ABI_VERSION };
         var hdr = new NativeDecodedHdrInfo { structSize = (uint)sizeof(NativeDecodedHdrInfo), abiVersion = NativeDecodeMethods.ABI_VERSION };
+        var timing = new NativeFrameDisplayTiming { structSize = (uint)sizeof(NativeFrameDisplayTiming), abiVersion = NativeDecodeMethods.ABI_VERSION };
         Span<byte> error = stackalloc byte[NativeDecodeMethods.ERROR_CAPACITY];
         error.Clear();
         fixed (byte* errorPointer = error)
         {
             NativeDecodeError.ThrowIfFailed(NativeDecodeMethods.GetFrameInfo(handle, ref info, errorPointer, (uint)error.Length), error);
             NativeDecodeError.ThrowIfFailed(NativeDecodeMethods.GetHdrInfo(handle, ref hdr, errorPointer, (uint)error.Length), error);
+            NativeDecodeError.ThrowIfFailed(NativeDecodeMethods.GetDisplayTiming(handle, ref timing, errorPointer, (uint)error.Length), error);
         }
 
         var names = ImmutableArray.CreateBuilder<string>(checked((int)info.sideDataCount));
@@ -37,7 +39,7 @@ public sealed class DecodedVideoFrame : IVideoFrame
             names.Add(NativeDecodeError.ReadText(name));
         }
 
-        Info = new(info, hdr, names.ToImmutable());
+        Info = new(info, hdr, names.ToImmutable(), timing);
     }
 
     public VideoFrameInfo Info { get; }

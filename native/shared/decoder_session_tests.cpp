@@ -16,11 +16,13 @@ struct DecoderSessionTestAccess
         session.packetPending_ = true;
     }
     static bool NegotiationFailed(const DecoderSession &session) { return session.negotiationFailed_; }
+    static void InjectSetupAllocationFailure(DecoderSession &session) { session.hardwareSetupError_ = AVERROR(ENOMEM); }
     static void InjectPendingTimestamp(DecoderSession &session, int64_t timestamp)
     {
         session.pendingFrame_.reset(av_frame_alloc());
         if (!session.pendingFrame_) { throw std::bad_alloc(); }
         session.pendingFrame_->pts = timestamp;
+        session.pendingDisplayTiming_ = {timestamp, session.timeBase_, timestamp == AV_NOPTS_VALUE ? 0u : DISPLAY_ORIGINAL_PTS};
     }
 };
 }
@@ -64,6 +66,22 @@ void CancellationNeverFallsBack(const char *path)
         return;
     }
     throw std::runtime_error("Cancelled session returned a frame.");
+}
+void SetupAllocationFailureNeverFallsBack(const char *path)
+{
+    DecoderSession session;
+    session.Open(path, 0);
+    const auto backend = session.Info().activeBackend;
+    const auto reason = session.Info().fallbackReason;
+    DecoderSessionTestAccess::InjectSetupAllocationFailure(session);
+    try { session.ReadFrame(); }
+    catch (const std::bad_alloc &)
+    {
+        Require(session.Info().activeBackend == backend && session.Info().deliveredFrames == 0 && session.Info().fallbackReason == reason,
+            "Setup allocation failure changed backend or delivered a frame.");
+        return;
+    }
+    throw std::runtime_error("Hardware setup allocation failure was lost.");
 }
 void NegotiationFailureFallsBackBeforeDelivery(const char *path)
 {
@@ -133,7 +151,7 @@ void SeekSelectionPreservesTimestampContracts(const char *path)
         bool rejected = false;
         try { invalid.ReadFrameForSeek(first->pts + 1); }
         catch (const CoreError &error)
-        { rejected = error.Code() == ErrorCode::Decode && !error.IsHardwareFailure(); }
+        { rejected = error.Code() == (timestamp == AV_NOPTS_VALUE ? ErrorCode::DisplayTimingUnavailable : ErrorCode::Decode) && !error.IsHardwareFailure(); }
         Require(rejected && invalid.Info().deliveredFrames == 0, "Missing or decreasing PTS was accepted during selection.");
         rejected = false;
         try { invalid.ReadFrame(); }
@@ -159,6 +177,7 @@ int main()
     {
         CorruptionNeverTriggersHardwareFallback(path);
         CancellationNeverFallsBack(path);
+        SetupAllocationFailureNeverFallsBack(path);
         NegotiationFailureFallsBackBeforeDelivery(path);
         HardwareRequiresFailureAndNeverSwitchesAfterDelivery(path);
         SeekSelectionPreservesTimestampContracts(path);

@@ -35,7 +35,8 @@ ExportDecodedFrame Frame(int index)
     frame->pts = 1000 + index * 41;
     frame->duration = index % 2 ? 41 : 59;
     frame->time_base = {1, 1000};
-    return {std::move(frame), {1, 1000}, static_cast<uint32_t>(index)};
+    return {std::move(frame), {1, 1000}, static_cast<uint32_t>(index),
+        {2000 + index * 41, {1, 1000}, aeginext::media::DISPLAY_PREVIOUS_DURATION}};
 }
 void Await(const std::function<bool()> &condition, const char *message)
 {
@@ -63,7 +64,10 @@ void SingleOwnerOrderAndEof()
         auto item = prefetch.Next();
         Require(item.frame && item.frame->pts == 1000 + index * 41 && item.frame->data[0][0] == index &&
             item.frame->duration == (index % 2 ? 41 : 59) && item.timeBase.num == 1 && item.timeBase.den == 1000 &&
-            item.inferredFields == static_cast<uint32_t>(index), "Queued frame ownership, order or immutable facts changed");
+            item.inferredFields == static_cast<uint32_t>(index) && item.displayTiming.value == 2000 + index * 41 &&
+            item.displayTiming.timeBase.num == 1 && item.displayTiming.timeBase.den == 1000 &&
+            item.displayTiming.evidence == aeginext::media::DISPLAY_PREVIOUS_DURATION,
+            "Queued frame ownership, order, display timing snapshot or immutable facts changed");
     }
     Require(!prefetch.Next().frame && !prefetch.Next().frame, "EOF was not stable or drained in order");
     prefetch.Stop();
@@ -167,7 +171,7 @@ void ConsumerFailureJoinsAndReleasesRefcountedFrames()
         {
             FramePointer clone(av_frame_clone(source.frame.get()));
             Require(clone != nullptr, "Cannot clone refcounted frame");
-            return ExportDecodedFrame{std::move(clone), source.timeBase, source.inferredFields};
+            return ExportDecodedFrame{std::move(clone), source.timeBase, source.inferredFields, source.displayTiming};
         }, [&]() noexcept { interrupted = true; });
         auto item = prefetch.Next();
         Require(item.frame->data[0][0] == 9, "Consumer did not receive its refcounted view");

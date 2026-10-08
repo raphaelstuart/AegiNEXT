@@ -10,7 +10,7 @@ internal sealed class SettingsEffectImportTask(DesktopApplicationContext owner, 
     public override string Name => "Tasks.ImportEffectScripts";
 
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [owner.GetLibraryResource(PersonalLibraryKind.EFFECT), .. inputs.Select(AegiTaskResource.StoragePath)];
+        [owner.GetLibraryResource(PersonalLibraryKind.EFFECT), .. inputs.Select(AegiTaskResource.DeferredStoragePath)];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)
     {

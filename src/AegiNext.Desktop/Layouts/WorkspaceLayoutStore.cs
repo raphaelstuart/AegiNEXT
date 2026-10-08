@@ -99,7 +99,7 @@ internal sealed class WorkspaceLayoutStore : IDisposable
         }
     }
 
-    internal AegiTaskResource Resource => AegiTaskResource.StoragePath(path);
+    internal AegiTaskResource Resource => AegiTaskResource.DeferredStoragePath(path);
 
     internal Task SaveAsync(WorkspaceLayoutFile file)
     {

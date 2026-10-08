@@ -8,7 +8,7 @@ Use .NET SDK **10.0.401** (stable patches in the same feature band) and **PowerS
 
 Native builds need CMake, Ninja, a compiler, the shared FFmpeg SDK, and SDL3. macOS uses Homebrew and the Apple SDK; Windows uses Scoop and x64 MinGW. Versions are defined in `ffmpeg-toolchain.json` and native dependency manifests; a CLI-only FFmpeg distribution is insufficient. Current media locks are FFmpeg 9.0.2 and SDL3 3.4.16.
 
-Use `-InstallDependencies` to prepare locked SDKs in `.dependencies/<RID>/<name>/<version>/`, where RID is `osx-arm64`, `osx-x64`, or `win-x64`. macOS builds FFmpeg, SDL3, libplacebo, Vulkan-Headers, Vulkan-Loader, shaderc, LittleCMS, x264, and x265 from sources locked in `native/sdk-dependencies.json`, and downloads the official MoltenVK SDK. Windows downloads the pinned FFmpeg shared development SDK and SDL3 MinGW SDK. Build tools remain system installations; missing supported tools are installed through Homebrew/Scoop.
+Use `-InstallDependencies` to prepare locked SDKs in `.dependencies/<RID>/<name>/<version>/`, where RID is `osx-arm64`, `osx-x64`, or `win-x64`. macOS builds FFmpeg, SDL3, libplacebo, Vulkan-Headers, Vulkan-Loader, shaderc, LittleCMS, x264, x265, and dav1d from sources locked in `native/sdk-dependencies.json`, and downloads the official MoltenVK SDK. Windows downloads the pinned FFmpeg shared development SDK and SDL3 MinGW SDK. Build tools remain system installations; missing supported tools are installed through Homebrew/Scoop.
 
 ```powershell
 # Both platforms: prepare media SDKs and build the Debug workbench
@@ -19,7 +19,7 @@ pwsh ./build.ps1 -Target Native -InstallDependencies
 
 The first source build downloads and compiles dependencies; `-Jobs` controls parallelism. Archives are verified against SHA256 and cached in `.dependencies/downloads/`. Installation receipts record recipe fingerprints and file checksums. Repeated installs reuse valid SDKs and repair managed SDKs when damaged or outdated. Staging, backups, validation, and rollback protect existing SDKs; retry recovers interrupted replacements. Failed build logs and sources remain under `.dependencies/.work/`. Unmanaged SDK directories and system library installations are preserved. The entire `.dependencies/` tree is ignored by Git.
 
-The macOS FFmpeg recipe enables x264, x265 (8/10 bit), AAC, MP4/Matroska, and system media, TLS, compression, and character conversion support, with third-party autodetection disabled. It does not include every optional codec library in the full Homebrew recipe; select a compatible custom SDK explicitly when additional features are needed. Project dynamic libraries link only project dependencies and system frameworks. Publishing continues to collect runtime dependency closure and license notices.
+The macOS FFmpeg recipe enables x264, x265 (8/10 bit), dav1d software AV1 decoding, AAC, MP4/Matroska, and system media, TLS, compression, and character conversion support, with third-party autodetection disabled. Built-in decoders also cover formats such as ProRes, VP8/VP9, MPEG-2/4, MJPEG, and FFV1. Environment checks require a working `libdav1d` decoder in the selected SDK on both platforms. Project dynamic libraries link only project dependencies and system frameworks. Publishing collects the runtime dependency closure and license notices, including dav1d.
 
 
 Run from the repository root:

@@ -10,7 +10,7 @@ internal sealed class UserSettingsExportTask(DesktopApplicationContext owner, Us
     public override string Name => "Tasks.SettingsExport";
 
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. owner.SettingsResources, AegiTaskResource.StoragePath(path)];
+        [.. owner.SettingsResources, AegiTaskResource.DeferredStoragePath(path)];
 
     protected override async Task ExecuteAsync(AegiTaskExecutionContext context)
     {

@@ -6,7 +6,7 @@ internal sealed class UserSettingsImportTask(string path) : AegiTask<UserSetting
 {
     public override string Name => "Tasks.SettingsImport";
 
-    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.StoragePath(path)];
+    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.DeferredStoragePath(path)];
 
     protected override async Task<UserSettingsBundle> ExecuteResultAsync(AegiTaskExecutionContext context)
     {

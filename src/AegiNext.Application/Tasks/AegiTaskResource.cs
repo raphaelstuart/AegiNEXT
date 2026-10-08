@@ -10,8 +10,20 @@ public readonly record struct AegiTaskResource
         Key = key;
     }
 
-    /// <summary>Gets the canonical identity of this resource.</summary>
+    /// <summary>Gets the resource identity or the declared path key awaiting scheduler resolution.</summary>
     public string Key { get; }
+
+    internal string? DeferredPath { get; private init; }
+
+    /// <summary>Declares a storage path without accessing the filesystem; the scheduler resolves its identity before execution.</summary>
+    public static AegiTaskResource DeferredStoragePath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var fullPath = Path.GetFullPath(path);
+        return new("storage-pending:" + fullPath) { DeferredPath = fullPath };
+    }
+
+    internal AegiTaskResource Resolve() => DeferredPath is { } path ? StoragePath(path) : this;
 
     /// <summary>Creates an arbitrary shared resource identity.</summary>
     public static AegiTaskResource Named(string key) => new("named:" + key);

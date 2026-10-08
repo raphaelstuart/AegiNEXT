@@ -54,7 +54,7 @@ internal sealed class RecentProjectService : IAsyncDisposable
         }
     }
 
-    internal AegiTaskResource Resource => AegiTaskResource.StoragePath(storagePath);
+    internal AegiTaskResource Resource => AegiTaskResource.DeferredStoragePath(storagePath);
     internal Task Completion => tasks.DrainAsync();
 
     internal Task InitializeAsync()

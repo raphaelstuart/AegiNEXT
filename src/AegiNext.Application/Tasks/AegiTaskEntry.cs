@@ -7,7 +7,13 @@ internal sealed class AegiTaskEntry(AegiTask task, AegiTaskDefinition definition
 
     internal AegiTaskSnapshot Snapshot { get; set; } = snapshot;
 
-    internal HashSet<AegiTaskResource> Resources { get; } = definition.Resources;
+    internal HashSet<AegiTaskResource> DeclaredResources { get; } = definition.Resources;
+
+    internal HashSet<AegiTaskResource> Resources { get; set; } = definition.Resources;
+
+    internal bool ResourcesResolved { get; set; } = definition.Resources.All(resource => resource.DeferredPath is null);
+
+    internal bool ResourcePreparationStarted { get; set; }
 
     internal SynchronizationContext? SynchronizationContext { get; set; } = synchronizationContext;
 

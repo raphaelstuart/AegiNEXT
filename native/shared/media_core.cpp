@@ -1,10 +1,12 @@
 #include "media_core.h"
+#include "hardware_decode_policy.h"
 #include "color_resolution.h"
 #include "media_core_versions.h"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 extern "C"
 {
 #include <libavutil/cpu.h>
@@ -33,16 +35,20 @@ void CheckAv(int result, ErrorCode code, const char *operation, bool hardwareFai
         throw CoreError(code, (hardwareFailure ? "Hardware decoder failure: " : "") + std::string(operation) + ": " + message, hardwareFailure);
     }
 }
-bool HardwareEligible(const AVCodecParameters *parameters)
+#ifdef __APPLE__
+void RegisterVideoToolboxDecoders()
 {
-    if (parameters->codec_id != AV_CODEC_ID_H264 && parameters->codec_id != AV_CODEC_ID_HEVC) { return false; }
-    const auto *descriptor = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(parameters->format));
-    if (!descriptor) { return false; }
-    if (descriptor->nb_components != 3 || descriptor->log2_chroma_w != 1 || descriptor->log2_chroma_h != 1 ||
-        (descriptor->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_ALPHA | AV_PIX_FMT_FLAG_FLOAT))) { return false; }
-    const auto depth = descriptor->comp[0].depth;
-    return depth == 8 || (parameters->codec_id == AV_CODEC_ID_HEVC && depth == 10);
+    static std::once_flag registration;
+    std::call_once(registration, []
+    {
+        VTRegisterProfessionalVideoWorkflowVideoDecoders();
+        for (const auto codec : {kCMVideoCodecType_H264, kCMVideoCodecType_HEVC, kCMVideoCodecType_AV1, kCMVideoCodecType_VP9,
+            kCMVideoCodecType_AppleProRes422Proxy, kCMVideoCodecType_AppleProRes422LT, kCMVideoCodecType_AppleProRes422,
+            kCMVideoCodecType_AppleProRes422HQ, kCMVideoCodecType_AppleProRes4444, kCMVideoCodecType_AppleProRes4444XQ})
+        { VTRegisterSupplementalVideoDecoderIfAvailable(codec); }
+    });
 }
+#endif
 }
 void ValidateBackend()
 {
@@ -70,6 +76,7 @@ DecoderSession::~DecoderSession() { CloseAttempt(); }
 void DecoderSession::CloseAttempt() noexcept
 {
     pendingFrame_.reset();
+    latestDisplayTiming_ = pendingDisplayTiming_ = outputDisplayTiming_ = {};
     scratch_.reset();
     av_packet_free(&packet_);
     avcodec_free_context(&codec_);
@@ -108,7 +115,34 @@ AVPixelFormat DecoderSession::SelectFormat(AVCodecContext *context, const AVPixe
     {
         if (session->hardwareAttempt_)
         {
-            if (*format == session->hardwareFormat_) { return *format; }
+            if (*format == session->hardwareFormat_)
+            {
+#ifdef __APPLE__
+                AVBufferRef *parameters = nullptr;
+                const auto result = avcodec_get_hw_frames_parameters(context, session->device_, *format, &parameters);
+                session->hardwareSetupError_ = result;
+                if (result < 0)
+                {
+                    av_buffer_unref(&parameters);
+                    session->hardwareSetupFailure_ = "VideoToolbox hardware frame parameter setup failed";
+                    session->negotiationFailed_ = result != AVERROR(ENOMEM);
+                    return AV_PIX_FMT_NONE;
+                }
+                const auto *frames = reinterpret_cast<const AVHWFramesContext *>(parameters->data);
+                const auto cvFormat = av_map_videotoolbox_format_from_pixfmt2(frames->sw_format, context->color_range == AVCOL_RANGE_JPEG);
+                const auto *failure = HardwareReadbackFailure(context->sw_pix_fmt, frames->sw_format);
+                av_buffer_unref(&parameters);
+                if (!cvFormat || failure)
+                {
+                    session->hardwareSetupFailure_ = failure ? failure : "VideoToolbox cannot map the negotiated readback format";
+                    session->hardwareSetupError_ = AVERROR(ENOTSUP);
+                    session->negotiationFailed_ = true;
+                    return AV_PIX_FMT_NONE;
+                }
+                static_cast<AVVideotoolboxContext *>(session->videoToolbox_)->cv_pix_fmt_type = cvFormat;
+#endif
+                return *format;
+            }
         }
         else
         {
@@ -149,6 +183,8 @@ void DecoderSession::OpenAttempt(bool hardware)
     CheckCancelled();
     hardwareAttempt_ = hardware;
     negotiationFailed_ = false;
+    hardwareSetupError_ = 0;
+    hardwareSetupFailure_ = nullptr;
     format_ = avformat_alloc_context();
     if (!format_) { throw std::bad_alloc(); }
     format_->interrupt_callback = {Interrupt, this};
@@ -168,27 +204,18 @@ void DecoderSession::OpenAttempt(bool hardware)
     if (stream->time_base.num <= 0 || stream->time_base.den <= 0)
     { throw CoreError(ErrorCode::Unsupported, "The video stream has no valid time base."); }
     timeBase_ = stream->time_base;
+    displayTimingTracker_.Reset(timeBase_, stream->start_time, stream->avg_frame_rate, stream->r_frame_rate);
     colorContext_.hdrEvidence |= HasHdrEvidence(stream->codecpar);
     colorContext_.unsupportedColorMetadata |= HasUnsupportedColorMetadata(stream->codecpar);
     colorContext_.sourcePixelFormat = static_cast<AVPixelFormat>(stream->codecpar->format);
-    const auto *decoder = avcodec_find_decoder(stream->codecpar->codec_id);
-    if (!decoder) { throw CoreError(ErrorCode::Unsupported, "No decoder is available for this stream."); }
-    codec_ = avcodec_alloc_context3(decoder);
-    if (!codec_) { throw std::bad_alloc(); }
-    CheckAv(avcodec_parameters_to_context(codec_, stream->codecpar), ErrorCode::NativeFailure, "avcodec_parameters_to_context");
-    codec_->opaque = this;
-    codec_->pkt_timebase = timeBase_;
-    codec_->get_format = SelectFormat;
-    codec_->apply_cropping = 0;
-    codec_->export_side_data |= AV_CODEC_EXPORT_DATA_FILM_GRAIN;
-    codec_->thread_count = hardware || options_.workload == DecodeWorkload::Interactive ? 1 : std::clamp(av_cpu_count(), 1, 4);
+    const AVCodec *decoder = nullptr;
     if (hardware)
     {
-        if (!HardwareEligible(stream->codecpar)) { throw CoreError(ErrorCode::Unsupported, "Hardware v1 requires H.264 8-bit or HEVC 8/10-bit opaque 4:2:0.", true); }
 #ifdef __APPLE__
         constexpr auto deviceType = AV_HWDEVICE_TYPE_VIDEOTOOLBOX;
         hardwareFormat_ = AV_PIX_FMT_VIDEOTOOLBOX;
         info_.activeBackend = DecoderBackend::VideoToolbox;
+        RegisterVideoToolboxDecoders();
 #elif defined(_WIN32)
         constexpr auto deviceType = AV_HWDEVICE_TYPE_D3D11VA;
         hardwareFormat_ = AV_PIX_FMT_D3D11;
@@ -197,19 +224,34 @@ void DecoderSession::OpenAttempt(bool hardware)
         constexpr auto deviceType = AV_HWDEVICE_TYPE_NONE;
         throw CoreError(ErrorCode::Unsupported, "Hardware decoding is unavailable on this platform.", true);
 #endif
-        bool configured = false;
-        for (int index = 0; const auto *config = avcodec_get_hw_config(decoder, index); ++index)
-        {
-            if (config->device_type == deviceType && config->pix_fmt == hardwareFormat_ &&
-                (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)) { configured = true; break; }
-        }
-        if (!configured) { throw CoreError(ErrorCode::Unsupported, "The pinned FFmpeg decoder lacks the requested hardware configuration.", true); }
+        decoder = FindHardwareDecoder(stream->codecpar->codec_id, deviceType, hardwareFormat_);
+        if (!decoder) { throw CoreError(ErrorCode::Unsupported, "The pinned FFmpeg codec has no decoder configuration for the requested hardware backend.", true); }
         CheckAv(av_hwdevice_ctx_create(&device_, deviceType, nullptr, nullptr, 0), ErrorCode::Unsupported, "av_hwdevice_ctx_create", true);
+    }
+    else
+    {
+        decoder = avcodec_find_decoder(stream->codecpar->codec_id);
+        info_.activeBackend = DecoderBackend::Software;
+    }
+    if (!decoder) { throw CoreError(ErrorCode::Unsupported, "No decoder is available for this stream."); }
+    codec_ = avcodec_alloc_context3(decoder);
+    if (!codec_) { throw std::bad_alloc(); }
+    CheckAv(avcodec_parameters_to_context(codec_, stream->codecpar), ErrorCode::NativeFailure, "avcodec_parameters_to_context");
+    codec_->opaque = this;
+    codec_->pkt_timebase = timeBase_;
+    codec_->get_format = SelectFormat;
+    codec_->apply_cropping = 0;
+    if (std::strcmp(decoder->name, "libdav1d") != 0 &&
+        !(hardware && info_.activeBackend == DecoderBackend::VideoToolbox && stream->codecpar->codec_id == AV_CODEC_ID_AV1))
+    {
+        codec_->export_side_data |= AV_CODEC_EXPORT_DATA_FILM_GRAIN;
+    }
+    codec_->thread_count = hardware || options_.workload == DecodeWorkload::Interactive ? 1 : std::clamp(av_cpu_count(), 1, 4);
+    if (hardware)
+    {
 #ifdef __APPLE__
         auto *context = static_cast<AVVideotoolboxContext *>(av_mallocz(sizeof(AVVideotoolboxContext)));
         if (!context) { throw std::bad_alloc(); }
-        const auto *sourceDescriptor = av_pix_fmt_desc_get(colorContext_.sourcePixelFormat);
-        context->cv_pix_fmt_type = av_map_videotoolbox_format_from_pixfmt2(sourceDescriptor->comp[0].depth == 10 ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12, codec_->color_range == AVCOL_RANGE_JPEG);
         videoToolbox_ = context;
         codec_->hwaccel_context = context;
 #else
@@ -217,8 +259,10 @@ void DecoderSession::OpenAttempt(bool hardware)
         if (!codec_->hw_device_ctx) { throw std::bad_alloc(); }
 #endif
     }
-    else { info_.activeBackend = DecoderBackend::Software; }
-    CheckAv(avcodec_open2(codec_, decoder, nullptr), ErrorCode::Decode, "avcodec_open2");
+    const auto initialized = avcodec_open2(codec_, decoder, nullptr);
+    if (hardwareSetupError_ == AVERROR(ENOMEM)) { throw std::bad_alloc(); }
+    CheckAv(initialized, ErrorCode::Decode, hardwareSetupFailure_ ? hardwareSetupFailure_ : "avcodec_open2",
+        hardware && (negotiationFailed_ || IsHardwareSetupFailure(initialized)));
     CheckCancelled();
     packet_ = av_packet_alloc();
     scratch_.reset(av_frame_alloc());
@@ -253,6 +297,9 @@ void DecoderSession::Seek(int64_t timestamp)
         av_packet_unref(packet_);
         av_frame_unref(scratch_.get());
         pendingFrame_.reset();
+        latestDisplayTiming_ = pendingDisplayTiming_ = outputDisplayTiming_ = {};
+        const auto *stream = format_->streams[streamIndex_];
+        displayTimingTracker_.Reset(timeBase_, AV_NOPTS_VALUE, stream->avg_frame_rate, stream->r_frame_rate);
         packetPending_ = demuxEof_ = drainSent_ = decoderEof_ = false;
         seekTarget_ = timestamp;
         ++info_.generation;
@@ -271,26 +318,36 @@ FramePointer DecoderSession::ReadFrameForSeek(int64_t timestamp)
 }
 FramePointer DecoderSession::ReadSelected(int64_t timestamp)
 {
-    auto frame = pendingFrame_ ? std::move(pendingFrame_) : ReadInternal();
+    const auto hadPending = pendingFrame_ != nullptr;
+    auto frame = hadPending ? std::move(pendingFrame_) : ReadInternal();
+    auto timing = hadPending ? pendingDisplayTiming_ : latestDisplayTiming_;
+    pendingDisplayTiming_ = {};
+    outputDisplayTiming_ = timing;
     if (timestamp == AV_NOPTS_VALUE || !frame) { return frame; }
-    if (frame->pts == AV_NOPTS_VALUE)
-    { throw CoreError(ErrorCode::Decode, "Seek frame is missing its original PTS."); }
-    if (frame->pts > timestamp) { return frame; }
+    if (timing.value == AV_NOPTS_VALUE)
+    { throw CoreError(ErrorCode::DisplayTimingUnavailable, "Seek frame has no usable display timing evidence."); }
+    if (av_compare_ts(timing.value, timing.timeBase, timestamp, timeBase_) > 0) { return frame; }
     colorContext_.hdrEvidence |= HasHdrEvidence(frame.get());
     while (true)
     {
         CheckCancelled();
         auto next = ReadInternal();
-        if (!next) { return frame; }
-        if (next->pts == AV_NOPTS_VALUE || next->pts < frame->pts)
-        { throw CoreError(ErrorCode::Decode, "Seek frames have missing or decreasing original PTS."); }
-        if (next->pts > timestamp)
+        if (!next) { outputDisplayTiming_ = timing; return frame; }
+        const auto nextTiming = latestDisplayTiming_;
+        if (nextTiming.value == AV_NOPTS_VALUE)
+        { throw CoreError(ErrorCode::DisplayTimingUnavailable, "Seek frame has no usable display timing evidence."); }
+        if (av_compare_ts(nextTiming.value, nextTiming.timeBase, timing.value, timing.timeBase) < 0)
+        { throw CoreError(ErrorCode::Decode, "Seek frames have decreasing display times."); }
+        if (av_compare_ts(nextTiming.value, nextTiming.timeBase, timestamp, timeBase_) > 0)
         {
             pendingFrame_ = std::move(next);
+            pendingDisplayTiming_ = nextTiming;
+            outputDisplayTiming_ = timing;
             return frame;
         }
         colorContext_.hdrEvidence |= HasHdrEvidence(next.get());
         frame = std::move(next);
+        timing = nextTiming;
     }
 }
 FramePointer DecoderSession::ReadOutput(int64_t timestamp)
@@ -364,12 +421,13 @@ FramePointer DecoderSession::Download(FramePointer frame)
     if (!frame->hw_frames_ctx) { throw CoreError(ErrorCode::Decode, "Hardware frame has no transfer context.", true); }
 #endif
     const auto *frames = reinterpret_cast<const AVHWFramesContext *>(frame->hw_frames_ctx->data);
-    if (frames->sw_format != AV_PIX_FMT_NV12 && frames->sw_format != AV_PIX_FMT_P010LE)
+#ifdef _WIN32
+    if (frames->sw_format != AV_PIX_FMT_NV12 && frames->sw_format != AV_PIX_FMT_P010)
     { throw CoreError(ErrorCode::Unsupported, "Hardware readback requires NV12 or P010LE.", true); }
-    const auto *sourceDescriptor = av_pix_fmt_desc_get(codec_->sw_pix_fmt);
-    if (!sourceDescriptor) { sourceDescriptor = av_pix_fmt_desc_get(colorContext_.sourcePixelFormat); }
-    if (!sourceDescriptor || (sourceDescriptor->comp[0].depth == 10 ? frames->sw_format != AV_PIX_FMT_P010LE : frames->sw_format != AV_PIX_FMT_NV12))
-    { throw CoreError(ErrorCode::Unsupported, "Hardware readback component depth differs from the source.", true); }
+#endif
+    const auto sourceFormat = codec_->sw_pix_fmt != AV_PIX_FMT_NONE ? codec_->sw_pix_fmt : colorContext_.sourcePixelFormat;
+    if (const auto *failure = HardwareReadbackFailure(sourceFormat, frames->sw_format))
+    { throw CoreError(ErrorCode::Unsupported, failure, true); }
     FramePointer cpu(av_frame_alloc());
     if (!cpu) { throw std::bad_alloc(); }
     cpu->format = frames->sw_format;
@@ -377,6 +435,11 @@ FramePointer DecoderSession::Download(FramePointer frame)
     CheckAv(av_frame_copy_props(cpu.get(), frame.get()), ErrorCode::Decode, "av_frame_copy_props(hardware download)", true);
     if (cpu->format != frames->sw_format || cpu->width != frame->width || cpu->height != frame->height || cpu->hw_frames_ctx)
     { throw CoreError(ErrorCode::Decode, "Hardware download changed geometry or produced a non-CPU frame.", true); }
+    const auto *sourceDescriptor = av_pix_fmt_desc_get(sourceFormat);
+    const auto *outputDescriptor = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(cpu->format));
+    if (!(sourceDescriptor->flags & AV_PIX_FMT_FLAG_ALPHA) && (outputDescriptor->flags & AV_PIX_FMT_FLAG_ALPHA) &&
+        !HardwareReadbackAlphaIsOpaque(cpu.get()))
+    { throw CoreError(ErrorCode::Unsupported, "Hardware readback added nonopaque alpha to an opaque source.", true); }
     info_.hardwareConfirmed = true;
     info_.downloadNanoseconds += Elapsed(start);
     return cpu;
@@ -390,6 +453,7 @@ FramePointer DecoderSession::ReadInternal()
         const auto received = avcodec_receive_frame(codec_, scratch_.get());
         info_.decodeNanoseconds += Elapsed(start);
         CheckCancelled();
+        if (hardwareSetupError_ == AVERROR(ENOMEM)) { throw std::bad_alloc(); }
         if (received == 0)
         {
             FramePointer frame(av_frame_alloc());
@@ -402,6 +466,7 @@ FramePointer DecoderSession::ReadInternal()
                 if (frame->format != hardwareFormat_)
                 { throw CoreError(ErrorCode::Decode, "Hardware silently changed to software.", true); }
             }
+            latestDisplayTiming_ = displayTimingTracker_.Read(*frame);
             return frame;
         }
         if (received == AVERROR_EOF)
@@ -411,15 +476,20 @@ FramePointer DecoderSession::ReadInternal()
             return nullptr;
         }
         if (received != AVERROR(EAGAIN))
-        { CheckAv(received, ErrorCode::Decode, negotiationFailed_ ? "Hardware decoder format negotiation failed (avcodec_receive_frame)" : "avcodec_receive_frame", negotiationFailed_); }
+        { CheckAv(received, ErrorCode::Decode, negotiationFailed_ ?
+            (hardwareSetupFailure_ ? hardwareSetupFailure_ : "Hardware decoder format negotiation failed (avcodec_receive_frame)") : "avcodec_receive_frame",
+            negotiationFailed_ || (hardwareAttempt_ && IsHardwareSetupFailure(received))); }
         if (packetPending_)
         {
             start = Clock::now();
             const auto sent = avcodec_send_packet(codec_, packet_);
             info_.decodeNanoseconds += Elapsed(start);
             CheckCancelled();
+            if (hardwareSetupError_ == AVERROR(ENOMEM)) { throw std::bad_alloc(); }
             if (sent == AVERROR(EAGAIN)) { throw CoreError(ErrorCode::Decode, "Decoder made no receive/send progress."); }
-            CheckAv(sent, ErrorCode::Decode, negotiationFailed_ ? "Hardware decoder format negotiation failed (avcodec_send_packet)" : "avcodec_send_packet", negotiationFailed_);
+            CheckAv(sent, ErrorCode::Decode, negotiationFailed_ ?
+                (hardwareSetupFailure_ ? hardwareSetupFailure_ : "Hardware decoder format negotiation failed (avcodec_send_packet)") : "avcodec_send_packet",
+                negotiationFailed_ || (hardwareAttempt_ && IsHardwareSetupFailure(sent)));
             av_packet_unref(packet_);
             packetPending_ = false;
             continue;

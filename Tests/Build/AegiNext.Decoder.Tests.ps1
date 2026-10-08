@@ -132,6 +132,8 @@ Describe 'Decoder environment checks verify the selected development SDK' {
             ffmpeg = Get-DecoderToolFixtureVersion 'ffmpeg'
             ffprobe = Get-DecoderToolFixtureVersion 'ffprobe'
         }
+        $script:decoderAv1Help = 'Decoder libdav1d [dav1d AV1 decoder by VideoLAN]:'
+        $script:decoderAv1ExitCode = 0
         Mock Find-AegiNextCommand -ModuleName AegiNext.Build {
             if ($Name -in @('scoop', 'brew', 'cmake', 'ninja', 'ctest', 'gcc', 'g++')) { return "fixture-$Name" }
             return $null
@@ -141,6 +143,7 @@ Describe 'Decoder environment checks verify the selected development SDK' {
             if ($FilePath -eq 'fixture-cmake') { return [pscustomobject]@{ ExitCode = 0; Output = 'cmake version 3.31.6' } }
             if ($FilePath -eq 'fixture-ninja') { return [pscustomobject]@{ ExitCode = 0; Output = '1.13.0' } }
             if ($FilePath -in @('fixture-gcc', 'fixture-g++')) { return [pscustomobject]@{ ExitCode = 0; Output = $script:compilerMachine } }
+            if ('decoder=libdav1d' -in $Arguments) { return [pscustomobject]@{ ExitCode = $script:decoderAv1ExitCode; Output = $script:decoderAv1Help } }
             $name = [IO.Path]::GetFileNameWithoutExtension($FilePath)
             if ($script:decoderToolOutput.ContainsKey($name)) { return [pscustomobject]@{ ExitCode = 0; Output = $script:decoderToolOutput[$name] } }
             throw "Unexpected environment command: $FilePath"
@@ -159,8 +162,33 @@ Describe 'Decoder environment checks verify the selected development SDK' {
         @($report.Checks | Where-Object Id -eq 'DotNetSdk').Count | Should -Be 0
         Should -Invoke Find-AegiNextCommand -ModuleName AegiNext.Build -Times 0 -Exactly -ParameterFilter { $Name -in @('dotnet', 'ffmpeg', 'ffprobe', 'pkg-config') }
         Should -Invoke Invoke-AegiNextCommand -ModuleName AegiNext.Build -Times 2 -Exactly -ParameterFilter { $FilePath.StartsWith((Join-Path $script:decoderSdk 'bin')) -and $Arguments[0] -eq '-version' }
+        Should -Invoke Invoke-AegiNextCommand -ModuleName AegiNext.Build -Times 1 -Exactly -ParameterFilter {
+            $FilePath -eq (Join-Path $script:decoderSdk 'bin/ffmpeg.exe') -and 'decoder=libdav1d' -in $Arguments
+        }
         Should -Invoke Install-AegiNextDependency -ModuleName AegiNext.Build -Times 0 -Exactly
         Test-Path -LiteralPath (Join-Path $repository 'artifacts') | Should -BeFalse
+    }
+
+    It 'rejects hardware-only AV1 registration and failed software decoder inspection' -TestCases @(
+        @{ Help = 'Decoder av1 [Alliance for Open Media AV1]:'; ExitCode = 0 }
+        @{ Help = "Unknown decoder 'libdav1d'."; ExitCode = 0 }
+        @{ Help = 'Decoder libdav1d [dav1d AV1 decoder by VideoLAN]:'; ExitCode = 1 }
+    ) {
+        param($Help, $ExitCode)
+        $script:decoderAv1Help = $Help
+        $script:decoderAv1ExitCode = $ExitCode
+        $report = Get-AegiNextEnvironment -RepositoryRoot $repository -Target Decoder -HostInfo $hostInfo
+        $report.Ready | Should -BeFalse
+        ($report.Checks | Where-Object Id -eq 'FfmpegSdk').Detail | Should -BeLike '*software AV1 decoder libdav1d*'
+    }
+
+    It 'reports software AV1 inspection exceptions as an invalid selected SDK' {
+        Mock Invoke-AegiNextCommand -ModuleName AegiNext.Build { throw 'Cannot load decoder runtime' } -ParameterFilter {
+            'decoder=libdav1d' -in $Arguments
+        }
+        $report = Get-AegiNextEnvironment -RepositoryRoot $repository -Target Decoder -HostInfo $hostInfo
+        $report.Ready | Should -BeFalse
+        ($report.Checks | Where-Object Id -eq 'FfmpegSdk').Detail | Should -BeLike '*Cannot inspect software AV1 decoder libdav1d*Cannot load decoder runtime*'
     }
 
     It 'prioritizes explicit root over FFMPEG_DIR and package manager discovery' {

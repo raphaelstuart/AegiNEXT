@@ -10,8 +10,8 @@ internal sealed class SaveProjectTask(WorkbenchSession session, ProjectWorkflowC
     public override string Name => "Tasks.SaveProject";
     public override bool CanCancel => !finalization;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-    [.. base.Resources, AegiTaskResource.StoragePath(destination),
-        AegiTaskResource.StoragePath(Path.GetDirectoryName(Path.GetFullPath(destination))!)];
+    [.. base.Resources, AegiTaskResource.DeferredStoragePath(destination),
+        AegiTaskResource.DeferredStoragePath(Path.GetDirectoryName(Path.GetFullPath(destination))!)];
     protected override Task<bool> ExecuteResultAsync(AegiTaskExecutionContext context) =>
         coordinator.SaveProjectCoreAsync(destination, captured, persistenceSnapshot, sourceDirectory, context, finalization);
 }

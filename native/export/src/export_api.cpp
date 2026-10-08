@@ -128,10 +128,11 @@ void Versions()
 void ValidateFrame(const AVFrame *f)
 {
     const auto *desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(f->format));
-    Need(desc && desc->nb_components == 3 && !(desc->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_FLOAT |
-        AV_PIX_FMT_FLAG_HWACCEL | AV_PIX_FMT_FLAG_ALPHA | AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_BITSTREAM | AV_PIX_FMT_FLAG_BAYER)),
-        "Export currently requires opaque integer YUV input");
-    for (int i = 0; i < 3; ++i) Need(desc->comp[i].depth >= 8 && desc->comp[i].depth <= 16, "Unsupported input depth");
+    Need(desc && desc->nb_components == ((desc->flags & AV_PIX_FMT_FLAG_ALPHA) ? 4 : 3) &&
+        !(desc->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_FLOAT | AV_PIX_FMT_FLAG_HWACCEL |
+        AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_BITSTREAM | AV_PIX_FMT_FLAG_BAYER | AV_PIX_FMT_FLAG_XYZ)),
+        "Export requires integer YUV with optional alpha");
+    for (int i = 0; i < desc->nb_components; ++i) Need(desc->comp[i].depth >= 8 && desc->comp[i].depth <= 16, "Unsupported input depth");
     Need(f->width > 0 && f->height > 0 && static_cast<uint64_t>(f->width) * f->height <= 33177600,
         "Export input exceeds coded pixel limit");
     Need(!(f->flags & (AV_FRAME_FLAG_INTERLACED | AV_FRAME_FLAG_CORRUPT)) && !f->decode_error_flags,
@@ -456,6 +457,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
     std::vector<float> layer(static_cast<size_t>(r.width) * r.height * 4);
     PreparedOverlay overlay(r.width, r.height);
     auto streamTimeBase = sourceStream->time_base;
+    aeginext::media::DisplayTiming displayTiming;
     int64_t lastPts = AV_NOPTS_VALUE;
     std::string mastering;
     int sourceFormat = -1, sourceWidth = 0, sourceHeight = 0, matrix = -1, primaries = -1, transfer = -1, range = -1, chroma = -1;
@@ -465,8 +467,11 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         const auto width = decoded->width - decoded->crop_left - decoded->crop_right;
         const auto height = decoded->height - decoded->crop_top - decoded->crop_bottom;
         Need(width == r.width && height == r.height, "Project canvas must equal visible video dimensions");
-        const auto pts = decoded->pts != AV_NOPTS_VALUE ? decoded->pts : decoded->best_effort_timestamp;
-        Need(pts != AV_NOPTS_VALUE && (lastPts == AV_NOPTS_VALUE || pts > lastPts), "Export requires known strictly increasing presentation timestamps");
+        Need(displayTiming.value != AV_NOPTS_VALUE && displayTiming.timeBase.num > 0 && displayTiming.timeBase.den > 0,
+            "Export requires a presentation time supported by source timing evidence");
+        const auto pts = av_rescale_q(displayTiming.value, displayTiming.timeBase, streamTimeBase);
+        Need(pts != AV_NOPTS_VALUE && (lastPts == AV_NOPTS_VALUE || pts > lastPts),
+            "Export presentation time overflowed or ceased to increase after stream time-base quantization");
         lastPts = pts;
         if (!c.encoder)
         {
@@ -567,7 +572,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         }
         Check(c.performance.Measure(ExportStage::Upsample, [&]()
         {
-            return yuv->Upsample(decoded.get());
+            return yuv->Upsample(decoded.get(), [&]() { c.CheckCancel(); });
         }), "upsample encoded YUV");
         c.performance.Measure(ExportStage::Composite, [&]()
         {
@@ -579,7 +584,12 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         {
             return yuv->Downsample(outputFrame.get());
         }), "downsample encoded YUV");
-        outputFrame->pts = pts; outputFrame->duration = decoded->duration; outputFrame->time_base = streamTimeBase;
+        outputFrame->pts = pts;
+        const auto durationTimeBase = decoded->time_base.num > 0 && decoded->time_base.den > 0 ?
+            decoded->time_base : streamTimeBase;
+        outputFrame->duration = av_rescale_q(decoded->duration, durationTimeBase, streamTimeBase);
+        Need(outputFrame->duration >= 0, "Export duration overflowed or is negative");
+        outputFrame->time_base = streamTimeBase;
         outputFrame->color_range = decoded->color_range; outputFrame->colorspace = decoded->colorspace;
         outputFrame->color_primaries = decoded->color_primaries; outputFrame->color_trc = decoded->color_trc;
         outputFrame->chroma_location = AVCHROMA_LOC_LEFT; outputFrame->sample_aspect_ratio = decoded->sample_aspect_ratio;
@@ -591,6 +601,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         c.CheckCancel();
         auto raw = c.performance.Measure(ExportStage::Decode, [&]() { return c.decoderSession->ReadFrame(); });
         if (!raw) return {};
+        const auto timing = c.decoderSession->OutputDisplayTiming();
         const auto *stream = c.decoderSession->SourceStream();
         Need(stream && stream->time_base.num > 0 && stream->time_base.den > 0,
             "Invalid video stream/time base after decoder selection");
@@ -598,7 +609,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         aeginext::media::FramePointer frame(av_frame_clone(raw.get()));
         if (!frame) throw std::bad_alloc();
         aeginext::media::ApplyColor(frame.get(), resolved);
-        return {std::move(frame), stream->time_base, resolved.inferredFields};
+        return {std::move(frame), stream->time_base, resolved.inferredFields, timing};
     };
     auto first = readFrame();
     if (first.frame)
@@ -606,6 +617,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
         sourceStream = c.decoderSession->SourceStream();
         streamTimeBase = first.timeBase;
         decoded.reset(first.frame.release());
+        displayTiming = first.displayTiming;
         process();
         c.resultInfo.inferred_fields |= first.inferredFields;
     }
@@ -635,6 +647,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
             Need(item.timeBase.num == streamTimeBase.num && item.timeBase.den == streamTimeBase.den,
                 "Midstream video time base changes require a new export segment");
             decoded.reset(item.frame.release());
+            displayTiming = item.displayTiming;
             process();
             c.resultInfo.inferred_fields |= item.inferredFields;
         }
@@ -668,7 +681,7 @@ void Execute(Context &c, const an_export_request &r, an_export_render_callback r
     c.resultInfo.color_primaries = primaries;
     c.resultInfo.color_transfer = transfer;
     c.resultInfo.chroma_location = AVCHROMA_LOC_LEFT;
-    c.resultInfo.alpha_mode = decoded->alpha_mode;
+    c.resultInfo.alpha_mode = AVALPHA_MODE_UNSPECIFIED;
     CopyError(c.resultInfo.fallback_reason, sizeof(c.resultInfo.fallback_reason), session.fallbackReason.c_str());
     c.completed = true;
     c.performance.Report(frames, session.decodeNanoseconds, session.downloadNanoseconds);

@@ -22,6 +22,8 @@ internal static class NativeDecodeError
                 throw new NotSupportedException(message);
             case NativeDecodeMethods.INVALID_STATE:
                 throw new InvalidOperationException(message);
+            case NativeDecodeMethods.DISPLAY_TIMING_UNAVAILABLE:
+                throw new VideoDisplayTimingUnavailableException(message);
             default:
                 throw new InvalidDataException(message);
         }

@@ -8,7 +8,7 @@ internal sealed class UserSettingsRestoreCancelTask(DesktopApplicationContext ow
     public override string Name => "Tasks.SettingsRestoreCancel";
 
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. owner.SettingsResources, AegiTaskResource.StoragePath(Path.Combine(owner.PreferencesStore.DirectoryPath,
+        [.. owner.SettingsResources, AegiTaskResource.DeferredStoragePath(Path.Combine(owner.PreferencesStore.DirectoryPath,
             ".settings-restore", "pending.aegisettings"))];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)

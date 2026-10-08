@@ -205,7 +205,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         {
             return parent.RunStageAsync("Tasks.PrepareSubtitleStyle", context =>
                 PrepareCreationCoreAsync(trackId, preset, project, directory, context.CancellationToken),
-                [AegiTaskResource.Project(session.TaskScope), AegiTaskResource.StoragePath(directory),
+                [AegiTaskResource.Project(session.TaskScope), AegiTaskResource.DeferredStoragePath(directory),
                     session.ApplicationContext.GetLibraryResource(PersonalLibraryKind.STYLE)]);
         }
         return session.ApplicationContext.Tasks.Submit(new PrepareSubtitleStyleTask(session, trackId,

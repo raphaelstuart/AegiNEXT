@@ -123,6 +123,16 @@ function Invoke-AegiNextSdkRecipe
             Invoke-AegiNextSdkCommand (Find-AegiNextCommand 'make') @("-j$Jobs") $source $environment
             Invoke-AegiNextSdkCommand (Find-AegiNextCommand 'make') @('install') $source $environment
         }
+        'dav1d'
+        {
+            $meson = Find-AegiNextCommand 'meson'
+            $options = @('setup', $build, $source, "--prefix=$Stage", '--libdir=lib', '--buildtype=release', '--wrap-mode=nodownload',
+                '-Ddefault_library=shared', '-Dbitdepths=8,16', '-Denable_asm=true', '-Denable_tools=false',
+                '-Denable_tests=false', '-Denable_examples=false', '-Denable_docs=false', '-Dxxhash_muxer=disabled')
+            Invoke-AegiNextSdkCommand $meson $options $source $environment
+            Invoke-AegiNextSdkCommand $meson @('compile', '-C', $build, '-j', "$Jobs") $source $environment
+            Invoke-AegiNextSdkCommand $meson @('install', '-C', $build, '--no-rebuild') $source $environment
+        }
         'cmake'
         {
             $options = switch ($Name)
@@ -238,6 +248,14 @@ function Test-AegiNextPreparedSdk
         if ($check.Check.Status -ne 'Ready')
         {
             throw $check.Check.Detail
+        }
+    }
+    elseif ($Name -eq 'dav1d')
+    {
+        $pc = Get-Content -LiteralPath (Join-Path $Root 'lib/pkgconfig/dav1d.pc') -Raw
+        if ($pc -notmatch ('(?m)^Version:\s*' + [regex]::Escape($package.version) + '\s*$'))
+        {
+            throw 'Prepared dav1d does not match the locked version.'
         }
     }
     elseif ($Name -eq 'vulkan-headers')

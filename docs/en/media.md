@@ -22,9 +22,11 @@ Use `FfprobeMediaProbe` for existing local files. It validates tool identity, in
 
 Open the selected absolute stream index with `FfmpegVideoDecoder`. Receive buffered frames and drain EOF. A returned frame owns an independent reference; later reads or decoder disposal cannot reclaim it. Dispose every frame explicitly. Plane copies contain valid pixels in logical row order, without cropping or color conversion.
 
-Seek to a keyframe, then select the actual-PTS interval `Time <= target < NextFrameTime`. VFR remains rational. Missing/regressing PTS rejects; duplicate PTS selects the last decoded frame. Cache decoded intervals with bounded frame/byte budgets; cache hits must reconnect sequential playback to the logical next frame.
+Seek to a keyframe, then select the display interval `Time <= target < NextFrameTime`. Display timing uses original PTS, then FFmpeg's best-effort timestamp. When both are absent, a previous frame's valid duration can supply the next time; matching declared average and nominal frame rates can supply duration when necessary. An initial stream start can anchor the first sequential frame. These derived times carry provenance and never overwrite raw PTS or best-effort facts. Missing evidence or regressing display times rejects; duplicate times select the last decoded frame. VFR remains rational. Cache decoded intervals with bounded frame/byte budgets; cache hits must reconnect sequential playback to the logical next frame.
 
-Auto decoding prefers VideoToolbox on macOS or D3D11VA on Windows and can fall back before first delivery. Required GPU verifies acceleration and reports failure; cancellation, corrupt input, and later errors do not trigger silent fallback. Hardware readback preserves depth and frame metadata.
+Auto decoding prefers VideoToolbox on macOS or D3D11VA on Windows and falls back to CPU before first delivery for unsupported hardware formats. GPU (strict) requires confirmed acceleration without CPU fallback; choose Auto or CPU for broad compatibility. Cancellation, corrupt input, and later errors do not trigger silent fallback. macOS selects a decoder with the actual VideoToolbox configuration and negotiates source-preserving output, including HEVC 4:2:2/4:4:4, AV1, VP9, and ProRes 422/4444 on capable devices. Readback preserves chroma, component precision, Alpha, geometry, and frame metadata; 12-bit ProRes may use a 16-bit output container. Windows readback remains restricted to opaque 4:2:0 NV12/P010 output with a supported D3D11VA decoder configuration. Acceleration depends on the device, OS, codec profile, and dimensions, rather than the MKV/MOV container; a VideoToolbox software session is not reported as GPU decoding.
+
+The compatibility suite covers H.264 10-bit/RGB, HEVC 10-bit 4:2:2/4:4:4, VP8, VP9/AV1 10-bit, MPEG-2/4, MJPEG, ProRes 422 Proxy/LT/422/HQ and 4444/4444 XQ (with or without Alpha), and FFV1 16-bit in MKV, MP4, MOV, WebM, AVI, and MPEG-TS containers. AV1 uses the native decoder for supported hardware sessions and dav1d for software, including decoder-applied film grain. Codec support still depends on valid stream metadata and supported color interpretation.
 
 Missing SDR color tags use explicit shared resolution rules. Raw facts remain unchanged, while resolved color records inferred fields. HDR evidence requires complete supported tags. Preview decoder preference and export decode/encode choices are independent.
 
@@ -38,7 +40,7 @@ Playback results carry generations. New commands supersede stale deliveries; con
 
 ## Compose preview and analyze audio
 
-SDR conversion borrows the raw frame and produces independent, opaque, top-down sRGB BGRA8. Export never uses these display pixels. Composition keeps the corresponding uncomposed background to avoid double subtitles or wrong-frame reuse.
+SDR conversion borrows the raw frame and produces independent, opaque, top-down sRGB BGRA8. ProRes 4444 Alpha remains present in the original decoded planes. Preview and export composite transparency onto black in linear light before their separate color pipelines; unspecified alpha is treated as straight, while explicit premultiplication is respected. Export uses high-precision source pixels and never consumes the SDR preview. Composition keeps the corresponding uncomposed background to avoid double subtitles or wrong-frame reuse.
 
 Controller results check request, media time, project revision, and quality. Select preview quality in the workbench; interaction uses a temporary cap. Measure presented frames and dispatch latency separately from decode duration, especially for long GOP, high resolution, and repeated seeks.
 
@@ -63,3 +65,5 @@ dotnet test Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj -c Release --
 ```
 
 Native cases need the switches and tool paths in [Building](building.md). Test actual PTS/pixels, seeking, supersession, cancellation, frame lifetime, and faults. Silent system-device tests do not establish speaker latency; Headless presentation does not establish native HDR or GPU acceptance.
+
+To verify the original HEVC 4:4:4 10-bit failure through the real desktop preview controller, set `AEGINEXT_COMPATIBILITY_MEDIA_PATH` to the absolute source path and run `OriginalVideoCompatibilityTests` with native tests enabled. Optional `AEGINEXT_COMPATIBILITY_REPORT_PATH` records frame hashes, intervals, fallback diagnostics, and resource counts.

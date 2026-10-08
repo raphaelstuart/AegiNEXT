@@ -14,6 +14,8 @@ public sealed class NativeDecodeLayoutTests
         Assert.Equal(64, Marshal.SizeOf<NativeDecodeBackendInfo>());
         Assert.Equal(32, Marshal.OffsetOf<NativeDecodeBackendInfo>("releaseVersion").ToInt32());
         Assert.Equal(600, Marshal.SizeOf<NativeDecodedFrameInfo>());
+        Assert.Equal(32, Marshal.SizeOf<NativeFrameDisplayTiming>());
+        Assert.Equal(16, Marshal.OffsetOf<NativeFrameDisplayTiming>("timestamp").ToInt32());
         Assert.Equal(128, Marshal.OffsetOf<NativeDecodedFrameInfo>("pts").ToInt32());
         Assert.Equal(136, Marshal.OffsetOf<NativeDecodedFrameInfo>("bestEffortTimestamp").ToInt32());
         Assert.Equal(144, Marshal.OffsetOf<NativeDecodedFrameInfo>("duration").ToInt32());

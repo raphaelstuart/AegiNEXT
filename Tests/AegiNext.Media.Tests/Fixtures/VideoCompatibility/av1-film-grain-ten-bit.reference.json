@@ -1,0 +1,634 @@
+{
+  "frames": [
+    {
+      "key_frame": 1,
+      "pts": 0,
+      "best_effort_timestamp": 0,
+      "duration": 40,
+      "pict_type": "I",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 54 81 108 148 175 188 255",
+              "y_points_scaling": "107 109 120 108 121 126 122 117",
+              "ar_coeffs_y": "-20 -25 10 17 -31 -3 15 19 8 32 -4 28 13 3 19 -3 -27 14 -24 16 -34 22 -36 -24"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 54 94 108 148 255",
+              "uv_points_scaling": "115 113 108 102 109 120",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -93",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 40 67 81 121 175 188 255",
+              "uv_points_scaling": "110 105 113 121 105 119 118 115",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 40",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 40,
+      "best_effort_timestamp": 40,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 27 67 94 108 148 175 215 255",
+              "y_points_scaling": "107 107 102 102 96 114 121 111 111",
+              "ar_coeffs_y": "2 -12 -20 0 6 -28 -20 -18 4 13 -6 -9 -9 -4 -30 -3 -15 -33 -2 4 10 20 -20 5"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 40 54 81 94 148 202 255",
+              "uv_points_scaling": "114 109 101 101 93 97 104 104",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 94",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 81 94 108 148 162 175 202 255",
+              "uv_points_scaling": "105 103 96 88 81 97 105 108 109 109",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 76",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 80,
+      "best_effort_timestamp": 80,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 67 108 121 148 162 202 255",
+              "y_points_scaling": "105 111 89 93 113 119 115 115",
+              "ar_coeffs_y": "2 -3 -2 -3 0 1 -7 4 -11 0 -7 -5 -1 -5 -4 -1 6 2 -1 0 -12 3 -4 -3"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 81 121 135 148 255",
+              "uv_points_scaling": "25 29 23 25 28 28",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 40 94 121 135 148 162 215 229 255",
+              "uv_points_scaling": "37 45 37 32 37 48 60 62 62 62",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -115",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 120,
+      "best_effort_timestamp": 120,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 54 81 121 135 162 175 255",
+              "y_points_scaling": "109 106 120 104 103 119 122 123",
+              "ar_coeffs_y": "-2 1 -5 0 -8 2 1 -3 -6 -2 -3 1 -6 4 -3 2 -5 -2 -2 4 -3 2 -2 2"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 67 94 255",
+              "uv_points_scaling": "33 37 43 33",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -128",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 67 94 108 135 162 188 229 255",
+              "uv_points_scaling": "117 117 101 107 100 94 119 130 136 136",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -10",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 1,
+      "pts": 160,
+      "best_effort_timestamp": 160,
+      "duration": 40,
+      "pict_type": "I",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 67 94 108 121 175 188 215 255",
+              "y_points_scaling": "112 108 115 114 112 125 122 117 117",
+              "ar_coeffs_y": "-1 1 -7 -5 1 0 -2 5 -4 -2 -6 5 -3 0 1 1 -4 -5 3 -4 -3 -4 0 -1"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 108 175 255",
+              "uv_points_scaling": "31 27 31 28",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 94 175 255",
+              "uv_points_scaling": "28 24 31 28",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -128",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 200,
+      "best_effort_timestamp": 200,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 54 81 94 135 202 215 255",
+              "y_points_scaling": "102 104 122 113 105 115 113 113",
+              "ar_coeffs_y": "-5 2 -4 -1 -2 -7 2 -3 -2 -4 -3 -6 -2 -1 4 -1 -5 -5 3 0 -8 -4 0 4"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 54 81 94 135 148 202 255",
+              "uv_points_scaling": "36 36 46 43 35 40 36 35",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -128",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 54 81 94 121 135 148 162 175 255",
+              "uv_points_scaling": "111 110 120 101 93 96 104 111 114 107",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 240,
+      "best_effort_timestamp": 240,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 27 54 94 108 121 148 175 215 255",
+              "y_points_scaling": "113 113 119 122 118 112 115 118 114 114",
+              "ar_coeffs_y": "-5 3 -3 -3 -5 -8 0 -3 -9 -7 -12 -7 5 -2 -16 8 -6 -4 2 5 -2 -5 1 -6"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 54 81 108 121 148 162 202 255",
+              "uv_points_scaling": "79 79 87 98 92 79 87 80 84 86",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 97",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 54 94 108 121 148 162 215 255",
+              "uv_points_scaling": "108 108 113 117 114 105 104 110 120 120",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 19",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 280,
+      "best_effort_timestamp": 280,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 27 81 121 135 162 175 202 215 229 255",
+              "y_points_scaling": "103 102 115 99 105 125 130 121 118 118 118",
+              "ar_coeffs_y": "-1 -1 -5 -2 -4 -5 0 -1 2 1 -12 -2 0 3 3 -1 -2 -4 -1 1 -7 -3 -7 -5"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 67 148 229 255",
+              "uv_points_scaling": "54 55 55 30 37 37",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 81 108 135 148 202 255",
+              "uv_points_scaling": "36 38 34 25 26 26 31 31",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 1,
+      "pts": 320,
+      "best_effort_timestamp": 320,
+      "duration": 40,
+      "pict_type": "I",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 67 94 121 135 188 255",
+              "y_points_scaling": "111 113 109 110 112 107 107",
+              "ar_coeffs_y": "-8 -2 2 -2 1 -6 -6 9 -7 -3 -4 0 -3 -5 6 3 1 2 1 4 0 -1 -3 2"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 255",
+              "uv_points_scaling": "27 25",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -128",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 54 94 135 148 188 202 255",
+              "uv_points_scaling": "65 70 65 57 55 44 38 35",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 93",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 360,
+      "best_effort_timestamp": 360,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 40 94 108 121 135 215 255",
+              "y_points_scaling": "100 102 102 95 95 95 113 113",
+              "ar_coeffs_y": "1 -1 0 -4 -3 -2 -5 2 2 -7 -7 -3 -2 -12 -6 -1 -2 -3 3 2 -4 -2 -7 -3"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 67 94 108 121 135 162 255",
+              "uv_points_scaling": "59 59 70 57 54 54 49 58 67",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -86",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 67 94 108 121 135 175 229 255",
+              "uv_points_scaling": "92 92 102 94 87 76 75 115 121 121",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 17",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 400,
+      "best_effort_timestamp": 400,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 54 81 94 108 202 255",
+              "y_points_scaling": "101 98 112 112 113 120 122",
+              "ar_coeffs_y": "5 -1 -7 8 2 -2 -3 6 0 9 5 -1 -3 2 -11 -9 8 -12 -5 -9 -2 1 -2 -4"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 54 81 108 135 148 202 215 229 255",
+              "uv_points_scaling": "73 65 93 98 85 82 80 86 86 86",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 102",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 54 81 94 162 175 188 229 242 255",
+              "uv_points_scaling": "102 102 116 116 101 107 102 114 114 114",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key_frame": 0,
+      "pts": 440,
+      "best_effort_timestamp": 440,
+      "duration": 40,
+      "pict_type": "P",
+      "side_data_list": [
+        {
+          "side_data_type": "Film grain parameters",
+          "components": [
+            {
+              "bit_depth_luma": 0,
+              "y_points_value": "0 27 54 108 162 255",
+              "y_points_scaling": "100 100 89 112 120 122",
+              "ar_coeffs_y": "-16 0 4 4 4 9 -3 -25 -11 -5 -13 -1 -3 1 -5 -9 -3 -7 -2 -4 -4 -8 -8 -8"
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 27 54 108 121 148 255",
+              "uv_points_scaling": "100 100 91 113 107 108 122",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            },
+            {
+              "bit_depth_chroma": 0,
+              "uv_points_value": "0 54 81 94 108 255",
+              "uv_points_scaling": "82 83 74 73 80 96",
+              "ar_coeffs_uv": "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 82",
+              "uv_mult": 0,
+              "uv_mult_luma": 64,
+              "uv_offset": 0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "av1",
+      "profile": "Main",
+      "width": 128,
+      "height": 128,
+      "pix_fmt": "yuv420p10le",
+      "time_base": "1/1000",
+      "disposition": {
+        "default": 0,
+        "dub": 0,
+        "original": 0,
+        "comment": 0,
+        "lyrics": 0,
+        "karaoke": 0,
+        "forced": 0,
+        "hearing_impaired": 0,
+        "visual_impaired": 0,
+        "clean_effects": 0,
+        "attached_pic": 0,
+        "timed_thumbnails": 0,
+        "non_diegetic": 0,
+        "captions": 0,
+        "descriptions": 0,
+        "metadata": 0,
+        "dependent": 0,
+        "still_image": 0,
+        "multilayer": 0
+      },
+      "tags": {
+        "ENCODER": "Lavc63.1.102 libsvtav1",
+        "DURATION": "00:00:00.480000000"
+      }
+    }
+  ],
+  "generation": {
+    "source": "FFmpeg lavfi testsrc2 with seeded temporal noise; generated for AegiNext tests; no third-party media",
+    "ffmpeg_version": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+    "encode_arguments": [
+      "-v",
+      "error",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=128x128:rate=25",
+      "-an",
+      "-frames:v",
+      "12",
+      "-vf",
+      "noise=alls=20:allf=t+u:all_seed=31415,format=yuv420p10le,setsar=1/1,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709",
+      "-c:v",
+      "libsvtav1",
+      "-pix_fmt",
+      "yuv420p10le",
+      "-threads",
+      "1",
+      "-preset",
+      "12",
+      "-crf",
+      "30",
+      "-g",
+      "4",
+      "-svtav1-params",
+      "lp=1:film-grain=20:film-grain-denoise=1:scd=0",
+      "-color_range",
+      "tv",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
+      "-colorspace",
+      "bt709",
+      "-chroma_sample_location",
+      "left",
+      "-y",
+      "av1-film-grain-ten-bit.mkv"
+    ],
+    "probe_arguments": [
+      "-v",
+      "error",
+      "-export_side_data",
+      "+film_grain",
+      "-of",
+      "json",
+      "-select_streams",
+      "v:0",
+      "-show_streams",
+      "-show_frames",
+      "-show_entries",
+      "stream=index,codec_name,profile,pix_fmt,width,height,time_base:frame=pts,best_effort_timestamp,duration,pict_type,key_frame:frame_side_data=side_data_type",
+      "-i",
+      "av1-film-grain-ten-bit.mkv"
+    ],
+    "decode_arguments": [
+      "-v",
+      "error",
+      "-nostdin",
+      "-hwaccel",
+      "none",
+      "-c:v",
+      "libdav1d",
+      "-export_side_data",
+      "0",
+      "-i",
+      "av1-film-grain-ten-bit.mkv",
+      "-map",
+      "0:v:0",
+      "-fps_mode",
+      "passthrough",
+      "-c:v",
+      "rawvideo",
+      "-pix_fmt",
+      "yuv420p10le",
+      "-threads",
+      "1",
+      "-f",
+      "rawvideo",
+      "-y",
+      "av1-film-grain-ten-bit.raw"
+    ],
+    "media_sha256": "7347fe59237b075c1a878920b2c24727b7a051266b7959dbb1a5fda27d7adb0b",
+    "raw_sha256": "d3db43f508401bee46030c00c8c47dc6cbce57d2fe54c366f282009c416e5319",
+    "film_grain_verification": {
+      "side_data_type": "Film grain parameters",
+      "frames_with_parameters": 12,
+      "reference_decoder": "libdav1d with export_side_data=0; default film grain synthesis enabled",
+      "grain_disabled_decode_arguments": [
+        "-v",
+        "error",
+        "-nostdin",
+        "-hwaccel",
+        "none",
+        "-c:v",
+        "libdav1d",
+        "-export_side_data",
+        "+film_grain",
+        "-i",
+        "av1-film-grain-ten-bit.mkv",
+        "-map",
+        "0:v:0",
+        "-fps_mode",
+        "passthrough",
+        "-c:v",
+        "rawvideo",
+        "-pix_fmt",
+        "yuv420p10le",
+        "-threads",
+        "1",
+        "-f",
+        "rawvideo",
+        "-y",
+        "av1-film-grain-ten-bit.grain-disabled.raw"
+      ],
+      "grain_disabled_raw_sha256": "18aa023c3ee95b81f2dfc1ab593e3b0c7b50a37d837d1845706966a88f36c1f1",
+      "changed_bytes_per_frame": [
+        23404,
+        23379,
+        22994,
+        23382,
+        22574,
+        23406,
+        23753,
+        23059,
+        22878,
+        23275,
+        23672,
+        23430
+      ]
+    }
+  }
+}

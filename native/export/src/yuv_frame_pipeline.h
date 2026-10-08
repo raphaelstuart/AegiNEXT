@@ -3,6 +3,7 @@
 #include "frame_row_executor.h"
 #include "media_core.h"
 #include "prepared_overlay.h"
+#include "source_alpha_compositor.h"
 #include <functional>
 #include <span>
 
@@ -17,7 +18,7 @@ public:
     ~YuvFramePipeline();
     YuvFramePipeline(const YuvFramePipeline &) = delete;
     YuvFramePipeline &operator=(const YuvFramePipeline &) = delete;
-    int Upsample(const AVFrame *source);
+    int Upsample(const AVFrame *source, const std::function<void()> &checkCancel = {});
     void Composite(const AVFrame *source, std::span<const float> layer, const ColorPipeline &color,
         double referenceWhite, const std::function<void()> &checkCancel);
     void Composite(const AVFrame *source, PreparedOverlay &overlay, const ColorPipeline &color,
@@ -34,6 +35,7 @@ private:
     SwsContext *upsample_ = nullptr;
     SwsContext *downsample_ = nullptr;
     bool ready_ = false;
+    aeginext::media::SourceAlphaCompositor sourceAlpha_;
     FrameRowExecutor rows_;
 };
 }

@@ -13,11 +13,13 @@ internal static partial class NativeDecodeMethods
     internal const uint ABI_VERSION = 1;
     internal const uint SEEK_FEATURE = 1;
     internal const uint SEEK_SELECTION_FEATURE = 8;
+    internal const uint DISPLAY_TIMING_FEATURE = 16;
     internal const int EOF = 1;
     internal const int INVALID_ARGUMENT = 2;
     internal const int UNSUPPORTED = 3;
     internal const int CANCELLED = 6;
     internal const int INVALID_STATE = 7;
+    internal const int DISPLAY_TIMING_UNAVAILABLE = 9;
     internal const int ERROR_CAPACITY = 1024;
     internal const int NAME_CAPACITY = 64;
     private const string LIBRARY = "aeginext_decode";
@@ -101,6 +103,10 @@ internal static partial class NativeDecodeMethods
     [LibraryImport(LIBRARY, EntryPoint = "an_frame_get_info")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe partial int GetFrameInfo(DecodedFrameHandle frame, ref NativeDecodedFrameInfo info, byte* error, uint capacity);
+
+    [LibraryImport(LIBRARY, EntryPoint = "an_frame_get_display_timing")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static unsafe partial int GetDisplayTiming(DecodedFrameHandle frame, ref NativeFrameDisplayTiming info, byte* error, uint capacity);
 
     [LibraryImport(LIBRARY, EntryPoint = "an_frame_get_plane_info")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

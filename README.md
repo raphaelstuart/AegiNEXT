@@ -33,6 +33,8 @@ AegiNext makes subtitle creation easier to learn, supports Aegisub file standard
 2. Select a track, press **F8 / F9** to mark subtitle start and end, then enter the text.
 3. Adjust its style, save with **Cmd/Ctrl + S**, and export subtitles through **Format** or video through **Export**.
 
+For broad video compatibility, select **Settings → Media → Auto** decoding. macOS negotiates VideoToolbox support for the actual codec/profile, including HEVC 4:2:2/4:4:4, AV1, VP9, and ProRes 422/4444 on capable devices, while preserving source precision, chroma, and Alpha. Unsupported hardware inputs fall back to CPU. ProRes Alpha composites onto black; **GPU (strict)** requires confirmed hardware acceleration without fallback. See [media compatibility](docs/en/media.md).
+
 ## Aegisub compatibility
 
 The following classic Aegisub audition shortcuts and mouse timing controls are supported. Check **Settings → Shortcuts** for your current key bindings.

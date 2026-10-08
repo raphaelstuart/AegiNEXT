@@ -14,7 +14,7 @@ internal sealed class PrepareSubtitleStyleTask(WorkbenchSession session,
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-    [AegiTaskResource.Project(session.TaskScope), AegiTaskResource.StoragePath(directory),
+    [AegiTaskResource.Project(session.TaskScope), AegiTaskResource.DeferredStoragePath(directory),
         session.ApplicationContext.GetLibraryResource(PersonalLibraryKind.STYLE)];
     protected override Task<PreparedSubtitleStyle> ExecuteResultAsync(AegiTaskExecutionContext context) =>
         StyleLibraryCoordinator.PrepareCreationCoreAsync(trackId, preset, project, directory, context.CancellationToken);

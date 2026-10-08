@@ -108,7 +108,7 @@ void ExplicitUnsupportedAndConflicts()
     Unsupported([&]() { ResolveColor(rgb.get()); });
     auto yuv = Make(); yuv->colorspace = AVCOL_SPC_RGB;
     Unsupported([&]() { ResolveColor(yuv.get()); });
-    for (const auto format : {AV_PIX_FMT_YUVA420P, AV_PIX_FMT_GBRPF32LE, AV_PIX_FMT_GRAY8})
+    for (const auto format : {AV_PIX_FMT_YA8, AV_PIX_FMT_GBRPF32LE, AV_PIX_FMT_GRAY8})
     {
         auto frame = Make(format);
         Unsupported([&]() { ResolveColor(frame.get()); });
@@ -117,6 +117,20 @@ void ExplicitUnsupportedAndConflicts()
     {
         auto frame = Make(); frame->flags = flag;
         Unsupported([&]() { ResolveColor(frame.get()); });
+    }
+}
+void AlphaAssociationIsResolvedWithoutChangingRawFacts()
+{
+    for (const auto format : {AV_PIX_FMT_YUVA444P12LE, AV_PIX_FMT_GBRAP16LE, AV_PIX_FMT_RGBA})
+    {
+        for (const auto mode : {AVALPHA_MODE_UNSPECIFIED, AVALPHA_MODE_STRAIGHT, AVALPHA_MODE_PREMULTIPLIED})
+        {
+            auto frame = Make(format);
+            frame->alpha_mode = mode;
+            const auto resolved = ResolveColor(frame.get());
+            Require(resolved.alphaMode == mode && frame->alpha_mode == mode,
+                "Color resolution rewrote the raw alpha association.");
+        }
     }
 }
 void HdrEvidenceAndUnsupportedSideData()
@@ -155,7 +169,8 @@ int main()
 {
     try
     {
-        ValidateBackend(); DefaultsAndDependencies(); VisibleGeometryIsBackendIndependent(); ExplicitUnsupportedAndConflicts(); HdrEvidenceAndUnsupportedSideData();
+        ValidateBackend(); DefaultsAndDependencies(); VisibleGeometryIsBackendIndependent(); ExplicitUnsupportedAndConflicts();
+        AlphaAssociationIsResolvedWithoutChangingRawFacts(); HdrEvidenceAndUnsupportedSideData();
         std::cout << "PASS shared SDR dependencies, raw immutability, unsupported conflicts and strict HDR guards\n";
         return 0;
     }

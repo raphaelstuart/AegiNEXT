@@ -7,11 +7,12 @@ namespace AegiNext.Media.Decoding;
 /// <summary>
 /// 实际解码或硬件下载帧的事实快照；帧级色彩不由流级信息补写，估算时间戳与原始 PTS 分开保存。
 /// CPU 与 GPU 后端可能交付不同像素布局、编码尺寸及裁剪矩形；可视区域定义为尺寸减去裁剪，
-/// 后端不会补造已由硬件移除的编码边缘，NV12／P010 保留其实际平面及位深。
+/// 后端不会补造已由硬件移除的编码边缘；硬件读回保留实际平面、色度、位深及透明通道。
 /// </summary>
 public sealed record VideoFrameInfo
 {
-    internal unsafe VideoFrameInfo(NativeDecodedFrameInfo value, NativeDecodedHdrInfo hdr, ImmutableArray<string> sideDataTypes)
+    internal unsafe VideoFrameInfo(NativeDecodedFrameInfo value, NativeDecodedHdrInfo hdr, ImmutableArray<string> sideDataTypes,
+        NativeFrameDisplayTiming? displayTiming = null)
     {
         if (value.width == 0 || value.height == 0 || value.planeCount is 0 or > 4 || value.componentCount is 0 or > 4)
         {
@@ -32,6 +33,14 @@ public sealed record VideoFrameInfo
         BestEffortTimestampValue = ReadTimestampValue(value.bestEffortTimestamp, (value.flags & 2) != 0);
         PresentationTimestamp = PresentationTimestampValue is { } pts && TimeBase is { } timeBase ? new(pts, timeBase) : null;
         BestEffortTimestamp = BestEffortTimestampValue is { } estimate && StreamTimeBase is { } streamBase ? new(estimate, streamBase) : null;
+        DisplayTiming = displayTiming is { } timing ? ReadDisplayTiming(timing) :
+            PresentationTimestamp is { } original ? new(original, VideoDisplayTimingEvidence.OriginalPts) :
+            BestEffortTimestamp is { } bestEffort ? new(bestEffort, VideoDisplayTimingEvidence.BestEffortTimestamp) : null;
+        if (DisplayTiming is { IsDerived: false } direct && direct.Timestamp !=
+            (direct.Evidence == VideoDisplayTimingEvidence.OriginalPts ? PresentationTimestamp : BestEffortTimestamp))
+        {
+            throw new InvalidDataException("原生视频帧的直接显示时间与原始时间事实不一致。");
+        }
         DurationTicks = (value.flags & 4) != 0 && value.duration > 0 ? value.duration : null;
         IsKeyFrame = (value.flags & 8) != 0;
         IsCorrupt = (value.flags & 16) != 0;
@@ -109,6 +118,9 @@ public sealed record VideoFrameInfo
 
     public MediaTimestamp? BestEffortTimestamp { get; }
 
+    /// <summary>可用于导航的独立显示时间；包含实际时间或明确记录的推导依据。</summary>
+    public VideoFrameDisplayTiming? DisplayTiming { get; }
+
     public long? DurationTicks { get; }
 
     public bool IsKeyFrame { get; }
@@ -158,6 +170,23 @@ public sealed record VideoFrameInfo
     private static MediaTimeBase? ReadTimeBase(int numerator, int denominator)
     {
         return numerator > 0 && denominator > 0 ? new(numerator, denominator) : null;
+    }
+
+    private static VideoFrameDisplayTiming? ReadDisplayTiming(NativeFrameDisplayTiming value)
+    {
+        if (value.evidence == 0)
+        {
+            return null;
+        }
+
+        if (value.reserved != 0 || (value.evidence & ~31u) != 0 ||
+            (value.evidence & 19u) is not (1u or 2u or 16u) || value.timestamp == long.MinValue ||
+            ReadTimeBase(value.timeBaseNum, value.timeBaseDen) is not { } timeBase)
+        {
+            throw new InvalidDataException("原生视频帧的显示时间或推导依据无效。");
+        }
+
+        return new(new(value.timestamp, timeBase), (VideoDisplayTimingEvidence)value.evidence);
     }
 
     private static long? ReadTimestampValue(long value, bool present)

@@ -294,9 +294,10 @@ public sealed class FfmpegVideoDecoder : IVideoDecoder
     {
         try
         {
-            if ((NativeDecodeMethods.Features() & NativeDecodeMethods.SEEK_FEATURE) == 0)
+            if ((NativeDecodeMethods.Features() & (NativeDecodeMethods.SEEK_FEATURE | NativeDecodeMethods.DISPLAY_TIMING_FEATURE)) !=
+                (NativeDecodeMethods.SEEK_FEATURE | NativeDecodeMethods.DISPLAY_TIMING_FEATURE))
             {
-                throw new NotSupportedException("原生解码库未提供定位能力，请重新构建 Decoder。");
+                throw new NotSupportedException("原生解码库未提供定位或显示时间能力，请重新构建 Decoder。");
             }
         }
         catch (EntryPointNotFoundException exception)

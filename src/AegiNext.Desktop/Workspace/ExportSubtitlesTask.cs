@@ -9,7 +9,7 @@ internal sealed class ExportSubtitlesTask(WorkbenchSession session, ProjectWorkf
     public override string Name => "Tasks.ExportSubtitles";
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
-    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.StoragePath(path)];
+    public override IReadOnlyCollection<AegiTaskResource> Resources => [AegiTaskResource.DeferredStoragePath(path)];
     protected override Task ExecuteAsync(AegiTaskExecutionContext context) =>
         coordinator.ExportSubtitlesCoreAsync(path, document, ass, context);
 }

@@ -11,7 +11,7 @@ internal sealed class CreateProjectTask(WorkbenchSession session, ProjectWorkflo
     public override string Name => "Tasks.CreateProject";
     internal ProjectOpenResult? Outcome { get; private set; }
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. base.Resources, AegiTaskResource.StoragePath(path), AegiTaskResource.StoragePath(Path.GetDirectoryName(Path.GetFullPath(path))!)];
+        [.. base.Resources, AegiTaskResource.DeferredStoragePath(path), AegiTaskResource.DeferredStoragePath(Path.GetDirectoryName(Path.GetFullPath(path))!)];
     protected override async Task<ProjectOpenResult> ExecuteResultAsync(AegiTaskExecutionContext context)
     {
         context.CancellationToken.ThrowIfCancellationRequested();

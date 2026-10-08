@@ -25,7 +25,8 @@ an_decode_ratio Ratio(AVRational value)
 }
 }
 
-FrameOwner::FrameOwner(FramePointer frame, AVRational streamTimeBase, aeginext::media::SourceColorContext colorContext) : frame_(std::move(frame)), colorContext_(colorContext)
+FrameOwner::FrameOwner(FramePointer frame, AVRational streamTimeBase, aeginext::media::SourceColorContext colorContext,
+    aeginext::media::DisplayTiming displayTiming) : frame_(std::move(frame)), colorContext_(colorContext)
 {
     if (!frame_ || frame_->width <= 0 || frame_->height <= 0 || streamTimeBase.num <= 0 || streamTimeBase.den <= 0)
     {
@@ -50,6 +51,15 @@ FrameOwner::FrameOwner(FramePointer frame, AVRational streamTimeBase, aeginext::
 
     info_.struct_size = sizeof(info_);
     info_.abi_version = AN_DECODE_ABI_VERSION;
+    displayTiming_.struct_size = sizeof(displayTiming_);
+    displayTiming_.abi_version = AN_DECODE_ABI_VERSION;
+    if (displayTiming.value != AV_NOPTS_VALUE)
+    {
+        displayTiming_.evidence = displayTiming.evidence;
+        displayTiming_.timestamp = displayTiming.value;
+        displayTiming_.time_base_num = displayTiming.timeBase.num;
+        displayTiming_.time_base_den = displayTiming.timeBase.den;
+    }
     info_.width = static_cast<uint32_t>(frame_->width);
     info_.height = static_cast<uint32_t>(frame_->height);
     info_.component_count = descriptor->nb_components;

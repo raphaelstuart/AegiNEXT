@@ -1,0 +1,213 @@
+{
+  "frames": [
+    {
+      "key_frame": 1,
+      "pts": 0,
+      "best_effort_timestamp": 0,
+      "duration": 40,
+      "pict_type": "I"
+    },
+    {
+      "key_frame": 0,
+      "pts": 40,
+      "best_effort_timestamp": 40,
+      "duration": 40,
+      "pict_type": "P"
+    },
+    {
+      "key_frame": 0,
+      "pts": 80,
+      "best_effort_timestamp": 80,
+      "duration": 40,
+      "pict_type": "P"
+    },
+    {
+      "key_frame": 0,
+      "pts": 120,
+      "best_effort_timestamp": 120,
+      "duration": 40,
+      "pict_type": "P"
+    },
+    {
+      "key_frame": 1,
+      "pts": 160,
+      "best_effort_timestamp": 160,
+      "duration": 40,
+      "pict_type": "I"
+    },
+    {
+      "key_frame": 0,
+      "pts": 200,
+      "best_effort_timestamp": 200,
+      "duration": 40,
+      "pict_type": "P"
+    },
+    {
+      "key_frame": 0,
+      "pts": 240,
+      "best_effort_timestamp": 240,
+      "duration": 40,
+      "pict_type": "P"
+    },
+    {
+      "key_frame": 0,
+      "pts": 280,
+      "best_effort_timestamp": 280,
+      "duration": 40,
+      "pict_type": "P"
+    },
+    {
+      "key_frame": 1,
+      "pts": 320,
+      "best_effort_timestamp": 320,
+      "duration": 40,
+      "pict_type": "I"
+    },
+    {
+      "key_frame": 0,
+      "pts": 360,
+      "best_effort_timestamp": 360,
+      "duration": 40,
+      "pict_type": "P"
+    },
+    {
+      "key_frame": 0,
+      "pts": 400,
+      "best_effort_timestamp": 400,
+      "duration": 40,
+      "pict_type": "P"
+    },
+    {
+      "key_frame": 0,
+      "pts": 440,
+      "best_effort_timestamp": 440,
+      "duration": 40,
+      "pict_type": "P"
+    }
+  ],
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "vp8",
+      "profile": "0",
+      "width": 128,
+      "height": 128,
+      "pix_fmt": "yuv420p",
+      "time_base": "1/1000",
+      "disposition": {
+        "default": 0,
+        "dub": 0,
+        "original": 0,
+        "comment": 0,
+        "lyrics": 0,
+        "karaoke": 0,
+        "forced": 0,
+        "hearing_impaired": 0,
+        "visual_impaired": 0,
+        "clean_effects": 0,
+        "attached_pic": 0,
+        "timed_thumbnails": 0,
+        "non_diegetic": 0,
+        "captions": 0,
+        "descriptions": 0,
+        "metadata": 0,
+        "dependent": 0,
+        "still_image": 0,
+        "multilayer": 0
+      },
+      "tags": {
+        "ENCODER": "Lavc63.1.102 libvpx",
+        "DURATION": "00:00:00.480000000"
+      }
+    }
+  ],
+  "generation": {
+    "source": "FFmpeg lavfi testsrc2; generated for AegiNext tests; no third-party media",
+    "ffmpeg_version": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+    "encode_arguments": [
+      "-v",
+      "error",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=128x128:rate=25",
+      "-an",
+      "-frames:v",
+      "12",
+      "-vf",
+      "format=yuv420p,setsar=1/1,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709",
+      "-c:v",
+      "libvpx",
+      "-pix_fmt",
+      "yuv420p",
+      "-threads",
+      "1",
+      "-deadline",
+      "realtime",
+      "-cpu-used",
+      "8",
+      "-lag-in-frames",
+      "0",
+      "-g",
+      "4",
+      "-keyint_min",
+      "4",
+      "-b:v",
+      "100k",
+      "-color_range",
+      "tv",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
+      "-colorspace",
+      "bt709",
+      "-chroma_sample_location",
+      "left",
+      "-y",
+      "vp8.webm"
+    ],
+    "probe_arguments": [
+      "-v",
+      "error",
+      "-of",
+      "json",
+      "-select_streams",
+      "v:0",
+      "-show_streams",
+      "-show_frames",
+      "-show_entries",
+      "stream=index,codec_name,profile,pix_fmt,width,height,time_base:frame=pts,best_effort_timestamp,duration,pict_type,key_frame",
+      "-i",
+      "vp8.webm"
+    ],
+    "decode_arguments": [
+      "-v",
+      "error",
+      "-nostdin",
+      "-hwaccel",
+      "none",
+      "-i",
+      "vp8.webm",
+      "-map",
+      "0:v:0",
+      "-fps_mode",
+      "passthrough",
+      "-c:v",
+      "rawvideo",
+      "-pix_fmt",
+      "yuv420p",
+      "-threads",
+      "1",
+      "-f",
+      "rawvideo",
+      "-y",
+      "vp8.raw"
+    ],
+    "media_sha256": "808457bb49a111668e49ece87eba93a652433003fc886ddbff7dd33f91cb0387",
+    "raw_sha256": "f064e1558b296cfae93009ae0edc9d6e183b32b11315449e47c719a29a8da116"
+  }
+}

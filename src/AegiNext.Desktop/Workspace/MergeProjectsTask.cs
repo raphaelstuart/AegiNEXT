@@ -10,7 +10,7 @@ internal sealed class MergeProjectsTask(WorkbenchSession session, ProjectWorkflo
 {
     public override string Name => "Tasks.MergeProjects";
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [.. base.Resources, .. paths.Select(AegiTaskResource.StoragePath)];
+        [.. base.Resources, .. paths.Select(AegiTaskResource.DeferredStoragePath)];
     protected override Task<ProjectMergeResult> ExecuteResultAsync(AegiTaskExecutionContext context) =>
         coordinator.MergeProjectsCoreAsync(captured, directory, paths, inputRevision, context);
 }

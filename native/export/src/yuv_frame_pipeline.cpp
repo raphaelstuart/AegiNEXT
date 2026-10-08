@@ -77,7 +77,7 @@ SwsContext *MakeScaler(int sourceWidth, int sourceHeight, AVPixelFormat sourceFo
 YuvFramePipeline::YuvFramePipeline(const AVFrame *source, int width, int height,
     AVPixelFormat outputFormat, int threads)
     : width_(width), height_(height), sourceFormat_(static_cast<AVPixelFormat>(source->format)),
-      outputFormat_(outputFormat), upsampled_(av_frame_alloc()), visible_(av_frame_alloc()),
+      outputFormat_(outputFormat), upsampled_(av_frame_alloc()), visible_(av_frame_alloc()), sourceAlpha_(threads),
       rows_(static_cast<size_t>(std::clamp(threads, 1, 4)))
 {
     if (!upsampled_ || !visible_)
@@ -92,7 +92,7 @@ YuvFramePipeline::YuvFramePipeline(const AVFrame *source, int width, int height,
     try
     {
         const auto fullRange = source->color_range == AVCOL_RANGE_JPEG;
-        upsample_ = MakeScaler(source->width, source->height, sourceFormat_, source->width, source->height,
+        upsample_ = MakeScaler(source->width, source->height, aeginext::media::SourceAlphaCompositor::OutputFormat(source), source->width, source->height,
             AV_PIX_FMT_YUV444P16LE, source->chroma_location, AVCHROMA_LOC_UNSPECIFIED, fullRange, threads);
         downsample_ = MakeScaler(width_, height_, AV_PIX_FMT_YUV444P16LE, width_, height_, outputFormat_,
             AVCHROMA_LOC_UNSPECIFIED, AVCHROMA_LOC_LEFT, fullRange, threads);
@@ -111,7 +111,7 @@ YuvFramePipeline::~YuvFramePipeline()
     sws_free_context(&downsample_);
 }
 
-int YuvFramePipeline::Upsample(const AVFrame *source)
+int YuvFramePipeline::Upsample(const AVFrame *source, const std::function<void()> &checkCancel)
 {
     ready_ = false;
     av_frame_unref(visible_.get());
@@ -132,7 +132,7 @@ int YuvFramePipeline::Upsample(const AVFrame *source)
         return result;
     }
 
-    result = sws_scale_frame(upsample_, upsampled_.get(), source);
+    result = sws_scale_frame(upsample_, upsampled_.get(), sourceAlpha_.Composite(source, checkCancel));
     if (result < 0)
     {
         return result;

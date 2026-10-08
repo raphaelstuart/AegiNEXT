@@ -32,6 +32,8 @@ Describe 'Locked dependency manifest' {
             $manifest = Get-AegiNextDependencyManifest
             $order = @(Get-AegiNextSdkInstallOrder $manifest @('ffmpeg', 'libplacebo', 'molten-vk', 'sdl3') 'MacOS')
             [array]::IndexOf($order, 'x264') | Should -BeLessThan ([array]::IndexOf($order, 'ffmpeg'))
+            [array]::IndexOf($order, 'dav1d') | Should -BeGreaterOrEqual 0
+            [array]::IndexOf($order, 'dav1d') | Should -BeLessThan ([array]::IndexOf($order, 'ffmpeg'))
             [array]::IndexOf($order, 'shaderc') | Should -BeLessThan ([array]::IndexOf($order, 'libplacebo'))
             [array]::IndexOf($order, 'vulkan-headers') | Should -BeLessThan ([array]::IndexOf($order, 'vulkan-loader'))
             @($order | Select-Object -Unique).Count | Should -Be $order.Count
@@ -39,6 +41,21 @@ Describe 'Locked dependency manifest' {
             { Get-AegiNextSdkInstallOrder $manifest @('libplacebo') 'Windows' } | Should -Throw '*does not support Windows*'
             $manifest.packages.ffmpeg.windows.source | Should -Be 'ffmpeg-windows'
             $manifest.packages.sdl3.windows.source | Should -Be 'sdl3-windows'
+        }
+    }
+
+    It 'locks the software AV1 decoder independently and invalidates FFmpeg when its source changes' {
+        InModuleScope AegiNext.Build {
+            $manifest = Get-AegiNextDependencyManifest
+            $manifest.packages.dav1d.version | Should -Be '1.5.4'
+            $manifest.packages.dav1d.recipe | Should -Be 'dav1d'
+            $manifest.sources.dav1d.url | Should -Be 'https://download.videolan.org/pub/videolan/dav1d/1.5.4/dav1d-1.5.4.tar.xz'
+            $manifest.sources.dav1d.sha256 | Should -Be '686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5'
+            $manifest.packages.ffmpeg.configureOptions | Should -Contain '--enable-libdav1d'
+            $manifest.packages.dav1d.requiredFiles | Should -Contain 'lib/pkgconfig/dav1d.pc'
+            $first = Get-AegiNextSdkFingerprint $manifest 'ffmpeg' 'MacOS'
+            $manifest.sources.dav1d.sha256 = 'a' * 64
+            Get-AegiNextSdkFingerprint $manifest 'ffmpeg' 'MacOS' | Should -Not -Be $first
         }
     }
 
@@ -122,9 +139,109 @@ Describe 'Windows development SDK extraction' {
     }
 }
 
+Describe 'Software AV1 SDK preparation' {
+    It 'checks the prepared dav1d version and requires its packaged upstream license' {
+        InModuleScope AegiNext.Build -Parameters @{ Repository = $TestDrive } {
+            param($Repository)
+            $manifest = Get-AegiNextDependencyManifest
+            $root = Join-Path $Repository 'prepared dav1d SDK'
+            foreach ($file in $manifest.packages.dav1d.requiredFiles)
+            {
+                $path = Join-Path $root $file
+                [IO.Directory]::CreateDirectory((Split-Path $path)) | Out-Null
+                Set-Content -LiteralPath $path -Value 'prepared SDK file'
+            }
+            Mock Assert-AegiNextSdkReceipt {}
+            Set-Content -LiteralPath (Join-Path $root 'lib/pkgconfig/dav1d.pc') -Value 'Version: 1.5.4'
+            { Test-AegiNextPreparedSdk $root $Repository ([pscustomobject]@{ Platform = 'MacOS' }) $manifest dav1d } | Should -Not -Throw
+            Set-Content -LiteralPath (Join-Path $root 'lib/pkgconfig/dav1d.pc') -Value 'Version: 1.5.3'
+            { Test-AegiNextPreparedSdk $root $Repository ([pscustomobject]@{ Platform = 'MacOS' }) $manifest dav1d } | Should -Throw '*locked version*'
+            Remove-Item -LiteralPath (Join-Path $root 'share/licenses/dav1d/COPYING')
+            { Test-AegiNextPreparedSdk $root $Repository ([pscustomobject]@{ Platform = 'MacOS' }) $manifest dav1d } | Should -Throw '*COPYING*'
+        }
+    }
+
+    It 'builds both dav1d bitdepth families without tools or network wraps and preserves its license' {
+        $source = Join-Path $TestDrive 'dav1d source [locked]'
+        [IO.Directory]::CreateDirectory($source) | Out-Null
+        Set-Content -LiteralPath (Join-Path $source 'COPYING') -Value 'dav1d upstream BSD license'
+        InModuleScope AegiNext.Build -Parameters @{ Source = $source; Repository = $TestDrive } {
+            param($Source, $Repository)
+            $script:dav1dSource = $Source
+            $work = Join-Path $Repository 'dav1d work [staging]'
+            $stage = Join-Path $work 'sdk'
+            $build = Join-Path $work 'build'
+            Mock Get-AegiNextSdkArchive { 'verified-archive' }
+            Mock Expand-AegiNextSdkArchive { $script:dav1dSource }
+            Mock Get-AegiNextSdkBuildEnvironment { @{ CC = 'apple-clang'; CFLAGS = '-mmacosx-version-min=14.0' } }
+            Mock Find-AegiNextCommand { "fixture-$Name" }
+            Mock Invoke-AegiNextSdkCommand {}
+            Invoke-AegiNextSdkRecipe $Repository ([pscustomobject]@{ Platform = 'MacOS'; Architecture = 'Arm64' }) (Get-AegiNextDependencyManifest) dav1d $work $stage 3
+            Should -Invoke Invoke-AegiNextSdkCommand -Times 1 -Exactly -ParameterFilter {
+                $FilePath -eq 'fixture-meson' -and $Arguments[0] -eq 'setup' -and
+                $Arguments[1] -eq $build -and $Arguments[2] -eq $Source -and
+                "--prefix=$stage" -in $Arguments -and '--wrap-mode=nodownload' -in $Arguments -and
+                '-Ddefault_library=shared' -in $Arguments -and '-Dbitdepths=8,16' -in $Arguments -and
+                '-Denable_asm=true' -in $Arguments -and '-Denable_tools=false' -in $Arguments -and
+                '-Denable_tests=false' -in $Arguments -and '-Denable_examples=false' -in $Arguments -and
+                '-Denable_docs=false' -in $Arguments -and '-Dxxhash_muxer=disabled' -in $Arguments -and
+                $Environment.CFLAGS -eq '-mmacosx-version-min=14.0'
+            }
+            Should -Invoke Invoke-AegiNextSdkCommand -Times 1 -Exactly -ParameterFilter {
+                $Arguments[0] -eq 'compile' -and $Arguments[2] -eq $build -and $Arguments[4] -eq '3'
+            }
+            Should -Invoke Invoke-AegiNextSdkCommand -Times 1 -Exactly -ParameterFilter {
+                $Arguments[0] -eq 'install' -and $Arguments[2] -eq $build -and '--no-rebuild' -in $Arguments
+            }
+            (Get-Content -LiteralPath (Join-Path $stage 'share/licenses/dav1d/COPYING') -Raw).Trim() | Should -Be 'dav1d upstream BSD license'
+        }
+    }
+
+    It 'checks all transitive build tools while installing only the missing Meson tool on <Architecture>' -TestCases @(
+        @{ Architecture = 'Arm64' }
+        @{ Architecture = 'X64' }
+    ) {
+        param($Architecture)
+        InModuleScope AegiNext.Build -Parameters @{ Repository = $TestDrive; Architecture = $Architecture } {
+            param($Repository, $Architecture)
+            $script:mesonInstalled = $false
+            Mock Find-AegiNextCommand {
+                if ($Name -eq 'meson' -and !$script:mesonInstalled) { return $null }
+                return "fixture-$Name"
+            }
+            Mock Invoke-AegiNextSdkCommand {
+                $script:mesonInstalled = $true
+            }
+            Install-AegiNextSdkTool ([pscustomobject]@{ Platform = 'MacOS'; Architecture = $Architecture }) @('x264', 'x265', 'dav1d', 'ffmpeg') $Repository
+            Should -Invoke Find-AegiNextCommand -Times 1 -Exactly -ParameterFilter { $Name -eq 'python3' }
+            $nasmCalls = if ($Architecture -eq 'X64') { 1 } else { 0 }
+            Should -Invoke Find-AegiNextCommand -Times $nasmCalls -Exactly -ParameterFilter { $Name -eq 'nasm' }
+            Should -Invoke Invoke-AegiNextSdkCommand -Times 1 -Exactly -ParameterFilter {
+                $FilePath -eq 'fixture-brew' -and $Arguments[0] -eq 'install' -and $Arguments[1] -eq 'meson'
+            }
+        }
+    }
+}
+
 Describe 'Project SDK installation transactions' {
     BeforeEach {
         $repository = Join-Path $TestDrive ([guid]::NewGuid().ToString('N') + ' project [sdk]')
+    }
+
+    It 'passes the full dependency order to tool preparation when FFmpeg is the requested root' {
+        InModuleScope AegiNext.Build -Parameters @{ Repository = $repository } {
+            param($Repository)
+            $hostInfo = [pscustomobject]@{ Platform = 'MacOS'; Architecture = 'Arm64' }
+            Mock Install-AegiNextSdkTool {}
+            Mock Invoke-AegiNextSdkRecipe { Set-Content -LiteralPath (Join-Path $Stage 'runtime.dylib') -Value 'complete SDK' }
+            Mock Repair-AegiNextSdkPath {}
+            Mock Test-AegiNextPreparedSdk {}
+            Install-AegiNextProjectSdk $Repository $hostInfo @('ffmpeg')
+            Should -Invoke Install-AegiNextSdkTool -Times 1 -Exactly -ParameterFilter {
+                'dav1d' -in $Names -and 'ffmpeg' -in $Names -and
+                [array]::IndexOf($Names, 'dav1d') -lt [array]::IndexOf($Names, 'ffmpeg')
+            }
+        }
     }
 
     It 'installs, verifies and reuses a complete SDK without rebuilding or installing tools twice' {

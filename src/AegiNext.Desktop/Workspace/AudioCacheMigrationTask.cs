@@ -11,8 +11,8 @@ internal sealed class AudioCacheMigrationTask(WorkbenchSession session, Analysis
     public override string ScopeId => session.TaskScope;
     public override string ScopeDisplayName => session.ProjectDisplayName;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-    [AegiTaskResource.Named("analysis:" + session.TaskScope), AegiTaskResource.StoragePath(analysis.CacheDirectory),
-        AegiTaskResource.StoragePath(destination)];
+    [AegiTaskResource.Named("analysis:" + session.TaskScope), AegiTaskResource.DeferredStoragePath(analysis.CacheDirectory),
+        AegiTaskResource.DeferredStoragePath(destination)];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)
     {

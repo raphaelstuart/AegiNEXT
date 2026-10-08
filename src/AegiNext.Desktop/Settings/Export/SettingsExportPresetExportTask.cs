@@ -11,7 +11,7 @@ internal sealed class SettingsExportPresetExportTask(DesktopApplicationContext o
     public override string Name => "Tasks.ExportPresets";
     public override bool CanCancel => false;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [owner.GetLibraryResource(PersonalLibraryKind.EXPORT), AegiTaskResource.StoragePath(destination)];
+        [owner.GetLibraryResource(PersonalLibraryKind.EXPORT), AegiTaskResource.DeferredStoragePath(destination)];
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)
     {

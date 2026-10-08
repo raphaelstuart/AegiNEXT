@@ -30,7 +30,8 @@ enum an_decode_result
     AN_DECODE_DECODE_ERROR = 5,
     AN_DECODE_CANCELLED = 6,
     AN_DECODE_INVALID_STATE = 7,
-    AN_DECODE_NATIVE_FAILURE = 8
+    AN_DECODE_NATIVE_FAILURE = 8,
+    AN_DECODE_DISPLAY_TIMING_UNAVAILABLE = 9
 };
 
 enum { AN_DECODE_ABI_VERSION = 1, AN_DECODE_NAME_CAPACITY = 64 };
@@ -39,7 +40,8 @@ enum an_decode_feature_flags
 {
     AN_DECODE_FEATURE_SEEK = 1,
     AN_DECODE_FEATURE_SDR_PREVIEW = 2,
-    AN_DECODE_FEATURE_SEEK_SELECTION = 8
+    AN_DECODE_FEATURE_SEEK_SELECTION = 8,
+    AN_DECODE_FEATURE_DISPLAY_TIMING = 16
 };
 
 enum an_frame_flags
@@ -116,6 +118,26 @@ typedef struct an_frame_info
     char chroma_location_name[AN_DECODE_NAME_CAPACITY];
     char alpha_mode_name[AN_DECODE_NAME_CAPACITY];
 } an_frame_info;
+
+enum an_display_timing_evidence
+{
+    AN_DISPLAY_ORIGINAL_PTS = 1,
+    AN_DISPLAY_BEST_EFFORT = 2,
+    AN_DISPLAY_PREVIOUS_DURATION = 4,
+    AN_DISPLAY_DECLARED_FRAME_RATE = 8,
+    AN_DISPLAY_STREAM_START = 16
+};
+
+typedef struct an_frame_display_timing
+{
+    uint32_t struct_size;
+    uint32_t abi_version;
+    uint32_t evidence;
+    uint32_t reserved;
+    int64_t timestamp;
+    int32_t time_base_num;
+    int32_t time_base_den;
+} an_frame_display_timing;
 
 typedef struct an_frame_plane_info
 {
@@ -220,10 +242,15 @@ AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_create(void **decoder, char *err
 AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_open(void *decoder, const char *path_utf8, int32_t stream_index, char *error, uint32_t capacity);
 AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_read_next(void *decoder, void **frame, char *error, uint32_t capacity);
 /* Optional SEEK_SELECTION capability. From the current cursor, select the last
- * original PTS <= timestamp (or the first frame if already after the target).
+ * display time <= timestamp (or the first frame if already after the target).
  * Intermediate hardware frames stay on the GPU. The first frame after the
  * target is retained for read_next; duplicates select the last frame. Missing
- * or decreasing PTS during selection is a terminal error. No implicit seek. */
+ * or decreasing display time during selection is a terminal error. No implicit seek.
+ * Display time prefers original PTS, then FFmpeg best-effort; derived timing
+ * is separate from the original frame fields and is described by its evidence.
+ * DISPLAY_TIMING_UNAVAILABLE reports insufficient anchors after preroll; this
+ * session is terminal. A caller may retry once with a new session from the start.
+ * Decreasing timing and corrupted media remain distinct decode errors. */
 AN_DECODE_API int32_t AN_DECODE_CALL an_decoder_read_for_seek(void *decoder, int64_t timestamp, void **frame, char *error, uint32_t capacity);
 /* Returns the selected stream's positive time base after a successful open.
  * This query neither reads packets nor changes the current decoder position. */
@@ -251,6 +278,12 @@ AN_DECODE_API void AN_DECODE_CALL an_decoder_destroy(void *decoder);
  * a palette) may have native_stride == 0; multirow strides cover an active row.
  * Unknown color names are empty; unknown raw enum values are not rewritten. */
 AN_DECODE_API int32_t AN_DECODE_CALL an_frame_get_info(void *frame, an_frame_info *info, char *error, uint32_t capacity);
+/* Independent extension; an_frame_info remains 600 bytes. Evidence is zero
+ * when display time is unavailable. Derived evidence retains its anchor and
+ * records previous frame duration or matching declared average/nominal rate.
+ * Stream start is an initial anchor only; it is never reused after seeking.
+ * Original PTS, best-effort timestamp, duration and time bases are unchanged. */
+AN_DECODE_API int32_t AN_DECODE_CALL an_frame_get_display_timing(void *frame, an_frame_display_timing *info, char *error, uint32_t capacity);
 AN_DECODE_API int32_t AN_DECODE_CALL an_frame_get_plane_info(void *frame, uint32_t plane, an_frame_plane_info *info, char *error, uint32_t capacity);
 AN_DECODE_API int32_t AN_DECODE_CALL an_frame_get_hdr_info(void *frame, an_frame_hdr_info *info, char *error, uint32_t capacity);
 AN_DECODE_API int32_t AN_DECODE_CALL an_frame_get_side_data_name(void *frame, uint32_t index, char *name, uint32_t name_capacity, char *error, uint32_t capacity);

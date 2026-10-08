@@ -3,6 +3,8 @@
 
 _Static_assert(sizeof(an_decode_backend_info) == 64, "backend ABI size");
 _Static_assert(sizeof(an_frame_info) == 600, "frame ABI size");
+_Static_assert(sizeof(an_frame_display_timing) == 32, "display timing ABI size");
+_Static_assert(offsetof(an_frame_display_timing, timestamp) == 16, "display timestamp ABI offset");
 _Static_assert(offsetof(an_frame_info, pts) == 128, "PTS ABI offset");
 _Static_assert(offsetof(an_frame_info, pixel_format_name) == 152, "format name ABI offset");
 _Static_assert(sizeof(an_frame_plane_info) == 32, "plane ABI size");

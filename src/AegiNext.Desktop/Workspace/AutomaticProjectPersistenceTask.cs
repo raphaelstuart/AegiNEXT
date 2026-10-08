@@ -8,7 +8,7 @@ internal sealed class AutomaticProjectPersistenceTask(ProjectPersistenceCoordina
     public override string Name => autoSave ? "Tasks.ProjectAutoSave" : "Tasks.ProjectBackup";
     public override string ScopeId => scopeId;
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-    [AegiTaskResource.Project(scopeId), AegiTaskResource.StoragePath(state.ProjectPath)];
+    [AegiTaskResource.Project(scopeId), AegiTaskResource.DeferredStoragePath(state.ProjectPath)];
     public override string CoalescingKey => $"{Name}:{version}:{revision}:{Resources.Last().Key}";
 
     protected override Task ExecuteAsync(AegiTaskExecutionContext context)

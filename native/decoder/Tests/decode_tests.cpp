@@ -486,6 +486,85 @@ void BackendAbiAndLifecycle()
         "Time-base query accepted a released decoder.");
     Require(an_decoder_create(nullptr, error.data(), 1) == AN_DECODE_INVALID_ARGUMENT && error[0] == '\0', "Bounded error buffer handling failed.");
 }
+
+void DisplayTimingKeepsOriginalFactsAndVariableDurations()
+{
+    using namespace aeginext::media;
+    DisplayTimingTracker tracker;
+    tracker.Reset({1, 1000}, AV_NOPTS_VALUE, {}, {});
+    auto frame = MakeFrame();
+    frame->time_base = {1, 90000};
+    frame->pts = 180000;
+    frame->best_effort_timestamp = 9000;
+    frame->duration = 9000;
+    auto timing = tracker.Read(*frame);
+    Require(timing.value == 180000 && timing.timeBase.den == 90000 && timing.evidence == DISPLAY_ORIGINAL_PTS,
+        "Original PTS did not retain priority or its own time base.");
+    frame->pts = AV_NOPTS_VALUE;
+    frame->best_effort_timestamp = 2200;
+    frame->duration = 18000;
+    timing = tracker.Read(*frame);
+    Require(timing.value == 2200 && timing.timeBase.den == 1000 && timing.evidence == DISPLAY_BEST_EFFORT,
+        "Best-effort did not use the stream time base independently of raw PTS.");
+    frame->best_effort_timestamp = AV_NOPTS_VALUE;
+    frame->duration = 4500;
+    timing = tracker.Read(*frame);
+    Require(timing.value == 2400 && timing.timeBase.den == 1000 &&
+        timing.evidence == (DISPLAY_BEST_EFFORT | DISPLAY_PREVIOUS_DURATION),
+        "Missing tail timing did not use the previous frame duration in its actual time base.");
+    Require(frame->pts == AV_NOPTS_VALUE && frame->best_effort_timestamp == AV_NOPTS_VALUE && frame->duration == 4500,
+        "Derived display timing replaced original frame facts.");
+    timing = tracker.Read(*frame);
+    Require(timing.value == 2450, "Variable frame duration was replaced by fixed frame rate.");
+    FrameOwner owner(std::move(frame), {1, 1000}, {}, timing);
+    Require(!(owner.Info().flags & (AN_FRAME_HAS_PTS | AN_FRAME_HAS_BEST_EFFORT_TIMESTAMP)) &&
+        owner.DisplayTiming().timestamp == 2450 && owner.DisplayTiming().evidence ==
+        (AN_DISPLAY_BEST_EFFORT | AN_DISPLAY_PREVIOUS_DURATION), "Frame ABI conflated derived and raw timing.");
+}
+
+void DisplayTimingRequiresAnchorsAndCompatibleDeclaredRates()
+{
+    using namespace aeginext::media;
+    DisplayTimingTracker tracker;
+    auto frame = MakeFrame();
+    tracker.Reset({1, 24000}, 240000, {24000, 1001}, {24000, 1001});
+    auto timing = tracker.Read(*frame);
+    Require(timing.value == 240000 && timing.evidence == DISPLAY_STREAM_START, "Known stream start was discarded.");
+    for (int index = 1; index <= 240; ++index)
+    {
+        timing = tracker.Read(*frame);
+        Require(timing.value == 240000 + index * 1001 &&
+            timing.evidence == (DISPLAY_STREAM_START | DISPLAY_DECLARED_FRAME_RATE),
+            "Declared fractional rate drifted or lost its provenance.");
+    }
+    tracker.Reset({1, 1000}, AV_NOPTS_VALUE, {25, 1}, {30, 1});
+    frame->pts = 4000;
+    tracker.Read(*frame);
+    frame->pts = AV_NOPTS_VALUE;
+    Require(tracker.Read(*frame).value == AV_NOPTS_VALUE, "Variable/contradictory rate was used as a duration.");
+    tracker.Reset({1, 1000}, AV_NOPTS_VALUE, {25, 1}, {25, 1});
+    Require(tracker.Read(*frame).value == AV_NOPTS_VALUE, "Missing seek anchor was replaced by an invented origin.");
+    tracker.Reset({1, 1000}, 5000, {}, {});
+    frame->pts = 7000;
+    tracker.Read(*frame);
+    frame->pts = AV_NOPTS_VALUE;
+    Require(tracker.Read(*frame).value == AV_NOPTS_VALUE, "Stream start was reused for a later missing timestamp.");
+    tracker.Reset({1, 1000}, AV_NOPTS_VALUE, {}, {});
+    frame->pts = 4000;
+    frame->duration = 80;
+    tracker.Read(*frame);
+    frame->pts = 4000;
+    auto duplicate = tracker.Read(*frame);
+    frame->pts = 3000;
+    auto regression = tracker.Read(*frame);
+    Require(duplicate.value == 4000 && regression.value == 3000, "Duplicate/decreasing source PTS was rewritten.");
+    tracker.Reset({1, 1000}, AV_NOPTS_VALUE, {}, {});
+    frame->pts = INT64_MAX - 10;
+    frame->duration = 40;
+    tracker.Read(*frame);
+    frame->pts = AV_NOPTS_VALUE;
+    Require(tracker.Read(*frame).value == AV_NOPTS_VALUE, "Derived timestamp arithmetic overflowed.");
+}
 }
 
 int main()
@@ -494,6 +573,8 @@ int main()
         {"padding and negative stride", CopyPaddingAndNegativeStride},
         {"ten-bit odd chroma and color", PreservesTenBitOddChromaAndColor},
         {"timestamp evidence", KeepsTimestampEvidenceSeparate},
+        {"independent derived display timing and VFR duration", DisplayTimingKeepsOriginalFactsAndVariableDurations},
+        {"display timing anchors and fractional rate evidence", DisplayTimingRequiresAnchorsAndCompatibleDeclaredRates},
         {"partial HDR and side data", PreservesPartialHdrAndAdditionalSideData},
         {"primaries without luminance", PreservesPrimariesWithoutInventingLuminance},
         {"independent frame ownership", OwnsFrameReferenceIndependently},

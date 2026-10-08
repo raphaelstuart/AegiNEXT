@@ -11,7 +11,7 @@ internal sealed class UserSettingsLayoutCaptureTask(DesktopApplicationContext ow
     public override string Name => "Tasks.SettingsCaptureLayout";
 
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
-        [AegiTaskResource.StoragePath(Path.Combine(directory, "layouts.json"))];
+        [AegiTaskResource.DeferredStoragePath(Path.Combine(directory, "layouts.json"))];
 
     protected override Task<WorkspaceLayoutFile> ExecuteResultAsync(AegiTaskExecutionContext context)
     {

@@ -7,7 +7,8 @@ internal sealed class FakeVideoFrame : IVideoFrame
 {
     private int disposeCount;
 
-    internal FakeVideoFrame(long? pts, int marker, MediaTimeBase? timeBase = null, long? bestEffortTimestamp = null)
+    internal FakeVideoFrame(long? pts, int marker, MediaTimeBase? timeBase = null, long? bestEffortTimestamp = null,
+        NativeFrameDisplayTiming? displayTiming = null)
     {
         var sourceTimeBase = timeBase ?? new(1, 1000);
         var value = new NativeDecodedFrameInfo
@@ -24,7 +25,7 @@ internal sealed class FakeVideoFrame : IVideoFrame
             pts = pts ?? 0,
             bestEffortTimestamp = bestEffortTimestamp ?? 0
         };
-        Info = new(value, default, []);
+        Info = new(value, default, [], displayTiming);
         Marker = marker;
     }
 

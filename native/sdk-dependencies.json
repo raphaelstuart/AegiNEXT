@@ -8,6 +8,11 @@
       "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
       "archive": "ffmpeg.tar.xz"
     },
+    "dav1d": {
+      "url": "https://download.videolan.org/pub/videolan/dav1d/1.5.4/dav1d-1.5.4.tar.xz",
+      "sha256": "686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5",
+      "archive": "dav1d.tar.xz"
+    },
     "x265": {
       "url": "https://github.com/Multicorewareinc/x265/releases/download/4.3/x265_4.3.tar.gz",
       "sha256": "83c53e4c8bbb8f1e33ed59e10a7d621d1d7801ca853910c3eb41f038b8ffb121",
@@ -100,7 +105,8 @@
       "recipe": "ffmpeg",
       "dependencies": [
         "x264",
-        "x265"
+        "x265",
+        "dav1d"
       ],
       "sources": [
         "ffmpeg"
@@ -132,6 +138,7 @@
         "--enable-gpl",
         "--enable-libx264",
         "--enable-libx265",
+        "--enable-libdav1d",
         "--enable-pthreads",
         "--enable-zlib",
         "--enable-bzlib",
@@ -140,6 +147,21 @@
         "--enable-videotoolbox",
         "--enable-audiotoolbox",
         "--extra-libs=-liconv"
+      ]
+    },
+    "dav1d": {
+      "version": "1.5.4",
+      "recipe": "dav1d",
+      "dependencies": [],
+      "sources": [
+        "dav1d"
+      ],
+      "requiredFiles": [
+        "include/dav1d/dav1d.h",
+        "include/dav1d/version.h",
+        "lib/libdav1d.dylib",
+        "lib/pkgconfig/dav1d.pc",
+        "share/licenses/dav1d/COPYING"
       ]
     },
     "sdl3": {

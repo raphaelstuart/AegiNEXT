@@ -93,7 +93,22 @@ function Get-AegiNextFfmpegSdkCheck
         }
     }
 
-    Get-AegiNextCheck 'FfmpegSdk' 'Ready' "$($Toolchain.version) development headers, link libraries and tool runtime versions at $Root"
+    $suffix = if ($Platform -eq 'Windows') { '.exe' } else { '' }
+    $ffmpeg = Join-Path $Root "bin/ffmpeg$suffix"
+    try
+    {
+        $decoder = Invoke-AegiNextCommand $ffmpeg @('-hide_banner', '-h', 'decoder=libdav1d') $RepositoryRoot
+    }
+    catch
+    {
+        return Get-AegiNextCheck 'FfmpegSdk' 'Invalid' "Cannot inspect software AV1 decoder libdav1d in the selected SDK: $($_.Exception.Message)"
+    }
+    if ($decoder.ExitCode -ne 0 -or $decoder.Output -notmatch '(?m)^Decoder\s+libdav1d\s+\[')
+    {
+        return Get-AegiNextCheck 'FfmpegSdk' 'Invalid' 'The selected SDK requires software AV1 decoder libdav1d. Hardware-only AV1 registration cannot provide software fallback. Run -InstallDependencies to prepare the locked project SDK; explicit SDK roots are never replaced.'
+    }
+
+    Get-AegiNextCheck 'FfmpegSdk' 'Ready' "$($Toolchain.version) development headers, link libraries, tool runtime versions and software AV1/libdav1d at $Root"
 }
 
 function Get-AegiNextDecoderEnvironment

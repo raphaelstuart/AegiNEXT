@@ -22,9 +22,11 @@
 
 通过 `FfmpegVideoDecoder` 打开绝对流索引，优先接收缓存帧并排空 EOF。返回帧拥有独立引用，后续读取或解码器释放不回收它；每帧显式释放。平面复制按逻辑行顺序保留有效像素，不裁剪或转换颜色。
 
-先定位关键帧，再选择真实 PTS 区间 `Time <= target < NextFrameTime`。VFR 使用有理时间；缺失/倒退 PTS 拒绝，重复 PTS 选择最后解码帧。缓存限制帧数/字节预算，命中后仍须将顺序播放连接到逻辑下一帧。
+先定位关键帧，再选择显示区间 `Time <= target < NextFrameTime`。显示时间优先原始 PTS，再用 FFmpeg best-effort 时间戳；两者都缺失时，可以用上一帧有效时长推导下一帧时间，必要时仅在声明的平均与名义帧率一致时推导时长。首次顺序读取可用流起点锚定首帧。推导时间显式记录依据，不覆盖原始 PTS 或 best-effort 事实。缺少依据或显示时间倒退时拒绝，重复时间选择最后解码帧。VFR 保持有理时间；缓存限制帧数/字节预算，命中后仍须将顺序播放连接到逻辑下一帧。
 
-自动解码优先 macOS VideoToolbox 或 Windows D3D11VA，可在首次交付前回退。强制 GPU 验证真实加速并报告失败；取消、损坏输入和后续错误不静默回退。硬件回读保留位深和帧元数据。
+自动解码优先 macOS VideoToolbox 或 Windows D3D11VA，硬件不支持的格式在首次交付前回退 CPU。“GPU（严格）”要求确认真实加速，不回退 CPU；需要广泛兼容时选择“自动”或“CPU”。取消、损坏输入和后续错误不静默回退。macOS 选择具备实际 VideoToolbox 配置的解码器，并协商保留源格式的输出；支持设备可加速 HEVC 4:2:2/4:4:4、AV1、VP9、ProRes 422/4444。硬件读回保留色度、分量精度、Alpha、尺寸与帧元数据，12-bit ProRes 可使用 16-bit 输出容器。Windows 读回仍限定为具备 D3D11VA 解码配置的不透明 4:2:0 NV12／P010 输出。加速取决于设备、系统、编码 profile 与尺寸，而非 MKV／MOV 容器；VideoToolbox 软件会话不会标为 GPU 解码。
+
+兼容性测试覆盖 H.264 10-bit/RGB、HEVC 10-bit 4:2:2/4:4:4、VP8、VP9/AV1 10-bit、MPEG-2/4、MJPEG、ProRes 422 Proxy/LT/422/HQ 与 4444/4444 XQ（有／无 Alpha）、FFV1 16-bit，以及 MKV、MP4、MOV、WebM、AVI、MPEG-TS 容器。AV1 在硬件支持时使用原生解码器，软件模式使用 dav1d，film grain 由解码器合成。具体素材仍需具备有效流信息和受支持的色彩解释。
 
 缺失 SDR 标签使用共享的显式解析规则，原始事实不变，解析结果标明推断字段。存在 HDR 证据时要求完整受支持标签。预览解码偏好与导出解码/编码选项独立。
 
@@ -38,7 +40,7 @@
 
 ## 预览合成与音频分析
 
-SDR 转换借用原始帧，输出独立、不透明、从上到下的 sRGB BGRA8；导出不使用显示像素。合成保留对应的未叠字背景，避免重复字幕或错帧背景。
+SDR 转换借用原始帧，输出独立、不透明、从上到下的 sRGB BGRA8。ProRes 4444 Alpha 保留在原始解码平面中，预览与导出先在线性光下将透明区域合成到黑底，再各自处理颜色；未标注 Alpha 语义时按 straight 处理，明确的预乘标记按预乘解释。导出使用高精度源像素，不使用 SDR 预览。合成保留对应的未叠字背景，避免重复字幕或错帧背景。
 
 控制器结果检查请求、媒体时间、工程修订和画质。工作台选择预览画质，交互时临时限制。呈现帧与派发延迟应和解码耗时分开测量，尤其是长 GOP、高分辨率和反复定位。
 
@@ -63,3 +65,5 @@ dotnet test Tests/AegiNext.Media.Tests/AegiNext.Media.Tests.csproj -c Release --
 ```
 
 原生用例所需开关和工具路径见[构建](building.md)。验证实际 PTS/像素、定位、替代、取消、帧生命周期和故障。静音设备测试不证明扬声器延迟，Headless 呈现不证明原生 HDR 或 GPU 验收。
+
+验证原始 HEVC 4:4:4 10-bit 报错时，将 `AEGINEXT_COMPATIBILITY_MEDIA_PATH` 设为源文件绝对路径，启用原生测试并运行 `OriginalVideoCompatibilityTests`，测试会走实际桌面预览控制器。可选 `AEGINEXT_COMPATIBILITY_REPORT_PATH` 保存帧哈希、显示区间、回退诊断与资源计数。

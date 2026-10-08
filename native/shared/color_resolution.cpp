@@ -69,11 +69,12 @@ ResolvedColor ResolveColor(const AVFrame *frame, SourceColorContext context)
     const auto visibleHeight = frame->height - static_cast<int>(frame->crop_top + frame->crop_bottom);
     const auto format = static_cast<AVPixelFormat>(frame->format);
     const auto *descriptor = av_pix_fmt_desc_get(format);
-    constexpr auto rejected = AV_PIX_FMT_FLAG_FLOAT | AV_PIX_FMT_FLAG_HWACCEL | AV_PIX_FMT_FLAG_ALPHA |
+    constexpr auto rejected = AV_PIX_FMT_FLAG_FLOAT | AV_PIX_FMT_FLAG_HWACCEL |
         AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_BAYER | AV_PIX_FMT_FLAG_BITSTREAM | AV_PIX_FMT_FLAG_XYZ;
-    if (!descriptor || descriptor->nb_components != 3 || (descriptor->flags & rejected) || frame->hw_frames_ctx)
-    { throw CoreError(ErrorCode::Unsupported, "Color resolution requires opaque three-component integer RGB or YUV."); }
-    for (int index = 0; index < 3; ++index)
+    if (!descriptor || descriptor->nb_components != ((descriptor->flags & AV_PIX_FMT_FLAG_ALPHA) ? 4 : 3) ||
+        (descriptor->flags & rejected) || frame->hw_frames_ctx)
+    { throw CoreError(ErrorCode::Unsupported, "Color resolution requires three color components with optional integer alpha."); }
+    for (int index = 0; index < descriptor->nb_components; ++index)
     {
         if (descriptor->comp[index].depth < 8 || descriptor->comp[index].depth > 16)
         { throw CoreError(ErrorCode::Unsupported, "Color component depth must be between eight and sixteen bits."); }

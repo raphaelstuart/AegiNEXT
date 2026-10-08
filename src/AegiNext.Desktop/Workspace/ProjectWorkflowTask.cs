@@ -12,7 +12,7 @@ internal abstract class ProjectWorkflowTask<TResult>(WorkbenchSession session) :
     public override IReadOnlyCollection<AegiTaskResource> Resources =>
     [
         AegiTaskResource.Project(Session.TaskScope), AegiTaskResource.Named("media:" + Session.TaskScope),
-        AegiTaskResource.StoragePath(Session.ProjectDirectory),
-        AegiTaskResource.StoragePath(Path.Combine(Session.PreferencesStore.DirectoryPath, "recent-projects.json"))
+        AegiTaskResource.DeferredStoragePath(Session.ProjectDirectory),
+        AegiTaskResource.DeferredStoragePath(Path.Combine(Session.PreferencesStore.DirectoryPath, "recent-projects.json"))
     ];
 }

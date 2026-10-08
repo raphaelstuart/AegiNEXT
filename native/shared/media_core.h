@@ -1,4 +1,5 @@
 #pragma once
+#include "display_timing_tracker.h"
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -18,7 +19,7 @@ inline constexpr uint32_t CAP_DECODE_OPTIONS = 2;
 inline constexpr uint32_t CAP_SESSION_INFO = 4;
 inline constexpr uint32_t CAP_HARDWARE_DECODE = 8;
 inline constexpr uint32_t CAPABILITIES = 15;
-enum class ErrorCode : int32_t { InvalidArgument = 2, Unsupported = 3, Io = 4, Decode = 5, Cancelled = 6, InvalidState = 7, NativeFailure = 8 };
+enum class ErrorCode : int32_t { InvalidArgument = 2, Unsupported = 3, Io = 4, Decode = 5, Cancelled = 6, InvalidState = 7, NativeFailure = 8, DisplayTimingUnavailable = 9 };
 class CoreError final : public std::runtime_error
 {
 public:
@@ -64,6 +65,7 @@ public:
     AVStream *SourceStream() const;
     const DecoderSessionInfo &Info() const noexcept { return info_; }
     SourceColorContext ColorContext() const noexcept { return colorContext_; }
+    DisplayTiming OutputDisplayTiming() const noexcept { return outputDisplayTiming_; }
 private:
     friend struct DecoderSessionTestAccess;
     static int Interrupt(void *opaque) noexcept;
@@ -85,6 +87,8 @@ private:
     bool packetPending_ = false, demuxEof_ = false, drainSent_ = false, decoderEof_ = false;
     bool hardwareAttempt_ = false;
     bool negotiationFailed_ = false;
+    int hardwareSetupError_ = 0;
+    const char *hardwareSetupFailure_ = nullptr;
     int32_t streamIndex_ = -1;
     int64_t seekTarget_ = AV_NOPTS_VALUE;
     std::string path_;
@@ -97,5 +101,9 @@ private:
     void *videoToolbox_ = nullptr;
     FramePointer scratch_;
     FramePointer pendingFrame_;
+    DisplayTimingTracker displayTimingTracker_;
+    DisplayTiming latestDisplayTiming_{};
+    DisplayTiming pendingDisplayTiming_{};
+    DisplayTiming outputDisplayTiming_{};
 };
 }
