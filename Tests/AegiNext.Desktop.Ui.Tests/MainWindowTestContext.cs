@@ -47,9 +47,22 @@ internal sealed class MainWindowTestContext : IAsyncDisposable
     {
         var path = Path.Combine(environment.DirectoryPath, "fixture.media");
         await File.WriteAllBytesAsync(path, new byte[20], TestContext.Current.CancellationToken);
-        await Window.OpenMediaAsync(path, true);
+        try
+        {
+            await Window.OpenMediaAsync(path, true);
+        }
+        catch (OperationCanceledException error)
+        {
+            throw new InvalidOperationException("Opening fixture media was cancelled. " + DescribeTaskState(), error);
+        }
         Assert.Equal(VideoPlaybackState.PAUSED, Controller.Snapshot.State);
     }
+
+    internal string DescribeTaskState() =>
+        $"Revision={Session.TaskInputRevision}; Drafts={Session.HasProjectDrafts}; Updating={Session.IsUpdating}; " +
+        $"Error={Session.LastError}; MediaError={Controller.Snapshot.Error}; File={Controller.Snapshot.FilePath}; " +
+        $"HasFrame={ViewModel.Preview.HasFrame}; " +
+        $"Tasks={string.Join("; ", Session.ApplicationContext.Tasks.GetSnapshots().Select(task => $"{task.Name}/{task.State}/{task.ErrorSummary}"))}";
 
     public async ValueTask DisposeAsync()
     {
@@ -64,7 +77,10 @@ internal sealed class MainWindowTestContext : IAsyncDisposable
             {
                 DiscardUnsavedDialogs(Window);
 
-                Assert.True(DateTime.UtcNow < deadline, "Main window did not complete asynchronous close.");
+                Assert.True(DateTime.UtcNow < deadline,
+                    $"Main window did not complete asynchronous close. Closing={Session.IsClosing}; Error={Session.LastError}; " +
+                    $"Tasks={string.Join("; ", Session.ApplicationContext.Tasks.GetSnapshots().Select(task => $"{task.Name}/{task.State}/{task.ScopeId ?? "Application"}"))}; " +
+                    $"Owned={string.Join("; ", Window.OwnedWindows.Select(owned => $"{owned.GetType().Name}/{owned.IsVisible}/{owned.Title}"))}");
                 await Task.Delay(5, TestContext.Current.CancellationToken);
             }
 

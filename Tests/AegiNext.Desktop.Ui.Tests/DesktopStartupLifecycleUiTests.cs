@@ -12,6 +12,24 @@ namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class DesktopStartupLifecycleUiTests
 {
+    [AvaloniaFact]
+    public async Task StartAfterAsynchronousInitializationShowsWelcomeWithoutFrameworkAutoShow()
+    {
+        using var environment = new UiTestEnvironment();
+        await using var application = new DesktopApplicationContext(new(environment.DirectoryPath));
+        await application.Initialization;
+        Window? active = null;
+        await using var coordinator = new DesktopStartupCoordinator(window => active = window, () => { }, application);
+
+        coordinator.Start();
+
+        Assert.Same(coordinator.WelcomeWindow, active);
+        Assert.True(coordinator.WelcomeWindow.IsVisible);
+        Assert.Null(coordinator.MainWindow);
+        await coordinator.DisposeAsync();
+        Assert.False(coordinator.WelcomeWindow.IsVisible);
+    }
+
     [AvaloniaTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -89,6 +107,7 @@ public sealed class DesktopStartupLifecycleUiTests
         var dialogs = new StartupTestDialogService { NewProjectRequest = request };
         await using var coordinator = new DesktopStartupCoordinator(window => active = window, () => shutdownCount++,
             dialogs: dialogs);
+        await coordinator.ApplicationContext.Initialization;
         coordinator.Start();
         Assert.Same(coordinator.WelcomeWindow, active);
         Assert.Null(coordinator.MainWindow);
@@ -126,6 +145,7 @@ public sealed class DesktopStartupLifecycleUiTests
         var dialogs = new StartupTestDialogService { OpenPath = path };
         var windows = new List<Window>();
         await using var coordinator = new DesktopStartupCoordinator(windows.Add, () => { }, dialogs: dialogs);
+        await coordinator.ApplicationContext.Initialization;
         coordinator.Start();
         coordinator.WelcomeWindow.Show();
         coordinator.ApplicationContext.UpdatePreferences(value => value with { Theme = WorkbenchTheme.DARK });

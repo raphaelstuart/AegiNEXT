@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using AegiNext.Application;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
@@ -61,6 +62,10 @@ internal sealed partial class WorkbenchSession
 
     private void StartTimingPreview(TimelineTimingPreview preview, Guid trackId)
     {
+        if (ViewModel.Timeline.TimingPreview?.CueId != preview.CueId)
+        {
+            NotifyTaskInputChanged();
+        }
         timingPreviewTrackId = trackId;
         timingPreviewFollowing = true;
         timingPreviewWasPlaying = controller.Snapshot.State == VideoPlaybackState.PLAYING;
@@ -207,23 +212,47 @@ internal sealed partial class WorkbenchSession
         var preview = new TimelineTimingPreview(entered.CueId, start, initialEnd);
         var generation = projectGeneration;
         var presetId = ViewModel.Styles.SelectedPreset?.Id;
-        var token = ProjectOperationsToken;
         pendingTimingEntry = entered;
         pendingTimingEnd = null;
         StartTimingPreview(preview, trackId);
-        SetProjectBusy(true);
+        try
+        {
+            await applicationContext.Tasks.Submit(new BeginTimingCueTask(this, trackId, start, entered, source,
+                generation, presetId, preview, TaskInputRevision)).Completion;
+        }
+        finally
+        {
+            if (pendingTimingEntry?.CueId == entered.CueId)
+            {
+                ClearTimingPreview();
+                pendingTimingEntry = null;
+                pendingTimingEnd = null;
+            }
+        }
+    }
+
+    internal async Task ExecutePendingTimingCreationAsync(Guid trackId, MediaTime start, Shortcuts.TimingEnterResult entered,
+        ProjectDocument source, long generation, Guid? presetId, TimelineTimingPreview preview, long inputRevision,
+        AegiTaskExecutionContext context)
+    {
+        var initialEnd = preview.End;
+        var token = context.CancellationToken;
+        using var editingLease = context.AcquireEditLease();
         var created = false;
         var refreshAfterFailure = false;
         MediaTime? finalEnd = null;
         try
         {
-            var prepared = await styles.PrepareCreationAsync(trackId, presetId);
+            var prepared = await styles.PrepareCreationAsync(trackId, presetId, source);
             token.ThrowIfCancellationRequested();
-            if (closing || generation != projectGeneration || !ReferenceEquals(source, editor.Snapshot))
+            if (closing || generation != projectGeneration || inputRevision != TaskInputRevision ||
+                HasProjectDrafts || !ReferenceEquals(source, editor.Snapshot))
             {
-                return;
+                throw new OperationCanceledException("The timing entry target changed during preparation.", token);
             }
 
+            context.EnterCommit(() => !closing && generation == projectGeneration && inputRevision == TaskInputRevision &&
+                !HasProjectDrafts && ReferenceEquals(source, editor.Snapshot));
             committingTimingCreation = true;
             try
             {
@@ -250,7 +279,7 @@ internal sealed partial class WorkbenchSession
             ClearTimingPreview();
             pendingTimingEntry = null;
             pendingTimingEnd = null;
-            SetProjectBusy(false);
+            editingLease.Dispose();
             if (refreshAfterFailure && !closing)
             {
                 RefreshDocument();

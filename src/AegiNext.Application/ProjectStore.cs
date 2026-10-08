@@ -39,16 +39,32 @@ public static class ProjectStore
     /// <summary>先验证快照并完整写入临时文件；提交前取消或失败不修改已有工程。</summary>
     public static Task SaveAsync(ProjectDocument document, string path, CancellationToken cancellationToken = default)
     {
-        return WriteAsync(document, path, true, cancellationToken);
+        return WriteAsync(document, path, true, null, cancellationToken);
+    }
+
+    /// <summary>写入完整临时文件后，在原子替换前进入调用方的提交阶段。</summary>
+    public static Task SaveAsync(ProjectDocument document, string path, Action beforeCommit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeCommit);
+        return WriteAsync(document, path, true, beforeCommit, cancellationToken);
     }
 
     /// <summary>原子提交新工程文件；已有文件或目录永不覆盖。</summary>
     public static Task CreateAsync(ProjectDocument document, string path, CancellationToken cancellationToken = default)
     {
-        return WriteAsync(document, path, false, cancellationToken);
+        return WriteAsync(document, path, false, null, cancellationToken);
     }
 
-    private static async Task WriteAsync(ProjectDocument document, string path, bool overwrite,
+    /// <summary>在新文件原子提交前进入调用方的提交阶段，保留不覆盖语义。</summary>
+    public static Task CreateAsync(ProjectDocument document, string path, Action beforeCommit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeCommit);
+        return WriteAsync(document, path, false, beforeCommit, cancellationToken);
+    }
+
+    private static async Task WriteAsync(ProjectDocument document, string path, bool overwrite, Action? beforeCommit,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -69,6 +85,7 @@ public static class ProjectStore
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            beforeCommit?.Invoke();
             File.Move(temporary, fullPath, overwrite);
         }
         finally

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
 using AegiNext.Rendering.Fonts;
@@ -7,7 +8,41 @@ namespace AegiNext.Desktop.Editing;
 
 internal sealed class SubtitleFontSelectionService
 {
-    private readonly ImmutableArray<SystemFontFace> faces;
+    private ImmutableArray<SystemFontFace> faces;
+    private readonly AegiTaskService? tasks;
+    private readonly Lock loadingGate = new();
+    private Task? loading;
+
+    internal SubtitleFontSelectionService(AegiTaskService tasks) : this(SystemFontCatalog.Empty)
+    {
+        this.tasks = tasks;
+    }
+
+    internal event EventHandler? Changed;
+
+    internal Task EnsureLoadedAsync()
+    {
+        lock (loadingGate)
+        {
+            if (loading is null || loading.IsCanceled || loading.IsFaulted)
+            {
+                loading = LoadAsync();
+            }
+            return loading;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (tasks is null)
+        {
+            return;
+        }
+        var catalog = await tasks.Submit(new EnumerateSystemFontsTask()).Completion;
+        Catalog = catalog;
+        LoadFaces(catalog.Faces);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
 
     internal SubtitleFontSelectionService(SystemFontCatalog catalog) : this(catalog.Faces)
     {
@@ -15,6 +50,11 @@ internal sealed class SubtitleFontSelectionService
     }
 
     internal SubtitleFontSelectionService(IEnumerable<SystemFontFace> faces)
+    {
+        LoadFaces(faces);
+    }
+
+    private void LoadFaces(IEnumerable<SystemFontFace> faces)
     {
         this.faces = faces.ToImmutableArray();
         var candidates = this.faces.GroupBy(face => face.FamilyName, StringComparer.OrdinalIgnoreCase)
@@ -26,8 +66,8 @@ internal sealed class SubtitleFontSelectionService
         Candidates = FontSelectionResolver.NormalizeCandidates(candidates).ToImmutableArray();
     }
 
-    internal SystemFontCatalog? Catalog { get; }
-    internal ImmutableArray<FontPickerCandidate> Candidates { get; }
+    internal SystemFontCatalog? Catalog { get; private set; }
+    internal ImmutableArray<FontPickerCandidate> Candidates { get; private set; }
 
     internal static FontSelection FromStyle(SubtitleStyle style) => new(style.FontFamily, style.FontVariant, !style.FontAssetId.HasValue);
 

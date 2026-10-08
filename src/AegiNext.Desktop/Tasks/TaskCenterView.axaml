@@ -1,0 +1,96 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tasks="using:AegiNext.Desktop.Tasks"
+             xmlns:materialIcons="using:Material.Icons.Avalonia"
+             x:Class="AegiNext.Desktop.Tasks.TaskCenterView" x:DataType="tasks:TaskCenterViewModel"
+             Classes="business-surface">
+  <UserControl.Resources>
+    <ItemsPanelTemplate x:Key="TaskRowsPanel">
+      <StackPanel Spacing="{StaticResource WorkbenchGapSmall}" />
+    </ItemsPanelTemplate>
+    <ControlTheme x:Key="TaskFlyoutPresenterTheme" TargetType="FlyoutPresenter"
+                  BasedOn="{StaticResource {x:Type FlyoutPresenter}}">
+      <Setter Property="Width" Value="480" />
+      <Setter Property="MaxHeight" Value="560" />
+      <Setter Property="Padding" Value="{StaticResource WorkbenchInset}" />
+      <Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}" />
+      <Setter Property="FontFamily" Value="{StaticResource WorkbenchBodyFontFamily}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+      <Style Selector="^ /template/ ScrollViewer">
+        <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
+      </Style>
+    </ControlTheme>
+    <DataTemplate x:Key="TaskRowTemplate" x:DataType="tasks:TaskRowViewModel">
+      <Border Name="TaskCard" Classes="card" ToolTip.Tip="{Binding Description}">
+        <Grid Name="TaskCardLayout" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto"
+              ColumnSpacing="{StaticResource WorkbenchGapSmall}" RowSpacing="{StaticResource WorkbenchGapSmall}">
+          <Grid Name="TaskTextGroup" ColumnDefinitions="Auto,*" ColumnSpacing="{StaticResource WorkbenchGapSmall}"
+                VerticalAlignment="Center">
+            <TextBlock Name="TaskNameText" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                       MaxWidth="{Binding #TaskTextGroup.Bounds.Width, Converter={x:Static tasks:TaskCenterView.NameWidthConverter}}"
+                       FontSize="{StaticResource WorkbenchBodyFontSize}" FontFamily="{StaticResource WorkbenchBodyFontFamily}"
+                       LineHeight="{StaticResource WorkbenchInputLineHeight}" />
+            <TextBlock Name="TaskSecondaryText" Grid.Column="1" Text="{Binding SecondaryTitle}"
+                       Foreground="{DynamicResource PreviewMuted}" TextTrimming="CharacterEllipsis"
+                       FontSize="{StaticResource WorkbenchBodyFontSize}" FontFamily="{StaticResource WorkbenchBodyFontFamily}"
+                       LineHeight="{StaticResource WorkbenchInputLineHeight}" />
+          </Grid>
+          <Button Name="TaskCancelButton" Grid.Row="0" Grid.Column="1" Classes="icon-button" Command="{Binding CancelCommand}"
+                  IsVisible="{Binding ShowsCancel}" AutomationProperties.Name="{Binding CancelName}"
+                  ToolTip.Tip="{Loc Key=Tasks.Cancel}">
+            <materialIcons:MaterialIcon Kind="Close" Width="18" Height="18" />
+          </Button>
+          <ProgressBar Name="TaskProgressBar" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                       IsIndeterminate="{Binding IsIndeterminate}" Value="{Binding ProgressValue}" Minimum="0" Maximum="100"
+                       AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding ProgressDescription}" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+  <Button Name="TasksButton" MinWidth="56" Height="30" MinHeight="30" Padding="8,3"
+          ToolTip.Tip="{Loc Key=Tasks.Title}" AutomationProperties.Name="{Binding ButtonName}">
+    <Button.Content>
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <materialIcons:MaterialIcon Kind="FormatListBulleted" Width="17" Height="17" />
+        <TextBlock Text="{Binding ActiveCountText}" VerticalAlignment="Center" />
+      </StackPanel>
+    </Button.Content>
+    <Button.Flyout>
+      <Flyout Placement="BottomEdgeAlignedRight" ShowMode="Standard" FlyoutPresenterTheme="{StaticResource TaskFlyoutPresenterTheme}">
+        <Border Name="TaskFlyoutContent">
+          <Grid RowDefinitions="Auto,*" RowSpacing="{StaticResource WorkbenchGapSmall}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource WorkbenchGapSmall}">
+              <TextBlock Text="{Loc Key=Tasks.Title}" FontWeight="SemiBold" VerticalAlignment="Center"
+                         FontSize="{StaticResource WorkbenchBodyFontSize}" FontFamily="{StaticResource WorkbenchBodyFontFamily}"
+                         LineHeight="{StaticResource WorkbenchInputLineHeight}" />
+              <Button Name="ClearTaskHistoryButton" Grid.Column="1" Classes="icon-button"
+                      Command="{Binding ClearHistoryCommand}" AutomationProperties.Name="{Loc Key=Tasks.ClearHistory}"
+                      ToolTip.Tip="{Loc Key=Tasks.ClearHistory}">
+                <materialIcons:MaterialIcon Kind="DeleteSweep" Width="18" Height="18" />
+              </Button>
+            </Grid>
+            <ScrollViewer Name="TaskListScrollViewer" Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Spacing="{StaticResource WorkbenchGapSmall}">
+                <TextBlock Text="{Loc Key=Tasks.Empty}" IsVisible="{Binding IsEmpty}"
+                           FontSize="{StaticResource WorkbenchBodyFontSize}" FontFamily="{StaticResource WorkbenchBodyFontFamily}"
+                           LineHeight="{StaticResource WorkbenchInputLineHeight}" />
+                <TextBlock Text="{Loc Key=Tasks.Current}" IsVisible="{Binding HasCurrentTasks}" Foreground="{DynamicResource PreviewMuted}"
+                           FontSize="{StaticResource WorkbenchBodyFontSize}" FontFamily="{StaticResource WorkbenchBodyFontFamily}"
+                           LineHeight="{StaticResource WorkbenchInputLineHeight}" />
+                <ItemsControl Name="CurrentTaskRows" ItemsSource="{Binding CurrentTasks}" ItemTemplate="{StaticResource TaskRowTemplate}"
+                              ItemsPanel="{StaticResource TaskRowsPanel}" />
+                <TextBlock Text="{Loc Key=Tasks.History}" IsVisible="{Binding HasHistory}" Foreground="{DynamicResource PreviewMuted}"
+                           FontSize="{StaticResource WorkbenchBodyFontSize}" FontFamily="{StaticResource WorkbenchBodyFontFamily}"
+                           LineHeight="{StaticResource WorkbenchInputLineHeight}" />
+                <ItemsControl Name="RecentTaskRows" ItemsSource="{Binding RecentTasks}" ItemTemplate="{StaticResource TaskRowTemplate}"
+                              ItemsPanel="{StaticResource TaskRowsPanel}" />
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
+        </Border>
+      </Flyout>
+    </Button.Flyout>
+  </Button>
+</UserControl>

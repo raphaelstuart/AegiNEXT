@@ -381,6 +381,38 @@ public sealed class VideoExporterTests
     }
 
     [ExportTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AtomicCommitCallbackRunsBeforePublishingAndCleansRejectedOutput(bool reject)
+    {
+        using var fixture = await DecoderFixture.CreateAsync(frameCount: 5);
+        var directory = Path.GetDirectoryName(fixture.MediaPath)!;
+        var output = Path.Combine(directory, "atomic-commit.mkv");
+        var request = Request(CreateProject(fixture.MediaPath, 1, 64, 48), directory, output);
+        var callbackInvoked = false;
+        var export = new VideoExporter().ExportAsync(request, null, () =>
+        {
+            callbackInvoked = true;
+            Assert.False(File.Exists(output));
+            if (reject)
+            {
+                throw new OperationCanceledException("Commit rejected");
+            }
+        }, CancellationToken.None);
+        if (reject)
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => export);
+        }
+        else
+        {
+            await export;
+        }
+        Assert.True(callbackInvoked);
+        Assert.Equal(!reject, File.Exists(output));
+        Assert.Empty(Directory.GetDirectories(directory, ".aeginext-export-*"));
+    }
+
+    [ExportTheory]
     [InlineData("smpte2084", 723, 855, 675)]
     [InlineData("arib-std-b67", 940, 502, 872)]
     public async Task HdrHighlightsStayHdrAndHalfWhiteUses203Nits(string transfer, int left, int right, int mixed)

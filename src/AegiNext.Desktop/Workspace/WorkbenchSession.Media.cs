@@ -1,3 +1,4 @@
+using AegiNext.Application.Tasks;
 using AegiNext.Media.Decoding;
 
 namespace AegiNext.Desktop.Workspace;
@@ -41,7 +42,7 @@ internal sealed partial class WorkbenchSession
 
     internal async Task<bool> SetPreviewDecodeModeAsync(VideoDecodeMode mode, CancellationToken cancellationToken = default)
     {
-        if (closing || switchingPreviewDecodeMode || projectBusy)
+        if (closing || switchingPreviewDecodeMode || IsProjectBusy)
         {
             return false;
         }
@@ -56,22 +57,32 @@ internal sealed partial class WorkbenchSession
         }
 
         switchingPreviewDecodeMode = true;
-        playback.Invalidate();
-        ViewModel.CancelGestures();
-        Tick();
-        PreviewDecodeModeChanged?.Invoke(this, EventArgs.Empty);
+        Task<bool> completion;
         try
         {
-            LastError = null;
-            ViewModel.Error = null;
-            await controller.SwitchDecodeModeAsync(mode, cancellationToken);
-            if (closing)
-            {
-                return false;
-            }
+            var handle = applicationContext.Tasks.Submit(new SwitchPreviewDecodeModeTask(this, mode));
+            completion = ObservePreviewDecodeModeSwitchAsync(handle.Completion);
+        }
+        catch
+        {
+            switchingPreviewDecodeMode = false;
+            throw;
+        }
+        try
+        {
+            return await completion.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
 
-            UpdatePreferences(current => current with { PreviewDecodeMode = mode });
-            return true;
+    private async Task<bool> ObservePreviewDecodeModeSwitchAsync(Task<bool> completion)
+    {
+        try
+        {
+            return await completion;
         }
         catch (OperationCanceledException)
         {
@@ -83,12 +94,41 @@ internal sealed partial class WorkbenchSession
             {
                 ShowError(error);
             }
-
             return false;
         }
         finally
         {
             switchingPreviewDecodeMode = false;
+            if (!closing)
+            {
+                Tick();
+                PreviewDecodeModeChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    internal async Task<bool> SwitchPreviewDecodeModeCoreAsync(VideoDecodeMode mode, AegiTaskExecutionContext context)
+    {
+        playback.Invalidate();
+        ViewModel.CancelGestures();
+        Tick();
+        PreviewDecodeModeChanged?.Invoke(this, EventArgs.Empty);
+        try
+        {
+            LastError = null;
+            ViewModel.Error = null;
+            await controller.SwitchDecodeModeAsync(mode, context.CancellationToken);
+            if (closing)
+            {
+                throw new OperationCanceledException(context.CancellationToken);
+            }
+
+            context.EnterCommit(() => !closing);
+            UpdatePreferences(current => current with { PreviewDecodeMode = mode });
+            return true;
+        }
+        finally
+        {
             if (!closing)
             {
                 Tick();

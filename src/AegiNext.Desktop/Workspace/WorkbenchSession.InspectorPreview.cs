@@ -32,7 +32,7 @@ internal sealed partial class WorkbenchSession
             inspectorPreviewQueued = false;
         }
 
-        if (inspectorPreviewQueued || updatingWorkbench || closing || projectBusy)
+        if (inspectorPreviewQueued || IsUpdating || closing || IsProjectBusy)
         {
             return;
         }
@@ -49,7 +49,7 @@ internal sealed partial class WorkbenchSession
                 return;
             }
             inspectorPreviewQueued = false;
-            if (closing || projectBusy || updatingWorkbench || layerId != SelectedLayerId || target != SceneEditing.DraftTarget ||
+            if (closing || IsProjectBusy || IsUpdating || layerId != SelectedLayerId || target != SceneEditing.DraftTarget ||
                 !ReferenceEquals(source, DocumentSnapshot))
             {
                 return;
@@ -89,7 +89,7 @@ internal sealed partial class WorkbenchSession
 
     private string SynchronizeNumericText(string text, decimal? value)
     {
-        if (!updatingWorkbench && (value is null && string.IsNullOrWhiteSpace(text) ||
+        if (!IsUpdating && (value is null && string.IsNullOrWhiteSpace(text) ||
             decimal.TryParse(text, NumberStyles.Float, InterfaceCulture, out var parsed) && parsed == value))
         {
             return text;

@@ -1,4 +1,5 @@
 using AegiNext.Application;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.I18n;
@@ -45,7 +46,7 @@ public sealed class WorkbenchSessionPersistenceTests
     }
 
     [Fact]
-    public async Task CancellationAfterCreationCommitKeepsTheNamedDirectoryAndAcceptedProject()
+    public async Task CancelledWaitAfterCreationCommitKeepsTheNamedDirectoryAndAcceptedProject()
     {
         await using var context = new WorkspaceSessionTestContext();
         await context.InitializeAsync();
@@ -56,11 +57,46 @@ public sealed class WorkbenchSessionPersistenceTests
         var result = await context.Session.CreateProjectAsync(request, cancellation.Token);
 
         Assert.True(cancellation.IsCancellationRequested);
-        Assert.Equal(Desktop.Workspace.ProjectOpenStatus.OPENED, result.Status);
+        Assert.Equal(Desktop.Workspace.ProjectOpenStatus.CANCELLED, result.Status);
+        await context.Session.WaitForProjectIdleAsync();
         Assert.Equal(ProjectCreationService.GetProjectPath(request), context.Session.ProjectPath);
         Assert.Equal("committed", (await ProjectStore.LoadAsync(context.Session.ProjectPath!)).Name);
         Assert.True(Directory.Exists(Path.Combine(context.Session.ProjectDirectory, "backup")));
         Assert.Single(context.Session.ApplicationContext.RecentProjects.Entries);
+    }
+
+    [Fact]
+    public async Task ClosingTheCreationDialogExplicitlyCancelsItsQueuedTaskWithoutCancellingOtherWork()
+    {
+        await using var context = new WorkspaceSessionTestContext();
+        await context.InitializeAsync();
+        var gate = new QueuedSaveGateTask(context.Session.TaskScope);
+        var gateHandle = context.Session.ApplicationContext.Tasks.Submit(gate);
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource();
+        var request = new ProjectCreationRequest("cancelled-dialog", context.DirectoryPath);
+        var creation = context.Session.CreateProjectFromDialogAsync(request, cancellation.Token);
+        try
+        {
+            Assert.Contains(context.Session.ApplicationContext.Tasks.GetSnapshots(), task =>
+                task.Name == "Tasks.CreateProject" && task.State == AegiTaskState.Queued);
+
+            cancellation.Cancel();
+            var result = await creation.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(Desktop.Workspace.ProjectOpenStatus.CANCELLED, result.Status);
+            Assert.False(File.Exists(ProjectCreationService.GetProjectPath(request)));
+            Assert.Null(context.Session.ProjectPath);
+            Assert.Equal(AegiTaskState.Running, gateHandle.Snapshot.State);
+            Assert.Contains(context.Session.ApplicationContext.Tasks.GetSnapshots(), task =>
+                task.Name == "Tasks.CreateProject" && task.State == AegiTaskState.Cancelled);
+        }
+        finally
+        {
+            gate.Released.TrySetResult();
+            await gateHandle.Completion;
+            await creation;
+        }
     }
 
     [Fact]

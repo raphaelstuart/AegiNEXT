@@ -12,7 +12,7 @@ internal sealed partial class WorkbenchSession
 
     internal bool SelectSubtitleRows(Guid? primaryId, IEnumerable<Guid> ids)
     {
-        if (updatingWorkbench || projectBusy || closing)
+        if (IsUpdating || IsProjectBusy || closing)
         {
             return false;
         }

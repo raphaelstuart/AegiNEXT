@@ -1,5 +1,6 @@
 using System.Globalization;
 using AegiNext.Application;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Core.Editing;
@@ -21,15 +22,7 @@ internal sealed partial class WorkbenchSession
         var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
         var presetId = ViewModel.Styles.SelectedPreset?.Id;
         var cue = new SubtitleLine { Start = start, End = start + new MediaTime(2), Text = string.Empty, TrackId = trackId };
-        SetProjectBusy(true);
-        try
-        {
-            await CreateSubtitleClipsAsync([cue], trackId, presetId);
-        }
-        finally
-        {
-            SetProjectBusy(false);
-        }
+        await CreateSubtitleClipsAsync([cue], trackId, presetId);
 
         SelectCue(cue.Id);
     }
@@ -53,12 +46,31 @@ internal sealed partial class WorkbenchSession
         {
             return;
         }
+        var source = editor.Snapshot;
+        var inputRevision = TaskInputRevision;
+        if (AegiTaskExecutionContext.Current is { } parent)
+        {
+            await parent.RunStageAsync("Tasks.CreateSubtitleClips", context =>
+                CreateSubtitleClipsCoreAsync(imported, trackId, fallbackPresetId, source, inputRevision, context),
+                CreateSubtitleClipsTask.GetResources(this));
+        }
+        else
+        {
+            await applicationContext.Tasks.Submit(new CreateSubtitleClipsTask(this, imported, trackId, fallbackPresetId,
+                source, inputRevision)).Completion;
+        }
+    }
 
-        var prepared = await styles.PrepareCreationAsync(trackId, fallbackPresetId);
-        editor.Apply("Create subtitle clips", _ =>
-            ProjectEditingOperations.CreateSubtitleClips(prepared.Project,
-                imported.Select(line => line with { StyleName = prepared.StyleName, StylePresetId = prepared.StylePresetId }),
-                trackId, prepared.Style));
+    internal async Task CreateSubtitleClipsCoreAsync(IReadOnlyList<SubtitleLine> imported, Guid trackId,
+        Guid? fallbackPresetId, ProjectDocument source, long inputRevision, AegiTaskExecutionContext context)
+    {
+        var prepared = await styles.PrepareCreationAsync(trackId, fallbackPresetId, source);
+        using var editingLease = context.AcquireEditLease();
+        context.EnterCommit(() => !closing && inputRevision == TaskInputRevision && !HasProjectDrafts &&
+            ReferenceEquals(source, editor.Snapshot));
+        editor.Apply("Create subtitle clips", _ => ProjectEditingOperations.CreateSubtitleClips(prepared.Project,
+            imported.Select(line => line with { StyleName = prepared.StyleName, StylePresetId = prepared.StylePresetId }),
+            trackId, prepared.Style));
     }
 
     internal void SetCueEnd()

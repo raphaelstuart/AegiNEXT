@@ -5,7 +5,7 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed partial class WorkbenchSession
 {
     private readonly ProjectPersistenceCoordinator persistence;
-    private readonly CancellationTokenSource projectOperationsCancellation = new();
+    private CancellationTokenSource projectOperationsCancellation = new();
     private long projectGeneration;
 
     internal ProjectPersistenceCoordinator Persistence => persistence;
@@ -26,7 +26,7 @@ internal sealed partial class WorkbenchSession
 
         var contentSnapshot = editor.Snapshot;
         return new(projectGeneration, projectPath, projectDirectory,
-            CreatePersistenceSnapshot(contentSnapshot), HasUnsavedChanges, projectBusy || !documentChangeTask.IsCompleted)
+            CreatePersistenceSnapshot(contentSnapshot), HasUnsavedChanges, IsProjectBusy || !documentChangeTask.IsCompleted)
         {
             ContentSnapshot = contentSnapshot
         };
@@ -45,6 +45,11 @@ internal sealed partial class WorkbenchSession
 
     private void OnEditorStateChanged(object? sender, ProjectEditorChangedEventArgs args)
     {
+        if (args.Kind == ProjectEditorChangeKind.RELOCATION)
+        {
+            RefreshRelocatedDocument();
+            return;
+        }
         if (args.Kind == ProjectEditorChangeKind.SAVE_POINT)
         {
             RefreshTitle();

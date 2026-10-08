@@ -11,6 +11,9 @@ internal sealed class VideoWorkbenchExportService(VideoExporter exporter) : IWor
         return exporter.ExportAsync(request, progress, cancellationToken);
     }
 
+    public Task<VideoExportResult> ExportWithCommitAsync(VideoExportRequest request, IProgress<VideoExportProgress> progress,
+        Action beforeCommit, CancellationToken cancellationToken) => exporter.ExportAsync(request, progress, beforeCommit, cancellationToken);
+
     /// <inheritdoc />
     public void Dispose()
     {

@@ -5,8 +5,8 @@ namespace AegiNext.Desktop.Windowing;
 [StructLayout(LayoutKind.Sequential)]
 internal struct MacOsRect
 {
-    internal double X;
-    internal double Y;
-    internal double Width;
-    internal double Height;
+    internal double X { get; set; }
+    internal double Y { get; set; }
+    internal double Width { get; set; }
+    internal double Height { get; set; }
 }

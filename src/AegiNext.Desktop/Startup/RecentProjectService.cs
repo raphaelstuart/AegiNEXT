@@ -1,6 +1,8 @@
 using System.Text.Json;
+using AegiNext.Application.Tasks;
 using System.Text.Json.Serialization;
 using System.Collections.ObjectModel;
+using System.Runtime.ExceptionServices;
 
 namespace AegiNext.Desktop.Startup;
 
@@ -20,15 +22,21 @@ internal sealed class RecentProjectService : IAsyncDisposable
     private readonly Lock stateGate = new();
     private readonly SemaphoreSlim writeGate = new(1, 1);
     private ReadOnlyCollection<RecentProjectEntry> entries = Array.AsReadOnly<RecentProjectEntry>([]);
-    private Task completion = Task.CompletedTask;
+    private readonly AegiTaskService tasks;
+    private readonly bool ownsTasks;
     private Task? disposeTask;
     private bool disposing;
 
-    internal RecentProjectService(string directory)
+    internal RecentProjectService(string directory, AegiTaskService? tasks = null, bool deferLoad = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         storagePath = Path.Combine(Path.GetFullPath(directory), "recent-projects.json");
-        Load();
+        ownsTasks = tasks is null;
+        this.tasks = tasks ?? new();
+        if (!deferLoad)
+        {
+            Load();
+        }
     }
 
     internal event EventHandler? Changed;
@@ -46,57 +54,66 @@ internal sealed class RecentProjectService : IAsyncDisposable
         }
     }
 
-    internal Task Completion
+    internal AegiTaskResource Resource => AegiTaskResource.StoragePath(storagePath);
+    internal Task Completion => tasks.DrainAsync();
+
+    internal Task InitializeAsync()
     {
-        get
+        return Task.Run(Load);
+    }
+
+    private Task QueueWrite(IReadOnlyList<RecentProjectEntry> snapshot)
+    {
+        if (AegiTaskExecutionContext.Current is { } parent)
         {
-            lock (stateGate)
-            {
-                return completion;
-            }
+            return parent.RunStageAsync("Tasks.RecentProjectsSave", _ => PersistAsync(snapshot), [Resource]);
         }
+        return ObserveWriteAsync(tasks.Submit(new RecentProjectsWriteTask(this, snapshot)).Completion);
+    }
+
+    private static async Task ObserveWriteAsync(Task pending)
+    {
+        await pending.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     }
 
     internal Task RecordAsync(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var fullPath = Path.GetFullPath(path);
-        Task write;
+        IReadOnlyList<RecentProjectEntry> snapshot;
         lock (stateGate)
         {
             ObjectDisposedException.ThrowIf(disposing, this);
             var value = new RecentProjectEntry(fullPath, Path.GetFileNameWithoutExtension(fullPath), DateTimeOffset.UtcNow);
             entries = Array.AsReadOnly(entries.Where(entry => !pathComparer.Equals(entry.Path, fullPath))
                 .Prepend(value).OrderByDescending(entry => entry.LastUsedUtc).Take(MAX_ENTRIES).ToArray());
-            completion = PersistAsync(entries, completion);
-            write = completion;
+            snapshot = entries;
         }
 
         Changed?.Invoke(this, EventArgs.Empty);
-        return write;
+        return QueueWrite(snapshot);
     }
 
     internal Task RemoveAsync(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var fullPath = Path.GetFullPath(path);
-        Task write;
+        IReadOnlyList<RecentProjectEntry> snapshot;
         lock (stateGate)
         {
             ObjectDisposedException.ThrowIf(disposing, this);
             var remaining = entries.Where(entry => !pathComparer.Equals(entry.Path, fullPath)).ToArray();
             if (remaining.Length == entries.Count)
             {
-                return completion;
+                return Task.CompletedTask;
             }
 
             entries = Array.AsReadOnly(remaining);
-            completion = PersistAsync(entries, completion);
-            write = completion;
+            snapshot = entries;
         }
 
         Changed?.Invoke(this, EventArgs.Empty);
-        return write;
+        return QueueWrite(snapshot);
     }
 
     /// <inheritdoc />
@@ -105,7 +122,7 @@ internal sealed class RecentProjectService : IAsyncDisposable
         lock (stateGate)
         {
             disposing = true;
-            disposeTask ??= DisposeCoreAsync(completion);
+            disposeTask ??= DisposeCoreAsync();
             return new(disposeTask);
         }
     }
@@ -150,10 +167,8 @@ internal sealed class RecentProjectService : IAsyncDisposable
         }
     }
 
-    private async Task PersistAsync(IReadOnlyList<RecentProjectEntry> snapshot, Task previous)
+    internal async Task PersistAsync(IReadOnlyList<RecentProjectEntry> snapshot)
     {
-        await Task.Yield();
-        await previous;
         await writeGate.WaitAsync();
         Exception? failure = null;
         var temporary = storagePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -187,6 +202,10 @@ internal sealed class RecentProjectService : IAsyncDisposable
         }
 
         SetError(failure);
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
     }
 
     private void SetError(Exception? error)
@@ -200,9 +219,12 @@ internal sealed class RecentProjectService : IAsyncDisposable
         ErrorChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private async Task DisposeCoreAsync(Task pending)
+    private async Task DisposeCoreAsync()
     {
-        await pending;
+        if (ownsTasks)
+        {
+            await tasks.DisposeAsync();
+        }
         writeGate.Dispose();
     }
 }

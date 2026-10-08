@@ -37,7 +37,7 @@ internal sealed partial class WorkbenchSession
 
     private void OnPreviewPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (updatingWorkbench)
+        if (IsUpdating)
         {
             return;
         }

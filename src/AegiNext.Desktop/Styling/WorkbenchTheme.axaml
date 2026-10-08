@@ -149,6 +149,13 @@
     <Setter Property="HorizontalContentAlignment" Value="Center"/>
     <Setter Property="VerticalContentAlignment" Value="Center"/>
   </Style>
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource PreviewSurface}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource PreviewBorder}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="Padding" Value="16"/>
+  </Style>
   <Style Selector="dock|ToolChromeControl">
     <Setter Property="Background" Value="{DynamicResource PreviewSurface}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource PreviewBorder}"/>

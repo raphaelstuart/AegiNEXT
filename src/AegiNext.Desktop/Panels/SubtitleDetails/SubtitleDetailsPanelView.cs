@@ -349,6 +349,8 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         }
         coordinator.Changed += OnCoordinatorChanged;
         session.StyleLibraryChanged += OnStyleLibraryChanged;
+        session.Fonts.Changed += OnFontsChanged;
+        selectionFont.PropertyChanged += OnFontPickerChanged;
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
         session.PreviewUpdated += OnPreviewUpdated;
         Localization.LanguageChanged += OnLanguageChanged;
@@ -930,6 +932,55 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
 
     private void OnCoordinatorChanged(object? sender, EventArgs e) => Refresh();
     private void OnStyleLibraryChanged(object? sender, EventArgs e) => Refresh();
+    private void OnFontsChanged(object? sender, EventArgs e)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(RefreshFontCandidates);
+            return;
+        }
+
+        RefreshFontCandidates();
+    }
+
+    private void RefreshFontCandidates()
+    {
+        if (!disposed)
+        {
+            selectionFont.RefreshFontCandidates(session.Fonts.Candidates);
+        }
+    }
+
+    private void OnFontPickerChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == AutoCompleteBox.IsDropDownOpenProperty && selectionFont.IsDropDownOpen)
+        {
+            _ = LoadFontCandidatesAsync();
+        }
+    }
+
+    private async Task LoadFontCandidatesAsync()
+    {
+        if (disposed || session.IsClosing)
+        {
+            return;
+        }
+
+        try
+        {
+            await session.Fonts.EnsureLoadedAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            if (!disposed && !session.IsClosing)
+            {
+                session.LogError("Fonts", error);
+            }
+        }
+    }
     private void OnLanguageChanged(object? sender, EventArgs e) => Refresh();
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
     private void OnPreviewUpdated(object? sender, VideoPreviewUpdate e)
@@ -1112,6 +1163,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        _ = LoadFontCandidatesAsync();
         hostWindow = TopLevel.GetTopLevel(this) as Window;
         if (hostWindow is not null)
         {
@@ -1172,6 +1224,8 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         _ = session.RunCommandAsync(coordinator.StopPlaybackAsync);
         coordinator.Changed -= OnCoordinatorChanged;
         session.StyleLibraryChanged -= OnStyleLibraryChanged;
+        session.Fonts.Changed -= OnFontsChanged;
+        selectionFont.PropertyChanged -= OnFontPickerChanged;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
         session.PreviewUpdated -= OnPreviewUpdated;
         Localization.LanguageChanged -= OnLanguageChanged;

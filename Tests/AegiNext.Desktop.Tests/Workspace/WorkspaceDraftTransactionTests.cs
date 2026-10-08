@@ -7,6 +7,20 @@ namespace AegiNext.Desktop.Tests.Workspace;
 public sealed class WorkspaceDraftTransactionTests
 {
     [Fact]
+    public async Task UnboundDetailsInputsDoNotCreateProjectDrafts()
+    {
+        await using var context = new WorkspaceSessionTestContext();
+        await context.InitializeAsync();
+        context.Session.Details.StyleDraft.FontSizeText = "unbound control input";
+
+        Assert.True(context.Session.Details.StyleDraft.IsDirty);
+        Assert.Null(context.Session.Details.Line);
+        Assert.False(context.Session.Details.HasDrafts);
+        Assert.False(context.Session.HasProjectDrafts);
+        Assert.False(context.Session.HasUnsavedChanges);
+    }
+
+    [Fact]
     public async Task InvalidSecondSubtitleKeepsAllDraftsAndLeavesDocumentAndHistoryUnchanged()
     {
         await using var context = new WorkspaceSessionTestContext(CreateDocument());
@@ -19,7 +33,7 @@ public sealed class WorkspaceDraftTransactionTests
         var focusRequests = 0;
         session.ViewModel.DraftErrorFocusRequested += (_, _) => focusRequests++;
 
-        Assert.False(session.ViewModel.TryCommitDrafts());
+        Assert.False(session.ViewModel.TryCommitDrafts(), $"Updating={session.IsUpdating}; Busy={session.IsProjectBusy}; Drafts={session.HasProjectDrafts}");
 
         Assert.Same(original, context.Editor.Snapshot);
         Assert.False(context.Editor.CanUndo);

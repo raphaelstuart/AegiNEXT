@@ -32,6 +32,9 @@ public sealed class ExportWorkspaceLifecycleUiTests
         Assert.False(session.ViewModel.GetCommand(WorkbenchCommand.EXPORT_VIDEO).CanExecute(null));
         context.ExportService.Report(new(12, new MediaTime(2, 5), 0.4, "encoding"));
         context.Flush();
+        var exportTask = Assert.Single(session.ApplicationContext.Tasks.GetSnapshots(), task => task.Name == "Tasks.VideoExport");
+        Assert.True(exportTask.CanCancel);
+        Assert.True(exportModel.CanCancel);
 
         Assert.True(await context.Layouts.ApplyPresetAsync(WorkspaceLayoutPresets.EFFECTS));
         Assert.True(await context.Layouts.ApplyPresetAsync(WorkspaceLayoutPresets.TIMING));
@@ -61,6 +64,8 @@ public sealed class ExportWorkspaceLifecycleUiTests
         Assert.True(exportModel.IsRunning);
         context.ExportService.Report(new(27, new MediaTime(9, 10), 0.9, "encoding"));
         context.Flush();
+        Assert.False(exportModel.CanCancel);
+        Assert.False(Assert.Single(session.ApplicationContext.Tasks.GetSnapshots(), task => task.Id == exportTask.Id).CanCancel);
         Assert.Equal(0.4, exportModel.Progress);
         context.ExportService.Release();
         await operation.WaitAsync(TimeSpan.FromSeconds(5));
@@ -124,12 +129,13 @@ public sealed class ExportWorkspaceLifecycleUiTests
         await context.ExportService.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.False(close.IsCompleted);
         Assert.False(operation.IsCompleted);
-        Assert.Equal(1, flushes);
+        Assert.Equal(0, flushes);
         Assert.Equal(0, context.SourceDisposeCount);
         Assert.Equal(0, context.ExportService.DisposeCount);
         Assert.False(await session.RequestCloseAsync());
         context.ExportService.Release();
         Assert.True(await close.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(1, flushes);
         await operation.WaitAsync(TimeSpan.FromSeconds(5));
         await session.DisposeAsync();
         Assert.Equal(1, context.ExportService.CancellationCount);

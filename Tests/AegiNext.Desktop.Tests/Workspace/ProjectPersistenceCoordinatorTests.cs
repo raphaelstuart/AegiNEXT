@@ -1,10 +1,44 @@
 using AegiNext.Application;
 using AegiNext.Core.Projects;
+using AegiNext.Application.Tasks;
 
 namespace AegiNext.Desktop.Tests.Workspace;
 
 public sealed class ProjectPersistenceCoordinatorTests
 {
+    [Fact]
+    public async Task PendingAutosavesCoalesceTheLatestCommittedCaptureWithoutReadingLaterEdits()
+    {
+        await using var context = new ProjectPersistenceTestContext();
+        context.Coordinator.UpdatePreferences(context.Preferences with { BackupEnabled = false });
+        var gate = new QueuedSaveGateTask(context.TaskScope);
+        var handle = context.Tasks.Submit(gate);
+        try
+        {
+            await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            context.Clock.Advance(TimeSpan.FromMinutes(2));
+            var first = Assert.Single(context.Tasks.GetSnapshots(), value => value.Name == "Tasks.ProjectAutoSave");
+            var old = context.State!;
+            context.State = old with { Snapshot = old.Snapshot with { Name = "Latest submitted" } };
+            context.Clock.Advance(TimeSpan.FromMinutes(2));
+            var merged = Assert.Single(context.Tasks.GetSnapshots(), value => value.Name == "Tasks.ProjectAutoSave");
+            Assert.Equal(first.Id, merged.Id);
+            Assert.Equal(first.SubmissionSequence, merged.SubmissionSequence);
+            Assert.Equal(AegiTaskState.Queued, merged.State);
+            context.State = context.State with { Snapshot = old.Snapshot with { Name = "Later edit" } };
+            gate.Released.TrySetResult();
+            await handle.Completion;
+            await context.Coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal("Latest submitted", Assert.Single(context.Storage.SavedSnapshots).Name);
+            Assert.Equal("Later edit", context.State.Snapshot.Name);
+            Assert.True(context.State.HasUnsavedChanges);
+        }
+        finally
+        {
+            gate.Released.TrySetResult();
+        }
+    }
+
     [Fact]
     public async Task AutoSaveAndBackupUseIndependentIntervalsAndSavedContentMarkers()
     {
@@ -50,7 +84,7 @@ public sealed class ProjectPersistenceCoordinatorTests
     }
 
     [Fact]
-    public async Task SavingAnOlderSnapshotPreservesNewerEditsAndDoesNotStartOverlappingWork()
+    public async Task SavingAnOlderSnapshotQueuesTheLatestCapturedEditsWithoutOverlappingWork()
     {
         await using var context = new ProjectPersistenceTestContext();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -73,11 +107,13 @@ public sealed class ProjectPersistenceCoordinatorTests
             await context.Coordinator.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
             Assert.Same(newer, context.State.Snapshot);
-            Assert.True(context.State.HasUnsavedChanges);
-            Assert.Equal("Committed", Assert.Single(context.Storage.SavedSnapshots).Name);
+            Assert.False(context.State.HasUnsavedChanges);
+            Assert.Collection(context.Storage.SavedSnapshots,
+                snapshot => Assert.Equal("Committed", snapshot.Name),
+                snapshot => Assert.Equal(newer, snapshot));
             context.Storage.SaveWork = null;
             await context.AdvanceAsync(TimeSpan.FromMinutes(2));
-            Assert.Equal(newer, context.Storage.SavedSnapshots[1]);
+            Assert.Equal(2, context.Storage.SavedSnapshots.Count);
             Assert.False(context.State.HasUnsavedChanges);
         }
         finally
@@ -97,6 +133,8 @@ public sealed class ProjectPersistenceCoordinatorTests
         Assert.Same(failure, Assert.Single(context.Errors));
         Assert.True(context.State!.HasUnsavedChanges);
         Assert.Empty(context.SaveResults);
+        Assert.Contains(context.Tasks.GetSnapshots(), value => value.Name == "Tasks.ProjectAutoSave" &&
+            value.State == AegiTaskState.Failed);
         context.Storage.SaveWork = null;
         await context.AdvanceAsync(TimeSpan.FromMinutes(2));
 

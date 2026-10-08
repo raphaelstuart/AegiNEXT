@@ -1,20 +1,24 @@
 using System.Text.Json;
+using AegiNext.Application.Tasks;
 using System.Globalization;
 using AegiNext.Desktop.Settings.Transfer;
 
 namespace AegiNext.Desktop.Layouts;
 
-internal sealed class WorkspaceLayoutStore
+internal sealed class WorkspaceLayoutStore : IDisposable
 {
     internal const int MAXIMUM_FILE_BYTES = 4 * 1024 * 1024;
     private static readonly JsonSerializerOptions jsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
     private readonly string path;
     private readonly object writeLock = new();
-    private Task pendingWrite = Task.CompletedTask;
+    private readonly HashSet<Task> pendingWrites = [];
+    private readonly AegiTaskService? tasks;
+    private readonly SemaphoreSlim atomicWriteGate = new(1, 1);
 
-    internal WorkspaceLayoutStore(string personalDirectory)
+    internal WorkspaceLayoutStore(string personalDirectory, AegiTaskService? tasks = null)
     {
         path = Path.Combine(personalDirectory, "layouts.json");
+        this.tasks = tasks;
     }
 
     public string? DiagnosticPath { get; private set; }
@@ -95,22 +99,53 @@ internal sealed class WorkspaceLayoutStore
         }
     }
 
+    internal AegiTaskResource Resource => AegiTaskResource.StoragePath(path);
+
     internal Task SaveAsync(WorkspaceLayoutFile file)
     {
-        ValidateFile(file);
         var bytes = Serialize(file);
+        var pending = tasks is null ? WriteAsync(bytes) :
+            tasks.Submit(new LayoutWriteTask(this, bytes)).Completion;
         lock (writeLock)
         {
-            pendingWrite = WriteAfterAsync(pendingWrite, bytes);
-            return pendingWrite;
+            pendingWrites.Add(pending);
+        }
+        _ = RemoveCompletedAsync(pending);
+        return pending;
+    }
+
+    private async Task RemoveCompletedAsync(Task pending)
+    {
+        try
+        {
+            await pending.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+        }
+        finally
+        {
+            lock (writeLock)
+            {
+                pendingWrites.Remove(pending);
+            }
         }
     }
 
-    internal Task FlushAsync()
+    internal async Task FlushAsync()
     {
-        lock (writeLock)
+        while (true)
         {
-            return pendingWrite;
+            Task[] pending;
+            lock (writeLock)
+            {
+                pending = pendingWrites.ToArray();
+            }
+            if (pending.Length == 0)
+            {
+                return;
+            }
+            await Task.WhenAll(pending).ConfigureAwait(false);
         }
     }
 
@@ -119,16 +154,27 @@ internal sealed class WorkspaceLayoutStore
         return JsonSerializer.Serialize(layout);
     }
 
-    private async Task WriteAfterAsync(Task previous, byte[] bytes)
+    internal async Task WriteAsync(byte[] bytes)
     {
+        await atomicWriteGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            await previous.ConfigureAwait(false);
+            await WriteCoreAsync(bytes).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        finally
         {
+            atomicWriteGate.Release();
         }
+    }
 
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        atomicWriteGate.Dispose();
+    }
+
+    private async Task WriteCoreAsync(byte[] bytes)
+    {
         var directory = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(directory);
         var temporaryPath = Path.Combine(directory, ".layouts-" + Guid.NewGuid().ToString("N") + ".tmp");

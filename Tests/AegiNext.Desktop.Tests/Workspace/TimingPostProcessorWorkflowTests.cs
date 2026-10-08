@@ -217,6 +217,9 @@ public sealed class TimingPostProcessorWorkflowTests
         await session.Styles.Completion;
         session.SelectCue(document.Subtitles[1].Id);
 
+        Assert.True(!session.IsUpdating && !session.IsProjectBusy && !session.Styles.IsBusy,
+            $"Updating={session.IsUpdating}; Busy={session.IsProjectBusy}; Styles={session.Styles.IsBusy}; Drafts={session.HasProjectDrafts}");
+
         var changed = await session.ApplyTimingPostProcessorAsync(LeadOptions(), new HashSet<string> { "Default" }, false);
 
         Assert.Equal(2, changed);
@@ -267,7 +270,7 @@ public sealed class TimingPostProcessorWorkflowTests
     }
 
     [Fact]
-    public async Task PendingFrameProbeFreezesSelectionAndUsesTheMediaBindingIdentity()
+    public async Task PendingFrameProbeAllowsSelectionAndRejectsChangedInput()
     {
         using var directory = new TemporaryWorkbenchDirectory();
         var mediaPath = Path.Combine(directory.Path, "source.mkv");
@@ -292,21 +295,21 @@ public sealed class TimingPostProcessorWorkflowTests
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.True(session.IsProjectBusy);
-            Assert.False(session.SelectSubtitleRows(document.Subtitles[1].Id, [document.Subtitles[1].Id]));
-            Assert.Equal(first.Id, session.SelectedCueId);
-            Assert.Equal(new[] { first.Id }, session.SelectedSubtitleIds);
+            Assert.False(session.IsProjectBusy);
+            Assert.True(session.SelectSubtitleRows(document.Subtitles[1].Id, [document.Subtitles[1].Id]));
+            Assert.Equal(document.Subtitles[1].Id, session.SelectedCueId);
+            Assert.Equal(new[] { document.Subtitles[1].Id }, session.SelectedSubtitleIds);
             Assert.Equal(0, await session.ApplyTimingPostProcessorAsync(LeadOptions(), new HashSet<string> { "Default" }, false));
             release.TrySetResult(CreateVideoIndex());
-            Assert.Equal(1, await applying.WaitAsync(TimeSpan.FromSeconds(5)));
-            Assert.Same(document.Subtitles[1], editor.Snapshot.Subtitles[1]);
-            Assert.Same(document.Subtitles[2], editor.Snapshot.Subtitles[2]);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => applying.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Same(document, editor.Snapshot);
+            Assert.False(editor.CanUndo);
             Assert.False(session.IsProjectBusy);
         }
         finally
         {
             release.TrySetResult(CreateVideoIndex());
-            await applying;
+            await ObserveCancelled(applying);
         }
     }
 
@@ -358,6 +361,54 @@ public sealed class TimingPostProcessorWorkflowTests
         finally
         {
             release.TrySetResult(CreateVideoIndex());
+            await ObserveCancelled(applying);
+        }
+    }
+
+    [Theory]
+    [InlineData("Text")]
+    [InlineData("StartText")]
+    public async Task PendingProbePreservesNewUncommittedRowInput(string field)
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        var mediaPath = Path.Combine(directory.Path, "source.mkv");
+        var document = WithMedia(CreateDocument(), mediaPath, MediaTime.Zero);
+        var editor = new ProjectEditor(document);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = new TaskCompletionSource<VideoTimingIndex>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var session = CreateSession(directory.Path, editor, async (_, _, _, token) =>
+        {
+            entered.TrySetResult();
+            return await pending.Task.WaitAsync(token);
+        });
+        await session.Styles.Completion;
+        await session.Controller.OpenAsync(mediaPath);
+        var applying = session.ApplyTimingPostProcessorAsync(LeadOptions() with { KeyframeSnapEnabled = true },
+            new HashSet<string> { "Default" }, false);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var row = session.ViewModel.Subtitles.Rows[0];
+            if (field == "Text")
+            {
+                row.Text = "draft changed during scan";
+            }
+            else
+            {
+                row.StartText = "invalid";
+            }
+            Assert.False(session.IsProjectBusy);
+            pending.TrySetResult(CreateVideoIndex());
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => applying.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Same(document, editor.Snapshot);
+            Assert.Same(row, session.ViewModel.Subtitles.Rows[0]);
+            Assert.Equal(field == "Text" ? "draft changed during scan" : "invalid", field == "Text" ? row.Text : row.StartText);
+            Assert.True(session.HasUnsavedChanges);
+            Assert.False(editor.CanUndo);
+        }
+        finally
+        {
+            pending.TrySetResult(CreateVideoIndex());
             await ObserveCancelled(applying);
         }
     }

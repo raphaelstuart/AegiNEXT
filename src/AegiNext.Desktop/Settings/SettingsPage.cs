@@ -13,5 +13,6 @@ public enum SettingsPage
     PREVIEW,
     TIMING_POST_PROCESSOR,
     EXPORT_PRESETS,
-    TRANSFER
+    TRANSFER,
+    TASKS
 }

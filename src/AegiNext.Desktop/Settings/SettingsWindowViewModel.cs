@@ -11,6 +11,7 @@ using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Settings.Preview;
 using AegiNext.Desktop.Settings.TimingPostProcessor;
 using AegiNext.Desktop.Settings.Transfer;
+using AegiNext.Desktop.Settings.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegiNext.Desktop.Settings;
@@ -42,6 +43,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Projects = new(preferences.Projects);
         Preview = new(preferences);
         TimingPostProcessor = new(preferences);
+        Tasks = new(preferences);
         Shortcuts.PropertyChanged += PageModelChanged;
         Styles.PropertyChanged += PageModelChanged;
         Effects.PropertyChanged += PageModelChanged;
@@ -50,6 +52,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Projects.PropertyChanged += PageModelChanged;
         Preview.PropertyChanged += PageModelChanged;
         TimingPostProcessor.PropertyChanged += PageModelChanged;
+        Tasks.PropertyChanged += PageModelChanged;
     }
 
     public AppearanceSettingsViewModel Appearance { get; }
@@ -63,6 +66,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public ProjectSettingsViewModel Projects { get; }
     public PreviewSettingsViewModel Preview { get; }
     public TimingPostProcessorSettingsViewModel TimingPostProcessor { get; }
+    public TaskSettingsViewModel Tasks { get; }
     public string Title => title;
     public SettingsPage CurrentPage => (SettingsPage)PageIndex;
     public bool IsAppearanceVisible => CurrentPage == SettingsPage.APPEARANCE;
@@ -76,6 +80,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public bool IsTimingPostProcessorVisible => CurrentPage == SettingsPage.TIMING_POST_PROCESSOR;
     public bool IsExportPresetsVisible => CurrentPage == SettingsPage.EXPORT_PRESETS;
     public bool IsTransferVisible => CurrentPage == SettingsPage.TRANSFER;
+    public bool IsTasksVisible => CurrentPage == SettingsPage.TASKS;
 
     public string PageTitle => Localization.Get("Settings." + (CurrentPage switch
     {
@@ -89,6 +94,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.TIMING_POST_PROCESSOR => "TimingPostProcessor",
         SettingsPage.EXPORT_PRESETS => "ExportPresets",
         SettingsPage.TRANSFER => "Transfer",
+        SettingsPage.TASKS => "Tasks",
         _ => "Appearance"
     }));
 
@@ -101,6 +107,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.TIMING_POST_PROCESSOR => TimingPostProcessor.Error,
         SettingsPage.EXPORT_PRESETS => ExportPresets.Error,
         SettingsPage.TRANSFER => Transfer.Error,
+        SettingsPage.TASKS => Tasks.Error,
         _ => null
     });
 
@@ -185,6 +192,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsTimingPostProcessorVisible));
             OnPropertyChanged(nameof(IsExportPresetsVisible));
             OnPropertyChanged(nameof(IsTransferVisible));
+            OnPropertyChanged(nameof(IsTasksVisible));
             OnPropertyChanged(nameof(PageTitle));
             RefreshError();
         }
@@ -212,6 +220,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Projects.RefreshLanguage();
         Preview.RefreshLanguage();
         TimingPostProcessor.RefreshLanguage();
+        Tasks.RefreshLanguage();
         title = Localization.Get("Settings.Settings");
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(PageTitle));

@@ -185,7 +185,7 @@ public sealed class PreviewVideoDropUiTests
         DragEventArgs? feedback = null;
         surface.AddHandler(DragDrop.DropEvent, (_, e) => feedback = e, handledEventsToo: true);
         context.Window.DragDrop(point, RawDragEventType.DragEnter, data, DragDropEffects.Copy);
-        context.Session.SetProjectBusy(true);
+        using var editLease = context.Session.AcquireEditingLease();
         try
         {
             context.Window.DragDrop(point, RawDragEventType.Drop, data, DragDropEffects.Copy);
@@ -196,7 +196,7 @@ public sealed class PreviewVideoDropUiTests
         }
         finally
         {
-            context.Session.SetProjectBusy(false);
+            editLease.Dispose();
         }
     }
 
@@ -261,15 +261,17 @@ public sealed class PreviewVideoDropUiTests
     private static async Task WaitForMediaAsync(MainWindowTestContext context, string path)
     {
         await context.Session.WaitForProjectIdleAsync();
-        await DrainAsync(() => context.Controller.Snapshot.FilePath == path && context.ViewModel.Preview.HasFrame);
+        await DrainAsync(() => context.Controller.Snapshot.FilePath == path && context.ViewModel.Preview.HasFrame,
+            context.DescribeTaskState);
     }
 
-    private static async Task DrainAsync(Func<bool> complete)
+    private static async Task DrainAsync(Func<bool> complete, Func<string>? describeFailure = null)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (!complete())
         {
-            Assert.True(DateTime.UtcNow < deadline, "Dropped media did not complete its expected workflow.");
+            Assert.True(DateTime.UtcNow < deadline,
+                "Dropped media did not complete its expected workflow. " + describeFailure?.Invoke());
             Dispatcher.UIThread.RunJobs();
             await Task.Delay(5, TestContext.Current.CancellationToken);
         }

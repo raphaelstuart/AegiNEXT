@@ -1,4 +1,6 @@
 using AegiNext.Desktop.I18n;
+using AegiNext.Application.Tasks;
+using AegiNext.Core.Timing;
 using AegiNext.Media.Encoding;
 
 namespace AegiNext.Desktop.Workspace;
@@ -6,7 +8,7 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs,
     IWorkbenchExportService exportService) : IDisposable
 {
-    private CancellationTokenSource? cancellation;
+    private AegiTaskHandle<VideoExportResult>? taskHandle;
     private bool activeOperation;
     private bool disposed;
     private long revision;
@@ -15,8 +17,9 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
     internal bool IsChoosingOutput { get; private set; }
     internal bool IsRunning => session.ViewModel.Export.IsRunning;
     internal bool CanStart => !disposed && !activeOperation;
+    internal bool CanCancel => taskHandle?.Snapshot is { CanCancel: true, State: AegiTaskState.Queued or AegiTaskState.Running };
     public Task Completion { get; private set; } = Task.CompletedTask;
-    internal void Cancel() => cancellation?.Cancel();
+    internal void Cancel() => taskHandle?.RequestCancel();
 
     internal void RefreshLanguage()
     {
@@ -38,31 +41,41 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         var directory = session.ProjectDirectory;
         var vm = session.ViewModel.Export;
         var request = new VideoExportRequest(snapshot, directory, string.Empty).WithSettings(vm.CaptureSettings());
-        cancellation?.Dispose();
-        cancellation = new();
         activeOperation = true;
         revision++;
         IsChoosingOutput = true;
         session.ViewModel.RefreshCommands();
-        Completion = ChooseAndRunAsync(request, cancellation.Token);
+        Completion = ChooseAndRunAsync(request, session.Controller.Snapshot.Duration);
         return Completion;
     }
 
-    private async Task ChooseAndRunAsync(VideoExportRequest request, CancellationToken token)
+    private async Task ChooseAndRunAsync(VideoExportRequest request, MediaTime? duration)
     {
         try
         {
             var path = await dialogs.SaveFileAsync("Export", "Videos", ["*.mp4", "*.mkv"], ".mp4", session.ProjectDisplayName + ".mp4");
-            if (path is null || session.IsClosing || token.IsCancellationRequested)
+            if (path is null || session.IsClosing)
             {
                 return;
             }
 
             IsChoosingOutput = false;
-            await RunAsync(request with { OutputPath = path }, token);
+            var vm = session.ViewModel.Export;
+            vm.IsRunning = true;
+            vm.ProgressVisible = true;
+            vm.ProgressIndeterminate = true;
+            statusKey = "Tasks.Queued";
+            statusEncoder = null;
+            RefreshLanguage();
+            taskHandle = session.ApplicationContext.Tasks.Submit(new VideoExportTask(session, this, request with { OutputPath = path }, duration));
+            await taskHandle.Completion;
         }
         catch (OperationCanceledException)
         {
+            statusKey = "Workbench.Cancelled";
+            statusEncoder = null;
+            RefreshLanguage();
+            session.ViewModel.Export.ProgressVisible = false;
         }
         catch (Exception error)
         {
@@ -75,11 +88,18 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         {
             IsChoosingOutput = false;
             activeOperation = false;
+            session.ViewModel.Export.IsRunning = false;
             session.ViewModel.RefreshCommands();
         }
     }
 
-    private async Task RunAsync(VideoExportRequest request, CancellationToken token)
+    internal async Task<VideoExportResult> RunAsync(VideoExportRequest request, AegiTaskExecutionContext context, MediaTime? duration)
+    {
+        var token = context.CancellationToken;
+        return await RunExportCoreAsync(request, context, duration, token);
+    }
+
+    private async Task<VideoExportResult> RunExportCoreAsync(VideoExportRequest request, AegiTaskExecutionContext context, MediaTime? duration, CancellationToken token)
     {
         var vm = session.ViewModel.Export;
         vm.IsRunning = true;
@@ -88,7 +108,6 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         statusKey = null;
         statusEncoder = null;
         session.LogInfo("Export", Localization.Get("Workbench.Export"));
-        var duration = session.Controller.Snapshot.Duration;
         var exportRevision = revision;
         string? reportedEncoder = null;
         var progress = new Progress<VideoExportProgress>(value =>
@@ -100,6 +119,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
 
             var fraction = value.Fraction ?? (duration is { } end && WorkbenchSession.ToSeconds(end) > 0
                 ? WorkbenchSession.ToSeconds(value.Position) / WorkbenchSession.ToSeconds(end) : (double?)null);
+            context.ReportProgress(new("Tasks.Encoding", fraction, 1));
             vm.ProgressIndeterminate = fraction is null;
             vm.Progress = fraction is { } known ? Math.Clamp(known, 0, 1) : 0;
             statusKey = null;
@@ -117,7 +137,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         });
         try
         {
-            var result = await exportService.ExportAsync(request, progress, token);
+            var result = await exportService.ExportWithCommitAsync(request, progress, () => context.EnterCommit(), token);
             if (!session.IsClosing)
             {
                 vm.ProgressIndeterminate = false;
@@ -127,6 +147,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
                 RefreshLanguage();
                 session.LogInfo("Export", vm.Status);
             }
+            return result;
         }
         catch (OperationCanceledException)
         {
@@ -135,6 +156,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
             RefreshLanguage();
             session.LogInfo("Export", vm.Status);
             vm.ProgressVisible = false;
+            throw;
         }
         catch (Exception error)
         {
@@ -146,6 +168,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
                 vm.Status = error.Message;
                 vm.ProgressVisible = false;
             }
+            throw;
         }
         finally
         {
@@ -162,7 +185,6 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
             return;
         }
         disposed = true;
-        cancellation?.Dispose();
         exportService.Dispose();
     }
 }

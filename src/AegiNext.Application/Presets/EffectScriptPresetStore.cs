@@ -68,7 +68,15 @@ public static class EffectScriptPresetStore
     /// <summary>验证后原子保存，取消、失败或非法输入保留原文件。</summary>
     public static Task SaveAsync(EffectScriptPresetDocument collection, string path, CancellationToken cancellationToken = default)
     {
-        return WriteAtomicAsync(path, Serialize(collection), cancellationToken);
+        return SaveAsync(collection, path, null, cancellationToken);
+    }
+
+    /// <summary>Prepares the library file and invokes the commit boundary immediately before atomic replacement.</summary>
+    public static Task SaveAsync(EffectScriptPresetDocument collection, string path, Action? beforeCommit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return WriteAtomicAsync(path, Serialize(collection), beforeCommit, cancellationToken);
     }
 
     /// <summary>读取单个可交换脚本，采用严格 UTF-8 并返回解析后的同一份源。</summary>
@@ -91,11 +99,19 @@ public static class EffectScriptPresetStore
     /// <summary>导出内置或个人脚本的原文，格式为独立 UTF-8 .aegifx 文件。</summary>
     public static Task WriteScriptAsync(string source, string path, CancellationToken cancellationToken = default)
     {
-        _ = EffectScriptParser.Parse(source);
-        return WriteAtomicAsync(path, utf8.GetBytes(source), cancellationToken);
+        return WriteScriptAsync(source, path, null, cancellationToken);
     }
 
-    private static async Task WriteAtomicAsync(string path, byte[] bytes, CancellationToken cancellationToken)
+    /// <summary>Prepares an exchanged script and invokes the commit boundary immediately before atomic replacement.</summary>
+    public static Task WriteScriptAsync(string source, string path, Action? beforeCommit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = EffectScriptParser.Parse(source);
+        return WriteAtomicAsync(path, utf8.GetBytes(source), beforeCommit, cancellationToken);
+    }
+
+    private static async Task WriteAtomicAsync(string path, byte[] bytes, Action? beforeCommit, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         cancellationToken.ThrowIfCancellationRequested();
@@ -119,6 +135,7 @@ public static class EffectScriptPresetStore
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            beforeCommit?.Invoke();
             File.Move(temporary, fullPath, true);
         }
         finally

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Media;
@@ -38,19 +39,51 @@ internal sealed partial class WorkbenchSession
         {
             return;
         }
-        var preceding = audioCalibrationCompletion;
-        audioCalibrationCompletion = RunCommandAsync(async () =>
+        if (closing)
         {
-            await preceding;
-            if (!closing)
-            {
-                await ApplyAudioCalibrationPreferencesAsync(value.AudioCalibrations);
-            }
-        });
+            return;
+        }
+        QueueAudioDeviceTask(new ApplyAudioCalibrationTask(this, value.AudioCalibrations));
     }
 
-    private async Task ApplyAudioCalibrationPreferencesAsync(ImmutableArray<AudioDeviceCalibration> profiles)
+    private void QueueAudioDeviceTask(AegiTask task)
     {
+        if (AegiTaskExecutionContext.Current is { } parent)
+        {
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            audioCalibrationCompletion = completion.Task;
+            parent.ScheduleAfterCompletion(task, handle =>
+            {
+                if (handle is null)
+                {
+                    completion.TrySetResult();
+                    return;
+                }
+                _ = ObserveAudioDeviceTaskAsync(handle, completion);
+            });
+        }
+        else
+        {
+            audioCalibrationCompletion = RunCommandAsync(() => applicationContext.Tasks.Submit(task).Completion);
+        }
+    }
+
+    private async Task ObserveAudioDeviceTaskAsync(AegiTaskHandle handle, TaskCompletionSource completion)
+    {
+        try
+        {
+            await RunCommandAsync(() => handle.Completion);
+        }
+        finally
+        {
+            completion.TrySetResult();
+        }
+    }
+
+    internal async Task ApplyAudioCalibrationPreferencesCoreAsync(ImmutableArray<AudioDeviceCalibration> profiles,
+        AegiTaskExecutionContext context)
+    {
+        context.EnterCommit(() => !closing);
         if (AudioClock is null)
         {
             SetAppliedAudioCalibrations(profiles);
@@ -67,12 +100,12 @@ internal sealed partial class WorkbenchSession
             if (AudioClock?.Quality == AudioClockQuality.UNAVAILABLE)
             {
                 SetAppliedAudioCalibrations(profiles);
-                await controller.ReopenAudioOutputAsync(projectOperationsCancellation.Token);
+                await controller.ReopenAudioOutputAsync(CancellationToken.None);
             }
             else
             {
                 await controller.ApplyAudioCalibrationAsync(() => SetAppliedAudioCalibrations(profiles),
-                    projectOperationsCancellation.Token);
+                    CancellationToken.None);
             }
         }
         finally
@@ -111,15 +144,15 @@ internal sealed partial class WorkbenchSession
             AudioClockChanged?.Invoke(this, EventArgs.Empty);
         }
         var error = controller.Snapshot.AudioError;
-        if (!closing && !projectBusy && !switchingAudioDevice && clock?.Quality == AudioClockQuality.UNAVAILABLE &&
+        if (!closing && !IsProjectBusy && !switchingAudioDevice && clock?.Quality == AudioClockQuality.UNAVAILABLE &&
             error is not null && !ReferenceEquals(error, recoveredAudioError) && audioCalibrationCompletion.IsCompleted)
         {
             recoveredAudioError = error;
-            audioCalibrationCompletion = RunCommandAsync(RebuildAudioDeviceAsync);
+            QueueAudioDeviceTask(new RebuildAudioOutputTask(this));
         }
     }
 
-    private async Task RebuildAudioDeviceAsync()
+    internal async Task RebuildAudioDeviceCoreAsync(AegiTaskExecutionContext context)
     {
         var previousError = controller.Snapshot.AudioError;
         switchingAudioDevice = true;
@@ -129,7 +162,7 @@ internal sealed partial class WorkbenchSession
         AudioClockChanged?.Invoke(this, EventArgs.Empty);
         try
         {
-            await controller.ReopenAudioOutputAsync(projectOperationsCancellation.Token);
+            await controller.ReopenAudioOutputAsync(context.CancellationToken);
             if (previousError is not null && controller.Snapshot.AudioError is null)
             {
                 DismissError(previousError);

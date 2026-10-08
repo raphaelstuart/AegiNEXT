@@ -6,6 +6,7 @@ using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Shortcuts;
+using AegiNext.Desktop.Startup;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -223,14 +224,18 @@ public sealed class SettingsWindowUiTests
     }
 
     [AvaloniaFact]
-    public void FontPickerCombinesActualCatalogSearchAndFullDropdownWithoutChangingTheStyle()
+    public async Task FontPickerCombinesActualCatalogSearchAndFullDropdownWithoutChangingTheStyle()
     {
         using var environment = new UiTestEnvironment();
         var original =
             new SubtitleStylePreset(Guid.NewGuid(), "Imported", new() { FontFamily = "Project Imported Face" });
-        var expected = FontManager.Current.SystemFonts.Select(value => value.Name)
-            .Append(FontManager.Current.DefaultFontFamily.Name).ToArray();
+        await using var application = new DesktopApplicationContext(new(environment.DirectoryPath), new() { Language = "en-US" });
+        await application.Initialization;
+        await application.Fonts.EnsureLoadedAsync();
+        var expected = application.Fonts.Candidates.Select(value => value.Selection.FamilyName).Distinct().ToArray();
+        Assert.NotEmpty(expected);
         var window = new SettingsWindow(new());
+        window.ViewModel.Styles.SetFonts(application.Fonts);
         try
         {
             window.Show();
@@ -457,8 +462,6 @@ public sealed class SettingsWindowUiTests
             window.UpdateStyles([new(Guid.NewGuid(), "Original", new())]);
             window.UpdateSelectionAvailability(true);
             window.SelectPage(SettingsPage.STYLES);
-            UiTestActions.Find<Grid>(window, "StylesPage").GetVisualDescendants().OfType<Expander>().Single(expander => Equals(expander.Header, Localization.Get("Settings.Advanced")))
-                .IsExpanded = true;
             Assert.All(numericStyleFieldNames,
                 name => Assert.False(
                     string.IsNullOrWhiteSpace(UiTestActions.Find<NumericDraftInput>(window, name).RawText)));
@@ -475,7 +478,7 @@ public sealed class SettingsWindowUiTests
             UiTestActions.SetText(textBox, "7e-");
 
             UiTestActions.Click(window, "SaveStyleButton");
-            UiTestActions.Click(window, "ApplyStyleButton");
+            window.ViewModel.Styles.ApplyCommand.Execute(null);
 
             Assert.Empty(saved);
             Assert.Empty(applied);
@@ -492,7 +495,7 @@ public sealed class SettingsWindowUiTests
             Assert.Equal(Localization.Get("Settings.StyleValidation"), window.ViewModel.Styles.Error);
             UiTestActions.SetText(textBox, validText);
             UiTestActions.Click(window, "SaveStyleButton");
-            UiTestActions.Click(window, "ApplyStyleButton");
+            window.ViewModel.Styles.ApplyCommand.Execute(null);
 
             var preset = Assert.Single(saved);
             Assert.Equal(preset, Assert.Single(applied));

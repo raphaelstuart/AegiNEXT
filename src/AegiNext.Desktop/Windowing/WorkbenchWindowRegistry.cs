@@ -160,8 +160,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
 
     private static void UpdateMenuWidth(WorkbenchWindowEntry entry)
     {
-        entry.MenuBar.SetAvailableWidth(entry.Window.ClientSize.Width - entry.TitleBar.CaptionInsets.Left -
-                                       entry.TitleBar.CaptionInsets.Right - 120);
+        entry.MenuBar.SetAvailableWidth(entry.TitleBar.AvailableMenuWidth);
     }
 
     private Bitmap GetIcon(WorkbenchCommand command)
@@ -377,7 +376,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
 
     private void OnTitleBarPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (e.Property == WindowTitleBar.CaptionInsetsProperty &&
+        if ((e.Property == WindowTitleBar.CaptionInsetsProperty || e.Property == WindowTitleBar.AvailableMenuWidthProperty) &&
             windows.Values.FirstOrDefault(value => ReferenceEquals(value.TitleBar, sender)) is { } entry)
         {
             UpdateMenuWidth(entry);

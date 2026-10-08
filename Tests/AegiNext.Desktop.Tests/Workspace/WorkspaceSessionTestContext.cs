@@ -4,6 +4,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Startup;
 using AegiNext.Desktop.Workspace;
 
 namespace AegiNext.Desktop.Tests.Workspace;
@@ -16,15 +17,17 @@ internal sealed class WorkspaceSessionTestContext : IAsyncDisposable
 
     internal WorkspaceSessionTestContext(ProjectDocument? document = null, TimeProvider? persistenceTimeProvider = null,
         IProjectPersistenceStorage? persistenceStorage = null,
-        Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory = null)
+        Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory = null,
+        DesktopApplicationContext? applicationContext = null)
     {
         Editor = new(document);
         Session = new(Dialogs,
             controllerFactory ?? (update => new VideoPreviewController(ProbeAsync, (_, _) => new(_ => Source), () => Converter,
                 DispatchImmediately, update)), DispatchImmediately, Editor,
-            new WorkbenchPreferencesStore(directory.Path),
+            applicationContext is null ? new WorkbenchPreferencesStore(directory.Path) : null,
             initialPreferences: new() { Projects = new() { WorkspaceRoot = Path.Combine(directory.Path, "workspace") } },
-            persistenceTimeProvider: persistenceTimeProvider, persistenceStorage: persistenceStorage);
+            persistenceTimeProvider: persistenceTimeProvider, persistenceStorage: persistenceStorage,
+            applicationContext: applicationContext);
     }
 
     internal string DirectoryPath => directory.Path;

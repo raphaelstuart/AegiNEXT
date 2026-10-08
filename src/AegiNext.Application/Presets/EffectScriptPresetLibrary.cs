@@ -85,6 +85,13 @@ public sealed class EffectScriptPresetLibrary : IDisposable
     /// <summary>读取全部脚本并验证合并集合后一次提交；失败、冲突或取消均不部分入库。</summary>
     public Task ImportAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
     {
+        return ImportAsync(paths, null, cancellationToken);
+    }
+
+    /// <summary>Reads and validates all scripts before invoking the commit boundary for the library replacement.</summary>
+    public Task ImportAsync(IEnumerable<string> paths, Action? beforeCommit,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         var inputs = paths.ToArray();
         return ExecuteAsync(async () =>
@@ -106,7 +113,7 @@ public sealed class EffectScriptPresetLibrary : IDisposable
             var combined = snapshot with { Presets = items };
             EffectScriptPresetService.Validate(combined);
             cancellationToken.ThrowIfCancellationRequested();
-            await CommitAsync(combined, cancellationToken).ConfigureAwait(false);
+            await CommitAsync(combined, beforeCommit, cancellationToken).ConfigureAwait(false);
         }, cancellationToken);
     }
 
@@ -217,9 +224,14 @@ public sealed class EffectScriptPresetLibrary : IDisposable
         loaded = true;
     }
 
-    private async Task CommitAsync(EffectScriptPresetDocument value, CancellationToken cancellationToken)
+    private Task CommitAsync(EffectScriptPresetDocument value, CancellationToken cancellationToken)
     {
-        await EffectScriptPresetStore.SaveAsync(value, filePath, cancellationToken).ConfigureAwait(false);
+        return CommitAsync(value, null, cancellationToken);
+    }
+
+    private async Task CommitAsync(EffectScriptPresetDocument value, Action? beforeCommit, CancellationToken cancellationToken)
+    {
+        await EffectScriptPresetStore.SaveAsync(value, filePath, beforeCommit, cancellationToken).ConfigureAwait(false);
         Volatile.Write(ref snapshot, value);
     }
 

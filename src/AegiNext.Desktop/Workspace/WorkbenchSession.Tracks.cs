@@ -28,7 +28,7 @@ internal sealed partial class WorkbenchSession
 
     internal bool SelectTrack(Guid trackId)
     {
-        if (updatingWorkbench || projectBusy)
+        if (IsUpdating || IsProjectBusy)
         {
             return false;
         }
@@ -98,7 +98,7 @@ internal sealed partial class WorkbenchSession
     {
         return RunCommandAsync(async () =>
         {
-            if (updatingWorkbench || projectBusy || CurrentTrackId is not { } trackId)
+            if (IsUpdating || IsProjectBusy || CurrentTrackId is not { } trackId)
             {
                 return;
             }
@@ -110,14 +110,9 @@ internal sealed partial class WorkbenchSession
             if (count > 0)
             {
                 var accepted = false;
-                SetProjectBusy(true);
-                try
                 {
+                    using var editingLease = AcquireEditingLease();
                     accepted = await dialogs.ConfirmTrackDeletionAsync(track.Name, count, ProjectOperationsToken);
-                }
-                finally
-                {
-                    SetProjectBusy(false);
                 }
                 if (!accepted)
                 {

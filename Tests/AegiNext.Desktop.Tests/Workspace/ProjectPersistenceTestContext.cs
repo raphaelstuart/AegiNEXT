@@ -1,4 +1,5 @@
 using AegiNext.Core.Projects;
+using AegiNext.Application.Tasks;
 using AegiNext.Desktop.Settings.Projects;
 using AegiNext.Desktop.Workspace;
 
@@ -13,8 +14,9 @@ internal sealed class ProjectPersistenceTestContext : IAsyncDisposable
         State = new(1, Path.Combine(directory.Path, "project.aeginext"), directory.Path,
             new() { Name = "Committed" }, true, false);
         Preferences = new() { WorkspaceRoot = directory.Path };
+        Tasks.RegisterScope(TaskScope, "Persistence test");
         Coordinator = new(Clock, dispatch ?? DispatchImmediately, () => State, OnSaved,
-            error => Errors.Add(error), Storage);
+            error => Errors.Add(error), Storage, Tasks, TaskScope);
         Coordinator.UpdatePreferences(Preferences);
         Coordinator.ActivateProject();
     }
@@ -24,6 +26,8 @@ internal sealed class ProjectPersistenceTestContext : IAsyncDisposable
     internal ManualPlaybackTimeProvider Clock { get; } = new();
     internal ProjectPersistenceStorageStub Storage { get; } = new();
     internal ProjectPersistenceCoordinator Coordinator { get; }
+    internal AegiTaskService Tasks { get; } = new();
+    internal string TaskScope { get; } = Guid.NewGuid().ToString("N");
     internal List<ProjectPersistenceSaveResult> SaveResults { get; } = [];
     internal List<Exception> Errors { get; } = [];
 
@@ -36,6 +40,7 @@ internal sealed class ProjectPersistenceTestContext : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await Coordinator.DisposeAsync();
+        await Tasks.DisposeAsync();
         directory.Dispose();
     }
 

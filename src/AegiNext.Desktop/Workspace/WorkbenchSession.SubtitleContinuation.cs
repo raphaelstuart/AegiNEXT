@@ -7,7 +7,7 @@ internal sealed partial class WorkbenchSession
 {
     internal async Task<Guid?> AdvanceSubtitleRowAsync(Guid sourceId)
     {
-        if (updatingWorkbench || projectBusy || closing)
+        if (IsUpdating || IsProjectBusy || closing)
         {
             return null;
         }
@@ -51,15 +51,7 @@ internal sealed partial class WorkbenchSession
             var cue = new SubtitleLine { TrackId = trackId, Start = start, End = position, Text = string.Empty };
             var presetId = ViewModel.Styles.SelectedPreset?.Id;
             InvalidateTimingSession();
-            try
-            {
-                SetProjectBusy(true);
-                await CreateSubtitleClipsAsync([cue], trackId, presetId);
-            }
-            finally
-            {
-                SetProjectBusy(false);
-            }
+            await CreateSubtitleClipsAsync([cue], trackId, presetId);
 
             if (!closing && CurrentTrackId == trackId && SelectSubtitleRows(cue.Id, [cue.Id]))
             {

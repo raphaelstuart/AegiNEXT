@@ -9,6 +9,28 @@ namespace AegiNext.Desktop.Tests;
 public sealed class SubtitleStylePositionMeasurementTests
 {
     [Fact]
+    public async Task ConcurrentPlacementRequestsShareOneMeasuredResult()
+    {
+        var subtitle = new SubtitleLine { Text = "Concurrent layout", Style = new() { FontFamily = "sans-serif" } };
+        var layer = new ProjectLayer { Kind = LayerKind.SUBTITLE, SubtitleId = subtitle.Id, End = subtitle.End };
+        var document = new ProjectDocument { Subtitles = [subtitle], Layers = [layer] };
+        using var resolver = new LayerPlacementResolver();
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requests = Enumerable.Range(0, 32).Select(_ => Task.Run(async () =>
+        {
+            await start.Task;
+            return resolver.Resolve(document, Path.GetTempPath(), layer);
+        })).ToArray();
+
+        start.SetResult();
+        var results = await Task.WhenAll(requests);
+
+        Assert.Null(results[0].Error);
+        Assert.NotNull(results[0].Geometry);
+        Assert.All(results, result => Assert.Same(results[0], result));
+    }
+
+    [Fact]
     public void EmbeddedFontMeasurementsUseActualInkAndCurrentCanvasWithoutWritingAssets()
     {
         var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans.ttf"));

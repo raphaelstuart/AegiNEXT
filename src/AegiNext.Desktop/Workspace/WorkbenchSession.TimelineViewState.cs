@@ -8,13 +8,13 @@ internal sealed partial class WorkbenchSession
     private TimelineViewState savedTimelineViewState = new();
 
     internal TimelineViewState TimelineViewState => timelineViewState;
-    internal bool HasUnsavedChanges => editor.HasUnsavedChanges ||
+    internal bool HasUnsavedChanges => HasProjectDrafts || editor.HasUnsavedChanges ||
         !TimelineViewStatesEqual(timelineViewState, savedTimelineViewState);
 
     internal void SetTimelineAnimationRowCollapsed(TimelineAnimationRowId id, bool isCollapsed)
     {
         ArgumentNullException.ThrowIfNull(id);
-        if (closing || projectBusy)
+        if (closing || IsProjectBusy)
         {
             return;
         }
@@ -33,7 +33,7 @@ internal sealed partial class WorkbenchSession
 
     internal void SetTimelineTrackCollapsed(Guid id, bool isCollapsed)
     {
-        if (closing || projectBusy || id == Guid.Empty || !GetTimelineTrackIds().Contains(id))
+        if (closing || IsProjectBusy || id == Guid.Empty || !GetTimelineTrackIds().Contains(id))
         {
             return;
         }
@@ -52,7 +52,7 @@ internal sealed partial class WorkbenchSession
 
     internal void SetAllTimelineTracksCollapsed(bool isCollapsed)
     {
-        if (closing || projectBusy)
+        if (closing || IsProjectBusy)
         {
             return;
         }
@@ -132,6 +132,29 @@ internal sealed partial class WorkbenchSession
         savedTimelineViewState = savedState;
         RefreshTitle();
         ViewModel.RefreshCommands();
+    }
+
+    internal void AcceptRelocatedProjectSave(ProjectDocument expectedCurrent, ProjectDocument relocatedCurrent,
+        ProjectDocument originalSaveSnapshot, ProjectDocument relocatedSaveSnapshot)
+    {
+        var savedState = NormalizeTimelineViewState(relocatedSaveSnapshot.TimelineViewState);
+        var persistedContent = relocatedSaveSnapshot with { TimelineViewState = originalSaveSnapshot.TimelineViewState };
+        var currentContent = relocatedCurrent with { TimelineViewState = expectedCurrent.TimelineViewState };
+        if (ReferenceEquals(expectedCurrent, originalSaveSnapshot))
+        {
+            currentContent = persistedContent;
+        }
+        editor.AcceptRelocatedSave(expectedCurrent, currentContent, originalSaveSnapshot, persistedContent);
+        savedTimelineViewState = savedState;
+        RefreshTitle();
+        ViewModel.RefreshCommands();
+    }
+
+    private void RefreshRelocatedDocument()
+    {
+        MaskEditing.RebindRelocatedSource(editor.Snapshot);
+        ViewModel.Effects.RebindRelocatedSource(editor.Snapshot);
+        RefreshDocument(preserveDrafts: true);
     }
 
     private static TimelineViewState NormalizeTimelineViewState(TimelineViewState state)

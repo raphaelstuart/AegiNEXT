@@ -55,6 +55,8 @@ internal sealed class ExportPanelViewModel : VideoExportSettingsViewModel
         set => SetProperty(ref isRunning, value);
     }
 
+    public bool CanCancel => session.Export.CanCancel;
+
     public bool ProgressVisible
     {
         get => progressVisible;
@@ -103,4 +105,6 @@ internal sealed class ExportPanelViewModel : VideoExportSettingsViewModel
     {
         OnPropertyChanged(nameof(CanManagePresets));
     }
+
+    internal void RefreshTaskState() => OnPropertyChanged(nameof(CanCancel));
 }

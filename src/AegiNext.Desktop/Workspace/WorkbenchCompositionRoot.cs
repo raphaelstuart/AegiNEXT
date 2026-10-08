@@ -17,23 +17,9 @@ internal static class WorkbenchCompositionRoot
         DesktopApplicationContext? applicationContext = null)
     {
         var editor = new ProjectEditor();
-        if (applicationContext is null)
-        {
-            startup ??= LoadPreferences();
-        }
-
         return new(dialogs, controllerFactory, editor: editor, preferencesStore: startup?.Store,
             exportService: exportService ?? new VideoWorkbenchExportService(new VideoExporter()),
             initialPreferences: startup?.Preferences, applicationContext: applicationContext);
-    }
-
-    internal static WorkbenchStartupPreferences LoadPreferences()
-    {
-        var store = new WorkbenchPreferencesStore(Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
-        SettingsRestoreStartup.ApplyOnce(store.DirectoryPath);
-        var preferences = store.Load();
-        ApplyLanguagePreference(preferences.Language);
-        return new(store, preferences);
     }
 
     internal static void ApplyLanguagePreference(string languageId)

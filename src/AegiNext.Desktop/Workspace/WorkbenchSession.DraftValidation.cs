@@ -41,7 +41,7 @@ internal sealed partial class WorkbenchSession
 
     internal void RestoreEffectDraftField(string fieldKey)
     {
-        if (SelectedLayer is not { } layer || updatingWorkbench)
+        if (SelectedLayer is not { } layer || IsUpdating)
         {
             return;
         }
@@ -49,7 +49,7 @@ internal sealed partial class WorkbenchSession
         var target = AnimationTarget!;
         var placement = ResolvePlacement(editor.Snapshot, layer);
         var propertyName = fieldKey.EndsWith("Input", StringComparison.Ordinal) ? fieldKey[..^5] : fieldKey;
-        updatingWorkbench = true;
+        using var updateLease = BeginWorkbenchUpdate();
         try
         {
             switch (propertyName)
@@ -117,7 +117,7 @@ internal sealed partial class WorkbenchSession
         }
         finally
         {
-            updatingWorkbench = false;
+            updateLease.Dispose();
         }
         QueueInspectorPreview(true);
     }

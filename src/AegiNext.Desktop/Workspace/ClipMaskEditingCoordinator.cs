@@ -74,15 +74,14 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         }
         if (nextTarget != session.SceneEditing.Target)
         {
-            var wasUpdating = session.IsUpdating;
-            session.IsUpdating = true;
+            using var updateLease = session.BeginWorkbenchUpdate();
             try
             {
                 session.ViewModel.Effects.Target = nextTarget;
             }
             finally
             {
-                session.IsUpdating = wasUpdating;
+                updateLease.Dispose();
             }
         }
         session.ViewModel.Timeline.SelectedMaskNodeId = session.SceneEditing.MaskNodeId;
@@ -179,6 +178,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         {
             return;
         }
+        session.NotifyTaskInputChanged();
         draftSource ??= session.DocumentSnapshot;
         draftTarget ??= session.AnimationTarget;
         session.SceneEditing.DraftTarget ??= draftTarget;
@@ -250,6 +250,18 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         {
             return ReferenceEquals(lastValidSource, session.DocumentSnapshot) && fieldLayerId == session.SelectedLayerId ? lastValidPreview ?? document : document;
         }
+    }
+
+    internal bool HasDrafts => Fields.Any(draftField => draftField.IsDirty);
+
+    internal void RebindRelocatedSource(ProjectDocument document)
+    {
+        if (draftSource is not null)
+        {
+            draftSource = document;
+        }
+        lastValidSource = null;
+        lastValidPreview = null;
     }
 
     internal void AcceptDrafts()
@@ -428,6 +440,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         {
             return false;
         }
+        session.NotifyTaskInputChanged();
         gestureSource = session.DocumentSnapshot;
         gestureLayer = layer;
         gestureTarget = target;

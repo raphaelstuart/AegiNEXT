@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
@@ -22,6 +23,7 @@ internal sealed class AnalysisCoordinator : IDisposable
     private bool isAnalyzing;
     private long epoch;
     private long revision;
+    private bool analysisBatchPending;
 
     public Task Completion => DrainAsync();
 
@@ -36,6 +38,7 @@ internal sealed class AnalysisCoordinator : IDisposable
     internal void Cancel()
     {
         epoch++;
+        analysisBatchPending = false;
         windowCancellation?.Cancel();
         cancellation?.Cancel();
         if (analysis is { } current)
@@ -92,8 +95,99 @@ internal sealed class AnalysisCoordinator : IDisposable
             return;
         }
         RefreshLanguage();
-        Track(AnalyzeWindowAsync(current, plan.Analysis, desiredWaveform, desiredSpectrum, epoch, revision, immediate,
-            windowCancellation.Token));
+        if (!analysisBatchPending)
+        {
+            analysisBatchPending = true;
+            var task = new AudioAnalysisBatchTask(session, this, current, epoch);
+            if (AegiTaskExecutionContext.Current is { } parent)
+            {
+                parent.ScheduleAfterCompletion(task, handle =>
+                {
+                    if (handle is null)
+                    {
+                        if (ReferenceEquals(analysis, current))
+                        {
+                            analysisBatchPending = false;
+                        }
+                    }
+                    else
+                    {
+                        Track(ObserveBatchAsync(handle, current, task.Epoch));
+                    }
+                });
+            }
+            else
+            {
+                Track(ObserveBatchAsync(session.ApplicationContext.Tasks.Submit(task), current, epoch));
+            }
+        }
+    }
+
+    private async Task ObserveBatchAsync(AegiTaskHandle handle, AudioAnalysisSession current, long requestEpoch)
+    {
+        await handle.Completion.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (handle.Completion.IsCanceled)
+        {
+            var disposeCurrent = false;
+            await session.DispatchTaskCompletionAsync(() =>
+            {
+                if (requestEpoch == epoch && ReferenceEquals(analysis, current))
+                {
+                    windowCancellation?.Cancel();
+                    cancellation?.Cancel();
+                    analysis = null;
+                    desired = null;
+                    isAnalyzing = false;
+                    analysisBatchPending = false;
+                    session.ViewModel.Timeline.AnalysisStatus = string.Empty;
+                    disposeCurrent = true;
+                }
+            });
+            if (disposeCurrent)
+            {
+                await current.DisposeAsync();
+            }
+        }
+    }
+
+    internal async Task ExecuteBatchAsync(AudioAnalysisSession current, long requestEpoch, AegiTaskExecutionContext context)
+    {
+        try
+        {
+            while (IsCurrent(requestEpoch, context.CancellationToken) && desired is { } plan && windowCancellation is { } window)
+            {
+                var requestedRevision = revision;
+                using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(window.Token, context.CancellationToken);
+                context.ReportProgress(new(desiredSpectrum ? "Tasks.Spectrum" : "Tasks.Waveform"));
+                await AnalyzeWindowAsync(current, plan.Analysis, desiredWaveform, desiredSpectrum,
+                    requestEpoch, requestedRevision, false, lifetime.Token);
+                context.CancellationToken.ThrowIfCancellationRequested();
+                if (requestedRevision == revision)
+                {
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            if (requestEpoch == epoch)
+            {
+                analysisBatchPending = false;
+                if (context.CancellationToken.IsCancellationRequested)
+                {
+                    windowCancellation?.Cancel();
+                    cancellation?.Cancel();
+                    if (ReferenceEquals(analysis, current))
+                    {
+                        analysis = null;
+                    }
+                    await current.DisposeAsync();
+                    desired = null;
+                    isAnalyzing = false;
+                    session.ViewModel.Timeline.AnalysisStatus = string.Empty;
+                }
+            }
+        }
     }
 
     private async Task AnalyzeWindowAsync(AudioAnalysisSession current, WaveformAnalysisRequest request, bool waveform, bool spectrum,
@@ -142,6 +236,7 @@ internal sealed class AnalysisCoordinator : IDisposable
         catch (Exception error)
         {
             ReportFailure(error, requestEpoch, token);
+            throw;
         }
         finally
         {
@@ -224,7 +319,7 @@ internal sealed class AnalysisCoordinator : IDisposable
     {
         try
         {
-            await task.ConfigureAwait(false);
+            await task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
         finally
         {

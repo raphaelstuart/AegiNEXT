@@ -1,6 +1,7 @@
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Workspace;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -29,6 +30,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         DataContext = viewModel;
         fonts = this.FindControl<FontFamilyPicker>("FontCombo")!;
         fonts.CommitOnLostFocus = false;
+        fonts.PropertyChanged += OnFontPickerChanged;
         fonts.RefreshFontCandidates(viewModel.Fonts.Candidates);
         fonts.SetCurrentFont(viewModel.CurrentFont);
         fonts.FamilyCommitted += (_, e) =>
@@ -111,6 +113,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
             }
         }, RoutingStrategies.Bubble);
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
+        session.Fonts.Changed += OnFontsChanged;
     }
 
     public string PanelId => "styles";
@@ -187,6 +190,63 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     }
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
 
+    private void OnFontsChanged(object? sender, EventArgs e)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(RefreshFontCandidates);
+            return;
+        }
+
+        RefreshFontCandidates();
+    }
+
+    private void RefreshFontCandidates()
+    {
+        if (!disposed)
+        {
+            fonts.RefreshFontCandidates(session.Fonts.Candidates);
+        }
+    }
+
+    private void OnFontPickerChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == AutoCompleteBox.IsDropDownOpenProperty && fonts.IsDropDownOpen)
+        {
+            _ = LoadFontCandidatesAsync();
+        }
+    }
+
+    private async Task LoadFontCandidatesAsync()
+    {
+        if (disposed || session.IsClosing)
+        {
+            return;
+        }
+
+        try
+        {
+            await session.Fonts.EnsureLoadedAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            if (!disposed && !session.IsClosing)
+            {
+                session.LogError("Fonts", error);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _ = LoadFontCandidatesAsync();
+    }
+
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
         suppressFocusCommit = false;
@@ -210,5 +270,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         focusCommitRevision++;
         viewModel.ShadowDraft.Committed -= OnShadowCommitted;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
+        session.Fonts.Changed -= OnFontsChanged;
+        fonts.PropertyChanged -= OnFontPickerChanged;
     }
 }

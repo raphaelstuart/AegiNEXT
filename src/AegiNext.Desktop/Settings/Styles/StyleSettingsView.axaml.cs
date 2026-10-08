@@ -20,7 +20,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
     private StyleSettingsViewModel? model;
     private bool synchronizingSelection;
     private readonly SubtitleStylePreviewScheduler preview;
-    private readonly SystemFontCatalog fallbackFontCatalog = new();
+    private SubtitleFontSelectionService? observedFonts;
     private long previewRevision;
     private Guid? previewPresetId;
     private bool disposed;
@@ -33,11 +33,16 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         AvaloniaXamlLoader.Load(this);
         preview = new(SubtitleStylePreviewRenderer.Render, PresentPreview);
         DataContextChanged += (_, _) => ChangeModel();
-        AttachedToVisualTree += (_, _) => RefreshPreview();
+        AttachedToVisualTree += (_, _) =>
+        {
+            RefreshPreview();
+            _ = LoadFontCandidatesAsync();
+        };
         DetachedFromVisualTree += (_, _) => preview.Invalidate(++previewRevision);
         this.FindControl<ListBox>("StyleList")!.SelectionChanged += SelectionChanged;
         this.FindControl<FontFamilyPicker>("FontInput")!.FamilyCommitted +=
             (_, value) => model?.CommitFont(value.Selection);
+        this.FindControl<FontFamilyPicker>("FontInput")!.PropertyChanged += OnFontPickerChanged;
         this.FindControl<SubtitleAlignmentPicker>("AlignmentPicker")!.AlignmentCommitted +=
             (_, value) => model?.CommitAlignment(value.Alignment);
     }
@@ -50,6 +55,11 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         }
         preview.Invalidate(++previewRevision);
         previewPresetId = null;
+        if (observedFonts is not null)
+        {
+            observedFonts.Changed -= OnFontsChanged;
+            observedFonts = null;
+        }
         this.FindControl<PreviewViewportControl>("StylePreviewViewport")!.ResetView();
         this.FindControl<VideoFramePresenter>("StylePreviewFrame")!.Clear();
         if (model is not null)
@@ -69,6 +79,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
                 var picker = this.FindControl<FontFamilyPicker>("FontInput")!;
                 return picker.Text != picker.CurrentFont.DisplayName;
             };
+            ObserveFonts();
             SynchronizeSelection();
             RefreshFontFamilies();
             LoadFont();
@@ -160,7 +171,12 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         }
         if (e.PropertyName is nameof(StyleSettingsViewModel.Styles) or nameof(StyleSettingsViewModel.Fonts))
         {
+            ObserveFonts();
             RefreshFontFamilies();
+            if (e.PropertyName == nameof(StyleSettingsViewModel.Fonts))
+            {
+                RefreshPreview();
+            }
         }
         else if (e.PropertyName == nameof(StyleSettingsViewModel.DraftVersion))
         {
@@ -177,6 +193,74 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
     {
         this.FindControl<FontFamilyPicker>("FontInput")!.RefreshFontCandidates(
             model!.Fonts.Candidates, model.Styles.Select(value => value.Style.FontFamily));
+    }
+
+    private void ObserveFonts()
+    {
+        if (ReferenceEquals(observedFonts, model?.Fonts))
+        {
+            return;
+        }
+
+        if (observedFonts is not null)
+        {
+            observedFonts.Changed -= OnFontsChanged;
+        }
+
+        observedFonts = model?.Fonts;
+        if (observedFonts is not null)
+        {
+            observedFonts.Changed += OnFontsChanged;
+        }
+    }
+
+    private void OnFontsChanged(object? sender, EventArgs args)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => OnFontsChanged(sender, args));
+            return;
+        }
+
+        if (!disposed && model is not null && ReferenceEquals(sender, observedFonts))
+        {
+            RefreshFontFamilies();
+            RefreshPreview();
+        }
+    }
+
+    private void OnFontPickerChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
+    {
+        if (args.Property == AutoCompleteBox.IsDropDownOpenProperty &&
+            this.FindControl<FontFamilyPicker>("FontInput")!.IsDropDownOpen)
+        {
+            _ = LoadFontCandidatesAsync();
+        }
+    }
+
+    private async Task LoadFontCandidatesAsync()
+    {
+        var currentModel = model;
+        var fonts = observedFonts;
+        if (disposed || currentModel is null || fonts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await fonts.EnsureLoadedAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            if (!disposed && ReferenceEquals(currentModel, model) && ReferenceEquals(fonts, observedFonts))
+            {
+                currentModel.SetPreviewError(error.Message);
+            }
+        }
     }
 
     private void LoadFont()
@@ -214,7 +298,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         var defaults = new ProjectDocument();
         preview.Submit(new(revision, preset!, model.PreviewText,
             canvas is { } size ? (int)size.X : defaults.Width,
-            canvas is { } dimensions ? (int)dimensions.Y : defaults.Height, model.Fonts.Catalog ?? fallbackFontCatalog));
+            canvas is { } dimensions ? (int)dimensions.Y : defaults.Height, model.Fonts.Catalog ?? SystemFontCatalog.Empty));
     }
 
     private void PresentPreview(SubtitleStylePreviewResult result)
@@ -259,6 +343,12 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         previewRevision++;
         this.FindControl<PreviewViewportControl>("StylePreviewViewport")!.CancelInteraction();
         preview.Dispose();
+        this.FindControl<FontFamilyPicker>("FontInput")!.PropertyChanged -= OnFontPickerChanged;
+        if (observedFonts is not null)
+        {
+            observedFonts.Changed -= OnFontsChanged;
+            observedFonts = null;
+        }
         if (model is not null)
         {
             model.PropertyChanged -= ModelChanged;

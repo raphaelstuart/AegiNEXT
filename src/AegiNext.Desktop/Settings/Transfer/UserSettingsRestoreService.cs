@@ -50,12 +50,18 @@ internal sealed class UserSettingsRestoreService : IDisposable
     internal bool HasRecoveryJournal => RegularFileExists(journalPath);
     internal string? RetentionBackupPath { get; private set; }
 
-    internal async Task StageAsync(UserSettingsBundle bundle, CancellationToken cancellationToken = default)
+    internal Task StageAsync(UserSettingsBundle bundle, CancellationToken cancellationToken = default)
+    {
+        return StageAsync(bundle, null, cancellationToken);
+    }
+
+    internal async Task StageAsync(UserSettingsBundle bundle, Action? beforeCommit,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(bundle);
         cancellationToken.ThrowIfCancellationRequested();
         bundle.Preferences.Validate();
-        var bytes = UserSettingsBundleStore.Serialize(bundle);
+        var bytes = UserSettingsBundleStore.Serialize(bundle, cancellationToken);
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -63,7 +69,7 @@ internal sealed class UserSettingsRestoreService : IDisposable
             using var fileLock = AcquireFileLock();
             EnsureNoJournal();
             _ = RegularFileExists(pendingPath);
-            await UserSettingsTransferFiles.WriteAtomicAsync(pendingPath, bytes, cancellationToken).ConfigureAwait(false);
+            await UserSettingsTransferFiles.WriteAtomicAsync(pendingPath, bytes, beforeCommit, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -72,7 +78,12 @@ internal sealed class UserSettingsRestoreService : IDisposable
         PendingChanged?.Invoke();
     }
 
-    internal async Task CancelPendingAsync(CancellationToken cancellationToken = default)
+    internal Task CancelPendingAsync(CancellationToken cancellationToken = default)
+    {
+        return CancelPendingAsync(null, cancellationToken);
+    }
+
+    internal async Task CancelPendingAsync(Action? beforeCommit, CancellationToken cancellationToken = default)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         var changed = false;
@@ -84,6 +95,7 @@ internal sealed class UserSettingsRestoreService : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             if (RegularFileExists(pendingPath))
             {
+                beforeCommit?.Invoke();
                 File.Delete(pendingPath);
                 changed = true;
             }

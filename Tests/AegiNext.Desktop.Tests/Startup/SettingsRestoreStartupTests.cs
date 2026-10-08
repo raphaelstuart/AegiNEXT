@@ -14,6 +14,8 @@ public sealed class SettingsRestoreStartupTests
         using var directory = new TemporaryWorkbenchDirectory();
         using var store = new WorkbenchPreferencesStore(directory.Path);
         await store.SaveAsync(new() { AccentColor = "#123456" });
+        await using var firstContext = new DesktopApplicationContext(new(directory.Path));
+        await firstContext.Initialization;
         using var restore = new UserSettingsRestoreService(directory.Path);
         await restore.StageAsync(new() { Preferences = new() { AccentColor = "#654321" } });
 

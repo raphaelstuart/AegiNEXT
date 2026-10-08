@@ -27,7 +27,14 @@ public static class SubtitleStylePresetStore
     }
 
     /// <summary>验证完整集合后原子替换目标文件；提交前失败或取消保留旧文件。</summary>
-    public static async Task SaveAsync(SubtitleStylePresetCollection collection, string path, CancellationToken cancellationToken = default)
+    public static Task SaveAsync(SubtitleStylePresetCollection collection, string path, CancellationToken cancellationToken = default)
+    {
+        return SaveAsync(collection, path, null, cancellationToken);
+    }
+
+    /// <summary>Prepares an atomic replacement, invoking the commit boundary only after the temporary file is flushed.</summary>
+    public static async Task SaveAsync(SubtitleStylePresetCollection collection, string path, Action? beforeCommit,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         cancellationToken.ThrowIfCancellationRequested();
@@ -47,6 +54,7 @@ public static class SubtitleStylePresetStore
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            beforeCommit?.Invoke();
             File.Move(temporary, fullPath, true);
         }
         finally

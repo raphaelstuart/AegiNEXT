@@ -11,17 +11,27 @@
           Padding="{Binding CaptionInsets, ElementName=Root}"
           chrome:WindowDecorationProperties.ElementRole="User">
     <Border Background="Transparent" chrome:WindowDecorationProperties.ElementRole="TitleBar">
-      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="8,0">
+      <local:WindowTitleBarLayout Name="ContentLayout" Margin="8,0" ClipToBounds="True">
         <ContentControl Name="MenuPresenter"
                         Content="{Binding MenuContent, ElementName=Root}"
                         VerticalContentAlignment="Center"
                         chrome:WindowDecorationProperties.ElementRole="User"/>
-        <TextBlock Name="TitleText" Grid.Column="1"
+        <ContentControl Name="CenterPresenter"
+                        Content="{Binding CenterContent, ElementName=Root}"
+                        VerticalContentAlignment="Center"
+                        HorizontalContentAlignment="Center"
+                        chrome:WindowDecorationProperties.ElementRole="User"/>
+        <TextBlock Name="TitleText"
                    Text="{Binding Title, ElementName=Root}"
                    VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"
                    TextTrimming="CharacterEllipsis"
                    chrome:WindowDecorationProperties.ElementRole="TitleBar"/>
-      </Grid>
+        <ContentControl Name="RightPresenter"
+                        Content="{Binding RightContent, ElementName=Root}"
+                        VerticalContentAlignment="Center"
+                        HorizontalContentAlignment="Right"
+                        chrome:WindowDecorationProperties.ElementRole="User"/>
+      </local:WindowTitleBarLayout>
     </Border>
   </Border>
 </UserControl>

@@ -11,8 +11,22 @@ public static class ProjectBackupStore
     private const string PROJECT_EXTENSION = ".aeginext";
 
     /// <summary>不覆盖地提交原始快照备份；时间碰撞顺延毫秒，写盘成功后才裁剪。</summary>
-    public static async Task<string> WriteAsync(ProjectDocument snapshot, string projectPath,
+    public static Task<string> WriteAsync(ProjectDocument snapshot, string projectPath,
         DateTimeOffset timestamp, int maxCount, CancellationToken cancellationToken = default)
+    {
+        return WriteCoreAsync(snapshot, projectPath, timestamp, maxCount, null, cancellationToken);
+    }
+
+    /// <summary>提交完整备份前调用原子提交边界，提交后必须完成备份裁剪。</summary>
+    public static Task<string> WriteAsync(ProjectDocument snapshot, string projectPath,
+        DateTimeOffset timestamp, int maxCount, Action beforeCommit, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeCommit);
+        return WriteCoreAsync(snapshot, projectPath, timestamp, maxCount, beforeCommit, cancellationToken);
+    }
+
+    private static async Task<string> WriteCoreAsync(ProjectDocument snapshot, string projectPath,
+        DateTimeOffset timestamp, int maxCount, Action? beforeCommit, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxCount, 1);
         cancellationToken.ThrowIfCancellationRequested();
@@ -31,7 +45,14 @@ public static class ProjectBackupStore
                 PROJECT_EXTENSION);
             try
             {
-                await ProjectStore.CreateAsync(snapshot, backup, cancellationToken).ConfigureAwait(false);
+                if (beforeCommit is null)
+                {
+                    await ProjectStore.CreateAsync(snapshot, backup, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await ProjectStore.CreateAsync(snapshot, backup, beforeCommit, cancellationToken).ConfigureAwait(false);
+                }
                 break;
             }
             catch (IOException) when (File.Exists(backup))

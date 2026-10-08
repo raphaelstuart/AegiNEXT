@@ -11,8 +11,8 @@ internal sealed partial class WorkbenchSession
 {
     private ClipClipboardContent? timelineClipboard;
 
-    internal bool CanCopyTimelineClips => !closing && !projectBusy && TimelineClipIds().Length > 0;
-    internal bool CanPasteTimelineClips => !closing && !projectBusy && timelineClipboard is { } content &&
+    internal bool CanCopyTimelineClips => !closing && !IsProjectBusy && TimelineClipIds().Length > 0;
+    internal bool CanPasteTimelineClips => !closing && !IsProjectBusy && timelineClipboard is { } content &&
         content.SourceProjectId == editor.Snapshot.Id && (content.Subtitles.IsEmpty || CurrentTrackId.HasValue);
 
     internal ImmutableArray<Guid> TimelineClipIds()
@@ -29,7 +29,7 @@ internal sealed partial class WorkbenchSession
 
     internal bool SelectTimelineLayers(TimelineSelectionEventArgs value)
     {
-        if (updatingWorkbench || projectBusy || closing || !TryCommitDrafts())
+        if (IsUpdating || IsProjectBusy || closing || !TryCommitDrafts())
         {
             RefreshDocument();
             return false;
@@ -170,7 +170,7 @@ internal sealed partial class WorkbenchSession
     internal Task CreateTimelineSubtitleAsync(Guid trackId, MediaTime time, ProjectDocument expected) =>
         RunCommandAsync(async () =>
         {
-            if (!TimelineContextIsCurrent(expected) || projectBusy || !TryCommitDrafts())
+            if (!TimelineContextIsCurrent(expected) || IsProjectBusy || !TryCommitDrafts())
             {
                 return;
             }
@@ -182,6 +182,6 @@ internal sealed partial class WorkbenchSession
 
     internal void ClearTimelineClipboard() => timelineClipboard = null;
 
-    private bool TimelineContextIsCurrent(ProjectDocument? expected) => !closing && !projectBusy &&
+    private bool TimelineContextIsCurrent(ProjectDocument? expected) => !closing && !IsProjectBusy &&
         (expected is null || ReferenceEquals(expected, editor.Snapshot));
 }

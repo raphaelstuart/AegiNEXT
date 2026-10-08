@@ -1,4 +1,5 @@
 using AegiNext.Application.Presets;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Effects;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Workspace.Diagnostics;
@@ -9,7 +10,18 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
 {
     private int queuedOperations;
     private EffectScriptChoice[] choices = [];
-    public Task Completion { get; private set; } = Task.CompletedTask;
+    private readonly Lock operationsGate = new();
+    private readonly HashSet<Task> operations = [];
+    public Task Completion
+    {
+        get
+        {
+            lock (operationsGate)
+            {
+                return Task.WhenAll(operations);
+            }
+        }
+    }
     internal bool IsBusy => queuedOperations > 0 || session.ApplicationContext.EffectsBusy;
 
     internal void Initialize() => Queue(async () =>
@@ -21,14 +33,27 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
     internal void Queue(Func<Task> action, Action<WorkbenchLogEntry>? onFailure = null)
     {
         queuedOperations++;
-        Completion = RunAsync(Completion, action, onFailure);
+        var operation = RunAsync(action, onFailure);
+        lock (operationsGate)
+        {
+            operations.Add(operation);
+        }
+        _ = ForgetOperationAsync(operation);
     }
 
-    private async Task RunAsync(Task previous, Func<Task> action, Action<WorkbenchLogEntry>? onFailure)
+    private async Task ForgetOperationAsync(Task operation)
+    {
+        await operation.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        lock (operationsGate)
+        {
+            operations.Remove(operation);
+        }
+    }
+
+    private async Task RunAsync(Func<Task> action, Action<WorkbenchLogEntry>? onFailure)
     {
         try
         {
-            await previous;
             if (!session.IsClosing)
             {
                 await session.RunCommandAsync(action, onFailure);
@@ -57,28 +82,33 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         vm.Preset = choices.Length == 0 ? -1 : Math.Max(0, index);
     }
 
-    internal void ApplySelected()
+    internal Task ApplySelectedAsync()
     {
         var index = session.ViewModel.Effects.Preset;
         if (index >= 0 && index < choices.Length)
         {
-            Apply(choices[index].Source);
+            return ApplyAsync(choices[index].Source);
         }
+        return Task.CompletedTask;
     }
 
-    internal void Apply(string source)
+    internal Task ApplyAsync(string source)
     {
+        if (session.IsProjectBusy || session.IsClosing || !session.TryCommitDrafts())
+        {
+            return Task.CompletedTask;
+        }
         var selected = session.TimelineClipIds().ToHashSet();
         var layerIds = WorkbenchSession.Flatten(session.Editor.Snapshot.Layers)
             .Where(layer => layer.SubtitleId is not null && selected.Contains(layer.Id)).Select(layer => layer.Id).ToArray();
         if (layerIds.Length == 0)
         {
-            return;
+            return Task.CompletedTask;
         }
         session.ViewModel.CancelGestures();
         session.ClearKeyframeSelection();
-        session.Editor.ApplyEffectScript(layerIds, EffectScriptParser.Parse(source));
-        session.LogInfo("Effects", Localization.Get("Workbench.ApplyPreset"));
+        return session.ApplicationContext.Tasks.Submit(new ApplyEffectScriptTask(session, source, layerIds,
+            session.Editor.Snapshot, session.TaskInputRevision)).Completion;
     }
 
     internal async Task UpsertAsync(EffectScriptPreset preset)
@@ -103,7 +133,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         {
             return;
         }
-        await session.ApplicationContext.RunEffectOperationAsync(() => session.EffectScriptLibrary.ImportAsync(path));
+        await session.ApplicationContext.Tasks.Submit(new ImportEffectScriptsTask(session, path)).Completion;
         RefreshChoices();
         session.NotifyEffectLibraryChanged();
     }
@@ -114,7 +144,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
         var path = await dialogs.SaveFileAsync("ExportEffectScripts", "EffectScriptFiles", ["*.aegifx"], ".aegifx", script.Id + ".aegifx");
         if (path is not null)
         {
-            await session.ApplicationContext.RunEffectOperationAsync(() => EffectScriptPresetStore.WriteScriptAsync(preset.Source, path));
+            await session.ApplicationContext.Tasks.Submit(new ExportEffectScriptTask(session, path, preset.Source)).Completion;
         }
     }
 

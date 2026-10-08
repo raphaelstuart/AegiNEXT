@@ -10,7 +10,14 @@ public static class PresetBatchExporter
     private const int MAXIMUM_STEM_BYTES = 180;
 
     /// <summary>每个所选样式输出一份包含该样式和内嵌字体的独立 .aegistyles 文件。</summary>
-    public static async Task ExportStylesAsync(IEnumerable<SubtitleStylePreset> presets, string directory,
+    public static Task ExportStylesAsync(IEnumerable<SubtitleStylePreset> presets, string directory,
+        CancellationToken cancellationToken = default)
+    {
+        return ExportStylesAsync(presets, directory, null, cancellationToken);
+    }
+
+    /// <summary>Stages every selected style before entering a non-cancellable publication phase.</summary>
+    public static async Task ExportStylesAsync(IEnumerable<SubtitleStylePreset> presets, string directory, Action? beforePublish,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(presets);
@@ -37,11 +44,18 @@ public static class PresetBatchExporter
                 SubtitleStylePresetStore.SaveAsync(new() { Presets = [preset] }, path, token)));
         }
 
-        await ExportAsync(entries, directory, ".aegistyles", cancellationToken).ConfigureAwait(false);
+        await ExportAsync(entries, directory, ".aegistyles", beforePublish, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>每个所选内置或个人脚本以脚本标识命名，输出一份保持原文的独立 .aegifx 文件。</summary>
-    public static async Task ExportEffectsAsync(IEnumerable<EffectScriptPreset> presets, string directory,
+    public static Task ExportEffectsAsync(IEnumerable<EffectScriptPreset> presets, string directory,
+        CancellationToken cancellationToken = default)
+    {
+        return ExportEffectsAsync(presets, directory, null, cancellationToken);
+    }
+
+    /// <summary>Stages every selected effect script before entering a non-cancellable publication phase.</summary>
+    public static async Task ExportEffectsAsync(IEnumerable<EffectScriptPreset> presets, string directory, Action? beforePublish,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(presets);
@@ -69,11 +83,51 @@ public static class PresetBatchExporter
                 EffectScriptPresetStore.WriteScriptAsync(preset.Source, path, token)));
         }
 
-        await ExportAsync(entries, directory, ".aegifx", cancellationToken).ConfigureAwait(false);
+        await ExportAsync(entries, directory, ".aegifx", beforePublish, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Returns the exact style destinations used by a frozen batch selection.</summary>
+    public static IReadOnlyList<string> GetStyleDestinations(IEnumerable<SubtitleStylePreset> presets, string directory)
+    {
+        ArgumentNullException.ThrowIfNull(presets);
+        var entries = presets.Select(preset =>
+        {
+            ArgumentNullException.ThrowIfNull(preset);
+            return (preset.Id, SafeStem(preset.Name));
+        }).ToArray();
+        return GetDestinations(entries, directory, ".aegistyles");
+    }
+
+    /// <summary>Returns the exact effect destinations used by a frozen batch selection.</summary>
+    public static IReadOnlyList<string> GetEffectDestinations(IEnumerable<EffectScriptPreset> presets, string directory)
+    {
+        ArgumentNullException.ThrowIfNull(presets);
+        var entries = presets.Select(preset =>
+        {
+            ArgumentNullException.ThrowIfNull(preset);
+            return (preset.Id, SafeStem(EffectScriptParser.Parse(preset.Source).Id));
+        }).ToArray();
+        return GetDestinations(entries, directory, ".aegifx");
+    }
+
+    private static string[] GetDestinations((Guid Id, string Stem)[] entries, string directory, string extension)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        var identities = new HashSet<Guid>();
+        foreach (var entry in entries)
+        {
+            if (entry.Id == Guid.Empty || !identities.Add(entry.Id))
+            {
+                throw new InvalidDataException("待导出的预设标识必须非空且唯一。");
+            }
+        }
+
+        var destination = Path.GetFullPath(directory);
+        return ResolveFilenames(entries, extension).Select(filename => Path.Combine(destination, filename)).ToArray();
     }
 
     private static async Task ExportAsync(List<(Guid Id, string Stem, Func<string, CancellationToken, Task> Write)> entries,
-        string directory, string extension, CancellationToken cancellationToken)
+        string directory, string extension, Action? beforePublish, CancellationToken cancellationToken)
     {
         var destination = Path.GetFullPath(directory);
         var filenames = ResolveFilenames(entries.Select(entry => (entry.Id, entry.Stem)).ToArray(), extension);
@@ -99,9 +153,12 @@ public static class PresetBatchExporter
                 await entries[index].Write(Path.Combine(stagingDirectory, filenames[index]), cancellationToken).ConfigureAwait(false);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+            beforePublish?.Invoke();
+            var publicationToken = beforePublish is null ? cancellationToken : CancellationToken.None;
             for (var index = 0; index < entries.Count; index++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                publicationToken.ThrowIfCancellationRequested();
                 File.Move(Path.Combine(stagingDirectory, filenames[index]), paths[index]);
                 published.Add(paths[index]);
             }

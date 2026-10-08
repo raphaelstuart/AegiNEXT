@@ -35,7 +35,8 @@ public sealed class SelectedTimingPostProcessorWorkflowTests
         Assert.NotEqual(first.Id, firstLayer.Id);
         Assert.NotEqual(second.Id, secondLayer.Id);
         Assert.Empty(session.SelectedSubtitleIds);
-        Assert.True(session.HasApplicableSelectedTimingPostProcessor);
+        Assert.True(session.HasApplicableSelectedTimingPostProcessor,
+            $"Busy={session.IsProjectBusy}; Updating={session.IsUpdating}; Styles={session.Styles.IsBusy}; Drafts={session.HasProjectDrafts}; Selection={string.Join(',', session.TimelineClipIds())}");
 
         var changed = await session.ApplySelectedTimingPostProcessorAsync();
 
@@ -221,7 +222,7 @@ public sealed class SelectedTimingPostProcessorWorkflowTests
     }
 
     [Fact]
-    public async Task PendingVideoProbeFreezesActualClipSelectionAndRejectsASecondBatch()
+    public async Task PendingVideoProbeAllowsSelectionAndRejectsStaleSelectedBatch()
     {
         using var directory = new TemporaryWorkbenchDirectory();
         var preset = Preset(LeadOptions(100, 200) with { KeyframeSnapEnabled = true });
@@ -244,18 +245,16 @@ public sealed class SelectedTimingPostProcessorWorkflowTests
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.True(session.IsProjectBusy);
-            Assert.False(session.SelectTimelineLayers(new(LayerFor(document, second).Id, [LayerFor(document, second).Id])));
-            Assert.Equal(firstLayer.Id, session.SelectedLayerId);
-            Assert.Equal(new[] { firstLayer.Id }, session.TimelineClipIds());
+            Assert.False(session.IsProjectBusy);
+            Assert.True(session.SelectTimelineLayers(new(LayerFor(document, second).Id, [LayerFor(document, second).Id])));
+            Assert.Equal(LayerFor(document, second).Id, session.SelectedLayerId);
+            Assert.Equal(new[] { LayerFor(document, second).Id }, session.TimelineClipIds());
             Assert.Equal(0, await session.ApplySelectedTimingPostProcessorAsync());
             pending.TrySetResult(VideoIndex());
 
-            Assert.Equal(1, await operation.WaitAsync(TimeSpan.FromSeconds(5)));
-            Assert.Same(second, editor.Snapshot.Subtitles.Single(value => value.Id == second.Id));
-            Assert.False(session.IsProjectBusy);
-            Assert.True(editor.Undo());
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation.WaitAsync(TimeSpan.FromSeconds(5)));
             Assert.Same(document, editor.Snapshot);
+            Assert.False(session.IsProjectBusy);
             Assert.False(editor.CanUndo);
         }
         finally

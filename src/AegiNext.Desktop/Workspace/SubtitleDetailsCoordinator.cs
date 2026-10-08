@@ -72,6 +72,8 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
     }
     internal string? InvalidFieldKey { get; private set; }
     internal string? SourceDiagnostic { get; private set; }
+    internal bool HasDrafts => draft is not null && (sourceDirty || durationDirty || leadingDelayDirty || draft != original ||
+        StyleDraft.IsDirty || HighlightDraft.IsDirty);
     internal bool CanEditSource => SourceDiagnostic is null;
     internal Guid? SelectedClipId { get; private set; }
     internal bool IsPlaying => playbackCancellation is { } cancellation && session.Controller.IsPlaybackRangeOwnedBy(cancellation.Token);

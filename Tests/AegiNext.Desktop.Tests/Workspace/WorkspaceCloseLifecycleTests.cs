@@ -1,11 +1,88 @@
 using AegiNext.Core.Projects;
 using AegiNext.Media.Playback;
+using AegiNext.Application.Tasks;
+using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Startup;
 
 namespace AegiNext.Desktop.Tests.Workspace;
 
 [Collection("Workspace session")]
 public sealed class WorkspaceCloseLifecycleTests
 {
+    [Fact]
+    public async Task CancelledCloseDoesNotCancelRunningTaskOrReleaseItsEditingLease()
+    {
+        await using var context = new WorkspaceSessionTestContext();
+        await context.InitializeAsync();
+        context.Editor.Apply("Unsaved", document => document with { Name = "Pending" });
+        context.Dialogs.UnsavedChoice = 0;
+        var task = new WorkspaceLifecycleTask(context.Session.TaskScope);
+        var handle = context.Session.ApplicationContext.Tasks.Submit(task);
+        try
+        {
+            await task.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(await context.Session.RequestCloseAsync());
+            Assert.Equal(AegiTaskState.Running, handle.Snapshot.State);
+            Assert.False(task.CancellationObserved.Task.IsCompleted);
+            Assert.True(context.Session.IsProjectBusy);
+            task.Finish.TrySetResult();
+            task.Cleanup.TrySetResult();
+            await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(context.Session.IsProjectBusy);
+        }
+        finally
+        {
+            task.Finish.TrySetResult();
+            task.Cleanup.TrySetResult();
+        }
+    }
+
+    [Fact]
+    public async Task ConfirmedCloseWaitsForActualCleanupWhileAnotherProjectContinues()
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        await using var application = new DesktopApplicationContext(new WorkbenchPreferencesStore(directory.Path));
+        await application.Initialization;
+        await using var first = new WorkspaceSessionTestContext(applicationContext: application);
+        await using var second = new WorkspaceSessionTestContext(applicationContext: application);
+        await first.InitializeAsync();
+        await second.InitializeAsync();
+        var closingTask = new WorkspaceLifecycleTask(first.Session.TaskScope);
+        var otherTask = new WorkspaceLifecycleTask(second.Session.TaskScope);
+        var closingHandle = application.Tasks.Submit(closingTask);
+        var otherHandle = application.Tasks.Submit(otherTask);
+        Task<bool>? close = null;
+        try
+        {
+            await Task.WhenAll(closingTask.Started.Task, otherTask.Started.Task).WaitAsync(TimeSpan.FromSeconds(5));
+            close = first.Session.RequestCloseAsync();
+            await closingTask.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(close.IsCompleted);
+            Assert.Equal(AegiTaskState.Cancelling, closingHandle.Snapshot.State);
+            Assert.True(application.Tasks.IsEditingRestricted(first.Session.TaskScope));
+            Assert.Equal(AegiTaskState.Running, otherHandle.Snapshot.State);
+            closingTask.Cleanup.TrySetResult();
+            Assert.True(await close.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal(AegiTaskState.Cancelled, closingHandle.Snapshot.State);
+            Assert.False(application.Tasks.IsEditingRestricted(first.Session.TaskScope));
+            Assert.False(second.Session.IsClosing);
+            Assert.False(otherTask.CancellationObserved.Task.IsCompleted);
+            otherTask.Finish.TrySetResult();
+            otherTask.Cleanup.TrySetResult();
+            await otherHandle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            closingTask.Cleanup.TrySetResult();
+            otherTask.Finish.TrySetResult();
+            otherTask.Cleanup.TrySetResult();
+            if (close is not null)
+            {
+                await close;
+            }
+        }
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

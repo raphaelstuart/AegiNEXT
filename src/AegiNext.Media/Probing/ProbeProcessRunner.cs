@@ -97,6 +97,7 @@ internal static class ProbeProcessRunner
 
     private static async Task StopAsync(Process process)
     {
+        Exception? terminationError = null;
         try
         {
             if (!process.HasExited)
@@ -107,8 +108,15 @@ internal static class ProbeProcessRunner
         catch (InvalidOperationException) when (process.HasExited)
         {
         }
+        catch (System.ComponentModel.Win32Exception error)
+        {
+            terminationError = error;
+        }
 
-        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await process.WaitForExitAsync(cleanup.Token).ConfigureAwait(false);
+        await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+        if (terminationError is not null)
+        {
+            ExceptionDispatchInfo.Capture(terminationError).Throw();
+        }
     }
 }

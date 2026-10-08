@@ -63,16 +63,24 @@ public sealed class StyleLibraryOperationTests
             return second.Task;
         });
 
-        Assert.False(started.Task.IsCompleted);
-        first.SetResult();
-        await firstCompletion.WaitAsync(TimeSpan.FromSeconds(5));
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.True(styles.IsBusy);
-        Assert.All(notifications, value => Assert.True(value));
-        second.SetResult();
-        await styles.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            second.SetResult();
+            Assert.False(styles.Completion.IsCompleted);
+            Assert.True(styles.IsBusy);
+            Assert.All(notifications, value => Assert.True(value));
+            first.SetResult();
+            await firstCompletion.WaitAsync(TimeSpan.FromSeconds(5));
+            await styles.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Assert.False(styles.IsBusy);
-        Assert.False(notifications.Last());
+            Assert.False(styles.IsBusy);
+            Assert.False(notifications.Last());
+        }
+        finally
+        {
+            first.TrySetResult();
+            second.TrySetResult();
+        }
     }
 }

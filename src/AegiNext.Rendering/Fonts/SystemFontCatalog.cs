@@ -13,13 +13,15 @@ public sealed class SystemFontCatalog
     }
 
     /// <summary>枚举指定字体管理器及可选的家族集合，管理器的生命周期由调用方持有。</summary>
-    public SystemFontCatalog(SKFontManager manager, IEnumerable<string>? familyNames = null)
+    public SystemFontCatalog(SKFontManager manager, IEnumerable<string>? familyNames = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(manager);
         var faces = ImmutableArray.CreateBuilder<SystemFontFace>();
         var issues = ImmutableArray.CreateBuilder<SystemFontCatalogIssue>();
         foreach (var family in (familyNames ?? manager.GetFontFamilies()).Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(family))
             {
                 continue;
@@ -27,6 +29,7 @@ public sealed class SystemFontCatalog
             using var styles = manager.GetFontStyles(family);
             for (var index = 0; index < styles.Count; index++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 using var typeface = styles.CreateTypeface(index);
                 if (typeface is null)
                 {
@@ -52,6 +55,9 @@ public sealed class SystemFontCatalog
         Faces = Merge(faces);
         Issues = [];
     }
+
+    /// <summary>无需枚举原生字体即可取得空目录。</summary>
+    public static SystemFontCatalog Empty { get; } = new(Array.Empty<SystemFontFace>());
 
     public ImmutableArray<SystemFontFace> Faces { get; }
     public ImmutableArray<SystemFontCatalogIssue> Issues { get; }

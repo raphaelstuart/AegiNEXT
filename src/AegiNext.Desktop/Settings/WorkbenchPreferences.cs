@@ -25,6 +25,7 @@ public sealed record WorkbenchPreferences
     public PreviewQuality PreviewQuality { get; init; } = PreviewQuality.LOW;
     public VideoDecodeMode PreviewDecodeMode { get; init; } = VideoDecodeMode.Auto;
     public int SubtitleAuditionMilliseconds { get; init; } = 500;
+    public int MaximumConcurrentTasks { get; init; } = 4;
     public bool TimelineClassicTimingEnabled { get; init; }
     public bool TimelineSnapEnabled { get; init; } = true;
     public bool TimelineStepEnabled { get; init; }
@@ -39,7 +40,7 @@ public sealed record WorkbenchPreferences
     {
         if (Version != 1 || !IsValidLanguage(Language) ||
             !Enum.IsDefined(Theme) || !Enum.IsDefined(PreviewQuality) || !Enum.IsDefined(PreviewDecodeMode) || !float.IsFinite(Volume) || Volume is < 0 or > 1 ||
-            SubtitleAuditionMilliseconds < 1 || AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
+            SubtitleAuditionMilliseconds < 1 || MaximumConcurrentTasks is < 1 or > 32 || AccentColor is null || AccentColor.Length != 7 || AccentColor[0] != '#' ||
             AccentColor.AsSpan(1).ContainsAnyExcept(hexadecimalCharacters) || ShortcutBindings.IsDefault || AudioGraph is null || TimelineClips is null || Projects is null || TimingPostProcessor is null)
         {
             throw new InvalidDataException("桌面偏好无效或版本不受支持。");
@@ -92,7 +93,7 @@ public sealed record WorkbenchPreferences
     {
         return other is not null && Version == other.Version && Language == other.Language && Theme == other.Theme &&
                AccentColor == other.AccentColor && AudioGraph == other.AudioGraph && TimelineClips == other.TimelineClips && Volume.Equals(other.Volume) && WindowMenuOnMac == other.WindowMenuOnMac && PreviewQuality == other.PreviewQuality && PreviewDecodeMode == other.PreviewDecodeMode &&
-               SubtitleAuditionMilliseconds == other.SubtitleAuditionMilliseconds && TimelineClassicTimingEnabled == other.TimelineClassicTimingEnabled &&
+               SubtitleAuditionMilliseconds == other.SubtitleAuditionMilliseconds && MaximumConcurrentTasks == other.MaximumConcurrentTasks && TimelineClassicTimingEnabled == other.TimelineClassicTimingEnabled &&
                TimelineSnapEnabled == other.TimelineSnapEnabled && TimelineStepEnabled == other.TimelineStepEnabled &&
                TimelineSpectrumVisible == other.TimelineSpectrumVisible && TimelineWaveformVisible == other.TimelineWaveformVisible &&
                Projects == other.Projects && TimingPostProcessor == other.TimingPostProcessor &&
@@ -115,6 +116,7 @@ public sealed record WorkbenchPreferences
         hash.Add(PreviewQuality);
         hash.Add(PreviewDecodeMode);
         hash.Add(SubtitleAuditionMilliseconds);
+        hash.Add(MaximumConcurrentTasks);
         hash.Add(TimelineClassicTimingEnabled);
         hash.Add(TimelineSnapEnabled);
         hash.Add(TimelineStepEnabled);

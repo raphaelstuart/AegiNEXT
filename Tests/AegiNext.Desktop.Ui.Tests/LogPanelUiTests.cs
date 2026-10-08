@@ -63,11 +63,22 @@ public sealed class LogPanelUiTests
         Assert.Equal(3, main.Session.Journal.Entries.Count);
         Assert.Equal(1, main.ViewModel.Log.UnreadErrorCount);
         Assert.EndsWith("(1)", main.Layouts.PanelAdapters[WorkbenchPanelIds.LOG].Title);
-        main.Session.SetProjectBusy(true);
+        using var editLease = main.Session.AcquireEditingLease();
         try
         {
+            Flush(main);
             Assert.All(main.Panels.Where(pair => pair.Key != WorkbenchPanelIds.LOG), pair => Assert.False(pair.Value.IsEnabled));
             Assert.True(view.IsEnabled);
+            var tasksButton = UiTestActions.Find<Button>(main, "TasksButton");
+            Assert.True(tasksButton.IsEffectivelyEnabled);
+            Assert.True(tasksButton.Focus());
+            UiTestActions.Press(main, Key.Enter);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(tasksButton.Flyout!.IsOpen);
+            UiTestActions.Press(main, Key.Escape);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(tasksButton.Flyout.IsOpen);
+            Assert.True(tasksButton.IsFocused);
             Assert.True(main.GetCommand(WorkbenchCommand.VIEW_LOG).CanExecute(null));
             await main.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_LOG);
             Flush(main);
@@ -78,7 +89,7 @@ public sealed class LogPanelUiTests
         }
         finally
         {
-            main.Session.SetProjectBusy(false);
+            editLease.Dispose();
         }
 
         main.Layouts.Float(WorkbenchPanelIds.LOG);

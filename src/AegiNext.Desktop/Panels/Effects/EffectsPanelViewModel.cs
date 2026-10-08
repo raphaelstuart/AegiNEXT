@@ -84,7 +84,7 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
                 OnPropertyChanged(nameof(PowerExponent));
             }
         };
-        ApplyPresetCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ApplySelectedPreset)));
+        ApplyPresetCommand = new AsyncRelayCommand(() => session.RunCommandAsync(session.ApplySelectedPresetAsync));
     }
 
     public string? ValidationError

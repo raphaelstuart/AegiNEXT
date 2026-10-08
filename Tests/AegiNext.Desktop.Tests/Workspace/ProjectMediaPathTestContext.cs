@@ -39,15 +39,8 @@ internal sealed class ProjectMediaPathTestContext : IAsyncDisposable
 
     internal void ChangeDocument(Action change)
     {
-        Session.SetProjectBusy(true);
-        try
-        {
-            change();
-        }
-        finally
-        {
-            Session.SetProjectBusy(false);
-        }
+        using var lease = Session.AcquireEditingLease();
+        change();
     }
 
     public async ValueTask DisposeAsync()

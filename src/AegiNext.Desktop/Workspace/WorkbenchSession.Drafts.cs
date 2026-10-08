@@ -26,9 +26,25 @@ internal sealed partial class WorkbenchSession
 
     internal bool TryCommitDrafts(bool focusInvalid = true)
     {
-        if (updatingWorkbench || closing)
+        return TryCommitDraftsCore(focusInvalid, false);
+    }
+
+    internal bool TryCommitDraftsForClose(AegiNext.Application.Tasks.AegiTaskScopeCloseLease closeLease)
+    {
+        ArgumentNullException.ThrowIfNull(closeLease);
+        if (!closing || closeLease.ScopeId != TaskScope || applicationContext.Tasks.GetSnapshots().Any(task =>
+            task.ScopeId == TaskScope && !task.IsFinished))
         {
-            return !closing;
+            throw new InvalidOperationException("Closing drafts require a drained project scope.");
+        }
+        return TryCommitDraftsCore(true, true);
+    }
+
+    private bool TryCommitDraftsCore(bool focusInvalid, bool allowClosing)
+    {
+        if (IsUpdating || closing && !allowClosing)
+        {
+            return !closing || allowClosing;
         }
 
         var document = editor.Snapshot;
@@ -140,8 +156,7 @@ internal sealed partial class WorkbenchSession
     private void RefreshCommittedDrafts(Dictionary<Guid, SubtitleLine> changes, bool refreshStyles, bool refreshEffects,
         string[] effectFields)
     {
-        var previousUpdating = updatingWorkbench;
-        updatingWorkbench = true;
+        using var updateLease = BeginWorkbenchUpdate();
         try
         {
             if (changes.Count > 0)
@@ -181,7 +196,7 @@ internal sealed partial class WorkbenchSession
         }
         finally
         {
-            updatingWorkbench = previousUpdating;
+            updateLease.Dispose();
         }
     }
 
@@ -265,7 +280,7 @@ internal sealed partial class WorkbenchSession
 
     internal void CommitRow(SubtitleRow row)
     {
-        if (!projectBusy && !updatingWorkbench && row.IsDirty)
+        if (!IsProjectBusy && !IsUpdating && row.IsDirty)
         {
             TryCommitDrafts(false);
         }
@@ -285,10 +300,11 @@ internal sealed partial class WorkbenchSession
                 break;
         }
 
-        if (!updatingWorkbench && e.PropertyName is { } name && styleDraftProperties.Contains(name))
+        if (!IsUpdating && e.PropertyName is { } name && styleDraftProperties.Contains(name))
         {
             stylesDirty = true;
             draftRevision++;
+            NotifyTaskInputChanged();
             FreezeDraftTarget();
             if (name != "FontDraft")
             {
@@ -336,7 +352,7 @@ internal sealed partial class WorkbenchSession
                 break;
         }
 
-        if (updatingWorkbench || e.PropertyName is null)
+        if (IsUpdating || e.PropertyName is null)
         {
             return;
         }
@@ -345,6 +361,7 @@ internal sealed partial class WorkbenchSession
         {
             effectsDirty = true;
             draftRevision++;
+            NotifyTaskInputChanged();
             FreezeDraftTarget();
             changedEffectFields.Add(e.PropertyName);
             QueueInspectorPreview();
@@ -355,7 +372,7 @@ internal sealed partial class WorkbenchSession
         }
         else if (e.PropertyName == "Property")
         {
-            updatingWorkbench = true;
+            using var updateLease = BeginWorkbenchUpdate();
             try
             {
                 ViewModel.Timeline.EffectTarget = SceneEditing.Target;
@@ -364,15 +381,14 @@ internal sealed partial class WorkbenchSession
             }
             finally
             {
-                updatingWorkbench = false;
+                updateLease.Dispose();
             }
         }
     }
 
-    internal void RefreshDocument()
+    internal void RefreshDocument(bool preserveDrafts = false)
     {
-        var previousUpdating = updatingWorkbench;
-        updatingWorkbench = true;
+        using var updateLease = BeginWorkbenchUpdate();
         try
         {
             var document = editor.Snapshot;
@@ -435,15 +451,15 @@ internal sealed partial class WorkbenchSession
             ViewModel.Effects.SelectedLayer = SelectedLayer;
             SyncCurrentTrackForSelection();
             RefreshSubtitleSelection();
-            MaskEditing.Refresh(true);
+            MaskEditing.Refresh(!preserveDrafts);
             RefreshInspector();
-            ViewModel.Styles.CanApplyPreset = SelectedCue is not null && !projectBusy && !closing && ViewModel.Styles.SelectedPreset is not null;
+            ViewModel.Styles.CanApplyPreset = SelectedCue is not null && !IsProjectBusy && !closing && ViewModel.Styles.SelectedPreset is not null;
             Tick();
             SelectionChanged?.Invoke(this, EventArgs.Empty);
         }
         finally
         {
-            updatingWorkbench = previousUpdating;
+            updateLease.Dispose();
         }
     }
 
@@ -553,7 +569,7 @@ internal sealed partial class WorkbenchSession
 
     internal void SelectCue(Guid id)
     {
-        if (updatingWorkbench || projectBusy || id == SelectedCueId && SelectedLayer?.SubtitleId == id && SelectedSubtitleIds.Count <= 1)
+        if (IsUpdating || IsProjectBusy || id == SelectedCueId && SelectedLayer?.SubtitleId == id && SelectedSubtitleIds.Count <= 1)
         {
             return;
         }
@@ -582,7 +598,7 @@ internal sealed partial class WorkbenchSession
 
     internal void SelectLayer(Guid id, Guid[] selectedIds)
     {
-        if (updatingWorkbench || projectBusy)
+        if (IsUpdating || IsProjectBusy)
         {
             return;
         }

@@ -178,7 +178,7 @@ public sealed class UnavailableProjectMediaWorkflowTests
     }
 
     [Fact]
-    public async Task CancelledConfirmationCannotCommitEvenIfContinueArrivesLater()
+    public async Task CancellingTheCallerWaitDoesNotCancelThePendingProjectOpen()
     {
         await using var context = new ProjectMediaPathTestContext();
         await context.Session.Styles.Completion;
@@ -195,10 +195,42 @@ public sealed class UnavailableProjectMediaWorkflowTests
 
         cancellation.Cancel();
         var result = await operation;
+        Assert.Equal(ProjectOpenStatus.CANCELLED, result.Status);
+        Assert.Null(result.Error);
+        Assert.Same(original, context.Session.Editor.Snapshot);
+        Assert.Null(context.Session.ProjectPath);
+        Assert.Empty(context.Session.ApplicationContext.RecentProjects.Entries);
+        Assert.True(context.Session.IsProjectBusy);
+
+        context.Dialogs.PendingMediaConfirmation.SetResult(true);
+        await context.Session.WaitForProjectIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(path, context.Session.ProjectPath);
+        Assert.Equal(path, Assert.Single(context.Session.ApplicationContext.RecentProjects.Entries).Path);
+        Assert.False(context.Session.IsProjectBusy);
+    }
+
+    [Fact]
+    public async Task ExplicitTaskCancellationCannotCommitWhenConfirmationArrivesLater()
+    {
+        await using var context = new ProjectMediaPathTestContext();
+        await context.Session.Styles.Completion;
+        Directory.CreateDirectory(context.Session.ProjectDirectory);
+        var asset = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.MEDIA, "missing.mkv");
+        var path = await SaveProjectAsync(context, "cancelled.aeginext", asset);
+        context.Dialogs.PendingMediaConfirmation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var workflow = new ProjectWorkflowCoordinator(context.Session, context.Dialogs);
+        var original = context.Session.Editor.Snapshot;
+        var operation = workflow.OpenProjectAsync(path);
+        await WaitForAsync(() => context.Dialogs.UnavailableMediaRequests == 1 || operation.IsCompleted);
+        var task = Assert.Single(context.Session.ApplicationContext.Tasks.GetSnapshots(), task =>
+            task.Name == "Tasks.OpenProject" && !task.IsFinished);
+
+        Assert.True(context.Session.ApplicationContext.Tasks.RequestCancel(task.Id));
+        var result = await operation.WaitAsync(TimeSpan.FromSeconds(5));
         context.Dialogs.PendingMediaConfirmation.SetResult(true);
 
         Assert.Equal(ProjectOpenStatus.CANCELLED, result.Status);
-        Assert.Null(result.Error);
         Assert.Same(original, context.Session.Editor.Snapshot);
         Assert.Null(context.Session.ProjectPath);
         Assert.Empty(context.Session.ApplicationContext.RecentProjects.Entries);

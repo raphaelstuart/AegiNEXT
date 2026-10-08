@@ -1,7 +1,8 @@
 using AegiNext.Application.Presets;
 using AegiNext.Media.Encoding.Presets;
 using AegiNext.Desktop.Editing;
-using AegiNext.Rendering.Fonts;
+using AegiNext.Desktop.Layouts;
+using AegiNext.Application.Tasks;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Transfer;
 using AegiNext.Desktop.Workspace;
@@ -14,12 +15,9 @@ namespace AegiNext.Desktop.Startup;
 internal sealed class DesktopApplicationContext : IAsyncDisposable
 {
     private readonly Lock lifetime = new();
-    private readonly Lazy<SubtitleFontSelectionService> fonts = new(() => new(new SystemFontCatalog()));
+    private readonly SubtitleFontSelectionService fonts;
+    private readonly WorkbenchPreferences? initialPreferences;
     private WorkbenchPreferences preferences;
-    private Task preferencesCompletion = Task.CompletedTask;
-    private Task stylesCompletion = Task.CompletedTask;
-    private Task effectsCompletion = Task.CompletedTask;
-    private Task exportsCompletion = Task.CompletedTask;
     private Task? disposeTask;
     private int queuedStyles;
     private int queuedEffects;
@@ -32,21 +30,24 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         WorkbenchPreferences? initialPreferences = null)
     {
         PreferencesStore = preferencesStore ?? new(Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
-        preferences = initialPreferences ?? PreferencesStore.Load();
+        this.initialPreferences = initialPreferences;
+        preferences = initialPreferences ?? new();
+        Tasks = new();
+        Tasks.MaximumConcurrentTasks = preferences.MaximumConcurrentTasks;
+        fonts = new(Tasks);
         preferences.Validate();
         preferencesLoadError = PreferencesStore.LoadError;
         SettingsRestore = new(PreferencesStore.DirectoryPath);
         StyleLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "subtitle-styles.aegistyles"));
         EffectScriptLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "effect-scripts.json"));
         ExportPresetLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "export-presets.aegiexports"));
-        RecentProjects = new(PreferencesStore.DirectoryPath);
+        RecentProjects = new(PreferencesStore.DirectoryPath, Tasks, deferLoad: true);
         RecentProjects.ErrorChanged += OnRecentProjectsError;
-        ApplyAppearance(preferences);
-        LastError = SettingsRestoreStartup.GetError(PreferencesStore.DirectoryPath) ?? PreferencesStore.LoadError ?? RecentProjects.LastError;
-        var stylesInitialization = EnqueueLibraryOperation(() => StyleLibrary.LoadAsync(), PersonalLibraryKind.STYLE, false);
-        var effectsInitialization = EnqueueLibraryOperation(() => EffectScriptLibrary.LoadAsync(), PersonalLibraryKind.EFFECT, false);
-        var exportsInitialization = EnqueueLibraryOperation(() => ExportPresetLibrary.LoadAsync(), PersonalLibraryKind.EXPORT, false);
-        Initialization = Task.WhenAll(stylesInitialization, effectsInitialization, exportsInitialization);
+        if (initialPreferences is not null)
+        {
+            ApplyAppearance(preferences);
+        }
+        Initialization = InitializeAndLoadFontsAsync(Tasks.Submit(new ApplicationInitializationTask(this)).Completion);
     }
 
     internal event EventHandler? PreferencesChanged;
@@ -61,8 +62,19 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     internal VideoExportPresetLibrary ExportPresetLibrary { get; }
     internal UserSettingsRestoreService SettingsRestore { get; }
     internal RecentProjectService RecentProjects { get; }
-    internal SubtitleFontSelectionService Fonts => fonts.Value;
+    internal AegiTaskService Tasks { get; }
+    internal SubtitleFontSelectionService Fonts => fonts;
+    internal IReadOnlyCollection<AegiTaskResource> SettingsResources =>
+    [
+        AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, "preferences.json")),
+        GetLibraryResource(PersonalLibraryKind.STYLE), GetLibraryResource(PersonalLibraryKind.EFFECT),
+        GetLibraryResource(PersonalLibraryKind.EXPORT),
+        AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, "recent-projects.json")),
+        AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, "layouts.json")),
+        AegiTaskResource.Named("settings-restore:" + PreferencesStore.DirectoryPath)
+    ];
     internal Task Initialization { get; }
+    internal WorkspaceLayoutFile InitialLayout { get; private set; } = new();
     internal Exception? LastError { get; private set; }
     internal Exception? SettingsLoadError
     {
@@ -86,16 +98,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         }
     }
 
-    internal Task Completion
-    {
-        get
-        {
-            lock (lifetime)
-            {
-                return Task.WhenAll(preferencesCompletion, stylesCompletion, effectsCompletion, exportsCompletion, RecentProjects.Completion);
-            }
-        }
-    }
+    internal Task Completion => Tasks.DrainAsync();
 
     internal bool StylesBusy => Volatile.Read(ref queuedStyles) > 0;
     internal bool EffectsBusy => Volatile.Read(ref queuedEffects) > 0;
@@ -106,8 +109,6 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(update);
         WorkbenchPreferences value;
         bool languageChanged;
-        Task previous;
-        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (lifetime)
         {
             ObjectDisposedException.ThrowIf(closing, this);
@@ -121,18 +122,25 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
 
             languageChanged = !string.Equals(preferences.Language, value.Language, StringComparison.OrdinalIgnoreCase);
             preferences = value;
-            previous = preferencesCompletion;
-            preferencesCompletion = completion.Task;
         }
 
         try
         {
+            Tasks.MaximumConcurrentTasks = value.MaximumConcurrentTasks;
             ApplyAppearance(value, languageChanged);
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
         }
         finally
         {
-            _ = SavePreferencesAsync(previous, value, completion);
+            if (AegiTaskExecutionContext.Current is { } stage)
+            {
+                _ = stage.RunStageAsync("Tasks.PreferencesSave", _ => SavePreferencesAsync(value),
+                    [AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, "preferences.json"))]);
+            }
+            else
+            {
+                _ = Tasks.Submit(new PreferencesWriteTask(this, value)).Completion;
+            }
         }
     }
 
@@ -165,46 +173,111 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     private Task EnqueueLibraryOperation(Func<Task> operation, PersonalLibraryKind kind, bool propagateFailure)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        Task previous;
-        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource result = new(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (lifetime)
         {
             ObjectDisposedException.ThrowIf(closing, this);
-            switch (kind)
-            {
-                case PersonalLibraryKind.STYLE:
-                    previous = stylesCompletion;
-                    stylesCompletion = completion.Task;
-                    queuedStyles++;
-                    break;
-                case PersonalLibraryKind.EFFECT:
-                    previous = effectsCompletion;
-                    effectsCompletion = completion.Task;
-                    queuedEffects++;
-                    break;
-                case PersonalLibraryKind.EXPORT:
-                    previous = exportsCompletion;
-                    exportsCompletion = completion.Task;
-                    queuedExports++;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(kind));
-            }
         }
-
-        BusyChanged?.Invoke(this, EventArgs.Empty);
-        _ = ExecuteLibraryOperationAsync(previous, operation, kind, propagateFailure, completion, result);
-        return result.Task;
+        if (AegiTaskExecutionContext.Current is { } parent)
+        {
+            return parent.RunStageAsync("Tasks.LibraryOperation", _ => ExecuteLibraryOperationAsync(operation, kind, propagateFailure),
+                [GetLibraryResource(kind)]);
+        }
+        return Tasks.Submit(new PersonalLibraryTask(this, kind, operation, propagateFailure)).Completion;
     }
 
-    private async Task ExecuteLibraryOperationAsync(Task previous, Func<Task> operation, PersonalLibraryKind kind,
-        bool propagateFailure, TaskCompletionSource completion, TaskCompletionSource result)
+    internal AegiTaskResource GetLibraryResource(PersonalLibraryKind kind)
     {
-        Exception? failure = null;
+        var name = kind switch
+        {
+            PersonalLibraryKind.STYLE => "subtitle-styles.aegistyles",
+            PersonalLibraryKind.EFFECT => "effect-scripts.json",
+            PersonalLibraryKind.EXPORT => "export-presets.aegiexports",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
+        return AegiTaskResource.StoragePath(Path.Combine(PreferencesStore.DirectoryPath, name));
+    }
+
+    private async Task InitializeAndLoadFontsAsync(Task initialization)
+    {
         try
         {
-            await previous;
+            await initialization;
+        }
+        catch (ApplicationInitializationRecoveryException)
+        {
+        }
+        if (!closing)
+        {
+            _ = ObserveFontsAsync();
+        }
+    }
+
+    private async Task ObserveFontsAsync()
+    {
+        try
+        {
+            await fonts.EnsureLoadedAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            ReportError(error);
+        }
+    }
+
+    internal async Task InitializeAsync(AegiTaskExecutionContext context)
+    {
+        await context.RunStageAsync("Tasks.SettingsRestore", async _ =>
+        {
+            await Task.Run(() => SettingsRestoreStartup.ApplyOnce(PreferencesStore.DirectoryPath));
+        });
+        var loaded = initialPreferences ?? await Task.Run(PreferencesStore.Load);
+        loaded.Validate();
+        lock (lifetime)
+        {
+            preferences = loaded;
+            preferencesLoadError = PreferencesStore.LoadError;
+        }
+        Tasks.MaximumConcurrentTasks = loaded.MaximumConcurrentTasks;
+        ApplyAppearance(loaded);
+        PreferencesChanged?.Invoke(this, EventArgs.Empty);
+        await RecentProjects.InitializeAsync();
+        InitialLayout = await Task.Run(() =>
+        {
+            using var layoutStore = new WorkspaceLayoutStore(PreferencesStore.DirectoryPath);
+            return layoutStore.Load();
+        });
+        LastError = SettingsRestoreStartup.GetError(PreferencesStore.DirectoryPath) ?? PreferencesStore.LoadError ?? RecentProjects.LastError;
+        await context.RunStageAsync("Tasks.StyleLibrary", _ => ExecuteLibraryOperationAsync(() => StyleLibrary.LoadAsync(), PersonalLibraryKind.STYLE, false));
+        await context.RunStageAsync("Tasks.EffectLibrary", _ => ExecuteLibraryOperationAsync(() => EffectScriptLibrary.LoadAsync(), PersonalLibraryKind.EFFECT, false));
+        await context.RunStageAsync("Tasks.ExportPresetLibrary", _ => ExecuteLibraryOperationAsync(() => ExportPresetLibrary.LoadAsync(), PersonalLibraryKind.EXPORT, false));
+        var recoveryErrors = new List<Exception>();
+        foreach (var error in new[] { SettingsRestoreStartup.GetError(PreferencesStore.DirectoryPath), preferencesLoadError,
+                     RecentProjects.LastError })
+        {
+            if (error is not null)
+            {
+                recoveryErrors.Add(error);
+            }
+        }
+        lock (lifetime)
+        {
+            recoveryErrors.AddRange(libraryLoadErrors.Values);
+        }
+        if (recoveryErrors.Count > 0)
+        {
+            throw new ApplicationInitializationRecoveryException(recoveryErrors);
+        }
+    }
+
+    internal async Task ExecuteLibraryOperationAsync(Func<Task> operation, PersonalLibraryKind kind, bool propagateFailure)
+    {
+        IncrementLibraryOperations(kind, 1);
+        BusyChanged?.Invoke(this, EventArgs.Empty);
+        try
+        {
             var before = LibrarySnapshot(kind);
             await operation();
             var after = LibrarySnapshot(kind);
@@ -228,55 +301,45 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException cancellation)
+        catch (OperationCanceledException)
         {
-            failure = cancellation;
+            if (propagateFailure)
+            {
+                throw;
+            }
         }
         catch (Exception error)
         {
-            failure = error;
             if (!propagateFailure)
             {
                 SetLibraryLoadError(kind, error);
             }
             ReportError(error);
+            if (propagateFailure)
+            {
+                throw;
+            }
         }
         finally
         {
-            switch (kind)
-            {
-                case PersonalLibraryKind.STYLE:
-                    Interlocked.Decrement(ref queuedStyles);
-                    break;
-                case PersonalLibraryKind.EFFECT:
-                    Interlocked.Decrement(ref queuedEffects);
-                    break;
-                case PersonalLibraryKind.EXPORT:
-                    Interlocked.Decrement(ref queuedExports);
-                    break;
-            }
+            IncrementLibraryOperations(kind, -1);
+            BusyChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
-            try
-            {
-                BusyChanged?.Invoke(this, EventArgs.Empty);
-            }
-            finally
-            {
-                completion.TrySetResult();
-            }
-        }
-
-        if (!propagateFailure || failure is null)
+    private void IncrementLibraryOperations(PersonalLibraryKind kind, int change)
+    {
+        switch (kind)
         {
-            result.TrySetResult();
-        }
-        else if (failure is OperationCanceledException cancellation)
-        {
-            result.TrySetCanceled(cancellation.CancellationToken);
-        }
-        else
-        {
-            result.TrySetException(failure);
+            case PersonalLibraryKind.STYLE:
+                Interlocked.Add(ref queuedStyles, change);
+                break;
+            case PersonalLibraryKind.EFFECT:
+                Interlocked.Add(ref queuedEffects, change);
+                break;
+            case PersonalLibraryKind.EXPORT:
+                Interlocked.Add(ref queuedExports, change);
+                break;
         }
     }
 
@@ -291,11 +354,10 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         };
     }
 
-    private async Task SavePreferencesAsync(Task previous, WorkbenchPreferences value, TaskCompletionSource completion)
+    internal async Task SavePreferencesAsync(WorkbenchPreferences value)
     {
         try
         {
-            await previous;
             await PreferencesStore.SaveAsync(value);
             lock (lifetime)
             {
@@ -305,10 +367,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         catch (Exception error)
         {
             ReportError(error);
-        }
-        finally
-        {
-            completion.TrySetResult();
+            throw;
         }
     }
 
@@ -379,7 +438,11 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
 
     private async Task DisposeCoreAsync()
     {
-        await Completion;
+        foreach (var task in Tasks.GetSnapshots().Where(value => !value.IsFinished && value.CanCancel))
+        {
+            Tasks.RequestCancel(task.Id);
+        }
+        await Tasks.DisposeAsync();
         RecentProjects.ErrorChanged -= OnRecentProjectsError;
         await RecentProjects.DisposeAsync();
         StyleLibrary.Dispose();

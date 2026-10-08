@@ -25,7 +25,7 @@ internal sealed partial class WorkbenchSession
 
     private void OnTimelinePreferencePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (updatingWorkbench || closing)
+        if (IsUpdating || closing)
         {
             return;
         }

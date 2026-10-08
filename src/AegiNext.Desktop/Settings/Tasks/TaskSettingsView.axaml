@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tasks="using:AegiNext.Desktop.Settings.Tasks"
+             xmlns:inputs="using:AegiNext.Desktop.Controls"
+             x:Class="AegiNext.Desktop.Settings.Tasks.TaskSettingsView"
+             x:DataType="tasks:TaskSettingsViewModel" Classes="business-surface">
+  <ScrollViewer Name="TasksPage">
+    <StackPanel Spacing="16">
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
+            <TextBlock Text="{Loc Key=Settings.MaximumConcurrentTasks}" VerticalAlignment="Center" />
+            <inputs:NumericDraftInput Name="MaximumConcurrentTasksInput" Grid.Column="1"
+                RawText="{Binding MaximumConcurrentTasksText, Mode=TwoWay}"
+                Minimum="1" Maximum="32" Increment="1" FormatString="0" PreserveDoublePrecision="True"
+                AutomationProperties.Name="{Loc Key=Settings.MaximumConcurrentTasks}" />
+          </Grid>
+          <TextBlock Classes="field" Text="{Loc Key=Settings.MaximumConcurrentTasksHelp}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

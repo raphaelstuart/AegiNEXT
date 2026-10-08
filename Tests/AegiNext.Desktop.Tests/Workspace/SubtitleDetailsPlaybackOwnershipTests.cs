@@ -27,6 +27,9 @@ public sealed class SubtitleDetailsPlaybackOwnershipTests
         context.Session.SelectCue(line.Id);
         await context.Session.Details.PlayAsync(false, true);
         Assert.True(context.Session.Details.IsPlaying);
+        Assert.Same(document, context.Editor.Snapshot);
+        Assert.False(context.Session.Controller.Snapshot.IsOpening,
+            string.Join(';', context.Session.ApplicationContext.Tasks.GetSnapshots().Select(task => task.Name + "/" + task.State)));
         using var auditionOwner = new CancellationTokenSource();
         await context.Session.Controller.PlayAudioRangeAsync(new(1, 2), new(3, 4), auditionOwner.Token);
 

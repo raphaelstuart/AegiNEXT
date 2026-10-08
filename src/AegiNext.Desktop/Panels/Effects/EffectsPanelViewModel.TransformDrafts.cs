@@ -22,7 +22,7 @@ internal sealed partial class EffectsPanelViewModel
         ("OperationValueXInput", OperationValueX), ("OperationValueYInput", OperationValueY),
         ("OperationAccelerationInput", OperationAcceleration), ("OperationOrderInput", OperationOrder)
     ];
-    private bool HasOperationDraft => OperationFields.Any(draftField => operationOriginals.TryGetValue(draftField.Name, out var original) && draftField.Draft.RawText != original);
+    internal bool HasOperationDraft => OperationFields.Any(draftField => operationOriginals.TryGetValue(draftField.Name, out var original) && draftField.Draft.RawText != original);
 
     private void InitializeOperationDrafts()
     {
@@ -34,6 +34,7 @@ internal sealed partial class EffectsPanelViewModel
                 {
                     return;
                 }
+                session.NotifyTaskInputChanged();
                 operationSource ??= session.DocumentSnapshot;
                 operationLayer ??= SelectedLayer?.Id;
                 operationTarget = Target;
@@ -123,6 +124,14 @@ internal sealed partial class EffectsPanelViewModel
         catch (Exception error) when (error is InvalidDataException or InvalidOperationException or ArgumentException or OverflowException)
         {
             return document;
+        }
+    }
+
+    internal void RebindRelocatedSource(ProjectDocument document)
+    {
+        if (operationSource is not null)
+        {
+            operationSource = document;
         }
     }
 

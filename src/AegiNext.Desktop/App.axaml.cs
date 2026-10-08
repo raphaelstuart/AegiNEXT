@@ -63,15 +63,28 @@ public class App : Avalonia.Application
             else
             {
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-                using var preferencesStore = new WorkbenchPreferencesStore(
-                    Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
-                SettingsRestoreStartup.ApplyOnce(preferencesStore.DirectoryPath);
-                var startup = new DesktopStartupCoordinator(desktop);
-                startup.Start();
+                _ = StartDesktopAsync(desktop);
             }
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task StartDesktopAsync(IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        var context = new DesktopApplicationContext();
+        try
+        {
+            await context.Initialization;
+            var startup = new DesktopStartupCoordinator(desktop, context);
+            startup.Start();
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Trace.TraceError(error.ToString());
+            await context.DisposeAsync();
+            desktop.Shutdown(1);
+        }
     }
 
     [SupportedOSPlatform("macos")]

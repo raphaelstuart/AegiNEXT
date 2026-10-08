@@ -16,10 +16,27 @@ public sealed class LocalizationCatalogTests
         [("en-US", "Workbench.DeleteTrack")] = ("Delete empty track", "Delete track"),
         [("en-US", "Settings.IMPORT_SUBTITLES")] = ("Import subtitles", "Import SRT subtitles"),
         [("en-US", "Settings.EXPORT_SUBTITLES")] = ("Export subtitles", "Export SRT subtitles"),
+        [("en-US", "Settings.Apply")] = ("Apply to current subtitle", "Apply to current"),
+        [("en-US", "Settings.Capture")] = ("Capture current subtitle", "Capture current"),
         [("zh-CN", "Workbench.Karaoke")] = ("逐字高亮", "高亮"),
         [("zh-CN", "Workbench.DeleteTrack")] = ("删除空轨道", "删除轨道"),
         [("zh-CN", "Settings.IMPORT_SUBTITLES")] = ("导入字幕", "导入 SRT 字幕"),
-        [("zh-CN", "Settings.EXPORT_SUBTITLES")] = ("导出字幕", "导出 SRT 字幕")
+        [("zh-CN", "Settings.EXPORT_SUBTITLES")] = ("导出字幕", "导出 SRT 字幕"),
+        [("zh-CN", "Settings.Apply")] = ("应用到当前字幕", "应用到当前"),
+        [("zh-CN", "Settings.Capture")] = ("从当前字幕获取", "获取当前"),
+        [("zh-CN", "Settings.NEW_PROJECT")] = ("新建工程", "新建项目"),
+        [("zh-CN", "Settings.OPEN_PROJECT")] = ("打开工程", "打开项目"),
+        [("zh-CN", "Settings.SAVE_PROJECT")] = ("保存工程", "保存项目"),
+        [("zh-CN", "Settings.SAVE_PROJECT_AS")] = ("工程另存为", "项目另存为"),
+        [("zh-CN", "Workbench.OpenProject")] = ("打开工程", "打开项目"),
+        [("zh-CN", "Workbench.Projects")] = ("AegiNext 工程", "AegiNext 项目"),
+        [("zh-CN", "Workbench.UnsavedText")] = ("工程有未保存的修改。", "项目有未保存的修改。"),
+        [("zh-CN", "Workbench.Untitled")] = ("未命名工程", "未命名项目"),
+        [("zh-CN", "WorkflowLog.ProjectCreated")] = ("已创建工程", "已创建项目"),
+        [("zh-CN", "WorkflowLog.ProjectOpened")] = ("已打开工程", "已打开项目"),
+        [("zh-CN", "WindowChromeProbe.Description")] =
+            ("检查系统按钮、空白标题拖动、菜单点击、全屏和尺寸恢复。此窗口不加载工程或个人设置。",
+                "检查系统按钮、空白标题拖动、菜单点击、全屏和尺寸恢复。此窗口不加载项目或个人设置。")
     };
     /// <summary>Language metadata controls discovery independently of file names.</summary>
     [Fact]

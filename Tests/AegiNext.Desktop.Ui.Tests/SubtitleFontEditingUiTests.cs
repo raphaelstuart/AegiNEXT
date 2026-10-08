@@ -13,7 +13,7 @@ public sealed class SubtitleFontEditingUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var window = context.Window;
-        window.GetCommand(WorkbenchCommand.ADD_SUBTITLE).Execute(null);
+        await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
         var original = window.DocumentSnapshot;
         var picker = UiTestActions.Find<FontFamilyPicker>(window, "FontCombo");
         Assert.Equal(Assert.Single(original.Subtitles).Style.FontFamily, picker.Text);

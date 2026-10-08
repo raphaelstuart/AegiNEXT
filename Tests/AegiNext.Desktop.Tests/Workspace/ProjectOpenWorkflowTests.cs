@@ -165,7 +165,7 @@ public sealed class ProjectOpenWorkflowTests
     }
 
     [Fact]
-    public async Task CancellationAfterCommitDoesNotReclassifyAnOpenedProjectAsCancelled()
+    public async Task CallerWaitCancellationAfterCommitDoesNotUndoTheOpenedProject()
     {
         await using var context = new WorkspaceSessionTestContext();
         await context.InitializeAsync();
@@ -178,8 +178,9 @@ public sealed class ProjectOpenWorkflowTests
         var result = await workflow.OpenProjectAsync(path, cancellation.Token);
 
         Assert.True(cancellation.IsCancellationRequested);
-        Assert.Equal(ProjectOpenStatus.OPENED, result.Status);
+        Assert.Equal(ProjectOpenStatus.CANCELLED, result.Status);
         Assert.Null(result.Error);
+        await context.Session.WaitForProjectIdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(path, context.Session.ProjectPath);
         Assert.Equal("Committed", context.Editor.Snapshot.Name);
         Assert.Equal(path, Assert.Single(context.Session.ApplicationContext.RecentProjects.Entries).Path);

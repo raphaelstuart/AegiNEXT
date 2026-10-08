@@ -37,7 +37,7 @@ internal sealed class SettingsExportPresetCoordinator : IDisposable
 
     internal Task Completion { get; private set; } = Task.CompletedTask;
 
-    /// <summary>取消当前窗口的选择器与库请求，解除所有共享事件。</summary>
+    /// <summary>取消当前窗口的交互等待并解除共享事件，已提交的原子库操作由任务服务收尾。</summary>
     public void Dispose()
     {
         if (disposed)
@@ -64,7 +64,7 @@ internal sealed class SettingsExportPresetCoordinator : IDisposable
         return RunAsync(async token =>
         {
             await applicationContext.RunExportPresetOperationAsync(() =>
-                applicationContext.ExportPresetLibrary.UpsertAsync(preset, token));
+                applicationContext.ExportPresetLibrary.UpsertAsync(preset, CancellationToken.None));
             if (!disposed)
             {
                 window.ViewModel.ExportPresets.UpdatePresets(applicationContext.ExportPresetLibrary.Snapshot.Presets, preset.Id);
@@ -123,7 +123,7 @@ internal sealed class SettingsExportPresetCoordinator : IDisposable
             if (paths.Count > 0)
             {
                 await applicationContext.RunExportPresetOperationAsync(() =>
-                    applicationContext.ExportPresetLibrary.ImportAsync(paths, token));
+                    applicationContext.ExportPresetLibrary.ImportAsync(paths, CancellationToken.None));
             }
         });
     }
@@ -142,8 +142,7 @@ internal sealed class SettingsExportPresetCoordinator : IDisposable
                 ".aegiexports", "export-presets.aegiexports").WaitAsync(token);
             if (path is not null)
             {
-                await applicationContext.RunExportPresetOperationAsync(() =>
-                    applicationContext.ExportPresetLibrary.ExportPresetsAsync(presets, path, token));
+                await applicationContext.Tasks.Submit(new SettingsExportPresetExportTask(applicationContext, presets, path)).Completion;
             }
         });
     }
@@ -167,7 +166,7 @@ internal sealed class SettingsExportPresetCoordinator : IDisposable
             if (!e.IsDraftOnly)
             {
                 await applicationContext.RunExportPresetOperationAsync(() =>
-                    applicationContext.ExportPresetLibrary.RemoveAsync(e.Ids, token));
+                    applicationContext.ExportPresetLibrary.RemoveAsync(e.Ids, CancellationToken.None));
             }
             if (!disposed && window.ViewModel.ExportPresets.Draft?.Id is { } current
                 && (e.IsDraftOnly ? current == e.DraftId : e.Ids.Contains(current)))

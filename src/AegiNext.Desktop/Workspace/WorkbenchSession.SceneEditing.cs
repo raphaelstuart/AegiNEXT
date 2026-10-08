@@ -102,15 +102,14 @@ internal sealed partial class WorkbenchSession
         }
         inspectorTime = EditingPosition;
         inspectorLayerId = SelectedLayerId;
-        var previous = updatingWorkbench;
-        updatingWorkbench = true;
+        using var updateLease = BeginWorkbenchUpdate();
         try
         {
             RefreshInspector();
         }
         finally
         {
-            updatingWorkbench = previous;
+            updateLease.Dispose();
         }
     }
 

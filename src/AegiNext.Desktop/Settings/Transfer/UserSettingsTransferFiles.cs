@@ -44,6 +44,7 @@ internal static class UserSettingsTransferFiles
         var read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
         while (read > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             RequireLength(buffer.Length + read, maximumBytes);
             buffer.Write(chunk, 0, read);
             read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
@@ -58,13 +59,14 @@ internal static class UserSettingsTransferFiles
         return Read(stream, maximumBytes);
     }
 
-    internal static byte[] Read(Stream stream, int maximumBytes)
+    internal static byte[] Read(Stream stream, int maximumBytes, CancellationToken cancellationToken = default)
     {
         using var buffer = new MemoryStream();
         var chunk = new byte[BUFFER_SIZE];
         var read = stream.Read(chunk, 0, chunk.Length);
         while (read > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             RequireLength(buffer.Length + read, maximumBytes);
             buffer.Write(chunk, 0, read);
             read = stream.Read(chunk, 0, chunk.Length);
@@ -72,7 +74,13 @@ internal static class UserSettingsTransferFiles
         return buffer.ToArray();
     }
 
-    internal static async Task WriteAtomicAsync(string path, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken)
+    internal static Task WriteAtomicAsync(string path, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken)
+    {
+        return WriteAtomicAsync(path, bytes, null, cancellationToken);
+    }
+
+    internal static async Task WriteAtomicAsync(string path, ReadOnlyMemory<byte> bytes, Action? beforeCommit,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var directory = Path.GetDirectoryName(path)!;
@@ -88,6 +96,7 @@ internal static class UserSettingsTransferFiles
                 stream.Flush(true);
             }
             cancellationToken.ThrowIfCancellationRequested();
+            beforeCommit?.Invoke();
             File.Move(temporary, path, true);
         }
         finally

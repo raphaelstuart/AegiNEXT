@@ -45,6 +45,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool closing;
     private bool closeCompleted;
     private Task? disposeTask;
+    private Task? closeOperation;
     private readonly SettingsWindowCoordinator settingsCoordinator;
     private SettingsWindow? settingsWindow => settingsCoordinator.Window;
 
@@ -71,12 +72,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             throw new InvalidOperationException("必须先保存或打开项目文件，才能进入主界面。");
         }
 
-        var startup = preparedSession is null ? WorkbenchCompositionRoot.LoadPreferences() : null;
+        WorkbenchStartupPreferences? startup = null;
         AvaloniaXamlLoader.Load(this);
         Session = preparedSession ?? WorkbenchCompositionRoot.Create(new WindowWorkbenchDialogService(this,
             registerWindow: RegisterAuxiliaryWindow), controllerFactory, startup: startup);
         ViewModel = Session.ViewModel;
         DataContext = ViewModel;
+        InitializeTaskCenter(Session.ApplicationContext.Tasks);
         panels = new(StringComparer.Ordinal)
         {
             ["preview"] = new PreviewPanelView(ViewModel.Preview, Session),
@@ -96,7 +98,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         windowRegistry.Register(this, () => ViewModel.Title, this.FindControl<WindowTitleBar>("TitleBar")!,
             WorkbenchWindowRole.MAIN);
         layouts = new(this, panels, Session.PreferencesStore.DirectoryPath, ViewModel.TryCommitDrafts,
-            ViewModel.CancelGestures, RegisterWorkspaceWindow);
+            ViewModel.CancelGestures, RegisterWorkspaceWindow, Session.ApplicationContext.Tasks,
+            Session.ApplicationContext.InitialLayout);
         settingsCoordinator = new(Session.ApplicationContext, captureLayout: layouts.CaptureFile,
             requestApplicationExit: RequestApplicationExit);
         settingsCoordinator.EffectScriptErrorReported += RevealEffectScriptError;
@@ -168,7 +171,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             if (!closing)
             {
                 closing = true;
-                _ = CompleteCloseAsync();
+                closeOperation = CompleteCloseAsync();
             }
         }
         base.OnClosing(e);
@@ -184,7 +187,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 IsApplicationExitRequested = false;
                 return;
             }
-            await DisposeAsync();
+            await DisposeOnceAsync();
             closeCompleted = true;
             Close();
         }
@@ -199,12 +202,28 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
+        if (closeOperation is { IsCompleted: false } pendingClose)
+        {
+            return new(DisposeAfterCloseAsync(pendingClose));
+        }
+        return DisposeOnceAsync();
+    }
+
+    private async Task DisposeAfterCloseAsync(Task pendingClose)
+    {
+        await pendingClose;
+        await DisposeOnceAsync();
+    }
+
+    private ValueTask DisposeOnceAsync()
+    {
         disposeTask ??= DisposeCoreAsync();
         return new(disposeTask);
     }
 
     private async Task DisposeCoreAsync()
     {
+        DisposeTaskCenter();
         ViewModel.Log.PropertyChanged -= OnLogChanged;
         workspaceHost.IsEnabled = false;
         clockTimer.Stop();
@@ -216,7 +235,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             try
             {
-                await layouts.FlushAsync();
+                if (!Session.IsClosing)
+                {
+                    await layouts.FlushAsync();
+                }
             }
             finally
             {
@@ -412,7 +434,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             if (pair.Key != WorkbenchPanelIds.LOG)
             {
-                pair.Value.SetCurrentValue(InputElement.IsEnabledProperty, !ViewModel.IsBusy);
+                pair.Value.SetCurrentValue(InputElement.IsEnabledProperty, !Session.IsClosing &&
+                    !Session.ApplicationContext.Tasks.IsEditingRestricted(Session.TaskScope));
             }
         }
     }

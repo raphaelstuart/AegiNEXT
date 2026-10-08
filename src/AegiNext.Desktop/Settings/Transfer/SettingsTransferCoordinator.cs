@@ -1,3 +1,4 @@
+using AegiNext.Application.Tasks;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Layouts;
 using AegiNext.Desktop.Startup;
@@ -15,6 +16,7 @@ internal sealed class SettingsTransferCoordinator : IDisposable
     private readonly Action? requestApplicationExit;
     private readonly CancellationTokenSource cancellation = new();
     private UserSettingsBundle? preview;
+    private AegiTaskHandle? activeTask;
     private bool activeOperation;
     private bool disposed;
 
@@ -33,7 +35,6 @@ internal sealed class SettingsTransferCoordinator : IDisposable
         viewModel.CancelPendingRequested += OnCancelPendingRequested;
         viewModel.RestartRequested += OnRestartRequested;
         applicationContext.SettingsRestore.PendingChanged += OnPendingChanged;
-        applicationContext.BusyChanged += OnBusyChanged;
         RefreshPending();
         RefreshAvailability();
     }
@@ -50,6 +51,7 @@ internal sealed class SettingsTransferCoordinator : IDisposable
 
         disposed = true;
         cancellation.Cancel();
+        activeTask?.RequestCancel();
         var viewModel = window.ViewModel.Transfer;
         viewModel.ExportRequested -= OnExportRequested;
         viewModel.ImportRequested -= OnImportRequested;
@@ -57,7 +59,6 @@ internal sealed class SettingsTransferCoordinator : IDisposable
         viewModel.CancelPendingRequested -= OnCancelPendingRequested;
         viewModel.RestartRequested -= OnRestartRequested;
         applicationContext.SettingsRestore.PendingChanged -= OnPendingChanged;
-        applicationContext.BusyChanged -= OnBusyChanged;
         cancellation.Dispose();
     }
 
@@ -66,33 +67,42 @@ internal sealed class SettingsTransferCoordinator : IDisposable
         _ = RunAsync(async token =>
         {
             await applicationContext.Initialization.WaitAsync(token);
-            await applicationContext.Completion.WaitAsync(token);
             token.ThrowIfCancellationRequested();
             if (applicationContext.SettingsLoadError is { } error)
             {
                 throw new InvalidOperationException(Localization.Get("Settings.TransferExportUnavailable"), error);
             }
 
-            var bundle = new UserSettingsBundle
+            var layouts = captureLayout?.Invoke();
+            var snapshot = new UserSettingsBundle
             {
                 Preferences = applicationContext.Preferences,
                 Styles = applicationContext.StyleLibrary.Snapshot,
                 Effects = applicationContext.EffectScriptLibrary.Snapshot,
                 ExportPresets = applicationContext.ExportPresetLibrary.Snapshot,
-                Layouts = captureLayout?.Invoke() ?? new WorkspaceLayoutStore(applicationContext.PreferencesStore.DirectoryPath).LoadStrict()
+                Layouts = layouts ?? applicationContext.InitialLayout
             };
-            _ = UserSettingsBundleStore.Serialize(bundle);
+            if (layouts is null)
+            {
+                snapshot = snapshot with
+                {
+                    Layouts = await SubmitAsync(new UserSettingsLayoutCaptureTask(applicationContext), token)
+                };
+            }
+
             var path = await dialogs.SaveFileAsync("ExportUserSettings", "UserSettingsFiles", ["*.aegisettings"],
                 ".aegisettings", "settings.aegisettings").WaitAsync(token);
             token.ThrowIfCancellationRequested();
-            if (path is not null)
+            if (path is null)
             {
-                ValidateExportDestination(path);
-                await UserSettingsBundleStore.SaveAsync(bundle, path, token);
-                if (!disposed)
-                {
-                    window.ViewModel.Transfer.ShowStatus("Settings.TransferExported");
-                }
+                return;
+            }
+
+            ValidateExportDestination(path);
+            await SubmitAsync(new UserSettingsExportTask(applicationContext, snapshot, path), token);
+            if (!disposed)
+            {
+                window.ViewModel.Transfer.ShowStatus("Settings.TransferExported");
             }
         });
     }
@@ -108,8 +118,7 @@ internal sealed class SettingsTransferCoordinator : IDisposable
                 return;
             }
 
-            var imported = await UserSettingsBundleStore.LoadAsync(path, token);
-            token.ThrowIfCancellationRequested();
+            var imported = await SubmitAsync(new UserSettingsImportTask(path), token);
             if (!disposed)
             {
                 preview = imported;
@@ -160,7 +169,7 @@ internal sealed class SettingsTransferCoordinator : IDisposable
                 }
             } : imported;
             adapted.Preferences.Validate();
-            await applicationContext.SettingsRestore.StageAsync(adapted, token);
+            await SubmitAsync(new UserSettingsRestoreStageTask(applicationContext, adapted), token);
             if (!disposed)
             {
                 preview = null;
@@ -176,7 +185,7 @@ internal sealed class SettingsTransferCoordinator : IDisposable
     {
         _ = RunAsync(async token =>
         {
-            await applicationContext.SettingsRestore.CancelPendingAsync(token);
+            await SubmitAsync(new UserSettingsRestoreCancelTask(applicationContext), token);
             if (!disposed)
             {
                 RefreshPending();
@@ -234,18 +243,37 @@ internal sealed class SettingsTransferCoordinator : IDisposable
         }
     }
 
-    private void OnBusyChanged(object? sender, EventArgs e)
-    {
-        RefreshAvailability();
-    }
-
     private void RefreshAvailability()
     {
         if (!disposed)
         {
-            window.ViewModel.Transfer.IsBusy = activeOperation || applicationContext.StylesBusy ||
-                applicationContext.EffectsBusy || applicationContext.ExportPresetsBusy;
+            window.ViewModel.Transfer.IsBusy = activeOperation;
         }
+    }
+
+    private async Task SubmitAsync(AegiTask task, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        activeTask = applicationContext.Tasks.Submit(task);
+        if (disposed || cancellationToken.IsCancellationRequested)
+        {
+            activeTask.RequestCancel();
+        }
+
+        await activeTask.Completion;
+    }
+
+    private async Task<TResult> SubmitAsync<TResult>(AegiTask<TResult> task, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var handle = applicationContext.Tasks.Submit(task);
+        activeTask = handle;
+        if (disposed || cancellationToken.IsCancellationRequested)
+        {
+            handle.RequestCancel();
+        }
+
+        return await handle.Completion;
     }
 
     private Task RunAsync(Func<CancellationToken, Task> operation)
@@ -260,19 +288,17 @@ internal sealed class SettingsTransferCoordinator : IDisposable
         window.ShowError(null);
         window.ViewModel.Transfer.ShowError(null);
         window.ViewModel.Transfer.ShowStatus(null);
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Completion = completion.Task;
-        return ExecuteAsync(operation, completion, cancellation.Token);
+        Completion = ExecuteAsync(operation, cancellation.Token);
+        return Completion;
     }
 
-    private async Task ExecuteAsync(Func<CancellationToken, Task> operation, TaskCompletionSource completion,
-        CancellationToken token)
+    private async Task ExecuteAsync(Func<CancellationToken, Task> operation, CancellationToken token)
     {
         try
         {
             await operation(token);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
         }
         catch (Exception error)
@@ -284,15 +310,9 @@ internal sealed class SettingsTransferCoordinator : IDisposable
         }
         finally
         {
+            activeTask = null;
             activeOperation = false;
-            try
-            {
-                RefreshAvailability();
-            }
-            finally
-            {
-                completion.TrySetResult();
-            }
+            RefreshAvailability();
         }
     }
 }

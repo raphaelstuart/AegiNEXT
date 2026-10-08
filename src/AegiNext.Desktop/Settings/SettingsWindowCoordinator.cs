@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 using System.ComponentModel;
-using AegiNext.Application.Presets;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Effects;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
@@ -10,7 +10,9 @@ using AegiNext.Desktop.Layouts;
 using AegiNext.Desktop.Settings.Effects;
 using AegiNext.Desktop.Settings.Export;
 using AegiNext.Desktop.Settings.Projects;
+using AegiNext.Desktop.Settings.Presets;
 using AegiNext.Desktop.Settings.Preview;
+using AegiNext.Desktop.Settings.Tasks;
 using AegiNext.Desktop.Settings.TimingPostProcessor;
 using AegiNext.Desktop.Settings.Transfer;
 using AegiNext.Desktop.Startup;
@@ -35,6 +37,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private Task closedTransferCompletion = Task.CompletedTask;
     private CancellationTokenSource? deletionCancellation;
     private bool deletionActive;
+    private readonly HashSet<AegiTaskHandle> libraryTasks = [];
     internal Task ExportCompletion => exportPresets?.Completion ?? Task.CompletedTask;
     internal Task TransferCompletion => Task.WhenAll(closedTransferCompletion, transfer?.Completion ?? Task.CompletedTask);
     internal Task TimingCompletion { get; private set; } = Task.CompletedTask;
@@ -159,6 +162,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ViewModel.Media.AudioCalibrationChanged += OnAudioCalibrationChanged;
         window.ProjectsChanged += OnProjectsChanged;
         window.PreviewChanged += OnPreviewChanged;
+        window.TasksChanged += OnTasksChanged;
         window.TimingPreferencesChanged += OnTimingPreferencesChanged;
         window.TimingAssociateRequested += OnTimingAssociationRequested;
         window.TimingUnlinkRequested += OnTimingAssociationRequested;
@@ -204,6 +208,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ViewModel.Media.AudioCalibrationChanged -= OnAudioCalibrationChanged;
         window.ProjectsChanged -= OnProjectsChanged;
         window.PreviewChanged -= OnPreviewChanged;
+        window.TasksChanged -= OnTasksChanged;
         window.TimingPreferencesChanged -= OnTimingPreferencesChanged;
         window.TimingAssociateRequested -= OnTimingAssociationRequested;
         window.TimingUnlinkRequested -= OnTimingAssociationRequested;
@@ -262,6 +267,10 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private void CancelDeletion()
     {
         deletionCancellation?.Cancel();
+        foreach (var task in libraryTasks.ToArray())
+        {
+            task.RequestCancel();
+        }
         deletionCancellation?.Dispose();
         deletionCancellation = null;
         deletionActive = false;
@@ -362,6 +371,11 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private void OnProjectsChanged(object? sender, ProjectPreferencesChangedEventArgs e)
     {
         UpdatePreferences(value => value with { Projects = e.Preferences });
+    }
+
+    private void OnTasksChanged(object? sender, TaskSettingsChangedEventArgs e)
+    {
+        UpdatePreferences(value => value with { MaximumConcurrentTasks = e.MaximumConcurrentTasks });
     }
 
     private void OnPreviewChanged(object? sender, PreviewSettingsChangedEventArgs e)
@@ -597,31 +611,45 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private void OnImportStylesRequested(object? sender, EventArgs e)
     {
         var service = dialogs!;
-        _ = RunAsync(() => applicationContext.RunStyleOperationAsync(async () =>
+        var target = Window;
+        var token = deletionCancellation!.Token;
+        _ = RunAsync(async () =>
         {
-            var paths = await service.OpenFilesAsync("ImportStyles", "StyleFiles", ["*.aegistyles"]);
-            await applicationContext.StyleLibrary.ImportAsync(paths);
-        }));
+            var paths = await service.OpenFilesAsync("ImportStyles", "StyleFiles", ["*.aegistyles"]).WaitAsync(token);
+            token.ThrowIfCancellationRequested();
+            if (paths.Count > 0 && !disposed && ReferenceEquals(Window, target))
+            {
+                await SubmitLibraryTaskAsync(new SettingsStyleImportTask(applicationContext, paths), token);
+            }
+        });
     }
 
     private void OnExportStylesRequested(object? sender, SettingsStylesExportEventArgs e)
     {
         var service = dialogs!;
-        _ = RunAsync(() => applicationContext.RunStyleOperationAsync(async () =>
+        var target = Window;
+        var token = deletionCancellation!.Token;
+        var presets = e.Presets;
+        _ = RunAsync(async () =>
         {
-            if (e.Presets.Length == 1)
+            string? destination = null;
+            var batch = presets.Length > 1;
+            if (presets.Length == 1)
             {
-                var path = await service.SaveFileAsync("ExportStyles", "StyleFiles", ["*.aegistyles"], ".aegistyles", "styles.aegistyles");
-                if (path is not null)
-                {
-                    await applicationContext.StyleLibrary.ExportAsync(e.Presets[0], path);
-                }
+                destination = await service.SaveFileAsync("ExportStyles", "StyleFiles", ["*.aegistyles"],
+                    ".aegistyles", "styles.aegistyles").WaitAsync(token);
             }
-            else if (e.Presets.Length > 1 && await service.OpenFolderAsync("ExportStyles") is { } directory)
+            else if (batch)
             {
-                await PresetBatchExporter.ExportStylesAsync(e.Presets, directory);
+                destination = await service.OpenFolderAsync("ExportStyles").WaitAsync(token);
             }
-        }));
+
+            token.ThrowIfCancellationRequested();
+            if (destination is not null && !disposed && ReferenceEquals(Window, target))
+            {
+                await SubmitLibraryTaskAsync(new SettingsStyleExportTask(applicationContext, presets, destination, batch), token);
+            }
+        });
     }
 
     private void OnEffectValidationFailed(object? sender, EffectScriptValidationFailedEventArgs e)
@@ -645,33 +673,65 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
     private void OnImportEffectRequested(object? sender, EventArgs e)
     {
         var service = dialogs!;
-        _ = RunAsync(() => applicationContext.RunEffectOperationAsync(async () =>
+        var target = Window;
+        var token = deletionCancellation!.Token;
+        _ = RunAsync(async () =>
         {
-            var paths = await service.OpenFilesAsync("ImportEffectScripts", "EffectScriptFiles", ["*.aegifx"]);
-            await applicationContext.EffectScriptLibrary.ImportAsync(paths);
-        }), true);
+            var paths = await service.OpenFilesAsync("ImportEffectScripts", "EffectScriptFiles", ["*.aegifx"]).WaitAsync(token);
+            token.ThrowIfCancellationRequested();
+            if (paths.Count > 0 && !disposed && ReferenceEquals(Window, target))
+            {
+                await SubmitLibraryTaskAsync(new SettingsEffectImportTask(applicationContext, paths), token);
+            }
+        }, true);
     }
 
     private void OnExportEffectRequested(object? sender, SettingsEffectsExportEventArgs e)
     {
         var service = dialogs!;
-        _ = RunAsync(() => applicationContext.RunEffectOperationAsync(async () =>
+        var target = Window;
+        var token = deletionCancellation!.Token;
+        var presets = e.Presets;
+        _ = RunAsync(async () =>
         {
-            if (e.Presets.Length == 1)
+            string? destination = null;
+            var batch = presets.Length > 1;
+            if (presets.Length == 1)
             {
-                var preset = e.Presets[0];
-                var script = EffectScriptParser.Parse(preset.Source);
-                var path = await service.SaveFileAsync("ExportEffectScripts", "EffectScriptFiles", ["*.aegifx"], ".aegifx", script.Id + ".aegifx");
-                if (path is not null)
-                {
-                    await applicationContext.EffectScriptLibrary.ExportAsync(preset, path);
-                }
+                var script = EffectScriptParser.Parse(presets[0].Source);
+                destination = await service.SaveFileAsync("ExportEffectScripts", "EffectScriptFiles", ["*.aegifx"],
+                    ".aegifx", script.Id + ".aegifx").WaitAsync(token);
             }
-            else if (e.Presets.Length > 1 && await service.OpenFolderAsync("ExportEffectScripts") is { } directory)
+            else if (batch)
             {
-                await PresetBatchExporter.ExportEffectsAsync(e.Presets, directory);
+                destination = await service.OpenFolderAsync("ExportEffectScripts").WaitAsync(token);
             }
-        }), true);
+
+            token.ThrowIfCancellationRequested();
+            if (destination is not null && !disposed && ReferenceEquals(Window, target))
+            {
+                await SubmitLibraryTaskAsync(new SettingsEffectExportTask(applicationContext, presets, destination, batch), token);
+            }
+        }, true);
+    }
+
+    private async Task SubmitLibraryTaskAsync(AegiTask task, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var handle = applicationContext.Tasks.Submit(task);
+        libraryTasks.Add(handle);
+        try
+        {
+            if (disposed || cancellationToken.IsCancellationRequested)
+            {
+                handle.RequestCancel();
+            }
+            await handle.Completion;
+        }
+        finally
+        {
+            libraryTasks.Remove(handle);
+        }
     }
 
     private async Task<bool> RunAsync(Func<Task> operation, bool effectOperation = false)

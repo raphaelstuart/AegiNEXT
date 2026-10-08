@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using AegiNext.Application;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Effects;
@@ -86,24 +87,9 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             return;
         }
 
-        session.SetProjectBusy(true);
-        try
-        {
-            var asset = await ProjectResources.ImportAsync(path, ProjectAssetKind.FONT, session.ProjectDirectory);
-            session.Editor.Apply("Import font", document => document with
-            {
-                Assets = document.Assets.Add(asset), Subtitles = document.Subtitles.Select(line => line.Id == id
-                    ? line with
-                    {
-                        Style = line.Style with { FontAssetId = asset.Id }
-                    }
-                    : line).ToImmutableArray()
-            });
-        }
-        finally
-        {
-            session.SetProjectBusy(false);
-        }
+        var captured = session.Editor.Snapshot;
+        await session.ApplicationContext.Tasks.Submit(new ImportSubtitleFontTask(session, path, id,
+            captured, session.TaskInputRevision, session.ProjectDirectory)).Completion;
     }
 
     internal void BeginPathEdit()
@@ -212,8 +198,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         }
 
         session.ViewModel.CancelGestures();
-        var wasUpdating = session.IsUpdating;
-        session.IsUpdating = true;
+        using var updateLease = session.BeginWorkbenchUpdate();
         try
         {
             session.SelectedLayerId = layer.Id;
@@ -237,7 +222,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         }
         finally
         {
-            session.IsUpdating = wasUpdating;
+            updateLease.Dispose();
         }
 
         return true;
@@ -245,8 +230,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     internal void RefreshKeyframeInspector()
     {
-        var wasUpdating = session.IsUpdating;
-        session.IsUpdating = true;
+        using var updateLease = session.BeginWorkbenchUpdate();
         try
         {
             var frame = SelectedKeyframe;
@@ -287,7 +271,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         }
         finally
         {
-            session.IsUpdating = wasUpdating;
+            updateLease.Dispose();
         }
     }
 
@@ -410,7 +394,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     internal void EditPath() => BeginPathEdit();
     internal void ClearPath() => UpdateLayer(layer => layer with { MotionPath = null, Tracks = layer.Tracks.Where(track => track.Property != AnimationProperty.PATH_PROGRESS).ToImmutableArray() });
-    internal void ApplySelectedPreset() => session.EffectScripts.ApplySelected();
+    internal Task ApplySelectedPresetAsync() => session.EffectScripts.ApplySelectedAsync();
     internal void ClearKaraoke()
     {
         if (session.SelectedCue is { } cue)

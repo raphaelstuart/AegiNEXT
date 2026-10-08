@@ -101,7 +101,7 @@ public sealed class AnalysisCoordinatorRecoveryTests
         }
     }
 
-    /// <summary>旧防抖已完成但 continuation 延迟派发时，最新视口仍能完整发布。</summary>
+    /// <summary>任务启动回调延迟派发时，批次只读取最新视口并完整发布。</summary>
     [Fact]
     public async Task CompletedOldDebounceCannotDisplaceTheLatestViewportWhenItsCallbackRunsLate()
     {
@@ -138,8 +138,8 @@ public sealed class AnalysisCoordinatorRecoveryTests
 
             Interlocked.Exchange(ref blockNextRead, 1);
             timeline.Viewport = timeline.Viewport with { StartSeconds = 300, PixelsPerSecond = 20 };
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
             deferred.RunCallbacks();
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Same(previous, timeline.Waveform);
             Assert.False(coordinator.Completion.IsCompleted);
             release.Set();

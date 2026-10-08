@@ -50,7 +50,7 @@
         <Button Name="EncodeButton" Classes="accent" Command="{Binding EncodeCommand}">
           <controlsCommon:IconText IconKey="Export" Text="{Loc Key=Workbench.Export}" />
         </Button>
-        <Button Name="CancelEncodeButton" IsEnabled="{Binding IsRunning}"
+        <Button Name="CancelEncodeButton" IsEnabled="{Binding CanCancel}"
                 Command="{Binding CancelEncodeCommand}">
           <controlsCommon:IconText IconKey="Cancel" Text="{Loc Key=Workbench.Cancel}" />
         </Button>

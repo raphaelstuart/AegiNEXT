@@ -150,7 +150,14 @@ public sealed class SubtitleStylePresetLibrary : IDisposable
     }
 
     /// <summary>读取并验证全部交换文件后一次提交；任一文件失败、冲突或取消均不部分入库。</summary>
-    public async Task ImportAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    public Task ImportAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        return ImportAsync(paths, null, cancellationToken);
+    }
+
+    /// <summary>Reads and validates all inputs, invoking the commit boundary immediately before replacing the library.</summary>
+    public async Task ImportAsync(IEnumerable<string> paths, Action? beforeCommit,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(paths);
         var inputs = paths.ToArray();
@@ -179,7 +186,7 @@ public sealed class SubtitleStylePresetLibrary : IDisposable
             var combined = snapshot with { Presets = items };
             SubtitleStylePresetValidator.Validate(combined);
             cancellationToken.ThrowIfCancellationRequested();
-            await CommitAsync(combined, cancellationToken).ConfigureAwait(false);
+            await CommitAsync(combined, beforeCommit, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -266,9 +273,14 @@ public sealed class SubtitleStylePresetLibrary : IDisposable
         }
     }
 
-    private async Task CommitAsync(SubtitleStylePresetCollection updated, CancellationToken cancellationToken)
+    private Task CommitAsync(SubtitleStylePresetCollection updated, CancellationToken cancellationToken)
     {
-        await SubtitleStylePresetStore.SaveAsync(updated, filePath, cancellationToken).ConfigureAwait(false);
+        return CommitAsync(updated, null, cancellationToken);
+    }
+
+    private async Task CommitAsync(SubtitleStylePresetCollection updated, Action? beforeCommit, CancellationToken cancellationToken)
+    {
+        await SubtitleStylePresetStore.SaveAsync(updated, filePath, beforeCommit, cancellationToken).ConfigureAwait(false);
         Volatile.Write(ref snapshot, updated);
     }
 

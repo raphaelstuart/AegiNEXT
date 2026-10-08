@@ -2,6 +2,7 @@ using AegiNext.Desktop.I18n;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
 using AegiNext.Application.Presets;
+using AegiNext.Application;
 using AegiNext.Core.Presets;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Appearance;
@@ -12,6 +13,8 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using AegiNext.Desktop.Views;
+using AegiNext.Desktop.Startup;
+using AegiNext.Desktop.Workspace;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
@@ -30,7 +33,12 @@ public sealed class SettingsStartupUiTests
         };
         using var store = new WorkbenchPreferencesStore(environment.DirectoryPath);
         await store.SaveAsync(preferences, TestContext.Current.CancellationToken);
-        var main = new MainWindow();
+        await using var application = new DesktopApplicationContext(new(environment.DirectoryPath));
+        await application.Initialization;
+        await using var session = new WorkbenchSession(new StartupTestDialogService(), applicationContext: application);
+        Assert.Equal(ProjectOpenStatus.OPENED,
+            (await session.CreateProjectAsync(new ProjectCreationRequest("Untitled project", environment.DirectoryPath))).Status);
+        var main = new MainWindow(session);
         SettingsWindow? settings = null;
         try
         {

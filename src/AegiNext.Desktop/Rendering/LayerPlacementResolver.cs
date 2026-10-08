@@ -6,12 +6,21 @@ namespace AegiNext.Desktop.Rendering;
 
 internal sealed class LayerPlacementResolver : IDisposable
 {
+    private readonly Lock gate = new();
     private ProjectSceneRenderer? renderer;
     private string? directory;
     private ProjectDocument? cachedDocument;
     private readonly Dictionary<Guid, LayerPlacementResolution> cache = [];
 
     internal LayerPlacementResolution Resolve(ProjectDocument document, string projectDirectory, ProjectLayer? layer)
+    {
+        lock (gate)
+        {
+            return ResolveCore(document, projectDirectory, layer);
+        }
+    }
+
+    private LayerPlacementResolution ResolveCore(ProjectDocument document, string projectDirectory, ProjectLayer? layer)
     {
         if (layer?.SubtitleId is not { } id)
         {
@@ -59,9 +68,12 @@ internal sealed class LayerPlacementResolver : IDisposable
 
     public void Dispose()
     {
-        renderer?.Dispose();
-        renderer = null;
-        cachedDocument = null;
-        cache.Clear();
+        lock (gate)
+        {
+            renderer?.Dispose();
+            renderer = null;
+            cachedDocument = null;
+            cache.Clear();
+        }
     }
 }

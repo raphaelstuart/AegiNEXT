@@ -4,7 +4,7 @@ internal sealed partial class WorkbenchSession
 {
     internal bool RestoreStyleNumericDraftField(string fieldKey)
     {
-        if (SelectedLayer?.SubtitleId is null || SelectedCue is not { } cue || updatingWorkbench || closing)
+        if (SelectedLayer?.SubtitleId is null || SelectedCue is not { } cue || IsUpdating || closing)
         {
             return false;
         }
@@ -21,7 +21,7 @@ internal sealed partial class WorkbenchSession
             return false;
         }
         var vm = ViewModel.Styles;
-        updatingWorkbench = true;
+        using var updateLease = BeginWorkbenchUpdate();
         try
         {
             vm.LoadStyleNumber(fieldKey, number, InterfaceCulture);
@@ -36,7 +36,7 @@ internal sealed partial class WorkbenchSession
         }
         finally
         {
-            updatingWorkbench = false;
+            updateLease.Dispose();
         }
         QueueInspectorPreview(true);
         return true;

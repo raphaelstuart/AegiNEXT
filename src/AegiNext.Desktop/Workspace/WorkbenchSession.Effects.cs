@@ -19,7 +19,7 @@ internal sealed partial class WorkbenchSession
     internal void RemovePathPoint() => layerEditing.RemovePathPoint();
     internal void EditPath() => layerEditing.EditPath();
     internal void ClearPath() => layerEditing.ClearPath();
-    internal void ApplySelectedPreset() => layerEditing.ApplySelectedPreset();
+    internal Task ApplySelectedPresetAsync() => layerEditing.ApplySelectedPresetAsync();
     internal void ClearKaraoke() => layerEditing.ClearKaraoke();
     internal Task ImportFontAsync() => layerEditing.ImportFontAsync();
     internal bool SelectKeyframe(TimelineKeyframeEventArgs value) => layerEditing.SelectKeyframe(value);

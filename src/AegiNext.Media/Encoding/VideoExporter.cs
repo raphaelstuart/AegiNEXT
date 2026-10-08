@@ -11,9 +11,13 @@ namespace AegiNext.Media.Encoding;
 public sealed class VideoExporter
 {
     /// <summary>压制当前工程；失败或取消只删除本次临时文件，已有成片保持原样。</summary>
+    public Task<VideoExportResult> ExportAsync(VideoExportRequest request, IProgress<VideoExportProgress>? progress = null,
+        CancellationToken cancellationToken = default) => ExportAsync(request, progress, null, cancellationToken);
+
+    /// <summary>压制冻结快照，在原子发布成片前执行应用提供的提交边界。</summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Exporter is a service instance used by the application boundary.")]
-    public async Task<VideoExportResult> ExportAsync(VideoExportRequest request, IProgress<VideoExportProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+    public async Task<VideoExportResult> ExportAsync(VideoExportRequest request, IProgress<VideoExportProgress>? progress,
+        Action? beforeCommit, CancellationToken cancellationToken)
     {
         Validate(request);
         cancellationToken.ThrowIfCancellationRequested();
@@ -67,7 +71,16 @@ public sealed class VideoExporter
                 throw new InvalidOperationException("无法启动导出 worker。");
             }
 
-            using var cancelled = cancellationToken.Register(() => Kill(process));
+            using var cancelled = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    Kill(process);
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                }
+            });
             var errors = ReadErrorsAsync(process.StandardError);
             try
             {
@@ -116,15 +129,23 @@ public sealed class VideoExporter
                     throw new InvalidDataException("导出 worker 未产生有效成片。");
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
+                beforeCommit?.Invoke();
                 File.Move(encoded, output, false);
                 progress?.Report(new(completed.Frames, MediaTime.Zero, 1, "complete", completed.Encoder));
                 return new(output, completed.Frames, completed.Encoder, completed.Decoder, completed.OutputColor, completed.RateControl);
             }
             finally
             {
-                Kill(process);
-                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-                await errors.ConfigureAwait(false);
+                try
+                {
+                    Kill(process);
+                }
+                finally
+                {
+                    await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                    await errors.ConfigureAwait(false);
+                }
             }
         }
         finally

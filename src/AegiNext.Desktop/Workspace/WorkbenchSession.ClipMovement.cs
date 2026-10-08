@@ -11,7 +11,7 @@ internal sealed partial class WorkbenchSession
         var targets = subtitleIds.ToHashSet();
         return RunCommandAsync(() =>
         {
-            if (updatingWorkbench || !TimelineContextIsCurrent(expected) || targets.Count == 0)
+            if (IsUpdating || !TimelineContextIsCurrent(expected) || targets.Count == 0)
             {
                 return Task.CompletedTask;
             }
@@ -32,7 +32,7 @@ internal sealed partial class WorkbenchSession
     internal Task MoveTimelineClipsAsync(IReadOnlyCollection<Guid> layerIds, ProjectDocument? expected = null)
     {
         var targets = layerIds.Distinct().ToArray();
-        return RunCommandAsync(() => updatingWorkbench || !TimelineContextIsCurrent(expected) || targets.Length == 0
+        return RunCommandAsync(() => IsUpdating || !TimelineContextIsCurrent(expected) || targets.Length == 0
             ? Task.CompletedTask : ShowClipMovementAsync(targets, editor.Snapshot));
     }
 
@@ -40,15 +40,10 @@ internal sealed partial class WorkbenchSession
     {
         var generation = projectGeneration;
         int? milliseconds;
-        SetProjectBusy(true);
-        try
         {
+            using var editingLease = AcquireEditingLease();
             milliseconds = await dialogs.ShowIntegerInputAsync(new("Workbench.Move", "Workbench.MoveMilliseconds",
                 "Workbench.MoveMillisecondsHint"), ProjectOperationsToken);
-        }
-        finally
-        {
-            SetProjectBusy(false);
         }
 
         if (milliseconds is null or 0 || generation != projectGeneration || !TimelineContextIsCurrent(source))

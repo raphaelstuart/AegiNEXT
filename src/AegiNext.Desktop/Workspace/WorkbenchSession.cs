@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using AegiNext.Application;
+using AegiNext.Application.Tasks;
 using AegiNext.Application.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
@@ -51,12 +52,15 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private string? projectPath;
     private string projectDirectory;
     private Exception? previewRenderError;
-    private bool updatingWorkbench;
-    private bool projectBusy;
+    private readonly WorkbenchUpdateState updateState = new();
+    private bool closeRequested;
+    private Task<bool>? closeOperation;
+    private string? taskScopeDisplayName;
+    private AegiTaskScopeCloseLease? scopeCloseLease;
+    private bool lastEditRestriction;
     private bool closing;
     private bool stylesDirty;
     private bool effectsDirty;
-    private TaskCompletionSource projectIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task? disposeTask;
     private Task documentChangeTask = Task.CompletedTask;
     private TimingSession timingSession = new();
@@ -79,6 +83,8 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ownsApplicationContext = applicationContext is null;
         this.applicationContext = applicationContext ?? new(preferencesStore, initialPreferences);
         this.preferencesStore = this.applicationContext.PreferencesStore;
+        taskScopeDisplayName = ProjectDisplayName;
+        this.applicationContext.Tasks.RegisterScope(TaskScope, taskScopeDisplayName);
         preferences = this.applicationContext.Preferences;
         scratchDirectory = Path.Combine(Path.GetTempPath(), "AegiNext", Guid.NewGuid().ToString("N"));
         projectDirectory = scratchDirectory;
@@ -105,8 +111,10 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         playback = new(this, controller);
         persistence = new(persistenceTimeProvider ?? TimeProvider.System,
             action => this.dispatch(action, CancellationToken.None), CapturePersistenceState,
-            OnProjectAutomaticallySaved, error => ShowError(error, false), persistenceStorage);
+            OnProjectAutomaticallySaved, error => ShowError(error, false), persistenceStorage, this.applicationContext.Tasks, TaskScope);
         persistence.UpdatePreferences(preferences.Projects);
+        this.applicationContext.Tasks.Changed += OnTaskStateChanged;
+        this.applicationContext.Fonts.Changed += OnFontsChanged;
         this.applicationContext.PreferencesChanged += OnApplicationPreferencesChanged;
         this.applicationContext.StylesChanged += OnApplicationStylesChanged;
         this.applicationContext.BusyChanged += OnTimingLibrariesBusyChanged;
@@ -123,6 +131,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         ApplyPreferences();
         ResetTimelineViewState(this.editor.Snapshot);
         RefreshDocument();
+        InitializeTaskInputTracking();
         styles.Initialize();
         effectScripts.Initialize();
         exportPresets.Refresh();
@@ -152,6 +161,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal PreviewFrameCatalog PreviewFrames => previewFrames;
     internal void ConfigurePreviewGraphics(IOpenGlTextureSharingRenderInterfaceContextFeature graphics) =>
         Volatile.Write(ref previewGraphics, graphics);
+    internal string TaskScope { get; } = Guid.NewGuid().ToString("N");
     internal DesktopApplicationContext ApplicationContext => applicationContext;
     internal WorkbenchPreferences Preferences => applicationContext.Preferences;
     internal WorkbenchPreferencesStore PreferencesStore => preferencesStore;
@@ -161,8 +171,9 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal ProjectDocument DocumentSnapshot => editor.Snapshot;
     internal static CultureInfo InterfaceCulture => CultureInfo.GetCultureInfo(Localization.CurrentLanguageID);
     internal bool IsClosing => closing;
-    internal bool IsProjectBusy => projectBusy;
-    internal bool IsUpdating { get => updatingWorkbench; set => updatingWorkbench = value; }
+    internal bool IsProjectBusy => applicationContext.Tasks.IsEditingRestricted(TaskScope);
+    internal bool IsUpdating => updateState.IsActive;
+    internal WorkbenchUpdateLease BeginWorkbenchUpdate() => updateState.Acquire();
     internal Guid? SelectedLayerId { get => SceneEditing.LayerId; set => SceneEditing.LayerId = value; }
     internal Guid? SelectedCueId { get => SceneEditing.CueId; set => SceneEditing.CueId = value; }
     internal MediaTime? SelectedKeyTime { get => SceneEditing.KeyframeTime; set => SceneEditing.KeyframeTime = value; }
@@ -188,6 +199,12 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal Task<ProjectOpenResult> CreateProjectAsync(ProjectCreationRequest request, CancellationToken cancellationToken = default)
     {
         return workflow.CreateProjectAsync(request, cancellationToken);
+    }
+
+    internal Task<ProjectOpenResult> CreateProjectFromDialogAsync(ProjectCreationRequest request,
+        CancellationToken operationCancellation)
+    {
+        return workflow.CreateProjectFromDialogAsync(request, operationCancellation);
     }
 
     internal Task<ProjectOpenResult> OpenProjectAsync(string path, CancellationToken cancellationToken = default)
@@ -318,7 +335,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     internal Task EditAsync(Action action)
     {
-        if (!updatingWorkbench && !projectBusy && !closing && TryCommitDrafts())
+        if (!IsUpdating && !IsProjectBusy && !closing && TryCommitDrafts())
         {
             InvalidateTimingSession();
             action();
@@ -327,78 +344,167 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    internal void SetProjectBusy(bool value)
+    internal AegiTaskEditLease AcquireEditingLease()
     {
-        if (value && !projectBusy)
-        {
-            playback.Invalidate();
-            ViewModel.CancelGestures();
-            projectIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
+        return AegiTaskExecutionContext.Current is { } context
+            ? context.AcquireEditLease()
+            : applicationContext.Tasks.AcquireScopeEditLease(TaskScope);
+    }
 
-        projectBusy = value;
-        ViewModel.IsBusy = value;
-        ViewModel.RefreshCommands();
-        if (!value)
+    private void OnTaskStateChanged(object? sender, EventArgs e)
+    {
+        if (disposeTask is not null)
         {
-            projectIdle.TrySetResult();
+            return;
         }
+        _ = dispatch(() =>
+        {
+            if (disposeTask is not null)
+            {
+                return;
+            }
+            var restricted = IsProjectBusy;
+            if (restricted && !lastEditRestriction)
+            {
+                playback.Invalidate();
+                ViewModel.CancelGestures();
+            }
+            lastEditRestriction = restricted;
+            ViewModel.IsBusy = restricted || closing;
+            ViewModel.Export.RefreshTaskState();
+            ViewModel.RefreshCommands();
+        }, CancellationToken.None);
+    }
+
+    private void OnFontsChanged(object? sender, EventArgs e)
+    {
+        _ = dispatch(() =>
+        {
+            if (!closing)
+            {
+                ClearInspectorPreview();
+                ViewModel.RefreshCommands();
+            }
+        }, CancellationToken.None);
     }
 
     internal async Task WaitForProjectIdleAsync()
     {
-        while (projectBusy || !documentChangeTask.IsCompleted)
-        {
-            if (projectBusy)
-            {
-                await projectIdle.Task;
-            }
-            else
-            {
-                await documentChangeTask;
-            }
-        }
+        await applicationContext.Tasks.DrainScopeAsync(TaskScope);
+        await documentChangeTask;
     }
 
-    internal async Task<bool> RequestCloseAsync(Func<Task>? beforeDispose = null)
+    internal Task<bool> RequestCloseAsync(Func<Task>? beforeDispose = null)
     {
-        if (closing)
+        if (closing || closeRequested)
         {
-            return false;
+            return Task.FromResult(false);
         }
+        closeOperation = RequestCloseCoreAsync(beforeDispose);
+        return closeOperation;
+    }
 
-        await WaitForProjectIdleAsync();
-        InvalidateTimingSession();
-        await using var persistencePause = await persistence.PauseAsync();
-        if (!await workflow.ConfirmDiscardOrSaveAsync())
+    private async Task<bool> RequestCloseCoreAsync(Func<Task>? beforeDispose)
+    {
+        closeRequested = true;
+        try
         {
-            return false;
-        }
+            var prompted = HasUnsavedChanges;
+            var choice = prompted ? await dialogs.ConfirmUnsavedAsync() : 2;
+            if (choice == 0)
+            {
+                return false;
+            }
+            string? destination = projectPath;
+            if (choice == 1 && destination is null)
+            {
+                destination = await dialogs.SaveFileAsync("Save", "Projects", ["*.aeginext"], ".aeginext", ProjectDisplayName + ".aeginext");
+                if (destination is null)
+                {
+                    return false;
+                }
+            }
 
-        closing = true;
-        UnsubscribeTimelinePreferences();
-        ClearTimelineClipboard();
-        ViewModel.CancelGestures();
-        ViewModel.RefreshCommands();
-        if (beforeDispose is not null)
-        {
+            using var closeLease = applicationContext.Tasks.BeginCloseScope(TaskScope);
+            scopeCloseLease = closeLease;
+            closing = true;
+            ViewModel.IsBusy = true;
+            ViewModel.RefreshCommands();
             try
             {
-                await beforeDispose();
+                await using var persistencePause = await persistence.PauseAsync();
+                await projectOperationsCancellation.CancelAsync();
+                analysis.Cancel();
+                export.Cancel();
+                await closeLease.DrainAsync();
+                await Task.WhenAll(timingProcessingCompletion, audioCalibrationCompletion, documentChangeTask,
+                    analysis.Completion, export.Completion, styles.Completion, effectScripts.Completion)
+                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+                if (!prompted && HasUnsavedChanges)
+                {
+                    choice = await dialogs.ConfirmUnsavedAsync();
+                    if (choice == 0)
+                    {
+                        RestoreAfterCancelledClose();
+                        return false;
+                    }
+                }
+                if (choice == 1)
+                {
+                    if (!TryCommitDraftsForClose(closeLease) || !await workflow.SaveProjectForCloseAsync(closeLease, destination))
+                    {
+                        RestoreAfterCancelledClose();
+                        return false;
+                    }
+                }
+                if (beforeDispose is not null)
+                {
+                    await beforeDispose();
+                }
+                await DisposeOnceAsync();
+                scopeCloseLease = null;
+                return true;
             }
             catch
             {
-                closing = false;
-                ViewModel.RefreshCommands();
+                RestoreAfterCancelledClose();
                 throw;
             }
         }
-        await DisposeAsync();
-        return true;
+        finally
+        {
+            closeRequested = false;
+        }
+    }
+
+    private void RestoreAfterCancelledClose()
+    {
+        scopeCloseLease?.Dispose();
+        scopeCloseLease = null;
+        closing = false;
+        projectOperationsCancellation.Dispose();
+        projectOperationsCancellation = new();
+        ViewModel.IsBusy = IsProjectBusy;
+        ViewModel.RefreshCommands();
     }
 
     /// <summary>等待会话任务结束并释放资源；重复调用等待同一次释放。</summary>
     public ValueTask DisposeAsync()
+    {
+        if (closeOperation is { IsCompleted: false } pendingClose)
+        {
+            return new(DisposeAfterCloseAsync(pendingClose));
+        }
+        return DisposeOnceAsync();
+    }
+
+    private async Task DisposeAfterCloseAsync(Task<bool> pendingClose)
+    {
+        await ((Task)pendingClose).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+        await DisposeOnceAsync();
+    }
+
+    private ValueTask DisposeOnceAsync()
     {
         disposeTask ??= DisposeCoreAsync();
         return new(disposeTask);
@@ -406,9 +512,14 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private async Task DisposeCoreAsync()
     {
+        using var closeLease = scopeCloseLease ?? applicationContext.Tasks.BeginCloseScope(TaskScope);
         InvalidateTimingSession();
         closing = true;
-        projectOperationsCancellation.Cancel();
+        DisposeTaskInputTracking();
+        applicationContext.Tasks.Changed -= OnTaskStateChanged;
+        applicationContext.Fonts.Changed -= OnFontsChanged;
+        await projectOperationsCancellation.CancelAsync();
+        await closeLease.DrainAsync();
         await timingProcessingCompletion.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
         await audioCalibrationCompletion.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
         await persistence.DisposeAsync();
@@ -443,6 +554,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             layerPlacement.Dispose();
             analysis.Dispose();
             export.Dispose();
+            closeLease.CompleteClose();
             if (ownsApplicationContext)
             {
                 await applicationContext.DisposeAsync();
@@ -459,8 +571,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private void ApplyPreferences()
     {
-        var previous = updatingWorkbench;
-        updatingWorkbench = true;
+        using var updateLease = BeginWorkbenchUpdate();
         try
         {
             ViewModel.Preview.Volume = preferences.Volume;
@@ -469,7 +580,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
         finally
         {
-            updatingWorkbench = previous;
+            updateLease.Dispose();
         }
         RefreshLocalizedState();
         PreferencesChanged?.Invoke(this, EventArgs.Empty);
@@ -477,7 +588,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private void OnSubtitleDetailsChanged(object? sender, EventArgs e)
     {
-        if (!closing && !updatingWorkbench)
+        if (!closing && !IsUpdating)
         {
             RefreshEditingPreview();
         }
@@ -490,8 +601,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
 
     private void RefreshLocalizedState()
     {
-        var previous = updatingWorkbench;
-        updatingWorkbench = true;
+        using var updateLease = BeginWorkbenchUpdate();
         try
         {
             ViewModel.Preview.EmptyLabel = Localization.Get("Preview.Empty");
@@ -515,7 +625,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         }
         finally
         {
-            updatingWorkbench = previous;
+            updateLease.Dispose();
         }
 
     }
@@ -611,7 +721,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         {
             RefreshDocument();
         }
-        if (projectBusy || closing)
+        if (IsProjectBusy || closing)
         {
             return;
         }
@@ -643,6 +753,11 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private void RefreshTitle()
     {
         ViewModel.Title = WorkbenchProjectTitle.Format(ProjectDisplayName, HasUnsavedChanges);
+        if (!closing && taskScopeDisplayName != ProjectDisplayName)
+        {
+            taskScopeDisplayName = ProjectDisplayName;
+            applicationContext.Tasks.RegisterScope(TaskScope, taskScopeDisplayName);
+        }
     }
 
     internal void ResetSelection()

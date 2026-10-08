@@ -73,6 +73,8 @@ public sealed class SharedSettingsUiTests
         var owner = new Window();
         var styleRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var effectRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var styleStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var effectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Task? styleOperation = null;
         Task? effectOperation = null;
         try
@@ -93,8 +95,18 @@ public sealed class SharedSettingsUiTests
             var effectId = window.ViewModel.Effects.Draft!.Id;
             var diagnosticLine = window.ViewModel.Effects.DiagnosticLine;
 
-            styleOperation = context.RunStyleOperationAsync(() => styleRelease.Task);
-            effectOperation = context.RunEffectOperationAsync(() => effectRelease.Task);
+            styleOperation = context.RunStyleOperationAsync(() =>
+            {
+                styleStarted.TrySetResult();
+                return styleRelease.Task;
+            });
+            effectOperation = context.RunEffectOperationAsync(() =>
+            {
+                effectStarted.TrySetResult();
+                return effectRelease.Task;
+            });
+            await Task.WhenAll(styleStarted.Task, effectStarted.Task).WaitAsync(TimeSpan.FromSeconds(5));
+            Dispatcher.UIThread.RunJobs();
             Assert.True(window.ViewModel.Styles.IsBusy);
             Assert.True(window.ViewModel.Effects.IsBusy);
             context.UpdatePreferences(value => value with { Theme = WorkbenchTheme.DARK });

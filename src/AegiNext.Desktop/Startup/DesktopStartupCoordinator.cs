@@ -39,8 +39,8 @@ internal sealed class DesktopStartupCoordinator : IAsyncDisposable
     private bool allowWelcomeClose;
     private readonly IClassicDesktopStyleApplicationLifetime? desktopLifetime;
 
-    internal DesktopStartupCoordinator(IClassicDesktopStyleApplicationLifetime desktop)
-        : this(window => desktop.MainWindow = window, () => desktop.Shutdown())
+    internal DesktopStartupCoordinator(IClassicDesktopStyleApplicationLifetime desktop, DesktopApplicationContext? context = null)
+        : this(window => desktop.MainWindow = window, () => desktop.Shutdown(), context)
     {
         desktopLifetime = desktop;
         desktop.ShutdownRequested += OnShutdownRequested;
@@ -88,6 +88,7 @@ internal sealed class DesktopStartupCoordinator : IAsyncDisposable
     internal void Start()
     {
         setMainWindow(WelcomeWindow);
+        WelcomeWindow.Show();
     }
 
     private Task BeginOpen(bool create, string? path)
@@ -121,7 +122,7 @@ internal sealed class DesktopStartupCoordinator : IAsyncDisposable
                         WorkbenchSession? trial = sessionFactory(dialogs, context);
                         try
                         {
-                            var attempt = await trial.CreateProjectAsync(request, linked.Token);
+                            var attempt = await trial.CreateProjectFromDialogAsync(request, linked.Token);
                             if (attempt.Status == ProjectOpenStatus.OPENED)
                             {
                                 candidate = trial;

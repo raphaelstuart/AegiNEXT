@@ -7,6 +7,25 @@ namespace AegiNext.Application.Tests;
 public sealed class ProjectStoreTests
 {
     [Fact]
+    public async Task RejectedCommitKeepsOriginalFileAndRemovesPreparedTemporaryFile()
+    {
+        using var directory = new TemporaryProjectDirectory();
+        var path = Path.Combine(directory.Path, "project.aeginext");
+        await ProjectStore.SaveAsync(new() { Name = "Original" }, path);
+        var before = await File.ReadAllBytesAsync(path);
+        var prepared = false;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ProjectStore.SaveAsync(new() { Name = "Prepared" },
+            path, () =>
+            {
+                prepared = Directory.EnumerateFiles(directory.Path, "*.tmp").Any();
+                throw new OperationCanceledException("Commit rejected");
+            }));
+        Assert.True(prepared);
+        Assert.Equal(before, await File.ReadAllBytesAsync(path));
+        Assert.Empty(Directory.EnumerateFiles(directory.Path, "*.tmp"));
+    }
+
+    [Fact]
     public async Task CreateWritesANewFileButCannotOverwriteAnExistingProject()
     {
         using var directory = new TemporaryProjectDirectory();

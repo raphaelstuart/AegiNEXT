@@ -23,16 +23,17 @@ internal static class UserSettingsBundleStore
         new("layouts.json", WorkspaceLayoutStore.MAXIMUM_FILE_BYTES)
     ];
 
-    internal static byte[] Serialize(UserSettingsBundle bundle)
+    internal static byte[] Serialize(UserSettingsBundle bundle, CancellationToken cancellationToken = default)
     {
-        var files = SerializeFiles(bundle);
+        cancellationToken.ThrowIfCancellationRequested();
+        var files = SerializeFiles(bundle, cancellationToken);
         using var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, true))
         {
-            WriteEntry(archive, MANIFEST_NAME, "{\"version\":1}"u8);
+            WriteEntry(archive, MANIFEST_NAME, "{\"version\":1}"u8, cancellationToken);
             foreach (var file in Files)
             {
-                WriteEntry(archive, file.Name, files[file.Name]);
+                WriteEntry(archive, file.Name, files[file.Name], cancellationToken);
             }
         }
         if (buffer.Length > MAXIMUM_FILE_BYTES)
@@ -42,8 +43,9 @@ internal static class UserSettingsBundleStore
         return buffer.ToArray();
     }
 
-    internal static UserSettingsBundle Deserialize(ReadOnlySpan<byte> bytes)
+    internal static UserSettingsBundle Deserialize(ReadOnlySpan<byte> bytes, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (bytes.Length > MAXIMUM_FILE_BYTES)
         {
             throw new InvalidDataException("用户设置包超过 128 MiB。");
@@ -60,6 +62,7 @@ internal static class UserSettingsBundleStore
             long expandedBytes = 0;
             foreach (var entry in archive.Entries)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var maximum = entry.FullName == MANIFEST_NAME ? MAXIMUM_MANIFEST_BYTES :
                     Files.FirstOrDefault(file => file.Name == entry.FullName)?.MaximumBytes;
                 if (maximum is null || !entries.TryAdd(entry.FullName, entry) || entry.Length > maximum.Value)
@@ -72,9 +75,9 @@ internal static class UserSettingsBundleStore
                     throw new InvalidDataException("用户设置包解压内容超过 128 MiB。");
                 }
             }
-            ValidateManifest(ReadEntry(entries[MANIFEST_NAME], MAXIMUM_MANIFEST_BYTES));
+            ValidateManifest(ReadEntry(entries[MANIFEST_NAME], MAXIMUM_MANIFEST_BYTES, cancellationToken));
             var content = Files.ToDictionary(file => file.Name,
-                file => ReadEntry(entries[file.Name], file.MaximumBytes), StringComparer.Ordinal);
+                file => ReadEntry(entries[file.Name], file.MaximumBytes, cancellationToken), StringComparer.Ordinal);
             return new()
             {
                 Preferences = WorkbenchPreferencesStore.Deserialize(content["preferences.json"], allowForeignWorkspace: true),
@@ -96,40 +99,54 @@ internal static class UserSettingsBundleStore
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var bytes = await UserSettingsTransferFiles.ReadAsync(path, MAXIMUM_FILE_BYTES, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        return Deserialize(bytes);
+        return Deserialize(bytes, cancellationToken);
     }
 
     internal static Task SaveAsync(UserSettingsBundle bundle, string path, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         cancellationToken.ThrowIfCancellationRequested();
-        return UserSettingsTransferFiles.WriteAtomicAsync(Path.GetFullPath(path), Serialize(bundle), cancellationToken);
+        return UserSettingsTransferFiles.WriteAtomicAsync(Path.GetFullPath(path), Serialize(bundle, cancellationToken), cancellationToken);
     }
 
-    internal static Dictionary<string, byte[]> SerializeFiles(UserSettingsBundle bundle)
+    internal static Dictionary<string, byte[]> SerializeFiles(UserSettingsBundle bundle,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(bundle);
-        return new(StringComparer.Ordinal)
-        {
-            ["preferences.json"] = WorkbenchPreferencesStore.Serialize(bundle.Preferences, allowForeignWorkspace: true),
-            ["subtitle-styles.aegistyles"] = SubtitleStylePresetStore.Serialize(bundle.Styles),
-            ["effect-scripts.json"] = EffectScriptPresetStore.Serialize(bundle.Effects),
-            ["export-presets.aegiexports"] = VideoExportPresetStore.Serialize(bundle.ExportPresets),
-            ["layouts.json"] = WorkspaceLayoutStore.Serialize(bundle.Layouts)
-        };
+        var files = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        cancellationToken.ThrowIfCancellationRequested();
+        files.Add("preferences.json", WorkbenchPreferencesStore.Serialize(bundle.Preferences, allowForeignWorkspace: true));
+        cancellationToken.ThrowIfCancellationRequested();
+        files.Add("subtitle-styles.aegistyles", SubtitleStylePresetStore.Serialize(bundle.Styles));
+        cancellationToken.ThrowIfCancellationRequested();
+        files.Add("effect-scripts.json", EffectScriptPresetStore.Serialize(bundle.Effects));
+        cancellationToken.ThrowIfCancellationRequested();
+        files.Add("export-presets.aegiexports", VideoExportPresetStore.Serialize(bundle.ExportPresets));
+        cancellationToken.ThrowIfCancellationRequested();
+        files.Add("layouts.json", WorkspaceLayoutStore.Serialize(bundle.Layouts));
+        cancellationToken.ThrowIfCancellationRequested();
+        return files;
     }
 
-    private static void WriteEntry(ZipArchive archive, string name, ReadOnlySpan<byte> bytes)
+    private static void WriteEntry(ZipArchive archive, string name, ReadOnlySpan<byte> bytes,
+        CancellationToken cancellationToken)
     {
         var entry = archive.CreateEntry(name, CompressionLevel.Optimal);
         using var stream = entry.Open();
-        stream.Write(bytes);
+        const int CHUNK_SIZE = 65536;
+        while (!bytes.IsEmpty)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var length = Math.Min(bytes.Length, CHUNK_SIZE);
+            stream.Write(bytes[..length]);
+            bytes = bytes[length..];
+        }
     }
 
-    private static byte[] ReadEntry(ZipArchiveEntry entry, int maximumBytes)
+    private static byte[] ReadEntry(ZipArchiveEntry entry, int maximumBytes, CancellationToken cancellationToken)
     {
         using var stream = entry.Open();
-        var bytes = UserSettingsTransferFiles.Read(stream, maximumBytes);
+        var bytes = UserSettingsTransferFiles.Read(stream, maximumBytes, cancellationToken);
         if (bytes.LongLength != entry.Length)
         {
             throw new InvalidDataException("用户设置包文件长度与清单不一致。");

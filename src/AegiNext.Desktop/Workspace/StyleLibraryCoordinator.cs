@@ -1,4 +1,7 @@
 using AegiNext.Application.Presets;
+using AegiNext.Application.Tasks;
+using AegiNext.Core.Projects;
+using AegiNext.Desktop.Startup;
 using AegiNext.Core.Presets;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
@@ -8,7 +11,18 @@ namespace AegiNext.Desktop.Workspace;
 internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkbenchDialogService dialogs)
 {
     internal event EventHandler? BusyChanged;
-    public Task Completion { get; private set; } = Task.CompletedTask;
+    private readonly Lock operationsGate = new();
+    private readonly HashSet<Task> operations = [];
+    public Task Completion
+    {
+        get
+        {
+            lock (operationsGate)
+            {
+                return Task.WhenAll(operations);
+            }
+        }
+    }
     private int queuedOperations;
     internal bool IsBusy => queuedOperations > 0 || session.ApplicationContext.StylesBusy;
     internal void Initialize() => Queue(async () =>
@@ -22,14 +36,27 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
     {
         queuedOperations++;
         BusyChanged?.Invoke(this, EventArgs.Empty);
-        Completion = RunAsync(Completion, action);
+        var operation = RunAsync(action);
+        lock (operationsGate)
+        {
+            operations.Add(operation);
+        }
+        _ = ForgetOperationAsync(operation);
     }
 
-    private async Task RunAsync(Task previous, Func<Task> action)
+    private async Task ForgetOperationAsync(Task operation)
+    {
+        await operation.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        lock (operationsGate)
+        {
+            operations.Remove(operation);
+        }
+    }
+
+    private async Task RunAsync(Func<Task> action)
     {
         try
         {
-            await previous;
             if (!session.IsClosing)
             {
                 await session.RunCommandAsync(action);
@@ -81,24 +108,23 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         {
             return;
         }
+        await session.ApplicationContext.Tasks.Submit(new CaptureSubtitleStyleTask(session, this, cue,
+            session.Editor.Snapshot, session.ProjectDirectory)).Completion;
+    }
 
-        session.SetProjectBusy(true);
-        try
+    internal async Task CaptureCoreAsync(SubtitleLine cue, ProjectDocument captured, string directory,
+        AegiTaskExecutionContext context)
+    {
+        var index = 1;
+        var name = $"{Localization.Get("Workbench.CapturedStyle")} {index}";
+        while (session.StyleLibrary.Snapshot.Presets.Any(value => string.Equals(value.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
-            var index = 1;
-            var name = $"{Localization.Get("Workbench.CapturedStyle")} {index}";
-            while (session.StyleLibrary.Snapshot.Presets.Any(value => string.Equals(value.Name, name, StringComparison.OrdinalIgnoreCase)))
-            {
-                name = $"{Localization.Get("Workbench.CapturedStyle")} {++index}";
-            }
-
-            var preset = await SubtitleStylePresetService.CaptureAsync(name, cue.Style, session.Editor.Snapshot, session.ProjectDirectory);
-            await UpsertAsync(preset);
+            name = $"{Localization.Get("Workbench.CapturedStyle")} {++index}";
         }
-        finally
-        {
-            session.SetProjectBusy(false);
-        }
+        var preset = await SubtitleStylePresetService.CaptureAsync(name, cue.Style, captured, directory,
+            cancellationToken: context.CancellationToken);
+        context.EnterCommit();
+        await UpsertAsync(preset);
     }
 
     internal async Task ApplyAsync(SubtitleStylePreset preset)
@@ -107,20 +133,19 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         {
             return;
         }
+        await session.ApplicationContext.Tasks.Submit(new ApplySubtitleStyleTask(session, this, preset,
+            cue.Id, session.Editor.Snapshot, session.TaskInputRevision, session.ProjectDirectory)).Completion;
+    }
 
-        session.SetProjectBusy(true);
-        try
-        {
-            var prepared = await SubtitleStylePresetService.ApplyAsync(preset, session.Editor.Snapshot, session.ProjectDirectory, [cue.Id]);
-            session.Editor.Apply("Apply subtitle style preset", _ => prepared);
-            Refresh(preset.Id);
-            session.LogInfo("Styles", Localization.Get("WorkflowLog.StyleApplied"), preset.Name);
-        }
-        finally
-        {
-            session.SetProjectBusy(false);
-        }
-
+    internal async Task ApplyCoreAsync(SubtitleStylePreset preset, Guid cueId, ProjectDocument captured,
+        long inputRevision, string directory, AegiTaskExecutionContext context)
+    {
+        var prepared = await SubtitleStylePresetService.ApplyAsync(preset, captured, directory, [cueId], context.CancellationToken);
+        using var editingLease = context.AcquireEditLease();
+        context.EnterCommit(() => IsTargetCurrent(captured, inputRevision, directory));
+        session.Editor.Apply("Apply subtitle style preset", _ => prepared);
+        Refresh(preset.Id);
+        session.LogInfo("Styles", Localization.Get("WorkflowLog.StyleApplied"), preset.Name);
         if (session.Controller.Snapshot.State == AegiNext.Media.Playback.VideoPlaybackState.PAUSED)
         {
             await session.Controller.SeekAsync(session.Controller.Snapshot.Position);
@@ -133,53 +158,72 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         {
             return;
         }
-
+        var captured = session.Editor.Snapshot;
+        var inputRevision = session.TaskInputRevision;
         var preset = session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == presetId) ??
             throw new KeyNotFoundException("字幕样式预设不存在。");
-        session.SetProjectBusy(true);
-        try
+        var track = captured.SubtitleTracks.FirstOrDefault(value => value.Id == trackId) ??
+            throw new KeyNotFoundException("字幕轨道不存在。");
+        var count = captured.Subtitles.Count(line => line.TrackId == trackId);
+        var decision = count == 0 ? TrackStyleUpdateDecision.DEFAULT_ONLY :
+            await dialogs.ConfirmTrackStyleChangeAsync(track.Name, preset.Name, count);
+        if (decision != TrackStyleUpdateDecision.CANCEL)
         {
-            var track = session.Editor.Snapshot.SubtitleTracks.FirstOrDefault(value => value.Id == trackId) ??
-                throw new KeyNotFoundException("字幕轨道不存在。");
-            var count = session.Editor.Snapshot.Subtitles.Count(line => line.TrackId == trackId);
-            var decision = count == 0 ? TrackStyleUpdateDecision.DEFAULT_ONLY :
-                await dialogs.ConfirmTrackStyleChangeAsync(track.Name, preset.Name, count);
-            if (decision == TrackStyleUpdateDecision.CANCEL)
-            {
-                return;
-            }
-
-            var prepared = await SubtitleStylePresetService.PrepareAsync(preset, session.Editor.Snapshot, session.ProjectDirectory);
-            session.Editor.Apply("Apply subtitle track style", _ =>
-                AegiNext.Application.ProjectEditingOperations.SetSubtitleTrackStyle(prepared.Project, trackId, preset.Id,
-                    preset.Name, prepared.Style, decision == TrackStyleUpdateDecision.UPDATE_EXISTING));
-            Refresh();
-            session.LogInfo("Styles", Localization.Get("Workbench.TrackStyleApplied"), preset.Name);
+            await session.ApplicationContext.Tasks.Submit(new ApplySubtitleTrackStyleTask(session, this, preset,
+                trackId, decision, captured, inputRevision, session.ProjectDirectory)).Completion;
         }
-        finally
-        {
-            session.SetProjectBusy(false);
-        }
+    }
 
+    internal async Task ApplyTrackCoreAsync(SubtitleStylePreset preset, Guid trackId, TrackStyleUpdateDecision decision,
+        ProjectDocument captured, long inputRevision, string directory, AegiTaskExecutionContext context)
+    {
+        var prepared = await SubtitleStylePresetService.PrepareAsync(preset, captured, directory, context.CancellationToken);
+        using var editingLease = context.AcquireEditLease();
+        context.EnterCommit(() => IsTargetCurrent(captured, inputRevision, directory));
+        session.Editor.Apply("Apply subtitle track style", _ =>
+            AegiNext.Application.ProjectEditingOperations.SetSubtitleTrackStyle(prepared.Project, trackId, preset.Id,
+                preset.Name, prepared.Style, decision == TrackStyleUpdateDecision.UPDATE_EXISTING));
+        Refresh();
+        session.LogInfo("Styles", Localization.Get("Workbench.TrackStyleApplied"), preset.Name);
         if (session.Controller.Snapshot.State == AegiNext.Media.Playback.VideoPlaybackState.PAUSED)
         {
             await session.Controller.SeekAsync(session.Controller.Snapshot.Position);
         }
     }
 
-    internal Task<PreparedSubtitleStyle> PrepareCreationAsync(Guid? trackId, Guid? fallbackPresetId)
+    private bool IsTargetCurrent(ProjectDocument captured, long inputRevision, string directory) =>
+        !session.IsClosing && session.TaskInputRevision == inputRevision && !session.HasProjectDrafts &&
+        ReferenceEquals(captured, session.Editor.Snapshot) && directory == session.ProjectDirectory;
+
+    internal Task<PreparedSubtitleStyle> PrepareCreationAsync(Guid? trackId, Guid? fallbackPresetId,
+        ProjectDocument? captured = null)
     {
-        var project = session.Editor.Snapshot;
+        var project = captured ?? session.Editor.Snapshot;
+        var directory = session.ProjectDirectory;
+        var preset = session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == fallbackPresetId);
+        if (AegiTaskExecutionContext.Current is { } parent)
+        {
+            return parent.RunStageAsync("Tasks.PrepareSubtitleStyle", context =>
+                PrepareCreationCoreAsync(trackId, preset, project, directory, context.CancellationToken),
+                [AegiTaskResource.Project(session.TaskScope), AegiTaskResource.StoragePath(directory),
+                    session.ApplicationContext.GetLibraryResource(PersonalLibraryKind.STYLE)]);
+        }
+        return session.ApplicationContext.Tasks.Submit(new PrepareSubtitleStyleTask(session, trackId,
+            preset, project, directory)).Completion;
+    }
+
+    internal static Task<PreparedSubtitleStyle> PrepareCreationCoreAsync(Guid? trackId, SubtitleStylePreset? preset,
+        ProjectDocument project, string directory, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var track = trackId is { } id ? project.SubtitleTracks.FirstOrDefault(value => value.Id == id) ??
             throw new KeyNotFoundException("字幕轨道不存在。") : null;
         if (track is { AutoApplyStyle: true, DefaultStyle: { } defaultStyle })
         {
             return Task.FromResult(new PreparedSubtitleStyle(project, defaultStyle, track.StylePresetName!, track.StylePresetId));
         }
-
-        var preset = session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == fallbackPresetId);
         return preset is null ? Task.FromResult(new PreparedSubtitleStyle(project, new())) :
-            SubtitleStylePresetService.PrepareAsync(preset, project, session.ProjectDirectory);
+            SubtitleStylePresetService.PrepareAsync(preset, project, directory, cancellationToken);
     }
 
     internal async Task ImportAsync()
@@ -187,7 +231,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         var path = await dialogs.OpenFileAsync("ImportStyles", "StyleFiles", ["*.aegistyles"]);
         if (path is not null)
         {
-            await session.ApplicationContext.RunStyleOperationAsync(() => session.StyleLibrary.ImportAsync(path));
+            await session.ApplicationContext.Tasks.Submit(new ImportStylePresetsTask(session, path)).Completion;
             Refresh();
             session.LogInfo("Styles", Localization.Get("WorkflowLog.StylesImported"), path);
         }
@@ -198,7 +242,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         var path = await dialogs.SaveFileAsync("ExportStyles", "StyleFiles", ["*.aegistyles"], ".aegistyles", "styles.aegistyles");
         if (path is not null)
         {
-            await session.ApplicationContext.RunStyleOperationAsync(() => session.StyleLibrary.ExportAsync(path));
+            await session.ApplicationContext.Tasks.Submit(new ExportStylePresetsTask(session, path, session.StyleLibrary.Snapshot)).Completion;
             session.LogInfo("Styles", Localization.Get("WorkflowLog.StylesExported"), path);
         }
     }

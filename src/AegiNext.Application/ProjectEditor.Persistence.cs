@@ -29,6 +29,32 @@ public sealed partial class ProjectEditor
         NotifyChanged(ProjectEditorChangeKind.SAVE_POINT);
     }
 
+    /// <summary>原子接受跨目录保存，重定位当前内容并保留实际写盘的旧保存点；旧目录历史不再可用。</summary>
+    public void AcceptRelocatedSave(ProjectDocument expectedCurrent, ProjectDocument relocatedCurrent,
+        ProjectDocument originalSaveSnapshot, ProjectDocument relocatedSaveSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(expectedCurrent);
+        ArgumentNullException.ThrowIfNull(originalSaveSnapshot);
+        ProjectValidator.Validate(relocatedCurrent);
+        ProjectValidator.Validate(relocatedSaveSnapshot);
+        lock (gate)
+        {
+            EnsureNotEditing();
+            if (!ReferenceEquals(snapshot, expectedCurrent))
+            {
+                throw new InvalidOperationException("工程在资源重定位期间发生变化。");
+            }
+
+            snapshot = ReferenceEquals(expectedCurrent, originalSaveSnapshot) || relocatedCurrent == relocatedSaveSnapshot
+                ? relocatedSaveSnapshot : relocatedCurrent;
+            saved = relocatedSaveSnapshot;
+            undo.Clear();
+            redo.Clear();
+        }
+
+        NotifyChanged(ProjectEditorChangeKind.RELOCATION);
+    }
+
     private static void ReplaceHistorySnapshot(List<ProjectHistoryEntry> history, ProjectDocument originalSnapshot,
         ProjectDocument persistedSnapshot)
     {

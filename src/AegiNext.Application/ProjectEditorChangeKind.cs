@@ -7,5 +7,6 @@ public enum ProjectEditorChangeKind
 {
     DOCUMENT,
     [SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores", Justification = "项目状态枚举按已锁定的 ALL_UPPER 公共契约命名。")]
-    SAVE_POINT
+    SAVE_POINT,
+    RELOCATION
 }

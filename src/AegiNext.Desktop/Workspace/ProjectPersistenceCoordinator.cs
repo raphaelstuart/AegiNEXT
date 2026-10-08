@@ -1,4 +1,5 @@
 using AegiNext.Application;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Settings.Projects;
 
@@ -17,7 +18,12 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
     private ProjectPreferences preferences = new();
     private ITimer? autoSaveTimer;
     private ITimer? backupTimer;
-    private Task completion = Task.CompletedTask;
+    private readonly AegiTaskService tasks;
+    private readonly string scopeId;
+    private readonly bool ownsTasks;
+    private readonly HashSet<Task> pendingOperations = [];
+    private IReadOnlyCollection<AegiTaskResource> resources = [];
+    private CancellationToken OperationToken => AegiTaskExecutionContext.Current?.CancellationToken ?? lifetime.Token;
     private Task? disposal;
     private string? autoSaveFingerprint;
     private string? backupFingerprint;
@@ -26,14 +32,12 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
     private int pauseCount;
     private bool active;
     private bool disposed;
-    private bool autoSavePending;
-    private bool backupPending;
     private bool prunePending;
     private bool pruneRequired;
 
     internal ProjectPersistenceCoordinator(TimeProvider timeProvider, Func<Action, Task> dispatch,
         Func<ProjectPersistenceState?> capture, Action<ProjectPersistenceSaveResult> saved,
-        Action<Exception> reportError, IProjectPersistenceStorage? storage = null)
+        Action<Exception> reportError, IProjectPersistenceStorage? storage = null, AegiTaskService? tasks = null, string? scopeId = null)
     {
         this.timeProvider = timeProvider;
         this.dispatch = dispatch;
@@ -41,6 +45,14 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
         this.saved = saved;
         this.reportError = reportError;
         this.storage = storage ?? new ProjectPersistenceStorage();
+        ownsTasks = tasks is null;
+        this.tasks = tasks ?? new();
+        this.scopeId = scopeId ?? Guid.NewGuid().ToString("N");
+        if (ownsTasks)
+        {
+            this.tasks.RegisterScope(this.scopeId, "Tasks.ProjectPersistence");
+        }
+        resources = [AegiTaskResource.Project(this.scopeId)];
     }
 
     internal Task Completion => DrainAsync();
@@ -70,6 +82,9 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             projectVersion++;
+            var state = capture();
+            resources = state is null ? [AegiTaskResource.Project(scopeId)] :
+                [AegiTaskResource.Project(scopeId), AegiTaskResource.StoragePath(state.ProjectPath)];
             active = true;
             autoSaveFingerprint = null;
             backupFingerprint = null;
@@ -89,7 +104,10 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
             pending = DrainAsync();
         }
 
-        await pending.ConfigureAwait(false);
+        if (AegiTaskExecutionContext.Current is null)
+        {
+            await pending.ConfigureAwait(false);
+        }
         return new(Resume);
     }
 
@@ -136,7 +154,12 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
                 disposed = true;
                 StopSchedulingLocked();
                 lifetime.Cancel();
-                disposal = DisposeCoreAsync(completion);
+                foreach (var handle in tasks.GetSnapshots().Where(value => value.ScopeId == scopeId && !value.IsFinished &&
+                    value.Name.StartsWith("Tasks.Project", StringComparison.Ordinal)))
+                {
+                    tasks.RequestCancel(handle.Id);
+                }
+                disposal = DisposeCoreAsync(DrainAsync());
             }
 
             return new(disposal);
@@ -147,6 +170,10 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
     {
         await pending.ConfigureAwait(false);
         lifetime.Dispose();
+        if (ownsTasks)
+        {
+            await tasks.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private void Resume()
@@ -176,6 +203,7 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
         }
 
         var revision = scheduleVersion;
+        using var executionFlow = ExecutionContext.SuppressFlow();
         if (preferences.AutoSaveEnabled)
         {
             var interval = TimeSpan.FromMinutes(preferences.AutoSaveIntervalMinutes);
@@ -201,64 +229,50 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
     {
         lock (gate)
         {
-            if (disposed || !active || pauseCount != 0 || revision != scheduleVersion ||
-                (autoSave ? autoSavePending : backupPending))
+            if (!CanStart(projectVersion, revision))
             {
                 return;
             }
-
-            if (autoSave)
-            {
-                autoSavePending = true;
-            }
-            else
-            {
-                backupPending = true;
-            }
-
-            var version = projectVersion;
-            _ = EnqueueLocked(async () =>
-            {
-                try
-                {
-                    await RunTickAsync(autoSave, version, revision).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-                {
-                }
-                catch (Exception error)
-                {
-                    await ReportAsync(error).ConfigureAwait(false);
-                }
-                finally
-                {
-                    lock (gate)
-                    {
-                        if (autoSave)
-                        {
-                            autoSavePending = false;
-                        }
-                        else
-                        {
-                            backupPending = false;
-                        }
-                    }
-                }
-                return true;
-            });
+            TrackPendingLocked(CaptureAndSubmitTickAsync(autoSave, projectVersion, revision));
         }
     }
 
-    private async Task RunTickAsync(bool autoSave, long version, long revision)
+    private async Task CaptureAndSubmitTickAsync(bool autoSave, long version, long revision)
     {
-        if (!CanStart(version, revision))
+        try
         {
-            return;
+            var state = await InvokeAsync(capture).ConfigureAwait(false);
+            if (state is null || state.IsBusy || ProjectBackupStore.IsBackupPath(state.ProjectPath))
+            {
+                return;
+            }
+            Task pending;
+            lock (gate)
+            {
+                if (!CanStart(version, revision))
+                {
+                    return;
+                }
+                pending = tasks.Submit(new AutomaticProjectPersistenceTask(this, scopeId, state,
+                    autoSave, version, revision)).Completion;
+            }
+            await pending.ConfigureAwait(false);
         }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            if (CanStart(version, revision))
+            {
+                await ReportAsync(error).ConfigureAwait(false);
+            }
+        }
+    }
 
-        var state = await InvokeAsync(capture).ConfigureAwait(false);
-        if (state is null || state.IsBusy || ProjectBackupStore.IsBackupPath(state.ProjectPath) ||
-            !CanStart(version, revision))
+    internal async Task RunTickAsync(ProjectPersistenceState state, bool autoSave, long version, long revision)
+    {
+        if (!CanStart(version, revision) || !await InvokeAsync(() => IsCurrentState(state, version)).ConfigureAwait(false))
         {
             return;
         }
@@ -280,7 +294,7 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
 
             if (!unchanged)
             {
-                await storage.SaveAsync(state.Snapshot, state.ProjectPath, lifetime.Token).ConfigureAwait(false);
+                await storage.SaveAsync(state.Snapshot, state.ProjectPath, OperationToken).ConfigureAwait(false);
             }
             await InvokeAsync(() =>
             {
@@ -319,7 +333,7 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
             try
             {
                 await storage.WriteBackupAsync(state.Snapshot, state.ProjectPath, timeProvider.GetUtcNow(),
-                    maximumCount, lifetime.Token).ConfigureAwait(false);
+                    maximumCount, OperationToken).ConfigureAwait(false);
             }
             catch (ProjectBackupPruneException)
             {
@@ -402,12 +416,14 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
                     }
                 }
             }
-            catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
+                throw;
             }
             catch (Exception error)
             {
                 await ReportAsync(error).ConfigureAwait(false);
+                throw;
             }
             finally
             {
@@ -421,12 +437,12 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
                 }
             }
             return true;
-        });
+        }, "Tasks.ProjectBackupPrune");
     }
 
     private async Task PruneAsync(ProjectPersistenceState state, long version, int maximumCount)
     {
-        await storage.PruneBackupsAsync(state.ProjectPath, maximumCount, lifetime.Token).ConfigureAwait(false);
+        await storage.PruneBackupsAsync(state.ProjectPath, maximumCount, OperationToken).ConfigureAwait(false);
         lock (gate)
         {
             if (version == projectVersion)
@@ -469,36 +485,44 @@ internal sealed class ProjectPersistenceCoordinator : IAsyncDisposable
         return await result.Task.ConfigureAwait(false);
     }
 
-    private Task<T> EnqueueLocked<T>(Func<Task<T>> operation)
+    private Task<T> EnqueueLocked<T>(Func<Task<T>> operation, string name = "Tasks.ProjectPersistence")
     {
-        var previous = completion;
-        var pending = Task.Run(async () =>
-        {
-            await previous.ConfigureAwait(false);
-            return await operation().ConfigureAwait(false);
-        });
-        completion = ObserveAsync(pending);
+        var pending = AegiTaskExecutionContext.Current is { } parent
+            ? parent.RunStageAsync(name, _ => operation(), resources)
+            : tasks.Submit(new ProjectPersistenceTask<T>(scopeId, resources, name, operation)).Completion;
+        TrackPendingLocked(pending);
         return pending;
+    }
+
+    private void TrackPendingLocked(Task pending)
+    {
+        pendingOperations.Add(pending);
+        _ = RemoveCompletedAsync(pending);
+    }
+
+    private async Task RemoveCompletedAsync(Task pending)
+    {
+        await ObserveAsync(pending).ConfigureAwait(false);
+        lock (gate)
+        {
+            pendingOperations.Remove(pending);
+        }
     }
 
     private async Task DrainAsync()
     {
         while (true)
         {
-            Task pending;
+            Task[] pending;
             lock (gate)
             {
-                pending = completion;
+                pending = pendingOperations.ToArray();
             }
-
-            await pending.ConfigureAwait(false);
-            lock (gate)
+            if (pending.Length == 0)
             {
-                if (ReferenceEquals(pending, completion))
-                {
-                    return;
-                }
+                return;
             }
+            await ObserveAsync(Task.WhenAll(pending)).ConfigureAwait(false);
         }
     }
 

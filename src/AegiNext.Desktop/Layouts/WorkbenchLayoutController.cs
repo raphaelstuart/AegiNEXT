@@ -1,4 +1,5 @@
 using AegiNext.Desktop.I18n;
+using AegiNext.Application.Tasks;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using Avalonia;
@@ -39,7 +40,8 @@ internal sealed class WorkbenchLayoutController : IDisposable
     private string lastFingerprint = string.Empty;
 
     internal WorkbenchLayoutController(Window owner, IReadOnlyDictionary<string, Control> panelViews,
-        string personalDirectory, Func<bool> commitDrafts, Action cancelGestures, Action<Window> registerWindow)
+        string personalDirectory, Func<bool> commitDrafts, Action cancelGestures, Action<Window> registerWindow,
+        AegiTaskService? tasks = null, WorkspaceLayoutFile? initialLayout = null)
     {
         if (!panelViews.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(WorkbenchPanelIds.All))
         {
@@ -54,8 +56,8 @@ internal sealed class WorkbenchLayoutController : IDisposable
             pair => new WorkbenchDockPanel(pair.Key, pair.Value, Localization.Get("Layout." + (pair.Key))), StringComparer.Ordinal);
         factory = new(CreateFloatingHost, cancelGestures, ScheduleCapture, commitDrafts);
         codec = new(factory, panels);
-        store = new(personalDirectory);
-        var file = store.Load();
+        store = new(personalDirectory, tasks);
+        var file = initialLayout ?? store.Load();
         userPresets = file.Presets.ToList();
         CurrentPresetId = file.CurrentPresetId;
         dockHost = new() { Factory = factory, InitializeFactory = false, InitializeLayout = false };
@@ -447,6 +449,7 @@ internal sealed class WorkbenchLayoutController : IDisposable
         owner.Opened -= OnOwnerOpened;
         dockHost.RemoveHandler(InputElement.PointerPressedEvent, OnDockSpacePointerPressed);
         Unwatch();
+        store.Dispose();
         applying = true;
         dockHost.Layout = null;
         CloseFloatingHosts();

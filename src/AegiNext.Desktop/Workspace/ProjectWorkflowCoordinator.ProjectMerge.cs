@@ -1,4 +1,5 @@
 using AegiNext.Application;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.I18n;
 
@@ -17,30 +18,25 @@ internal sealed partial class ProjectWorkflowCoordinator
 
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, session.ProjectOperationsToken);
         var token = lifetime.Token;
-        ProjectMergeResult? merged = null;
-        session.SetProjectBusy(true);
-        try
+        var captured = session.Editor.Snapshot;
+        var directory = session.ProjectDirectory;
+        var inputRevision = session.TaskInputRevision;
+        IReadOnlyList<string> paths;
+        using (selectedPaths is null ? session.AcquireEditingLease() : null)
         {
-            var captured = session.Editor.Snapshot;
-            var directory = session.ProjectDirectory;
-            await using var pause = await session.Persistence.PauseAsync();
-            var paths = selectedPaths ?? await dialogs.OpenFilesAsync("MergeProjects", "Projects", ["*.aeginext"])
+            paths = selectedPaths ?? await dialogs.OpenFilesAsync("MergeProjects", "Projects", ["*.aeginext"])
                 .WaitAsync(token);
-            token.ThrowIfCancellationRequested();
-            if (paths.Count == 0 || session.IsClosing)
-            {
-                return;
-            }
-            EnsureMergeTargetUnchanged(captured, directory);
-            merged = await session.Persistence.RunExclusiveAsync(() => MergeProjectsCoreAsync(
-                captured, directory, paths, token));
         }
-        finally
+        token.ThrowIfCancellationRequested();
+        if (paths.Count == 0 || session.IsClosing)
         {
-            session.SetProjectBusy(false);
+            return;
         }
+        EnsureMergeTargetUnchanged(captured, directory, inputRevision);
+        var merged = await session.ApplicationContext.Tasks.Submit(new MergeProjectsTask(session, this,
+            captured, directory, paths.ToArray(), inputRevision)).WaitAsync(cancellationToken);
 
-        if (merged is null || session.IsClosing)
+        if (session.IsClosing)
         {
             return;
         }
@@ -65,9 +61,10 @@ internal sealed partial class ProjectWorkflowCoordinator
         }
     }
 
-    private async Task<ProjectMergeResult> MergeProjectsCoreAsync(ProjectDocument captured, string directory,
-        IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    internal async Task<ProjectMergeResult> MergeProjectsCoreAsync(ProjectDocument captured, string directory,
+        IReadOnlyList<string> paths, long inputRevision, AegiTaskExecutionContext context)
     {
+        var cancellationToken = context.CancellationToken;
         var sources = new List<ProjectMergeSource>(paths.Count);
         var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var seen = new HashSet<string>(pathComparer);
@@ -111,38 +108,48 @@ internal sealed partial class ProjectWorkflowCoordinator
                 ? Path.GetFileNameWithoutExtension(fullPath) : source.Name, Path.GetDirectoryName(fullPath)!));
         }
 
-        EnsureMergeTargetUnchanged(captured, directory);
-        await using var resources = await ProjectMergeResources.PrepareAsync(sources, directory, cancellationToken);
-        var result = ProjectEditingOperations.MergeProjects(captured, resources.Sources);
-        ProjectStore.ValidateSerialization(result.Document);
-        cancellationToken.ThrowIfCancellationRequested();
-        EnsureMergeTargetUnchanged(captured, directory);
-        await resources.CommitAsync(cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        EnsureMergeTargetUnchanged(captured, directory);
+        EnsureMergeTargetUnchanged(captured, directory, inputRevision);
+        AegiTaskEditLease? editLease = null;
         try
         {
-            session.Editor.Apply("Merge projects", _ => result.Document);
+            await using var resources = await ProjectMergeResources.PrepareAsync(sources, directory, cancellationToken);
+            var result = ProjectEditingOperations.MergeProjects(captured, resources.Sources);
+            ProjectStore.ValidateSerialization(result.Document);
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureMergeTargetUnchanged(captured, directory, inputRevision);
+            editLease = context.AcquireEditLease();
+            context.EnterCommit(() => !session.IsClosing && inputRevision == session.TaskInputRevision &&
+                !session.HasProjectDrafts && ReferenceEquals(captured, session.Editor.Snapshot) && directory == session.ProjectDirectory);
+            await resources.CommitAsync(CancellationToken.None);
+            try
+            {
+                session.Editor.Apply("Merge projects", _ => result.Document);
+            }
+            finally
+            {
+                if (ReferenceEquals(session.Editor.Snapshot, result.Document))
+                {
+                    resources.Accept();
+                }
+            }
+            session.LogInfo("Project", Localization.Format("WorkflowLog.ProjectsMerged", sources.Count,
+                result.ImportedTrackIds.Length, result.ImportedSubtitleIds.Length));
+            return result;
         }
         finally
         {
-            if (ReferenceEquals(session.Editor.Snapshot, result.Document))
-            {
-                resources.Accept();
-            }
+            editLease?.Dispose();
         }
-        session.LogInfo("Project", Localization.Format("WorkflowLog.ProjectsMerged", sources.Count,
-            result.ImportedTrackIds.Length, result.ImportedSubtitleIds.Length));
-        return result;
     }
 
-    private void EnsureMergeTargetUnchanged(ProjectDocument captured, string directory)
+    private void EnsureMergeTargetUnchanged(ProjectDocument captured, string directory, long inputRevision)
     {
         if (session.IsClosing)
         {
             throw new OperationCanceledException(session.ProjectOperationsToken);
         }
-        if (!ReferenceEquals(captured, session.Editor.Snapshot) || directory != session.ProjectDirectory)
+        if (session.TaskInputRevision != inputRevision || session.HasProjectDrafts ||
+            !ReferenceEquals(captured, session.Editor.Snapshot) || directory != session.ProjectDirectory)
         {
             throw new InvalidOperationException(Localization.Get("Workbench.ProjectMergeChanged"));
         }

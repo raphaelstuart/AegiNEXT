@@ -417,7 +417,6 @@ public sealed class TimelineViewStatePersistenceTests
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             context.Editor.Apply("Resize during timeline state save", document => document with { Width = 1280 });
-            await context.Session.WaitForProjectIdleAsync();
             var newerSnapshot = context.Editor.Snapshot;
             context.Session.SetTimelineAnimationRowCollapsed(sceneRow, true);
             release.TrySetResult();

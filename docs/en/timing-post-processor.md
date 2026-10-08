@@ -17,6 +17,8 @@ Select subtitle clips in the timeline and click the clock icon at the bottom of 
 
 Subtitles without an association are skipped; the log reports changed and skipped counts. Without video, keyframe snapping is skipped. Probe failures, invalid durations, or final collisions reject the complete batch. Each click is a new processing operation; F8/F9, style application, and export do not run the processor automatically.
 
+The first uncached index scan appears in the title-bar task list and supports explicit cancellation while the project stays editable. Cancellation waits for probe-process exit and cleanup. Before applying, the task rechecks project, media, selection, subtitle input, draft, and gesture revisions. Changed input cancels application of the result, preserving new edits. Index caches remain reusable; requesting cancellation does not immediately remove the task row.
+
 ## Default options
 
 | Stage | Default |

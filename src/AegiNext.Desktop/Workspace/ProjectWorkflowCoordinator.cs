@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using AegiNext.Application;
+using AegiNext.Application.Tasks;
 using AegiNext.Application.SubtitleFormats;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
@@ -47,7 +48,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
             }
             await dialogs.ShowNewProjectAsync(session.Preferences.Projects.WorkspaceRoot, async (request, cancellationToken) =>
             {
-                var result = await CreateProjectAsync(request, cancellationToken);
+                var result = await CreateProjectFromDialogAsync(request, cancellationToken);
                 foreach (var diagnostic in result.Diagnostics)
                 {
                     session.ShowError(diagnostic);
@@ -62,32 +63,67 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         }
     }
 
-    internal async Task<ProjectOpenResult> CreateProjectAsync(ProjectCreationRequest request,
+    internal Task<ProjectOpenResult> CreateProjectAsync(ProjectCreationRequest request,
         CancellationToken cancellationToken = default)
+    {
+        return SubmitProjectCreationAsync(null, request, ownsCancellation: false, cancellationToken);
+    }
+
+    internal Task<ProjectOpenResult> CreateProjectAsync(string path,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitProjectCreationAsync(path, null, ownsCancellation: false, cancellationToken);
+    }
+
+    internal Task<ProjectOpenResult> CreateProjectFromDialogAsync(ProjectCreationRequest request,
+        CancellationToken operationCancellation)
+    {
+        return SubmitProjectCreationAsync(null, request, ownsCancellation: true, operationCancellation);
+    }
+
+    private async Task<ProjectOpenResult> SubmitProjectCreationAsync(string? path, ProjectCreationRequest? request,
+        bool ownsCancellation, CancellationToken cancellationToken)
     {
         if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
         {
             return new(ProjectOpenStatus.CANCELLED);
         }
         await using var pause = await session.Persistence.PauseAsync();
-        return await session.Persistence.RunExclusiveAsync(() => CreateProjectCoreAsync(
-            ProjectCreationService.GetProjectPath(request), request, cancellationToken));
+        var task = new CreateProjectTask(session, this, path ?? ProjectCreationService.GetProjectPath(request!), request);
+        var handle = session.ApplicationContext.Tasks.Submit(task);
+        if (ownsCancellation)
+        {
+            using var registration = cancellationToken.Register(() => handle.RequestCancel());
+            return await AwaitProjectResultAsync(handle, CancellationToken.None, () => task.Outcome);
+        }
+        return await AwaitProjectResultAsync(handle, cancellationToken, () => task.Outcome);
     }
 
-    internal async Task<ProjectOpenResult> CreateProjectAsync(string path,
-        CancellationToken cancellationToken = default)
+    private static async Task<ProjectOpenResult> AwaitProjectResultAsync(AegiTaskHandle<ProjectOpenResult> handle,
+        CancellationToken cancellationToken, Func<ProjectOpenResult?>? outcome = null)
     {
-        if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
+        try
+        {
+            return await handle.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
         {
             return new(ProjectOpenStatus.CANCELLED);
         }
-        await using var pause = await session.Persistence.PauseAsync();
-        return await session.Persistence.RunExclusiveAsync(() => CreateProjectCoreAsync(path, null, cancellationToken));
+        catch (Exception error)
+        {
+            if (outcome?.Invoke() is { Status: ProjectOpenStatus.OPENED } committed)
+            {
+                return new(ProjectOpenStatus.OPENED, diagnostics: [.. committed.Diagnostics, error]);
+            }
+            return new(ProjectOpenStatus.FAILED, error);
+        }
     }
 
-    private async Task<ProjectOpenResult> CreateProjectCoreAsync(string path, ProjectCreationRequest? request,
-        CancellationToken cancellationToken)
+    internal async Task<ProjectOpenResult> CreateProjectCoreAsync(string path, ProjectCreationRequest? request,
+        AegiTaskExecutionContext context)
     {
+        var cancellationToken = context.CancellationToken;
         if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
         {
             return new(ProjectOpenStatus.CANCELLED);
@@ -97,7 +133,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         var previousPreview = session.Controller.Snapshot;
         var previewChanged = false;
         var committed = false;
-        session.SetProjectBusy(true);
+        using var editLease = context.AcquireEditLease();
         try
         {
             path = Path.GetFullPath(path);
@@ -126,6 +162,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
                 document = new() { Name = Path.GetFileNameWithoutExtension(path) };
                 await ProjectStore.CreateAsync(document, path, cancellationToken);
             }
+            context.EnterCommit(() => !session.IsClosing);
             session.SetProjectLocation(path, directory);
             session.ClearTimelineClipboard();
             session.ResetSelection();
@@ -170,10 +207,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
                 ? new(ProjectOpenStatus.CANCELLED)
                 : new(ProjectOpenStatus.FAILED, error);
         }
-        finally
-        {
-            session.SetProjectBusy(false);
-        }
+
     }
 
     internal async Task OpenProjectAsync()
@@ -233,25 +267,35 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
             return new(ProjectOpenStatus.FAILED, error);
         }
 
-        return await session.Persistence.RunExclusiveAsync(() => OpenProjectCoreAsync(path, cancellationToken));
+        var task = new OpenProjectTask(session, this, path);
+        return await AwaitProjectResultAsync(session.ApplicationContext.Tasks.Submit(task), cancellationToken, () => task.Outcome);
     }
 
-    private async Task<ProjectOpenResult> OpenProjectCoreAsync(string path, CancellationToken cancellationToken)
+    internal async Task<ProjectOpenResult> OpenProjectCoreAsync(string path, AegiTaskExecutionContext context)
     {
+        var cancellationToken = context.CancellationToken;
         if (session.IsProjectBusy || session.IsClosing || cancellationToken.IsCancellationRequested)
         {
             return new(ProjectOpenStatus.CANCELLED);
         }
-        session.SetProjectBusy(true);
+
         var previousDocument = session.Editor.Snapshot;
+        var inputRevision = session.TaskInputRevision;
         var previousPreview = session.Controller.Snapshot;
         var previewChanged = false;
         Exception? unavailableMediaError = null;
         var committed = false;
+        AegiTaskEditLease? editLease = null;
         try
         {
             var document = await ProjectStore.LoadAsync(path, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            if (inputRevision != session.TaskInputRevision || session.HasProjectDrafts ||
+                !ReferenceEquals(previousDocument, session.Editor.Snapshot))
+            {
+                throw new OperationCanceledException("The project input changed during preparation.", cancellationToken);
+            }
+            editLease = context.AcquireEditLease();
             var directory = Path.GetDirectoryName(path)!;
             string? mediaPath = null;
             UnavailableProjectMediaBinding? deferredBinding = null;
@@ -309,13 +353,14 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
                 throw new OperationCanceledException();
             }
 
+            context.EnterCommit(() => !session.IsClosing);
             session.SetProjectLocation(path, directory);
             session.ClearTimelineClipboard();
             session.ResetSelection();
             session.ResetTimelineViewState(document);
+            unavailableMediaBinding = deferredBinding;
             session.Editor.Reset(document);
             session.ActivateProjectPersistence();
-            unavailableMediaBinding = deferredBinding;
             committed = true;
             await session.ApplicationContext.RecentProjects.RecordAsync(path);
             var diagnostics = new List<Exception>();
@@ -382,11 +427,12 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         }
         finally
         {
+            editLease?.Dispose();
             if (unavailableMediaError is { } error && !ReferenceEquals(session.Controller.Snapshot.Error, error))
             {
                 session.DismissError(error);
             }
-            session.SetProjectBusy(false);
+
         }
     }
 
@@ -398,14 +444,19 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         }
 
         path = ProjectAssetLocation.ResolveInputPath(path, session.ProjectDirectory);
-        session.SetProjectBusy(true);
+        await session.ApplicationContext.Tasks.Submit(new SwitchProjectMediaTask(session, this, path, updateProject)).Completion;
+    }
+
+    internal async Task OpenMediaCoreAsync(string path, bool updateProject, AegiTaskExecutionContext context)
+    {
+        using var editLease = context.AcquireEditLease();
         var previousDocument = session.Editor.Snapshot;
         var previousPreview = session.Controller.Snapshot;
         var committed = false;
         try
         {
             session.ResetTiming();
-            await session.Controller.OpenAsync(path);
+            await session.Controller.OpenAsync(path, context.CancellationToken);
             if (session.Controller.Snapshot.Error is { } error)
             {
                 throw error;
@@ -414,7 +465,8 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
             var media = session.Controller.MediaInfo ?? throw new InvalidDataException("媒体信息不可用。");
             if (updateProject)
             {
-                var asset = await ProjectResources.ImportAsync(path, ProjectAssetKind.MEDIA, session.ProjectDirectory);
+                var asset = await ProjectResources.ImportAsync(path, ProjectAssetKind.MEDIA, session.ProjectDirectory, context.CancellationToken);
+                context.EnterCommit(() => !session.IsClosing);
                 session.Editor.Apply("Bind media", document => document with
                 {
                     Width = media.VideoWidth ?? document.Width, Height = media.VideoHeight ?? document.Height,
@@ -444,10 +496,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
 
             throw;
         }
-        finally
-        {
-            session.SetProjectBusy(false);
-        }
+
     }
 
     private async Task RestorePreviewAsync(ProjectDocument document, VideoPreviewSnapshot previousPreview,
@@ -516,41 +565,64 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         {
             return false;
         }
-        return await session.Persistence.RunExclusiveAsync(() => SaveProjectCoreAsync(destination));
+        var captured = session.Editor.Snapshot;
+        var snapshot = WithCurrentPlaybackOrigin(session.CreatePersistenceSnapshot(captured));
+        return await session.ApplicationContext.Tasks.Submit(new SaveProjectTask(session, this, destination, captured,
+            snapshot, session.ProjectDirectory)).Completion;
     }
 
-    private async Task<bool> SaveProjectCoreAsync(string destination)
+    internal async Task<bool> SaveProjectCoreAsync(string destination, ProjectDocument snapshot,
+        ProjectDocument persistenceSnapshot, string sourceDirectory, AegiTaskExecutionContext context, bool finalization = false)
     {
-        session.SetProjectBusy(true);
-        try
+        destination = Path.GetFullPath(destination);
+        var locationChanged = !WorkbenchSession.PathsEqual(destination, session.ProjectPath);
+        var directory = Path.GetDirectoryName(destination)!;
+        var sameDirectory = WorkbenchSession.PathsEqual(directory, sourceDirectory);
+        using var relocationLease = sameDirectory ? null : context.AcquireEditLease();
+        var expectedCurrent = session.Editor.Snapshot;
+        var prepared = sameDirectory
+            ? ProjectResources.NormalizeMediaReferences(persistenceSnapshot, directory)
+            : await ProjectResources.RebaseAsync(persistenceSnapshot, sourceDirectory, directory, context.CancellationToken);
+        var relocatedCurrent = sameDirectory || ReferenceEquals(snapshot, expectedCurrent)
+            ? prepared : await ProjectResources.RebaseAsync(session.CreatePersistenceSnapshot(expectedCurrent),
+                sourceDirectory, directory, context.CancellationToken);
+        await ProjectStore.SaveAsync(prepared, destination, () => context.EnterCommit(() =>
+            (finalization || !session.IsClosing) && session.ProjectDirectory == sourceDirectory &&
+            (sameDirectory || ReferenceEquals(expectedCurrent, session.Editor.Snapshot))), context.CancellationToken);
+        session.SetProjectLocation(destination, directory);
+        if (sameDirectory)
         {
-            destination = Path.GetFullPath(destination);
-            var locationChanged = !WorkbenchSession.PathsEqual(destination, session.ProjectPath);
-            var snapshot = session.Editor.Snapshot;
-            var persistenceSnapshot = session.CreatePersistenceSnapshot(snapshot);
-            persistenceSnapshot = WithCurrentPlaybackOrigin(persistenceSnapshot);
-            var directory = Path.GetDirectoryName(destination)!;
-            var sameDirectory = WorkbenchSession.PathsEqual(directory, session.ProjectDirectory);
-            var prepared = sameDirectory
-                ? ProjectResources.NormalizeMediaReferences(persistenceSnapshot, directory)
-                : await ProjectResources.RebaseAsync(persistenceSnapshot, session.ProjectDirectory, directory);
-            await ProjectStore.SaveAsync(prepared, destination);
-            session.SetProjectLocation(destination, directory);
-            session.AcceptProjectSave(snapshot, prepared, !sameDirectory);
+            session.AcceptProjectSave(snapshot, prepared);
+        }
+        else
+        {
+            session.AcceptRelocatedProjectSave(expectedCurrent, relocatedCurrent, snapshot, prepared);
+        }
+        if (locationChanged)
+        {
+            session.ActivateProjectPersistence();
+        }
+        await session.Persistence.RecordManualSaveAsync(prepared);
+        session.LogInfo("Project", Localization.Get("Workbench.Saved"), destination);
+        await session.ApplicationContext.RecentProjects.RecordAsync(destination);
+        return true;
+    }
 
-            if (locationChanged)
-            {
-                session.ActivateProjectPersistence();
-            }
-            await session.Persistence.RecordManualSaveAsync(prepared);
-            session.LogInfo("Project", Localization.Get("Workbench.Saved"), destination);
-            await session.ApplicationContext.RecentProjects.RecordAsync(destination);
-            return true;
-        }
-        finally
+    internal async Task<bool> SaveProjectForCloseAsync(AegiTaskScopeCloseLease lease, string? destination = null)
+    {
+        destination ??= session.ProjectPath;
+        if (destination is null)
         {
-            session.SetProjectBusy(false);
+            destination = await dialogs.SaveFileAsync("Save", "Projects", ["*.aeginext"], ".aeginext",
+                session.ProjectDisplayName + ".aeginext");
+            if (destination is null)
+            {
+                return false;
+            }
         }
+        var snapshot = session.Editor.Snapshot;
+        return await lease.SubmitFinalization(new SaveProjectTask(session, this, destination, snapshot,
+            WithCurrentPlaybackOrigin(session.CreatePersistenceSnapshot(snapshot)), session.ProjectDirectory, finalization: true)).Completion;
     }
 
     internal async Task ImportSubtitlesAsync(bool ass = false)
@@ -567,56 +639,61 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         var captured = session.Editor.Snapshot;
         var trackId = session.CurrentTrackId;
         var presetId = session.ViewModel.Styles.SelectedPreset?.Id;
+        await session.ApplicationContext.Tasks.Submit(new ImportSubtitlesTask(session, this, path, ass,
+            captured, session.TaskInputRevision, trackId, presetId)).Completion;
+    }
+
+    internal async Task ImportSubtitlesCoreAsync(string path, bool ass, ProjectDocument captured, long inputRevision,
+        Guid? trackId, Guid? presetId, AegiTaskExecutionContext context)
+    {
         Guid? firstCueId;
-        session.SetProjectBusy(true);
-        try
+        var text = await ReadSubtitleFileAsync(path, context.CancellationToken);
+        var prepared = WithCurrentPlaybackOrigin(captured);
+        var mapping = SubtitleTimelineExchange.GetMapping(prepared.Media);
+        var timingDiagnostics = SubtitleTimingDiagnostics(mapping);
+        ImmutableArray<SubtitleLine> lines;
+        AssImportResult? assResult = null;
+        if (ass)
         {
-            var text = await ReadSubtitleFileAsync(path);
-            var prepared = WithCurrentPlaybackOrigin(captured);
-            var mapping = SubtitleTimelineExchange.GetMapping(prepared.Media);
-            var timingDiagnostics = SubtitleTimingDiagnostics(mapping);
-            ImmutableArray<SubtitleLine> lines;
-            AssImportResult? assResult = null;
-            if (ass)
-            {
-                var result = AssSubtitleFormat.Parse(text, captured.Width, captured.Height);
-                if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(timingDiagnostics)))
-                {
-                    return;
-                }
-                assResult = SubtitleTimelineExchange.ToProjectTime(result, mapping ?? default);
-                lines = assResult.Lines;
-            }
-            else
-            {
-                lines = SubtitleTextFormat.ParseSrt(text);
-                if (!await ConfirmConversionAsync(timingDiagnostics))
-                {
-                    return;
-                }
-                lines = SubtitleTimelineExchange.ToProjectTime(lines, mapping ?? default);
-                var creation = await session.Styles.PrepareCreationAsync(trackId, presetId);
-                prepared = WithCurrentPlaybackOrigin(creation.Project);
-                lines = lines.Select(line => line with
-                {
-                    Style = creation.Style, StyleName = creation.StyleName, StylePresetId = creation.StylePresetId
-                }).ToImmutableArray();
-            }
-            if (session.IsClosing || !ReferenceEquals(captured, session.Editor.Snapshot))
+            var result = await Task.Run(() => AssSubtitleFormat.Parse(text, captured.Width, captured.Height), context.CancellationToken);
+            if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(timingDiagnostics)))
             {
                 return;
             }
-            var imported = assResult is null
-                ? ProjectEditingOperations.ImportSubtitleLines(prepared, lines, Path.GetFileNameWithoutExtension(path))
-                : ProjectEditingOperations.ImportSubtitleLines(prepared, assResult, Path.GetFileNameWithoutExtension(path));
-            session.Editor.Apply("Import subtitles", _ => imported);
-            firstCueId = lines.IsEmpty ? null : lines[0].Id;
-            session.LogInfo("Subtitles", $"{Localization.Get("WorkflowLog.SubtitlesImported")} ({lines.Length})", path);
+            assResult = SubtitleTimelineExchange.ToProjectTime(result, mapping ?? default);
+            lines = assResult.Lines;
         }
-        finally
+        else
         {
-            session.SetProjectBusy(false);
+            lines = await Task.Run(() => SubtitleTextFormat.ParseSrt(text), context.CancellationToken);
+            if (!await ConfirmConversionAsync(timingDiagnostics))
+            {
+                return;
+            }
+            lines = SubtitleTimelineExchange.ToProjectTime(lines, mapping ?? default);
+            var creation = await session.Styles.PrepareCreationAsync(trackId, presetId, captured);
+            prepared = WithCurrentPlaybackOrigin(creation.Project);
+            lines = lines.Select(line => line with
+            {
+                Style = creation.Style, StyleName = creation.StyleName, StylePresetId = creation.StylePresetId
+            }).ToImmutableArray();
         }
+        if (session.IsClosing || inputRevision != session.TaskInputRevision || session.HasProjectDrafts ||
+            !ReferenceEquals(captured, session.Editor.Snapshot))
+        {
+            throw new OperationCanceledException("The subtitle import target changed during preparation.", context.CancellationToken);
+        }
+        var imported = assResult is null
+            ? ProjectEditingOperations.ImportSubtitleLines(prepared, lines, Path.GetFileNameWithoutExtension(path))
+            : ProjectEditingOperations.ImportSubtitleLines(prepared, assResult, Path.GetFileNameWithoutExtension(path));
+        using var editLease = context.AcquireEditLease();
+        context.EnterCommit(() => !session.IsClosing && inputRevision == session.TaskInputRevision &&
+            !session.HasProjectDrafts && ReferenceEquals(captured, session.Editor.Snapshot));
+        session.Editor.Apply("Import subtitles", _ => imported);
+        firstCueId = lines.IsEmpty ? null : lines[0].Id;
+        session.LogInfo("Subtitles", $"{Localization.Get("WorkflowLog.SubtitlesImported")} ({lines.Length})", path);
+        editLease.Dispose();
+
         if (firstCueId is { } id)
         {
             var line = session.Editor.Snapshot.Subtitles.First(value => value.Id == id);
@@ -631,40 +708,39 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         {
             return;
         }
-        session.SetProjectBusy(true);
+        var document = WithCurrentPlaybackOrigin(session.Editor.Snapshot);
+        var extension = ass ? ".ass" : ".srt";
+        var path = await dialogs.SaveFileAsync("ExportText", "SubtitleFiles", ["*" + extension], extension, "subtitles" + extension);
+        if (path is not null && !session.IsClosing)
+        {
+            await session.ApplicationContext.Tasks.Submit(new ExportSubtitlesTask(session, this, path, document, ass)).Completion;
+        }
+    }
+
+    internal async Task ExportSubtitlesCoreAsync(string path, ProjectDocument document, bool ass,
+        AegiTaskExecutionContext context)
+    {
+        var mapping = SubtitleTimelineExchange.GetMapping(document.Media);
+        var timeOffset = mapping?.Origin ?? MediaTime.Zero;
+        var result = await Task.Run(() => ass ? AssSubtitleFormat.Write(document, timeOffset) : new SubtitleFormatWriteResult(
+            SubtitleTextFormat.WriteSrt(document.Subtitles.OrderBy(line => line.Start), timeOffset),
+            SubtitleFormatLossAnalysis.ForSrt(document)), context.CancellationToken);
+        if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(SubtitleTimingDiagnostics(mapping))))
+        {
+            throw new OperationCanceledException(context.CancellationToken);
+        }
+        context.CancellationToken.ThrowIfCancellationRequested();
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            var document = WithCurrentPlaybackOrigin(session.Editor.Snapshot);
-            var mapping = SubtitleTimelineExchange.GetMapping(document.Media);
-            var timeOffset = mapping?.Origin ?? MediaTime.Zero;
-            var result = ass ? AssSubtitleFormat.Write(document, timeOffset) : new SubtitleFormatWriteResult(
-                SubtitleTextFormat.WriteSrt(document.Subtitles.OrderBy(line => line.Start), timeOffset),
-                SubtitleFormatLossAnalysis.ForSrt(document));
-            if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(SubtitleTimingDiagnostics(mapping))) || session.IsClosing)
-            {
-                return;
-            }
-            var extension = ass ? ".ass" : ".srt";
-            var path = await dialogs.SaveFileAsync("ExportText", "SubtitleFiles", ["*" + extension], extension, "subtitles" + extension);
-            if (path is null || session.IsClosing)
-            {
-                return;
-            }
-            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                await File.WriteAllTextAsync(temporary, result.Text, new UTF8Encoding(false, true));
-                File.Move(temporary, path, true);
-                session.LogInfo("Subtitles", Localization.Get("WorkflowLog.SubtitlesExported"), path);
-            }
-            finally
-            {
-                File.Delete(temporary);
-            }
+            await File.WriteAllTextAsync(temporary, result.Text, new UTF8Encoding(false, true), context.CancellationToken);
+            context.EnterCommit();
+            File.Move(temporary, path, true);
+            session.LogInfo("Subtitles", Localization.Get("WorkflowLog.SubtitlesExported"), path);
         }
         finally
         {
-            session.SetProjectBusy(false);
+            File.Delete(temporary);
         }
     }
 
@@ -698,13 +774,13 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         return dialogs.ConfirmSubtitleConversionAsync(messages);
     }
 
-    private static async Task<string> ReadSubtitleFileAsync(string path)
+    private static async Task<string> ReadSubtitleFileAsync(string path, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         using var reader = new StreamReader(stream, new UTF8Encoding(false, true),
             detectEncodingFromByteOrderMarks: false, bufferSize: 8192, leaveOpen: true);
-        var text = await reader.ReadToEndAsync();
+        var text = await reader.ReadToEndAsync(cancellationToken);
         return text.StartsWith('\uFEFF') ? text[1..] : text;
     }
 
@@ -719,9 +795,19 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
             ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 
-    internal async Task SynchronizePreviewBindingAsync()
+    internal Task SynchronizePreviewBindingAsync()
     {
-        session.SetProjectBusy(true);
+        if (AegiTaskExecutionContext.Current is { } parent)
+        {
+            return parent.RunStageAsync("Tasks.SynchronizeMedia", SynchronizePreviewBindingCoreAsync,
+                [AegiTaskResource.Project(session.TaskScope), AegiTaskResource.Named("media:" + session.TaskScope)]);
+        }
+        return session.ApplicationContext.Tasks.Submit(new SynchronizeProjectMediaTask(session, this)).Completion;
+    }
+
+    internal async Task SynchronizePreviewBindingCoreAsync(AegiTaskExecutionContext context)
+    {
+        using var editLease = context.AcquireEditLease();
         try
         {
             var document = session.Editor.Snapshot;
@@ -737,7 +823,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
             {
                 var path = ProjectAssetLocation.Resolve(document.Assets.Single(asset => asset.Id == binding.AssetId),
                     session.ProjectDirectory);
-                await session.Controller.OpenAsync(path);
+                await session.Controller.OpenAsync(path, context.CancellationToken);
                 if (session.Controller.Snapshot.Error is { } error)
                 {
                     throw error;
@@ -755,10 +841,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
             await ClearPreviewBindingAsync();
             throw;
         }
-        finally
-        {
-            session.SetProjectBusy(false);
-        }
+
     }
 
     internal async Task ClearPreviewBindingAsync()

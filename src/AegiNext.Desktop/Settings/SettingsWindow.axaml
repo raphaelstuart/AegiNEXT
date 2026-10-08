@@ -14,6 +14,7 @@
         xmlns:mediaPages="using:AegiNext.Desktop.Settings.Media"
         xmlns:projectPages="using:AegiNext.Desktop.Settings.Projects"
         xmlns:previewPages="using:AegiNext.Desktop.Settings.Preview"
+        xmlns:taskPages="using:AegiNext.Desktop.Settings.Tasks"
         xmlns:timingPages="using:AegiNext.Desktop.Settings.TimingPostProcessor"
         xmlns:materialIcons="using:Material.Icons.Avalonia"
         x:Class="AegiNext.Desktop.Settings.SettingsWindow" x:DataType="settings:SettingsWindowViewModel"
@@ -65,8 +66,6 @@
     <Style Selector="Border.card">
       <Setter Property="Background" Value="{DynamicResource SettingsSurface}" />
       <Setter Property="BorderBrush" Value="{DynamicResource SettingsBorder}" />
-      <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="16" />
     </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*">
@@ -144,6 +143,12 @@
                            ToolTip.Tip="{Loc Key=Settings.Transfer}" />
               </StackPanel>
             </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatListBulleted" />
+                <TextBlock Text="{Loc Key=Settings.Tasks}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
           </ListBox>
         </StackPanel>
       </Border>
@@ -192,6 +197,10 @@
         <Grid Grid.Row="1" IsVisible="{Binding IsTransferVisible}">
           <transferPages:UserSettingsTransferView Name="TransferView" DataContext="{Binding Transfer}"
                                                  IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsTasksVisible}">
+          <taskPages:TaskSettingsView Name="TasksView" DataContext="{Binding Tasks}"
+                                     IsVisible="{Binding $parent[Grid].IsVisible}" />
         </Grid>
         <TextBlock Name="SettingsError" Grid.Row="2" Text="{Binding Error}"
                    Foreground="{DynamicResource SettingsError}" IsVisible="{Binding HasError}" TextWrapping="Wrap"

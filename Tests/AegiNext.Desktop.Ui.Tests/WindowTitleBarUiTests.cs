@@ -1,5 +1,6 @@
 using System.Reflection;
 using AegiNext.Desktop.Controls.Common;
+using AegiNext.Desktop.Tasks;
 using AegiNext.Desktop.Windowing;
 using Avalonia;
 using Avalonia.Controls;
@@ -8,11 +9,39 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class WindowTitleBarUiTests
 {
+    [AvaloniaFact]
+    public async Task MainWindowTaskButtonUsesTheRightmostSlotInsideCaptionInsets()
+    {
+        await using var context = new MainWindowTestContext();
+        var window = context.Window;
+        window.Width = 760;
+        var titleBar = UiTestActions.Find<WindowTitleBar>(window, "TitleBar");
+        titleBar.CaptionInsets = new(72, 0, 100, 0);
+        FlushLayout(window);
+        var view = Assert.Single(titleBar.GetVisualDescendants().OfType<TaskCenterView>());
+        var button = UiTestActions.Find<Button>(view, "TasksButton");
+        var bounds = WindowBounds(button, window);
+        var barBounds = WindowBounds(titleBar, window);
+        Assert.InRange(Math.Abs(bounds.Right - (barBounds.Right - titleBar.CaptionInsets.Right - 8)), 0, 1);
+        Assert.Null(titleBar.CenterContent);
+        Assert.Same(view, titleBar.RightContent);
+        Assert.False(titleBar.IsDragRegion(bounds.Center));
+        Assert.True(button.Focus());
+        UiTestActions.Press(window, Key.Enter);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(button.Flyout!.IsOpen);
+        UiTestActions.Press(window, Key.Escape);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(button.Flyout.IsOpen);
+        Assert.True(button.IsFocused);
+    }
+
     [AvaloniaFact]
     public void SharedChromeSynchronizesTheWindowTitleWithoutReplacingContent()
     {
@@ -281,6 +310,143 @@ public sealed class WindowTitleBarUiTests
         root.Children.Add(titleBar);
         root.Children.Add(content);
         return (new Window { Title = title, Width = 640, Height = 300, Content = root }, titleBar, content);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(420, 64)]
+    [InlineData(760, 112)]
+    public void CenterContentUsesActualWidthAndRemainsInteractiveOutsideTheDragRegion(double width, double buttonWidth)
+    {
+        var (window, titleBar, _) = CreateHost("A long project title that should be trimmed to the available area");
+        window.Width = width;
+        titleBar.CaptionInsets = new(72, 0, 100, 0);
+        var menu = new Button { Content = "Menu", Width = 48 };
+        var center = new Button { Content = "Tasks", Width = buttonWidth };
+        titleBar.MenuContent = menu;
+        titleBar.CenterContent = center;
+        var clicks = 0;
+        center.Click += (_, _) => clicks++;
+        try
+        {
+            window.Show();
+            FlushLayout(window);
+            var centerBounds = WindowBounds(center, window);
+            var menuBounds = WindowBounds(menu, window);
+            var titleBounds = WindowBounds(UiTestActions.Find<TextBlock>(titleBar, "TitleText"), window);
+            var contentCenter = (titleBar.CaptionInsets.Left + width - titleBar.CaptionInsets.Right) / 2;
+            Assert.InRange(Math.Abs(centerBounds.Center.X - contentCenter), 0, 1);
+            Assert.True(menuBounds.Right <= centerBounds.Left);
+            Assert.True(centerBounds.Right <= titleBounds.Left);
+            Assert.True(titleBounds.Right <= width - titleBar.CaptionInsets.Right);
+            Assert.False(titleBar.IsDragRegion(centerBounds.Center));
+            Assert.False(titleBar.IsDragRegion(new(centerBounds.Center.X, titleBar.Bounds.Top + 2)));
+            Assert.Equal(WindowDecorationsElementRole.User, PlatformChromeRole(window, centerBounds.Center));
+            Assert.NotEqual(WindowDecorationsElementRole.TitleBar, MacOsChromeRole(window, centerBounds.Center));
+            window.MouseDown(centerBounds.Center, MouseButton.Left);
+            window.MouseUp(centerBounds.Center, MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, clicks);
+            var originalAvailable = titleBar.AvailableMenuWidth;
+            center.Width += 20;
+            FlushLayout(window);
+            Assert.InRange(originalAvailable - titleBar.AvailableMenuWidth, 9, 11);
+        }
+        finally
+        {
+            window.Close();
+            Assert.False(window.IsVisible);
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(420, 64, 72, 0)]
+    [InlineData(760, 112, 0, 138)]
+    [InlineData(760, 112, 92, 146)]
+    public void RightContentReservesItsMeasuredWidthAndStaysBeforeNativeButtons(double width, double buttonWidth,
+        double leftInset, double rightInset)
+    {
+        var (window, titleBar, _) = CreateHost("A long project title that should be trimmed to the available area");
+        window.Width = width;
+        titleBar.CaptionInsets = new(leftInset, 0, rightInset, 0);
+        var menu = new Button { Content = "Menu", Width = 48 };
+        var right = new Button { Content = "Tasks", Width = buttonWidth };
+        titleBar.MenuContent = menu;
+        titleBar.RightContent = right;
+        var rightPresenter = UiTestActions.Find<ContentControl>(titleBar, "RightPresenter");
+        var clicks = 0;
+        right.Click += (_, _) => clicks++;
+        try
+        {
+            window.Show();
+            FlushLayout(window);
+            var rightBounds = WindowBounds(right, window);
+            var menuBounds = WindowBounds(menu, window);
+            var titleBounds = WindowBounds(UiTestActions.Find<TextBlock>(titleBar, "TitleText"), window);
+            Assert.Equal(width - rightInset - 8, rightBounds.Right, precision: 4);
+            Assert.True(menuBounds.Right <= titleBounds.Left);
+            Assert.True(titleBounds.Right <= rightBounds.Left);
+            Assert.False(titleBar.IsDragRegion(rightBounds.Center));
+            Assert.False(titleBar.IsDragRegion(new(rightBounds.Center.X, titleBar.Bounds.Top + 2)));
+            if (rightInset > 0)
+            {
+                Assert.False(titleBar.IsDragRegion(new(width - 2, rightBounds.Center.Y)));
+            }
+            Assert.True(titleBar.IsDragRegion(titleBounds.Center));
+            Assert.Equal(WindowDecorationsElementRole.User, PlatformChromeRole(window, rightBounds.Center));
+            Assert.NotEqual(WindowDecorationsElementRole.TitleBar, MacOsChromeRole(window, rightBounds.Center));
+            window.MouseDown(rightBounds.Center, MouseButton.Left);
+            window.MouseUp(rightBounds.Center, MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, clicks);
+            var originalAvailable = titleBar.AvailableMenuWidth;
+            right.Width += 20;
+            FlushLayout(window);
+            Assert.True(titleBar.AvailableMenuWidth < originalAvailable);
+            Assert.Equal(width - rightInset - 8, WindowBounds(rightPresenter, window).Right, precision: 4);
+            Assert.Equal(right.Width, rightPresenter.Bounds.Width, precision: 4);
+            Assert.True(WindowBounds(UiTestActions.Find<TextBlock>(titleBar, "TitleText"), window).Right <=
+                WindowBounds(rightPresenter, window).Left);
+            titleBar.CaptionInsets = new(leftInset, 0, rightInset + 25, 0);
+            FlushLayout(window);
+            Assert.Equal(width - rightInset - 25 - 8, WindowBounds(rightPresenter, window).Right, precision: 4);
+        }
+        finally
+        {
+            window.Close();
+            Assert.False(window.IsVisible);
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(96U)]
+    [InlineData(144U)]
+    [InlineData(192U)]
+    public void WindowsCaptionMeasurementKeepsRightContentOutsideTheNativeAperture(uint dpi)
+    {
+        var (window, titleBar, _) = CreateHost("Windows caption fixture");
+        var clientWidth = WindowsChromeGeometry.ToPixels(window.Width, dpi);
+        var buttonWidth = WindowsChromeGeometry.ToPixels(138, dpi);
+        var nativeWindow = new WindowsRect { Left = -1920, Top = -100, Right = -1920 + clientWidth, Bottom = 980 };
+        var origin = new WindowsPoint { X = -1920, Y = -100 };
+        var buttons = new WindowsRect { Left = clientWidth - buttonWidth, Right = clientWidth, Bottom = 45 };
+        titleBar.CaptionInsets = WindowsChromeGeometry.GetCaptionInsets(nativeWindow, origin, clientWidth, buttons, dpi);
+        var right = new Button { Content = "Tasks", Width = 64 };
+        titleBar.RightContent = right;
+        try
+        {
+            window.Show();
+            FlushLayout(window);
+            var aperture = WindowsChromeGeometry.GetCaptionAperture(nativeWindow, origin, window.ClientSize, buttons, dpi);
+            var rightBounds = WindowBounds(right, window);
+            Assert.True(rightBounds.Right < aperture.Left);
+            Assert.False(aperture.Intersects(rightBounds));
+            Assert.False(titleBar.IsDragRegion(aperture.Center));
+        }
+        finally
+        {
+            window.Close();
+            Assert.False(window.IsVisible);
+        }
     }
 
     private static Rect WindowBounds(Control control, Window window)

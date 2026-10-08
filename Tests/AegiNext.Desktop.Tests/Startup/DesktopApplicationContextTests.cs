@@ -1,5 +1,6 @@
 using AegiNext.Core.Presets;
 using AegiNext.Desktop.Startup;
+using AegiNext.Application.Tasks;
 using AegiNext.Desktop.Tests.Workspace;
 using AegiNext.Desktop.Workspace;
 
@@ -132,6 +133,8 @@ public sealed class DesktopApplicationContextTests
         await context.Completion;
 
         Assert.NotNull(context.LastError);
+        Assert.Contains(context.Tasks.GetSnapshots(), value => value.Name == "Tasks.Initialization" &&
+            value.State == AegiTaskState.Failed && value.ErrorSummary is not null);
         Assert.Equal(CORRUPT_JSON, await File.ReadAllTextAsync(path));
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "Unaffected styles", new());
         await context.RunStyleOperationAsync(() => context.StyleLibrary.UpsertAsync(preset));

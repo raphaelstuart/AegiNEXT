@@ -9,7 +9,7 @@ internal sealed partial class WorkbenchSession
 {
     internal bool CanExecuteCommand(WorkbenchCommand command)
     {
-        if (closing || IsSwitchingAudioDevice || workflow.IsNewProjectDialogOpen || projectBusy && command != WorkbenchCommand.VIEW_LOG &&
+        if (closing || IsSwitchingAudioDevice || workflow.IsNewProjectDialogOpen || IsProjectBusy && command != WorkbenchCommand.VIEW_LOG &&
             !(command == WorkbenchCommand.TIMING_EXIT && pendingTimingEntry is not null && pendingTimingEnd is null))
         {
             return false;

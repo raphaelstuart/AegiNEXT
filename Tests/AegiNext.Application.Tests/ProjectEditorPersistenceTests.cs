@@ -91,6 +91,56 @@ public sealed class ProjectEditorPersistenceTests
         Assert.Empty(editor.Snapshot.Subtitles);
     }
 
+    [Fact]
+    public void RelocatedSavePreservesNewerContentAndClearsOldDirectoryHistory()
+    {
+        var editor = new ProjectEditor();
+        editor.AddSubtitle(new(0), new(1), "saved");
+        var original = editor.Snapshot;
+        editor.UpdateSubtitle(original.Subtitles[0].Id, line => line with { Text = "newer" });
+        var current = editor.Snapshot;
+        var relocatedSave = original with { Name = "relocated" };
+        var relocatedCurrent = current with { Name = "relocated" };
+
+        editor.AcceptRelocatedSave(current, relocatedCurrent, original, relocatedSave);
+
+        Assert.Same(relocatedCurrent, editor.Snapshot);
+        Assert.True(editor.HasUnsavedChanges);
+        Assert.False(editor.CanUndo);
+        Assert.False(editor.CanRedo);
+    }
+
+    [Fact]
+    public void RelocatedSaveRejectsStaleExpectedCurrentWithoutChangingState()
+    {
+        var editor = new ProjectEditor();
+        var original = editor.Snapshot;
+        editor.AddSubtitle(new(0), new(1), "newer");
+        var current = editor.Snapshot;
+
+        Assert.Throws<InvalidOperationException>(() => editor.AcceptRelocatedSave(original,
+            original with { Name = "relocated" }, original, original));
+
+        Assert.Same(current, editor.Snapshot);
+        Assert.True(editor.CanUndo);
+    }
+
+    [Fact]
+    public void RelocationPublishesDedicatedChangeAndAcceptsUnchangedSavePoint()
+    {
+        var editor = new ProjectEditor();
+        var original = editor.Snapshot;
+        var relocated = original with { Name = "relocated" };
+        ProjectEditorChangeKind? kind = null;
+        editor.StateChanged += (_, e) => kind = e.Kind;
+
+        editor.AcceptRelocatedSave(original, relocated, original, relocated);
+
+        Assert.Equal(ProjectEditorChangeKind.RELOCATION, kind);
+        Assert.Same(relocated, editor.Snapshot);
+        Assert.False(editor.HasUnsavedChanges);
+    }
+
     private static ProjectEditor CreateEditor(string directory)
     {
         var asset = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.MEDIA, string.Empty,

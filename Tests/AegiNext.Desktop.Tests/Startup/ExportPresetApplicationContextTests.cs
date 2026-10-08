@@ -11,9 +11,9 @@ namespace AegiNext.Desktop.Tests.Startup;
 [Collection("Workspace session")]
 public sealed class ExportPresetApplicationContextTests
 {
-    /// <summary>压制预设操作按库串行执行，其他类型的库可以独立更新。</summary>
+    /// <summary>资源冲突的队首保持提交顺序，启动后独立库仍可并行更新。</summary>
     [Fact]
-    public async Task ExportOperationsSerializeWithoutBlockingStyleLibrary()
+    public async Task ConflictingExportQueueHeadPreservesOrderBeforeIndependentStyleWork()
     {
         using var directory = new TemporaryWorkbenchDirectory();
         await using var context = new DesktopApplicationContext(new(directory.Path));
@@ -21,6 +21,7 @@ public sealed class ExportPresetApplicationContextTests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var nextEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSecond = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var exportChanges = 0;
         var styleChanges = 0;
         var effectChanges = 0;
@@ -36,6 +37,7 @@ public sealed class ExportPresetApplicationContextTests
         var second = context.RunExportPresetOperationAsync(async () =>
         {
             nextEntered.TrySetResult();
+            await releaseSecond.Task;
             await context.ExportPresetLibrary.UpsertAsync(preset);
         });
         try
@@ -47,14 +49,18 @@ public sealed class ExportPresetApplicationContextTests
             Assert.False(context.EffectsBusy);
             Assert.Equal(0, exportChanges);
             var style = new SubtitleStylePreset(Guid.NewGuid(), "独立字幕样式", new());
-            await context.RunStyleOperationAsync(() => context.StyleLibrary.UpsertAsync(style))
-                .WaitAsync(TimeSpan.FromSeconds(5));
+            var styleWork = context.RunStyleOperationAsync(() => context.StyleLibrary.UpsertAsync(style));
+            Assert.False(styleWork.IsCompleted);
+            Assert.False(nextEntered.Task.IsCompleted);
+            release.TrySetResult();
+            await nextEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await styleWork.WaitAsync(TimeSpan.FromSeconds(5));
 
             Assert.Equal(1, styleChanges);
             Assert.Equal(0, effectChanges);
             Assert.Equal(0, exportChanges);
-            Assert.False(nextEntered.Task.IsCompleted);
-            release.TrySetResult();
+            Assert.True(nextEntered.Task.IsCompleted);
+            releaseSecond.TrySetResult();
             await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
 
             Assert.Equal(preset, Assert.Single(context.ExportPresetLibrary.Snapshot.Presets));
@@ -66,6 +72,7 @@ public sealed class ExportPresetApplicationContextTests
         finally
         {
             release.TrySetResult();
+            releaseSecond.TrySetResult();
             await Task.WhenAll(first, second);
         }
     }
