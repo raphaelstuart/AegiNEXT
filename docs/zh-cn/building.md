@@ -66,7 +66,7 @@ pwsh -NoProfile -File ./build-debug-native.ps1 -RuntimeIdentifier win-x64
 | `-WithMediaTools` | 托管构建时检查 PATH FFmpeg/FFprobe |
 | `-ReportPath` | 保存环境报告 |
 
-FFmpeg SDK 按显式路径 → 项目 SDK → `FFMPEG_DIR` → 包管理器前缀解析；SDL 按显式路径 → 项目 SDK → `SDL3_DIR` → 包管理器前缀解析。显式路径无效即失败。开发工具使用绝对 `AEGINEXT_FFMPEG_PATH`/`AEGINEXT_FFPROBE_PATH` 或 PATH，完整应用包使用包内工具。
+FFmpeg SDK 按显式路径 → 项目 SDK → `FFMPEG_DIR` → 包管理器前缀解析；SDL 按显式路径 → 项目 SDK → `SDL3_DIR` → 包管理器前缀解析。显式路径无效即失败。Windows 原生构建将所选 SDK 的 ffmpeg、ffprobe 和配套 DLL 暂存到 `tools/`，托管构建自动复制到应用输出目录，开发运行无需额外配置 PATH。开发工具可通过绝对 `AEGINEXT_FFMPEG_PATH`/`AEGINEXT_FFPROBE_PATH` 覆盖，也可从 PATH 查找；完整应用包使用包内工具。
 
 原生产物位于 `artifacts/native/<RID>/<Configuration>/`，托管中间文件使用 `obj/<RID>`。Workbench 默认按本机目标 RID 还原、构建和测试，确保媒体 TestHost 与原生产物一致。NuGet 版本集中在 `Directory.Packages.props`，普通还原且不维护 lock 文件。Release 构建使用 `AegiNext.Product.slnf`，Debug 使用 `AegiNext.sln`。
 

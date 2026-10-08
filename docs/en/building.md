@@ -67,7 +67,7 @@ Then run `AegiNext.Desktop` in Debug. Ordinary dotnet/Rider builds copy existing
 | `-WithMediaTools` | Check PATH FFmpeg/FFprobe for a managed build |
 | `-ReportPath` | Save an environment report |
 
-FFmpeg SDK resolution: explicit root → project SDK → `FFMPEG_DIR` → package-manager prefix. SDL uses explicit root → project SDK → `SDL3_DIR` → package-manager prefix. Invalid explicit paths fail. Development tools use absolute `AEGINEXT_FFMPEG_PATH`/`AEGINEXT_FFPROBE_PATH` or PATH; complete packages use their own tools.
+FFmpeg SDK resolution: explicit root → project SDK → `FFMPEG_DIR` → package-manager prefix. SDL uses explicit root → project SDK → `SDL3_DIR` → package-manager prefix. Invalid explicit paths fail. Windows native builds stage the selected SDK's ffmpeg, ffprobe, and companion DLLs into `tools/`; managed builds copy them into the application output, so development runs need no additional PATH configuration. Development tools can be overridden with absolute `AEGINEXT_FFMPEG_PATH`/`AEGINEXT_FFPROBE_PATH` or found on PATH; complete packages use their own tools.
 
 Native output is `artifacts/native/<RID>/<Configuration>/`; intermediate managed files use `obj/<RID>`. Workbench restores, builds, and tests for the host target RID by default, keeping the media TestHost consistent with native output. NuGet versions live in `Directory.Packages.props`, with ordinary restore and no package lock files. Release builds use `AegiNext.Product.slnf`; Debug uses `AegiNext.sln`.
 

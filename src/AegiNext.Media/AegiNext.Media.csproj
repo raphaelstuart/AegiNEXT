@@ -33,6 +33,10 @@
           Link="%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
           Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('win-')) And Exists('$(AegiNextNativeDirectory)/aeginext_decode.dll')" />
+    <None Include="$(AegiNextNativeDirectory)/tools/*.exe;$(AegiNextNativeDirectory)/tools/*.dll"
+          Link="tools/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          Condition="$(AegiNextNativeRuntimeIdentifier.StartsWith('win-'))" />
     <None Include="$(AegiNextNativeDirectory)/libaeginext_decode.so"
           Link="libaeginext_decode.so"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"

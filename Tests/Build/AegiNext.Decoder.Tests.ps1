@@ -336,8 +336,8 @@ Describe 'Decoder environment checks verify the selected development SDK' {
     }
 }
 
-Describe 'Decoder runtime staging copies selected SDK DLLs only' {
-    It 'copies DLLs from a literal SDK path with spaces while leaving executables out' {
+Describe 'Decoder runtime staging includes media tools' {
+    It 'copies tools with their DLLs from a literal SDK path with spaces' {
         $sdk = Join-Path $TestDrive 'selected SDK [runtime]'
         $output = Join-Path $TestDrive 'output [Release]'
         New-DecoderSdkFixture $sdk
@@ -346,5 +346,20 @@ Describe 'Decoder runtime staging copies selected SDK DLLs only' {
         $result.ExitCode | Should -Be 0 -Because $result.Output
         @(Get-ChildItem -LiteralPath $output -File | Select-Object -ExpandProperty Name | Sort-Object) | Should -Be @('avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll', 'swresample-7.dll', 'swscale-10.dll')
         (Get-Content -LiteralPath (Join-Path $output 'avcodec-63.dll') -Raw) | Should -Be (Get-Content -LiteralPath (Join-Path $sdk 'bin/avcodec-63.dll') -Raw)
+        @(Get-ChildItem -LiteralPath (Join-Path $output 'tools') -File | Select-Object -ExpandProperty Name | Sort-Object) | Should -Be @('avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll', 'ffmpeg.exe', 'ffprobe.exe', 'swresample-7.dll', 'swscale-10.dll')
+        foreach ($tool in @('ffmpeg', 'ffprobe'))
+        {
+            (Get-Content -LiteralPath (Join-Path $output "tools/$tool.exe") -Raw) | Should -Be (Get-Content -LiteralPath (Join-Path $sdk "bin/$tool.exe") -Raw)
+        }
+    }
+
+    It 'rejects an SDK missing a required tool' {
+        $sdk = Join-Path $TestDrive 'incomplete SDK'
+        New-DecoderSdkFixture $sdk
+        Remove-Item -LiteralPath (Join-Path $sdk 'bin/ffprobe.exe')
+        $result = Invoke-AegiNextCommand -FilePath 'cmake' -WorkingDirectory $sourceRoot -Arguments @(
+            "-DAEGINEXT_FFMPEG_ROOT=$sdk", "-DAEGINEXT_NATIVE_OUTPUT_DIR=$(Join-Path $TestDrive 'incomplete output')", '-P', (Join-Path $sourceRoot 'scripts/build/copy-decoder-runtime.cmake'))
+        $result.ExitCode | Should -Not -Be 0
+        $result.Output | Should -BeLike '*ffprobe.exe*'
     }
 }
