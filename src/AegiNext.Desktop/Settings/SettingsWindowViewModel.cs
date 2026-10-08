@@ -72,7 +72,11 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public TaskSettingsViewModel Tasks { get; }
     public AudioAnalysisSettingsViewModel AudioAnalysis { get; }
     public string Title => title;
-    public SettingsPage CurrentPage => (SettingsPage)PageIndex;
+    public SettingsPage CurrentPage
+    {
+        get => (SettingsPage)PageIndex;
+        set => PageIndex = (int)value;
+    }
     public bool IsAppearanceVisible => CurrentPage == SettingsPage.APPEARANCE;
     public bool IsShortcutsVisible => CurrentPage == SettingsPage.SHORTCUTS;
     public bool IsStylesVisible => CurrentPage == SettingsPage.STYLES;
@@ -138,6 +142,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         if (!Enum.IsDefined(page) || navigating)
         {
             OnPropertyChanged(nameof(PageIndex));
+            OnPropertyChanged(nameof(CurrentPage));
             return false;
         }
         if (CurrentPage == page)
@@ -170,6 +175,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
             if (!accepted)
             {
                 OnPropertyChanged(nameof(PageIndex));
+                OnPropertyChanged(nameof(CurrentPage));
                 return false;
             }
             SetPageIndex((int)page);

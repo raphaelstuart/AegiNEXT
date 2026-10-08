@@ -71,89 +71,136 @@
   </Window.Styles>
   <Grid RowDefinitions="Auto,*">
     <controls:WindowTitleBar Name="SettingsTitleBar" Title="{Binding Title}" />
-    <Grid Grid.Row="1" ColumnDefinitions="184,*">
+    <Grid Grid.Row="1" ColumnDefinitions="208,*">
       <Border BorderBrush="{DynamicResource SettingsBorder}" BorderThickness="0,0,1,0" Padding="12,16">
         <Grid RowDefinitions="Auto,*" RowSpacing="16">
           <TextBlock Classes="heading" Text="{Loc Key=Settings.Settings}" Margin="12,0" FontSize="20" FontWeight="SemiBold" />
-          <ListBox Name="Navigation" Grid.Row="1" IsEnabled="{Binding IsNavigationAvailable}" Background="Transparent" SelectedIndex="{Binding PageIndex, Mode=TwoWay}">
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
+          <ListBox Name="Navigation" Grid.Row="1" IsEnabled="{Binding IsNavigationAvailable}"
+                   Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   SelectedValue="{Binding CurrentPage, Mode=TwoWay}">
+            <ListBox.SelectedValueBinding>
+              <Binding Path="DataContext" x:DataType="ListBoxItem" />
+            </ListBox.SelectedValueBinding>
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel /></ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="Padding" Value="10,6" />
+                <Setter Property="MinHeight" Value="32" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+              </Style>
+              <Style Selector="ListBoxItem.navigation-section">
+                <Setter Property="Padding" Value="10,0" />
+                <Setter Property="MinHeight" Value="28" />
+                <Setter Property="Margin" Value="0,10,0,0" />
+                <Setter Property="IsEnabled" Value="False" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="IsHitTestVisible" Value="False" />
+              </Style>
+              <Style Selector="ListBoxItem.navigation-section.first">
+                <Setter Property="Margin" Value="0" />
+              </Style>
+              <Style Selector="TextBlock.navigation-section-title">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{DynamicResource SettingsMuted}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+              </Style>
+              <Style Selector="TextBlock">
+                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+              </Style>
+            </ListBox.Styles>
+            <ListBoxItem Classes="navigation-section first">
+              <TextBlock Classes="navigation-section-title" Text="{Loc Key=Settings.NavigationGeneral}" />
+            </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.APPEARANCE}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
                 <materialIcons:MaterialIcon Width="18" Height="18" Kind="ThemeLightDark" />
                 <TextBlock Text="{Loc Key=Settings.Appearance}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Keyboard" />
-                <TextBlock Text="{Loc Key=Settings.Shortcuts}" VerticalAlignment="Center" />
-              </StackPanel>
-            </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatText" />
-                <TextBlock Text="{Loc Key=Settings.Styles}" VerticalAlignment="Center" />
-              </StackPanel>
-            </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Creation" />
-                <TextBlock Text="{Loc Key=Settings.Effects}" VerticalAlignment="Center" />
-              </StackPanel>
-            </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.COLORS}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
                 <materialIcons:MaterialIcon Width="18" Height="18" Kind="Palette" />
                 <TextBlock Text="{Loc Key=Settings.Colors}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <materialIcons:MaterialIcon Width="18" Height="18" Kind="PlayBoxOutline" />
-                <TextBlock Text="{Loc Key=Settings.Media}" VerticalAlignment="Center" />
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.SHORTCUTS}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Keyboard" />
+                <TextBlock Text="{Loc Key=Settings.Shortcuts}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <materialIcons:MaterialIcon Width="18" Height="18" Kind="FolderOpenOutline" />
-                <TextBlock Text="{Loc Key=Settings.Projects}" VerticalAlignment="Center" />
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.TASKS}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatListBulleted" />
+                <TextBlock Text="{Loc Key=Settings.Tasks}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Play" />
-                <TextBlock Text="{Loc Key=Settings.Preview}" VerticalAlignment="Center" />
+            <ListBoxItem Classes="navigation-section">
+              <TextBlock Classes="navigation-section-title" Text="{Loc Key=Settings.NavigationSubtitles}" />
+            </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.STYLES}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatText" />
+                <TextBlock Text="{Loc Key=Settings.Styles}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.EFFECTS}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Creation" />
+                <TextBlock Text="{Loc Key=Settings.Effects}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.TIMING_POST_PROCESSOR}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
                 <materialIcons:MaterialIcon Width="18" Height="18" Kind="ClockOutline" />
                 <TextBlock Text="{Loc Key=Settings.TimingNavigation}" VerticalAlignment="Center"
                            ToolTip.Tip="{Loc Key=Settings.TimingPostProcessor}" />
               </StackPanel>
             </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
+            <ListBoxItem Classes="navigation-section">
+              <TextBlock Classes="navigation-section-title" Text="{Loc Key=Settings.NavigationMedia}" />
+            </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.MEDIA}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="PlayBoxOutline" />
+                <TextBlock Text="{Loc Key=Settings.Media}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.PREVIEW}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Play" />
+                <TextBlock Text="{Loc Key=Settings.Preview}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.AUDIO_ANALYSIS}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Waveform" />
+                <TextBlock Text="{Loc Key=Settings.AudioAnalysis}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem Classes="navigation-section">
+              <TextBlock Classes="navigation-section-title" Text="{Loc Key=Settings.NavigationProjectData}" />
+            </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.PROJECTS}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="FolderOpenOutline" />
+                <TextBlock Text="{Loc Key=Settings.Projects}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.EXPORT_PRESETS}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
                 <materialIcons:MaterialIcon Width="18" Height="18" Kind="Export" />
                 <TextBlock Text="{Loc Key=Settings.ExportPresets}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.TRANSFER}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
                 <materialIcons:MaterialIcon Width="18" Height="18" Kind="Import" />
                 <TextBlock Text="{Loc Key=Settings.TransferNavigation}" VerticalAlignment="Center"
                            ToolTip.Tip="{Loc Key=Settings.Transfer}" />
-              </StackPanel>
-            </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatListBulleted" />
-                <TextBlock Text="{Loc Key=Settings.Tasks}" VerticalAlignment="Center" />
-              </StackPanel>
-            </ListBoxItem>
-            <ListBoxItem>
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <materialIcons:MaterialIcon Width="18" Height="18" Kind="Waveform" />
-                <TextBlock Text="{Loc Key=Settings.AudioAnalysis}" VerticalAlignment="Center" />
               </StackPanel>
             </ListBoxItem>
           </ListBox>
