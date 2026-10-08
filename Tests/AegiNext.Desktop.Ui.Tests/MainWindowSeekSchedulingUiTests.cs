@@ -8,6 +8,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
@@ -91,7 +92,9 @@ public sealed class MainWindowSeekSchedulingUiTests
         await using var context = new SeekSchedulingTestContext();
         await context.OpenMediaAsync();
         var window = context.Window;
-        window.GetCommand(WorkbenchCommand.ADD_SUBTITLE).Execute(null);
+        var addSubtitle = Assert.IsAssignableFrom<IAsyncRelayCommand>(window.GetCommand(WorkbenchCommand.ADD_SUBTITLE));
+        Assert.True(addSubtitle.CanExecute(null));
+        await WaitAsync(addSubtitle.ExecuteAsync(null));
         await WaitAsync(context.Controller.SeekAsync(MediaTime.Zero));
         Assert.False(Assert.Single(window.DocumentSnapshot.Subtitles).Style.Bold);
         var request = context.Source.BlockNextSeek(new(5));

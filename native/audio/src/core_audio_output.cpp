@@ -377,10 +377,11 @@ private:
         AudioTimeStamp time{};
         Boolean discontinuity = false;
         const auto status = AudioQueueGetCurrentTime(queue, queue_timeline, &time, &discontinuity);
+        const auto within_startup_grace = AudioGetCurrentHostTime() - clock_start_host_time < AudioConvertNanosToHostTime(1'000'000'000);
         if (status != noErr)
         {
             if (clock_continuity.can_wait_for_timestamp(status == kAudioQueueErr_InvalidRunState, paused.load()) &&
-                (paused.load() || AudioGetCurrentHostTime() - clock_start_host_time < AudioConvertNanosToHostTime(1'000'000'000)))
+                (paused.load() || within_startup_grace))
             {
                 return;
             }
@@ -400,7 +401,12 @@ private:
             return;
         }
         const auto sample_frame = static_cast<int64_t>(std::floor(time.mSampleTime));
-        if (!clock_continuity.observe(sample_frame, discontinuity, true))
+        const auto observation = clock_continuity.observe(sample_frame, discontinuity, true, within_startup_grace);
+        if (observation == CoreAudioClockObservation::WAITING)
+        {
+            return;
+        }
+        if (observation == CoreAudioClockObservation::INVALID)
         {
             invalidate(CoreAudioFailure::CLOCK_REGRESSION);
             return;

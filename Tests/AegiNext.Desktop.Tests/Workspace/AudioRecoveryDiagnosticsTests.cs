@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Media.Audio;
@@ -9,6 +10,7 @@ public sealed class AudioRecoveryDiagnosticsTests
 {
     /// <summary>设备恢复期间较早的 UI Tick 不能在恢复完成后重新显示已经失效的输出错误。</summary>
     [Fact]
+    [SuppressMessage("ReSharper", "AccessToDisposedClosure", Justification = "The context drains all dispatch callbacks before the gate is disposed.")]
     public async Task ACompletedOutputRecoveryCannotRestoreAnErrorFromAnEarlierTickSnapshot()
     {
         var firstOutput = new CalibrationAudioOutput("speaker");
@@ -18,10 +20,11 @@ public sealed class AudioRecoveryDiagnosticsTests
         var capturedTick = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseTick = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var opens = 0;
+        using var dispatchGate = new SemaphoreSlim(1, 1);
         await using var context = new WorkspaceSessionTestContext(controllerFactory: update => new VideoPreviewController(
             (_, _) => Task.FromResult(new VideoPreviewMedia(0, MediaTime.Zero, new(20), 1)),
             (_, _, position) => new(_ => new PreviewTestSource(10, 0, 1000, 2000, 5000, 10000), externalPosition: position),
-            () => new PreviewTestConverter(), Dispatch, update,
+            () => new PreviewTestConverter(), (action, token) => DispatchAsync(dispatchGate, action, token), update,
             async (_, _, position, token) =>
             {
                 if (Interlocked.Increment(ref opens) == 1)
@@ -43,17 +46,25 @@ public sealed class AudioRecoveryDiagnosticsTests
             session.Tick();
             await enteredFactory.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.NotNull(session.Controller.Snapshot.AudioError);
-            session.ViewModel.Preview.FileTitle = "Force an earlier snapshot across output recovery";
-            session.ViewModel.Preview.PropertyChanged += (_, args) =>
+            Assert.True(await dispatchGate.WaitAsync(TimeSpan.FromSeconds(5)));
+            try
             {
-                if (args.PropertyName == "FileTitle")
+                session.ViewModel.Preview.FileTitle = "Force an earlier snapshot across output recovery";
+                session.ViewModel.Preview.PropertyChanged += (_, args) =>
                 {
-                    capturedTick.TrySetResult();
-                    releaseTick.Task.GetAwaiter().GetResult();
-                }
-            };
-            oldTick = Task.Run(session.Tick);
-            await capturedTick.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    if (args.PropertyName == "FileTitle")
+                    {
+                        capturedTick.TrySetResult();
+                        releaseTick.Task.GetAwaiter().GetResult();
+                    }
+                };
+                oldTick = Task.Run(session.Tick);
+                await capturedTick.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            finally
+            {
+                dispatchGate.Release();
+            }
             releaseFactory.TrySetResult();
             await session.AudioCalibrationCompletion.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Null(session.Controller.Snapshot.AudioError);
@@ -75,10 +86,16 @@ public sealed class AudioRecoveryDiagnosticsTests
         }
     }
 
-    private static Task Dispatch(Action action, CancellationToken cancellationToken)
+    private static async Task DispatchAsync(SemaphoreSlim dispatchGate, Action action, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        action();
-        return Task.CompletedTask;
+        await dispatchGate.WaitAsync(cancellationToken);
+        try
+        {
+            action();
+        }
+        finally
+        {
+            dispatchGate.Release();
+        }
     }
 }

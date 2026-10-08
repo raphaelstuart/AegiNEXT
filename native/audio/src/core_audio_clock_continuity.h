@@ -1,14 +1,23 @@
 #pragma once
+#include "core_audio_clock_observation.h"
 #include <cstdint>
 
 class CoreAudioClockContinuity
 {
 public:
-    bool observe(int64_t sample_frame, bool discontinuity, bool route_matches)
+    CoreAudioClockObservation observe(int64_t sample_frame, bool discontinuity, bool route_matches, bool within_startup_grace)
     {
-        if (!route_matches || (observed && sample_frame < last_frame))
+        if (!route_matches)
         {
-            return false;
+            return CoreAudioClockObservation::INVALID;
+        }
+        if (awaiting_start && sample_frame <= last_frame)
+        {
+            return within_startup_grace ? CoreAudioClockObservation::WAITING : CoreAudioClockObservation::INVALID;
+        }
+        if (observed && sample_frame < last_frame)
+        {
+            return CoreAudioClockObservation::INVALID;
         }
         observed = true;
         last_frame = sample_frame;
@@ -17,7 +26,7 @@ public:
         {
             ++discontinuities;
         }
-        return true;
+        return CoreAudioClockObservation::ACCEPTED;
     }
 
     bool can_wait_for_timestamp(bool queue_not_running, bool paused) const

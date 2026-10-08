@@ -4,6 +4,7 @@
 #include "core_audio_clock_continuity.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -54,22 +55,35 @@ int main()
         require(timeline.read(10000) == 0, "Seek clears device-to-media mapping");
         CoreAudioClockContinuity queue_clock;
         require(queue_clock.can_wait_for_timestamp(true, false), "A newly started queue may not yet have a hardware timestamp");
-        require(queue_clock.observe(100, false, true), "Initial observed CoreAudio sample frame");
-        require(queue_clock.observe(150, true, true), "An overload discontinuity with an unchanged route and monotonic sample time must retain the system clock");
+        require(queue_clock.observe(-1, false, true, true) == CoreAudioClockObservation::WAITING, "A new queue waits for a future start timestamp without observing negative PCM");
+        require(queue_clock.observe(0, false, true, true) == CoreAudioClockObservation::WAITING, "A new queue waits until its hardware sample clock advances");
+        require(queue_clock.observe(-1, false, true, false) == CoreAudioClockObservation::INVALID, "A negative initial timestamp cannot outlive the startup grace period");
+        require(queue_clock.observe(0, false, true, false) == CoreAudioClockObservation::INVALID, "An initial clock that never advances must fail after the startup grace period");
+        require(queue_clock.observe(100, false, true, true) == CoreAudioClockObservation::ACCEPTED, "Initial observed CoreAudio sample frame");
+        require(queue_clock.observe(150, true, true, false) == CoreAudioClockObservation::ACCEPTED, "An overload discontinuity with an unchanged route and monotonic sample time must retain the system clock");
         require(!queue_clock.can_wait_for_timestamp(true, false), "A running observed clock cannot hide a missing timestamp");
         require(queue_clock.can_wait_for_timestamp(true, true), "A paused queue may lack a running timestamp without changing the device");
         queue_clock.begin_run();
         require(queue_clock.can_wait_for_timestamp(true, false), "Resume waits for the queue to restart without resetting its media sample mapping");
-        require(queue_clock.observe(150, false, true), "Resume retains the previous sample origin");
-        require(!queue_clock.observe(149, true, true), "A backwards queue timestamp must fail closed");
-        require(!queue_clock.observe(160, true, false), "A real route change must fail closed despite a monotonic timestamp");
-        require(!queue_clock.observe(160, false, false), "A real route change must fail closed without a discontinuity flag");
+        require(queue_clock.observe(149, false, true, true) == CoreAudioClockObservation::WAITING, "A resumed queue must wait for its initial stale timestamp instead of invalidating the device");
+        require(queue_clock.observe(150, false, true, true) == CoreAudioClockObservation::WAITING, "An unchanged resume timestamp must not prematurely end the startup grace period");
+        require(queue_clock.can_wait_for_timestamp(true, false), "Stale resume observations retain startup ownership");
+        require(queue_clock.observe(149, false, true, false) == CoreAudioClockObservation::INVALID, "A stale resume timestamp must fail after the startup grace period");
+        require(queue_clock.observe(150, false, true, false) == CoreAudioClockObservation::INVALID, "An unchanged resume timestamp must fail after the startup grace period");
+        require(queue_clock.observe(151, false, true, true) == CoreAudioClockObservation::ACCEPTED, "An advancing resume timestamp retains the previous sample origin");
+        require(!queue_clock.can_wait_for_timestamp(true, false), "An advancing resume timestamp ends startup ownership");
+        require(queue_clock.observe(151, false, true, true) == CoreAudioClockObservation::ACCEPTED, "Repeated steady timestamps remain valid for high-frequency reads");
+        require(queue_clock.observe(150, true, true, true) == CoreAudioClockObservation::INVALID, "A steady clock regression must fail even within the original startup grace period");
+        queue_clock.begin_run();
+        require(queue_clock.observe(150, true, false, true) == CoreAudioClockObservation::INVALID, "A real route change must fail immediately while waiting for resume");
+        require(queue_clock.observe(160, true, false, true) == CoreAudioClockObservation::INVALID, "A real route change must fail closed despite a monotonic timestamp");
+        require(queue_clock.observe(160, false, false, true) == CoreAudioClockObservation::INVALID, "A real route change must fail closed without a discontinuity flag");
         queue_clock.reset();
-        require(queue_clock.observe(0, false, true), "Clear begins a new queue sample timeline");
+        require(queue_clock.observe(0, false, true, true) == CoreAudioClockObservation::WAITING && timeline.read(0) == 0, "Clear begins a new queue sample timeline without reusing old PCM");
         timeline.append(0, 0, 100, 200);
-        require(queue_clock.observe(150, true, true) && timeline.read(150) == 100, "Overload and underflow silence do not invent media PCM");
+        require(queue_clock.observe(150, true, true, true) == CoreAudioClockObservation::ACCEPTED && timeline.read(150) == 100, "Overload and underflow silence do not invent media PCM");
         timeline.append(300, 100, 60, 100);
-        require(queue_clock.observe(330, true, true) && timeline.read(330) == 130, "Real PCM after a discontinuity retains exact queue-to-media mapping");
+        require(queue_clock.observe(330, true, true, false) == CoreAudioClockObservation::ACCEPTED && timeline.read(330) == 130, "Real PCM after a discontinuity retains exact queue-to-media mapping");
         require(an_audio_decoder_create(&decoder, error, sizeof(error)) == 0, error);
         require(an_audio_decoder_open(decoder, path.string().c_str(), 0, 16000, 1, error, sizeof(error)) == 0, error);
         std::vector<float> samples(4096);
@@ -194,6 +208,65 @@ int main()
                 SDL_Delay(20);
             }
             require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
+#if defined(__APPLE__)
+            require(an_audio_output_clear(output, error, sizeof(error)) == 0, error);
+            require(an_audio_output_write(output, stereo.data(), 9600, error, sizeof(error)) == 0, error);
+            require(an_audio_output_pause(output, 0, error, sizeof(error)) == 0, error);
+            SDL_Delay(100);
+            require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 && clock.played_frames > 0,
+                "Rapid resume regression starts from an observed hardware clock");
+            const auto resume_epoch = clock.epoch;
+            const std::array<Uint32, 8> resume_delays{0, 1, 2, 4, 8, 16, 40, 80};
+            for (size_t index = 0; index < 64; ++index)
+            {
+                require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
+                require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 && clock.epoch == resume_epoch,
+                    "Rapid pause retains the observed system clock and queue epoch");
+                const auto paused_played = clock.played_frames;
+                const auto refill = std::min(4096, 9600 - clock.queued_frames);
+                if (refill > 0)
+                {
+                    require(an_audio_output_write(output, stereo.data(), refill, error, sizeof(error)) == 0, error);
+                }
+                require(an_audio_output_pause(output, 0, error, sizeof(error)) == 0, error);
+                require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 &&
+                    clock.epoch == resume_epoch && clock.played_frames >= paused_played,
+                    "Immediate resume reads retain the last consumed PCM while the hardware timestamp settles");
+                SDL_Delay(resume_delays[index % resume_delays.size()]);
+                require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 &&
+                    clock.epoch == resume_epoch && clock.played_frames >= paused_played,
+                    "Rapid pause and resume preserve a monotonic media clock within the same queue epoch");
+            }
+            const auto last_resumed_position = clock.played_frames;
+            const auto refill = std::min(4096, 9600 - clock.queued_frames);
+            if (refill > 0)
+            {
+                require(an_audio_output_write(output, stereo.data(), refill, error, sizeof(error)) == 0, error);
+            }
+            SDL_Delay(100);
+            require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 &&
+                clock.epoch == resume_epoch && clock.played_frames > last_resumed_position,
+                "The system clock advances again after rapid resume waiting");
+            for (int index = 0; index < 32; ++index)
+            {
+                require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
+                const auto previous_queue_epoch = clock.epoch;
+                require(an_audio_output_clear(output, error, sizeof(error)) == 0, error);
+                require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 &&
+                    clock.epoch > previous_queue_epoch && clock.played_frames == 0, "Rapid seeking rebinds a new queue epoch");
+                require(an_audio_output_write(output, stereo.data(), 9600, error, sizeof(error)) == 0, error);
+                require(an_audio_output_pause(output, 0, error, sizeof(error)) == 0, error);
+                require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
+                require(an_audio_output_pause(output, 0, error, sizeof(error)) == 0, error);
+                require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2,
+                    "An immediately paused and resumed seek queue retains its system clock");
+                SDL_Delay(40);
+                require(an_audio_output_snapshot(output, &clock, error, sizeof(error)) == 0 && clock.quality == 2 && clock.played_frames > 0,
+                    "An immediately restarted seek queue resumes consuming real PCM");
+            }
+            require(an_audio_output_pause(output, 1, error, sizeof(error)) == 0, error);
+            std::cout << "PASS CoreAudio rapid resume and immediately restarted seek queues (silent PCM)\n";
+#endif
             an_audio_output_destroy(output); output = nullptr;
             std::cout << "PASS system output clock, pause, seek, ten-second restart and underflow stress (silent PCM)\n";
             for (int index = 0; index < 8; ++index)
