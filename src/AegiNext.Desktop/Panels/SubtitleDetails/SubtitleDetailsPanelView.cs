@@ -404,6 +404,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             return Task.CompletedTask;
         }));
         var font = selectionFont;
+        font.PreviewProvider = session.Fonts.PreviewProvider;
         font.RefreshFontCandidates(session.Fonts.Candidates);
         font.SetCurrentFont(SubtitleFontSelectionService.FromStyle(coordinator.SelectionStyle()));
         bindings.Add(font.Bind(AutoCompleteBox.TextProperty, new Binding(nameof(SubtitleDetailsStyleDraft.FontFamily))

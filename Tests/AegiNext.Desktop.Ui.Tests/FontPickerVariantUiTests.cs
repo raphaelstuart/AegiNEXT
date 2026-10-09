@@ -1,6 +1,8 @@
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -11,6 +13,350 @@ namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class FontPickerVariantUiTests
 {
+    private static readonly string[] orderedFamilies = ["Fixture", "Alphabetical First", "Zebra Family"];
+    private static readonly string[] orderedVariants = ["Regular", "SemiBold", "Bold", "Black"];
+
+    [AvaloniaFact]
+    public void CurrentVariantWithoutPostScriptMetadataDoesNotAddASecondWeight()
+    {
+        var picker = CreatePicker();
+        var stored = Candidate("Regular", 400).Selection;
+        stored = new(stored.FamilyName, stored.Variant!.Value with { PostScriptName = null }, true);
+        picker.SetCurrentFont(stored);
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var family = Assert.Single(GetFontMenu(picker).Items.Cast<MenuItem>());
+            var regular = Assert.Single(family.Items.Cast<MenuItem>(), item => Equals(item.Header, "Regular"));
+            Assert.Equal(4, family.Items.Count);
+            Assert.True(regular.IsChecked);
+            Assert.Equal(Candidate("Regular", 400).Selection, Assert.IsType<FontPickerCandidate>(regular.Tag).Selection);
+            Assert.Equal(stored, picker.CurrentFont);
+            Assert.Empty(values);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void AFamilyWithOneVariantCommitsThatVariantWithoutOpeningASubmenu()
+    {
+        var picker = new FontFamilyPicker { Width = 300 };
+        var only = Candidate("Black", 900);
+        picker.RefreshFontCandidates([only]);
+        picker.SetCurrentFamily("Existing family");
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var family = GetFontMenu(picker).Items.Cast<MenuItem>().Single(item => Equals(item.Header, "Fixture"));
+            Assert.False(family.HasSubMenu);
+            ClickMenuItem(family);
+            Flush(window);
+            Assert.Equal(only.Selection, Assert.Single(values));
+            Assert.Equal(only.Selection, picker.CurrentFont);
+            Assert.Equal(only.DisplayName, picker.Text);
+            Assert.False(picker.IsDropDownOpen);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void ClosingTheDropdownCannotReplaceTheVariantChosenByThePointer()
+    {
+        var picker = CreatePicker();
+        var current = picker.CurrentFont;
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        picker.DropDownClosed += (_, _) => picker.SetCurrentFont(current);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var family = Assert.Single(GetFontMenu(picker).Items.Cast<MenuItem>());
+            ClickMenuItem(family);
+            Flush(window);
+            ClickMenuItem(family.Items.Cast<MenuItem>().Single(item => Equals(item.Header, "Black")));
+            Flush(window);
+            Assert.Equal(Candidate("Black", 900).Selection, Assert.Single(values));
+            Assert.Equal(Candidate("Black", 900).Selection, picker.CurrentFont);
+            Assert.Equal("Fixture Black", picker.Text);
+            Assert.False(picker.IsDropDownOpen);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void RefreshingTheSameCatalogKeepsTheOpenSubmenuAndItsPointerTargets()
+    {
+        var picker = CreatePicker();
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var menu = GetFontMenu(picker);
+            var family = Assert.Single(menu.Items.Cast<MenuItem>());
+            ClickMenuItem(family);
+            Flush(window);
+            var black = family.Items.Cast<MenuItem>().Single(item => Equals(item.Header, "Black"));
+            picker.RefreshFontCandidates(Candidates());
+            Flush(window);
+            Assert.Same(family, Assert.Single(menu.Items.Cast<MenuItem>()));
+            Assert.True(family.IsSubMenuOpen);
+            Assert.True(black.IsAttachedToVisualTree());
+            Assert.Empty(values);
+            ClickMenuItem(black);
+            Flush(window);
+            Assert.Equal(Candidate("Black", 900).Selection, Assert.Single(values));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void ClickingTheCurrentVariantKeepsItsCheckmarkWhenTheMenuReopens()
+    {
+        VerifyCurrentCheckmarkAfterReopening(false);
+    }
+
+    [AvaloniaFact]
+    public void ClickingTheCurrentSingleVariantKeepsItsFamilyCheckmarkWhenTheMenuReopens()
+    {
+        VerifyCurrentCheckmarkAfterReopening(true);
+    }
+
+    [AvaloniaFact]
+    public void SwitchingFromAMissingVariantRemovesItsTemporaryCandidate()
+    {
+        var picker = CreatePicker();
+        var missing = new FontSelection("Fixture", new() { Name = "Designer Heavy", Weight = 913 });
+        picker.SetCurrentFont(missing);
+        Assert.Contains(picker.FontCandidates, candidate => candidate.Selection == missing);
+        picker.SetCurrentFont(Candidate("Black", 900).Selection);
+        Assert.DoesNotContain(picker.FontCandidates, candidate => candidate.Selection == missing);
+        Assert.Equal(4, picker.FontCandidates.Count(candidate => candidate.Selection.Variant is not null));
+    }
+
+    [AvaloniaFact]
+    public void PointerSelectionOpensTheSubmenuWithoutCommittingTheSearchDraft()
+    {
+        var picker = CreatePicker();
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            var input = Assert.Single(picker.GetVisualDescendants().OfType<TextBox>());
+            Assert.True(input.Focus());
+            input.SelectAll();
+            window.KeyTextInput("Pending custom family");
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var family = Assert.Single(GetFontMenu(picker).Items.Cast<MenuItem>());
+            ClickMenuItem(family);
+            Flush(window);
+            Assert.True(family.IsSubMenuOpen);
+            Assert.True(picker.IsDropDownOpen);
+            Assert.Equal("Pending custom family", picker.Text);
+            Assert.Empty(values);
+            var black = family.Items.Cast<MenuItem>().Single(item => Equals(item.Header, "Black"));
+            ClickMenuItem(black);
+            Flush(window);
+            Assert.Equal(Candidate("Black", 900).Selection, Assert.Single(values));
+            Assert.False(picker.IsDropDownOpen);
+            Assert.Equal("Fixture Black", picker.Text);
+            picker.OpenFontList();
+            Flush(window);
+            family = Assert.Single(GetFontMenu(picker).Items.Cast<MenuItem>());
+            var current = family.Items.Cast<MenuItem>().First();
+            Assert.Equal("Black", current.Header);
+            Assert.True(current.IsChecked);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void AFamilyWithoutVariantsCanBeSelectedDirectly()
+    {
+        var picker = CreatePicker();
+        picker.RefreshFontFamilies(["Embedded Project Family"]);
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var family = GetFontMenu(picker).Items.Cast<MenuItem>()
+                .Single(item => Equals(item.Header, "Embedded Project Family"));
+            Assert.False(family.HasSubMenu);
+            ClickMenuItem(family);
+            Flush(window);
+            Assert.Equal(new("Embedded Project Family"), Assert.Single(values));
+            Assert.False(picker.IsDropDownOpen);
+            Assert.Equal("Embedded Project Family", picker.Text);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void FontDropdownGroupsWeightsAndMovesTheCurrentFamilyToTheFirstRow()
+    {
+        var picker = CreatePicker();
+        picker.RefreshFontCandidates(Candidates().Concat(
+        [
+            new FontPickerCandidate(new("Alphabetical First")),
+            new FontPickerCandidate(new("Zebra Family"))
+        ]));
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var menu = GetFontMenu(picker);
+            var families = menu.Items.Cast<MenuItem>().ToArray();
+            Assert.Equal(orderedFamilies, families.Select(value => value.Header));
+            var variants = families[0].Items.Cast<MenuItem>().ToArray();
+            Assert.Equal(orderedVariants, variants.Select(value => value.Header));
+            Assert.True(families[0].IsChecked);
+            Assert.True(variants[0].IsChecked);
+            Assert.Equal("Fixture Regular", picker.Text);
+            Assert.Empty(values);
+
+            picker.IsDropDownOpen = false;
+            picker.SetCurrentFamily("Zebra Family");
+            picker.OpenFontList();
+            Flush(window);
+            Assert.Equal("Zebra Family", menu.Items.Cast<MenuItem>().First().Header);
+            Assert.Single(menu.Items.Cast<MenuItem>(), value => Equals(value.Header, "Zebra Family"));
+            Assert.Empty(values);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void OpeningAWeightSubmenuPreservesTheDraftAndCommitsOnlyTheChosenVariant()
+    {
+        var picker = CreatePicker();
+        var button = new Button { Content = "Move focus" };
+        var window = CreateWindow(picker, button);
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            UiTestActions.Press(window, Key.Down);
+            Assert.Equal(0, GetFontMenu(picker).SelectedIndex);
+            UiTestActions.Press(window, Key.Right);
+            Flush(window);
+            var family = Assert.Single(GetFontMenu(picker).Items.Cast<MenuItem>());
+            Assert.True(family.IsSubMenuOpen,
+                $"Dropdown: {picker.IsDropDownOpen}; selected: {GetFontMenu(picker).SelectedItem}; focus: {window.FocusManager.GetFocusedElement()}; text: {picker.Text}");
+            Assert.True(picker.IsDropDownOpen);
+            Assert.Equal("Fixture Regular", picker.Text);
+            Assert.Empty(values);
+            UiTestActions.Press(window, Key.Down);
+            UiTestActions.Press(window, Key.Enter);
+            Flush(window);
+            Assert.Equal(Candidate("SemiBold", 600).Selection, Assert.Single(values));
+            Assert.Equal("Fixture SemiBold", picker.Text);
+            Assert.False(picker.IsDropDownOpen);
+            Assert.False(family.IsSubMenuOpen);
+            Assert.True(button.Focus());
+            Flush(window);
+            Assert.Single(values);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void MissingCurrentVariantIsPinnedAndMenuDismissalDoesNotCommitIt()
+    {
+        var picker = CreatePicker();
+        var missing = new FontSelection("Unavailable Family", new() { Name = "Designer Heavy", Weight = 913 });
+        picker.SetCurrentFont(missing);
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var family = GetFontMenu(picker).Items.Cast<MenuItem>().First();
+            Assert.Equal("Unavailable Family", family.Header);
+            Assert.False(family.HasSubMenu);
+            Assert.Equal(missing, Assert.IsType<FontPickerCandidate>(family.Tag).Selection);
+            UiTestActions.Press(window, Key.Down);
+            UiTestActions.Press(window, Key.Right);
+            UiTestActions.Press(window, Key.Escape);
+            UiTestActions.Press(window, Key.Escape);
+            Flush(window);
+            Assert.False(picker.IsDropDownOpen);
+            Assert.Equal(missing, picker.CurrentFont);
+            Assert.Equal(missing.DisplayName, picker.Text);
+            Assert.Empty(values);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     [AvaloniaFact]
     public void ClosingTheFontDropdownPassesTheOutsideClickToItsTarget()
     {
@@ -162,6 +508,7 @@ public sealed class FontPickerVariantUiTests
             Assert.Empty(values);
             Assert.Equal("Fixture Heavy", picker.Text);
             UiTestActions.Press(window, Key.Down);
+            UiTestActions.Press(window, Key.Right);
             UiTestActions.Press(window, Key.Enter);
             Flush(window);
             var selected = Assert.Single(values);
@@ -276,6 +623,47 @@ public sealed class FontPickerVariantUiTests
         return picker;
     }
 
+    private static void VerifyCurrentCheckmarkAfterReopening(bool singleVariant)
+    {
+        var picker = CreatePicker();
+        if (singleVariant)
+        {
+            picker.RefreshFontCandidates([Candidate("Regular", 400)]);
+        }
+        var window = CreateWindow(picker, new Button());
+        var values = new List<FontSelection>();
+        picker.FamilyCommitted += (_, value) => values.Add(value.Selection);
+        try
+        {
+            window.Show();
+            Flush(window);
+            picker.OpenFontList();
+            Flush(window);
+            var family = Assert.Single(GetFontMenu(picker).Items.Cast<MenuItem>());
+            ClickMenuItem(family);
+            Flush(window);
+            if (!singleVariant)
+            {
+                ClickMenuItem(family.Items.Cast<MenuItem>().Single(item => item.IsChecked));
+                Flush(window);
+            }
+            Assert.False(picker.IsDropDownOpen);
+            picker.OpenFontList();
+            Flush(window);
+            family = Assert.Single(GetFontMenu(picker).Items.Cast<MenuItem>());
+            Assert.True(family.IsChecked);
+            if (!singleVariant)
+            {
+                Assert.Equal("Regular", Assert.Single(family.Items.Cast<MenuItem>(), item => item.IsChecked).Header);
+            }
+            Assert.Empty(values);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     private static FontPickerCandidate[] Candidates() =>
     [
         Candidate("Regular", 400), Candidate("SemiBold", 600), Candidate("Bold", 700), Candidate("Black", 900)
@@ -296,6 +684,23 @@ public sealed class FontPickerVariantUiTests
     {
         Dispatcher.UIThread.RunJobs();
         window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static MenuBase GetFontMenu(FontFamilyPicker picker)
+    {
+        return Assert.IsAssignableFrom<MenuBase>(Assert.Single(picker.GetVisualDescendants().OfType<Popup>()).Child);
+    }
+
+    private static void ClickMenuItem(MenuItem item)
+    {
+        var root = Assert.IsAssignableFrom<TopLevel>(TopLevel.GetTopLevel(item));
+        root.UpdateLayout();
+        var point = item.TranslatePoint(new(item.Bounds.Width / 2, item.Bounds.Height / 2), root)!.Value;
+        root.MouseMove(point);
+        root.MouseDown(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        root.MouseUp(point, MouseButton.Left);
         Dispatcher.UIThread.RunJobs();
     }
 }

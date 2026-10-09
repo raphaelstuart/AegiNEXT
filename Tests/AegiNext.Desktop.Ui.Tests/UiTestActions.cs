@@ -133,6 +133,20 @@ internal static class UiTestActions
         window.KeyRelease(key, modifiers, PhysicalKey.None, null);
     }
 
+    internal static void ClickFontMenuItem(MenuItem item)
+    {
+        item.BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        var root = Assert.IsAssignableFrom<TopLevel>(TopLevel.GetTopLevel(item));
+        root.UpdateLayout();
+        var point = item.TranslatePoint(new(item.Bounds.Width / 2, item.Bounds.Height / 2), root)!.Value;
+        root.MouseMove(point);
+        root.MouseDown(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        root.MouseUp(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+    }
+
     internal static void SetText(TextBox input, string text)
     {
         input.Text = text;

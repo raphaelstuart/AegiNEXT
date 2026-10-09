@@ -9,6 +9,7 @@ using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Startup;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -268,6 +269,57 @@ public sealed class SettingsWindowUiTests
             UiTestActions.Press(window, Key.Escape);
             Assert.Equal(original.Style.FontFamily, picker.Text);
             Assert.Empty(changes);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task PointerSelectionCommitsTheExactFontVariantAndSavesItOnce()
+    {
+        using var environment = new UiTestEnvironment();
+        await using var application = new DesktopApplicationContext(new(environment.DirectoryPath), new() { Language = "en-US" });
+        await application.Initialization;
+        await application.Fonts.EnsureLoadedAsync();
+        var selected = application.Fonts.Candidates.First(candidate => candidate.Selection.Variant is { Weight: >= 700 }).Selection;
+        var original = new SubtitleStylePreset(Guid.NewGuid(), "Fixture", new());
+        var window = new SettingsWindow(new());
+        window.ViewModel.Styles.SetFonts(application.Fonts);
+        try
+        {
+            window.Show();
+            window.UpdateStyles([original]);
+            window.SelectPage(SettingsPage.STYLES);
+            var picker = UiTestActions.Find<FontFamilyPicker>(window, "FontInput");
+            var commits = new List<FontSelection>();
+            picker.FamilyCommitted += (_, value) => commits.Add(value.Selection);
+            var saved = new List<SubtitleStylePreset>();
+            window.UpsertStyleRequested += (_, value) => saved.Add(value.Preset);
+            picker.OpenFontList();
+            Dispatcher.UIThread.RunJobs();
+            var menu = Assert.IsAssignableFrom<MenuBase>(Assert.Single(picker.GetVisualDescendants().OfType<Popup>()).Child);
+            var family = menu.Items.Cast<MenuItem>().Single(item => Equals(item.Header, selected.FamilyName));
+            UiTestActions.ClickFontMenuItem(family);
+            window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+            if (family.HasSubMenu)
+            {
+                Assert.Empty(commits);
+                Assert.Equal(original.Style, window.ViewModel.Styles.Draft!.Style);
+                Assert.True(family.IsSubMenuOpen);
+                var variant = family.Items.Cast<MenuItem>().Single(item => Equals(item.Header, selected.Variant?.Name));
+                UiTestActions.ClickFontMenuItem(variant);
+            }
+            Assert.Equal(selected, Assert.Single(commits));
+            Assert.Equal(selected.Variant, window.ViewModel.Styles.Draft!.Style.FontVariant);
+            Assert.Equal(selected.DisplayName, picker.Text);
+            Assert.False(picker.IsDropDownOpen);
+            UiTestActions.Click(window, "SaveStyleButton");
+            Assert.Equal(selected.FamilyName, Assert.Single(saved).Style.FontFamily);
+            Assert.Equal(selected.Variant, saved[0].Style.FontVariant);
+            Assert.Single(commits);
         }
         finally
         {

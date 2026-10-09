@@ -28,6 +28,10 @@ Read the consuming panel and closest shared control before adding an API. Shared
 
 Layouts control space without owning editor, Undo, playback, or export. Current layout and named presets are independent. Persistence validates app-owned snapshots, writes atomically, and constrains restored windows to available monitors. Floating close hides panels; main close flushes layouts and drains the session.
 
+Font fields share `FontFamilyPicker`: the current family stays first, multiple variants use a submenu, and a single variant commits directly. Menu matching ignores optional PostScript metadata while committed selections retain the complete font identity. Popup input belongs to its panel through both visual and logical ancestry.
+
+Hosts inject `IFontNamePreviewProvider` from the shared font service. `Controls/Media/FontNamePreviewPresenter` requests visible names and owns its bitmap; detach cancels its waiter and rejects stale results. Rendering opens the exact font face or named variable instance and returns a theme-independent Alpha8 mask. `DesktopApplicationContext` owns the bounded preview cache under `PreferencesStore.DirectoryPath/caches/fonts/v1`, keyed by font content and instance, name, size, and DPI; controls never access disk or create their own cache.
+
 ## Window appearance and input
 
 Reuse shared typography, spacing, panel corners, and chrome. Layout owns outer frames; panels avoid duplicate borders. Register floating/settings hosts for the same menu/shortcut policy.

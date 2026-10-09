@@ -1,6 +1,7 @@
 using AegiNext.Application.Presets;
 using AegiNext.Media.Encoding.Presets;
 using AegiNext.Desktop.Editing;
+using AegiNext.Desktop.Rendering;
 using AegiNext.Desktop.Layouts;
 using AegiNext.Application.Tasks;
 using AegiNext.Desktop.Settings;
@@ -8,6 +9,7 @@ using AegiNext.Desktop.Settings.AudioAnalysis;
 using AegiNext.Desktop.Settings.Transfer;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Media.Analysis;
+using AegiNext.Rendering.Fonts;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
@@ -18,6 +20,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
 {
     private readonly Lock lifetime = new();
     private readonly SubtitleFontSelectionService fonts;
+    private readonly FontNamePreviewCache fontNamePreviews;
     private readonly WorkbenchPreferences? initialPreferences;
     private WorkbenchPreferences preferences;
     private Task? disposeTask;
@@ -37,6 +40,9 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         Tasks = new();
         Tasks.MaximumConcurrentTasks = preferences.MaximumConcurrentTasks;
         fonts = new(Tasks);
+        fontNamePreviews = new(Path.Combine(PreferencesStore.DirectoryPath, "caches", "fonts", "v1"),
+            new SystemFontNamePreviewRenderer(() => fonts.Catalog));
+        fonts.PreviewProvider = fontNamePreviews;
         preferences.Validate();
         AudioAnalysisBudget = new(preferences.AudioAnalysis.Execution.MaximumWorkers);
         preferencesLoadError = PreferencesStore.LoadError;
@@ -466,6 +472,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
 
     private async Task DisposeCoreAsync()
     {
+        await fontNamePreviews.DisposeAsync();
         foreach (var task in Tasks.GetSnapshots().Where(value => !value.IsFinished && value.CanCancel))
         {
             Tasks.RequestCancel(task.Id);

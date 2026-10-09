@@ -190,8 +190,9 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
 
     private void RefreshFontFamilies()
     {
-        this.FindControl<FontFamilyPicker>("FontInput")!.RefreshFontCandidates(
-            model!.Fonts.Candidates, model.Styles.Select(value => value.Style.FontFamily));
+        var picker = this.FindControl<FontFamilyPicker>("FontInput")!;
+        picker.PreviewProvider = model!.Fonts.PreviewProvider;
+        picker.RefreshFontCandidates(model.Fonts.Candidates, model.Styles.Select(value => value.Style.FontFamily));
     }
 
     private void ObserveFonts()

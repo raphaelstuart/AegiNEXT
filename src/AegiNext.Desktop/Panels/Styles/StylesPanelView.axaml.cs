@@ -31,6 +31,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         DataContext = viewModel;
         fonts = this.FindControl<FontFamilyPicker>("FontCombo")!;
         fonts.CommitOnLostFocus = false;
+        fonts.PreviewProvider = viewModel.Fonts.PreviewProvider;
         fonts.PropertyChanged += OnFontPickerChanged;
         fonts.RefreshFontCandidates(viewModel.Fonts.Candidates);
         fonts.SetCurrentFont(viewModel.CurrentFont);

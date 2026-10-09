@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Dock.Avalonia.Controls;
@@ -643,7 +644,8 @@ internal sealed class WorkbenchLayoutController : IDisposable
     {
         if (e.Source is Visual visual)
         {
-            var ancestors = visual.GetVisualAncestors().ToArray();
+            var ancestors = visual.GetVisualAncestors()
+                .Concat(visual is ILogical logical ? logical.GetLogicalAncestors().OfType<Visual>() : []).ToArray();
             if (panels.Values.Any(panel => ReferenceEquals(panel.View, visual) || ancestors.Contains(panel.View)))
             {
                 return;

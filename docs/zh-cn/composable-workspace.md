@@ -28,6 +28,10 @@
 
 布局只管理空间，不拥有编辑器、Undo、播放或导出。当前布局和命名预设独立；持久化校验应用自有快照并原子写入，恢复浮窗时限制到可用显示器。关闭浮窗隐藏面板，关闭主窗口刷新布局并等待会话结束。
 
+字体字段共用 `FontFamilyPicker`：当前家族置顶，多变种使用二级菜单，单变种直接提交。菜单匹配忽略可选 PostScript 元数据，提交仍携带完整字体身份。弹窗输入通过视觉祖先和逻辑祖先归属业务面板。
+
+宿主从共享字体服务注入 `IFontNamePreviewProvider`。`Controls/Media/FontNamePreviewPresenter` 只请求可见名称并拥有位图；离开界面树时取消自身等待并拒绝过期结果。Rendering 打开真实字体 face 或可变字体命名实例，返回与主题无关的 Alpha8 蒙版。`DesktopApplicationContext` 拥有 `PreferencesStore.DirectoryPath/caches/fonts/v1` 中的有界缓存，缓存键包含字体内容及实例、名称、字号与 DPI；控件不访问磁盘或自行创建缓存。
+
 ## 窗口与输入
 
 复用字体、间距、面板圆角和窗口外观；布局绘制外框，面板避免重复边框。为浮窗/设置宿主注册相同菜单与快捷键策略。

@@ -77,6 +77,16 @@ public static class FontSelectionResolver
         return SearchNames(candidate).Any(name => name.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 
+    internal static bool HasSameFace(FontSelection left, FontSelection right) => GetFaceKey(left) == GetFaceKey(right);
+
+    internal static (string FamilyName, string? VariantName, int Weight, int Width, bool Italic) GetFaceKey(FontSelection selection)
+    {
+        var familyName = selection.FamilyName.ToUpperInvariant();
+        return selection.Variant is { } variant
+            ? (familyName, NormalizeName(variant.Name), variant.Weight, variant.Width, variant.Italic)
+            : (familyName, null, 0, 0, false);
+    }
+
     private static IEnumerable<string> SearchNames(FontPickerCandidate candidate)
     {
         yield return candidate.DisplayName;

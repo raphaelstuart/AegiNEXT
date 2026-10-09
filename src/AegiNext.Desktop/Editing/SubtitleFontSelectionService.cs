@@ -67,6 +67,7 @@ internal sealed class SubtitleFontSelectionService
     }
 
     internal SystemFontCatalog? Catalog { get; private set; }
+    internal IFontNamePreviewProvider? PreviewProvider { get; set; }
     internal ImmutableArray<FontPickerCandidate> Candidates { get; private set; }
 
     internal static FontSelection FromStyle(SubtitleStyle style) => new(style.FontFamily, style.FontVariant, !style.FontAssetId.HasValue);
