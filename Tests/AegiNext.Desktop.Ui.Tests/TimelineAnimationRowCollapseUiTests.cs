@@ -22,7 +22,7 @@ public sealed class TimelineAnimationRowCollapseUiTests
         var secondValue = CreateValue(property, true);
         var layer = CreateLayer(property, [new(new(1), firstValue), new(new(3), secondValue)]);
         var document = new ProjectDocument { Layers = [layer] };
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, layer.Id, property);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, layer.TrackId, property);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 80, IsSnapEnabled = false };
         timeline.SetDocument(document, null, layer);
         var requests = new List<TimelineAnimationRowCollapseEventArgs>();
@@ -100,7 +100,7 @@ public sealed class TimelineAnimationRowCollapseUiTests
     public void PointerCollapseOnlyRequestsTheStateAndWaitsForItsConsumerToAcceptIt()
     {
         var layer = CreateLayer(AnimationProperty.OPACITY, [new(new(1), 0.25)]);
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, layer.Id, AnimationProperty.OPACITY);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, layer.TrackId, AnimationProperty.OPACITY);
         using var timeline = new SubtitleTimelineControl();
         timeline.SetDocument(new() { Layers = [layer] }, null, layer);
         TimelineAnimationRowCollapseEventArgs? request = null;
@@ -136,21 +136,21 @@ public sealed class TimelineAnimationRowCollapseUiTests
     [AvaloniaFact]
     public void ClipsInOneTrackShareThePropertyStateWhileOtherTracksAndPropertiesRemainIndependent()
     {
-        var otherTrack = new SubtitleTrack { Name = "Other" };
+        var otherTrack = new ProjectTrack { Name = "Other" };
         var firstCue = new SubtitleLine { End = new(3), Text = "First" };
         var secondCue = new SubtitleLine { Start = new(4), End = new(7), Text = "Second" };
-        var otherCue = new SubtitleLine { End = new(3), TrackId = otherTrack.Id, Text = "Other" };
+        var otherCue = new SubtitleLine { End = new(3), Text = "Other" };
         var first = CreateSubtitleLayer(firstCue) with
         {
             Tracks = [new(AnimationProperty.OPACITY, [new(new(1), 0.25)]), new(AnimationProperty.ROTATION, [new(new(1), 40)])]
         };
         var second = CreateSubtitleLayer(secondCue) with { Tracks = [new(AnimationProperty.OPACITY, [new(new(1), 0.75)])] };
-        var other = CreateSubtitleLayer(otherCue) with { Tracks = [new(AnimationProperty.OPACITY, [new(new(1), 0.5)])] };
+        var other = CreateSubtitleLayer(otherCue) with { TrackId = otherTrack.Id, Tracks = [new(AnimationProperty.OPACITY, [new(new(1), 0.5)])] };
         var document = new ProjectDocument
         {
-            SubtitleTracks = [SubtitleTrack.Default, otherTrack], Subtitles = [firstCue, secondCue, otherCue], Layers = [first, second, other]
+            Tracks = [ProjectTrack.Default, otherTrack], Subtitles = [firstCue, secondCue, otherCue], Layers = [first, second, other]
         };
-        var sharedId = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, firstCue.TrackId, AnimationProperty.OPACITY);
+        var sharedId = new TimelineAnimationRowId(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY);
         var rotationId = sharedId with { Property = AnimationProperty.ROTATION };
         var otherId = sharedId with { OwnerId = otherTrack.Id };
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 70 };
@@ -177,7 +177,7 @@ public sealed class TimelineAnimationRowCollapseUiTests
             Assert.False(timeline.IsAnimationRowCollapsed(otherId));
             Assert.Equal(otherHeight, timeline.GetAnimationRowRectangle(otherId)!.Value.Height);
 
-            timeline.ToggleTrackCollapse(firstCue.TrackId);
+            timeline.ToggleTrackCollapse(ProjectTrack.DEFAULT_TRACK_ID);
             Prepare(window);
 
             Assert.Null(timeline.GetAnimationRowRectangle(sharedId));
@@ -187,7 +187,7 @@ public sealed class TimelineAnimationRowCollapseUiTests
             Assert.NotNull(timeline.GetClipRectangle(first.Id));
             Assert.NotNull(timeline.GetClipRectangle(second.Id));
 
-            timeline.ToggleTrackCollapse(firstCue.TrackId);
+            timeline.ToggleTrackCollapse(ProjectTrack.DEFAULT_TRACK_ID);
             Prepare(window);
 
             Assert.Equal(40, timeline.GetAnimationRowRectangle(sharedId)!.Value.Height);
@@ -203,13 +203,12 @@ public sealed class TimelineAnimationRowCollapseUiTests
     }
 
     [AvaloniaFact]
-    public void CollapsingAnOuterSceneGroupPreservesTheChildAnimationRowState()
+    public void CollapsingATrackPreservesItsClipAnimationRowState()
     {
         var child = CreateLayer(AnimationProperty.OPACITY, [new(new(1), 0.25)]);
-        var group = new ProjectLayer { Kind = LayerKind.GROUP, End = child.End, Children = [child] };
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, child.Id, AnimationProperty.OPACITY);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, child.TrackId, AnimationProperty.OPACITY);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 70 };
-        timeline.SetDocument(new() { Layers = [group] }, null, null);
+        timeline.SetDocument(new() { Layers = [child] }, null, null);
         var requests = new List<TimelineAnimationRowCollapseEventArgs>();
         AcceptCollapseRequests(timeline, requests);
         var window = new Window { Width = 800, Height = 350, Content = timeline };
@@ -218,13 +217,13 @@ public sealed class TimelineAnimationRowCollapseUiTests
         {
             Prepare(window);
             ClickExpander(window, timeline, rowId);
-            var groupExpander = new Point(14, timeline.GetClipRectangle(group.Id)!.Value.Center.Y);
+            var groupExpander = timeline.GetTrackExpanderRectangle(child.TrackId)!.Value.Center;
             Assert.Same(timeline, window.InputHitTest(groupExpander));
             window.MouseDown(groupExpander, MouseButton.Left);
             window.MouseUp(groupExpander, MouseButton.Left);
             Prepare(window);
 
-            Assert.Null(timeline.GetClipRectangle(child.Id));
+            Assert.NotNull(timeline.GetClipRectangle(child.Id));
             Assert.Null(timeline.GetAnimationRowRectangle(rowId));
             Assert.True(timeline.IsAnimationRowCollapsed(rowId));
             Assert.Equal(rowId, Assert.Single(timeline.TimelineViewState.CollapsedAnimationRows));
@@ -255,7 +254,7 @@ public sealed class TimelineAnimationRowCollapseUiTests
         var layer = CreateLayer(property, [key]);
         var source = new ProjectDocument { Layers = [layer] };
         var editor = new ProjectEditor(source);
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, layer.Id, property);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, layer.TrackId, property);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 80, IsSnapEnabled = false };
         timeline.SetDocument(source, null, layer);
         AcceptCollapseRequests(timeline, []);
@@ -334,7 +333,7 @@ public sealed class TimelineAnimationRowCollapseUiTests
         {
             Start = new(1), End = new(4)
         };
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, layer.Id, AnimationProperty.OPACITY);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, layer.TrackId, AnimationProperty.OPACITY);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 80, IsSnapEnabled = false };
         timeline.SetDocument(new() { Layers = [layer] }, null, layer);
         AcceptCollapseRequests(timeline, []);
@@ -383,7 +382,7 @@ public sealed class TimelineAnimationRowCollapseUiTests
     {
         var layer = CreateLayer(AnimationProperty.OPACITY, [new(new(1), 0.25)]);
         var document = new ProjectDocument { Layers = [layer] };
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, layer.Id, AnimationProperty.OPACITY);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, layer.TrackId, AnimationProperty.OPACITY);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 80, IsSnapEnabled = false };
         timeline.SetDocument(document, null, layer);
         var requests = new List<TimelineAnimationRowCollapseEventArgs>();

@@ -1,9 +1,11 @@
+using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Panels.Subtitles;
@@ -13,6 +15,9 @@ internal sealed partial class SubtitlesPanelView
     private TopLevel? keyboardRoot;
     private bool advancingRow;
     private int rowNavigationRevision;
+    private ProjectDocument? rowNavigationDocument;
+    private SubtitleRowFocusBookmark? rowNavigationFocus;
+    private bool rowNavigationFocusChanged;
 
     /// <inheritdoc />
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -21,6 +26,7 @@ internal sealed partial class SubtitlesPanelView
         if (!disposed)
         {
             keyboardRoot = TopLevel.GetTopLevel(this);
+            keyboardRoot?.AddHandler(GotFocusEvent, OnRowNavigationFocusChanged, RoutingStrategies.Bubble);
             if (keyboardRoot is Window window)
             {
                 window.Deactivated += OnKeyboardRootDeactivated;
@@ -108,15 +114,23 @@ internal sealed partial class SubtitlesPanelView
         }
 
         var sourceId = row.Id;
-        var trackId = row.Original.TrackId;
+        var trackId = session.ClipIndex.GetSubtitleTrackId(row.Id);
         var revision = ++rowNavigationRevision;
         advancingRow = true;
+        rowNavigationDocument = session.DocumentSnapshot;
+        rowNavigationFocus = null;
+        rowNavigationFocusChanged = false;
         try
         {
             var targetId = await viewModel.AdvanceRowAsync(sourceId);
-            if (targetId is not { } id || disposed || revision != rowNavigationRevision ||
-                !ReferenceEquals(root, keyboardRoot) || !this.IsAttachedToVisualTree() ||
-                session.CurrentTrackId != trackId || viewModel.SelectedRow?.Id != id)
+            if (targetId is not { } id || disposed || !this.IsAttachedToVisualTree() ||
+                session.CurrentTrackId != trackId || RestoreRowNavigationFocus(id))
+            {
+                return;
+            }
+
+            if (revision != rowNavigationRevision || !ReferenceEquals(root, keyboardRoot) ||
+                viewModel.SelectedRow?.Id != id)
             {
                 return;
             }
@@ -139,8 +153,64 @@ internal sealed partial class SubtitlesPanelView
         }
         finally
         {
+            rowNavigationDocument = null;
+            rowNavigationFocus = null;
+            rowNavigationFocusChanged = false;
             advancingRow = false;
         }
+    }
+
+    private void OnRowNavigationFocusChanged(object? sender, FocusChangedEventArgs e)
+    {
+        if (!advancingRow || disposed || session.IsProjectBusy ||
+            !ReferenceEquals(rowNavigationDocument, session.DocumentSnapshot) || keyboardRoot is not { } root)
+        {
+            return;
+        }
+
+        rowNavigationFocusChanged = true;
+        rowNavigationFocus = e.Source is TextBox { DataContext: SubtitleRow row } box &&
+            box.GetVisualAncestors().Contains(list)
+            ? new(row.Id, Grid.GetColumn(box), root, rowNavigationRevision, box.CaretIndex, box.SelectionStart, box.SelectionEnd)
+            : null;
+    }
+
+    private bool RestoreRowNavigationFocus(Guid targetId)
+    {
+        if (!rowNavigationFocusChanged)
+        {
+            return false;
+        }
+
+        if (rowNavigationFocus is not { } bookmark || keyboardRoot is not { } root ||
+            !ReferenceEquals(bookmark.Root, root) || bookmark.Revision != rowNavigationRevision)
+        {
+            return true;
+        }
+
+        var focused = root.FocusManager.GetFocusedElement();
+        if (focused is not null && (focused is not TextBox { AcceptsReturn: true, DataContext: SubtitleRow focusedRow } focusedBox ||
+            focusedRow.Id != targetId || !focusedBox.GetVisualAncestors().Contains(list)))
+        {
+            return true;
+        }
+
+        var target = viewModel.VisibleRows.FirstOrDefault(value => value.Id == bookmark.RowId);
+        if (target is not null)
+        {
+            list.ScrollIntoView(target);
+            root.UpdateLayout();
+            var input = list.GetVisualDescendants().OfType<TextBox>().FirstOrDefault(value =>
+                value.DataContext is SubtitleRow row && row.Id == bookmark.RowId && Grid.GetColumn(value) == bookmark.Column);
+            if (input?.Focus() == true)
+            {
+                input.CaretIndex = bookmark.CaretIndex;
+                input.SelectionStart = bookmark.SelectionStart;
+                input.SelectionEnd = bookmark.SelectionEnd;
+            }
+        }
+
+        return true;
     }
 
     private void OnKeyboardRootDeactivated(object? sender, EventArgs e)
@@ -153,6 +223,7 @@ internal sealed partial class SubtitlesPanelView
         rowNavigationRevision++;
         if (keyboardRoot is { } root)
         {
+            root.RemoveHandler(GotFocusEvent, OnRowNavigationFocusChanged);
             if (root is Window window)
             {
                 window.Deactivated -= OnKeyboardRootDeactivated;

@@ -13,7 +13,7 @@ public sealed class AnimationTrackTargetTests
         Assert.Equal(new AnimationTrackTarget(AnimationProperty.OPACITY), track.Target);
         Assert.Equal(AnimationProperty.OPACITY, track.Property);
         Assert.Null(track.Target.NodeId);
-        ProjectValidator.Validate(new() { Layers = [new() { Tracks = [track] }] });
+        ProjectValidator.Validate(new() { Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [track] }] });
     }
 
     [Fact]
@@ -72,10 +72,10 @@ public sealed class AnimationTrackTargetTests
         var track = new AnimationTrack(new AnimationTrackTarget(AnimationProperty.OPACITY, Guid.NewGuid()),
             [new(new(0), 0.5)]);
 
-        Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new() { Layers = [new() { Tracks = [track] }] }));
+        Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new() { Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [track] }] }));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new()
         {
-            Layers = [new() { Tracks = [track with { Target = track.Target with { NodeId = Guid.Empty } }] }]
+            Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [track with { Target = track.Target with { NodeId = Guid.Empty } }] }]
         }));
     }
 
@@ -86,7 +86,7 @@ public sealed class AnimationTrackTargetTests
 
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new()
         {
-            Layers = [new() { Tracks = [track, track with { Keyframes = [new(new(0), 0.75)] }] }]
+            Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [track, track with { Keyframes = [new(new(0), 0.75)] }] }]
         }));
     }
 }

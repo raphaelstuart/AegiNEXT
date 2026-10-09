@@ -29,7 +29,7 @@ internal static class AnimationEditOperations
     internal static ProjectDocument SetValue(ProjectDocument document, AnimationEditTarget target, AnimationTrackTarget animationTarget, AnimationValue value)
     {
         var property = animationTarget.Property;
-        var layer = WorkbenchSession.Flatten(document.Layers).Single(value => value.Id == target.LayerId);
+        var layer = document.Layers.Single(value => value.Id == target.LayerId);
         var track = layer.Tracks.FirstOrDefault(value => value.Target == animationTarget);
         if (track is not null && !track.Transforms.IsEmpty)
         {

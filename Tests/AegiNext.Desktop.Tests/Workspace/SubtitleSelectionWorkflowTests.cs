@@ -51,7 +51,7 @@ public sealed class SubtitleSelectionWorkflowTests
         Assert.Equal(ids[..2], session.SelectedSubtitleIds);
         Assert.Equal(ids[1], session.SelectedCueId);
 
-        var track = context.Editor.AddSubtitleTrack("Other");
+        var track = context.Editor.AddTrack("Other");
         Assert.True(session.SelectTrack(track));
         Assert.Empty(session.SelectedSubtitleIds);
         Assert.Null(session.SelectedCueId);

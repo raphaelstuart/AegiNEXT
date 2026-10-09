@@ -21,7 +21,7 @@ public sealed class SubtitleTextAlignmentPersistenceTests
             Position = new() { Anchor = new(0.25, 0.75), Pivot = new(0.5, 1), Offset = new(17.125, -23.5) }
         };
         var editor = new ProjectEditor();
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Aligned", style);
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Aligned", style);
         var id = editor.AddSubtitle(new(0), new(3), "Long line\nx");
         editor.ApplySubtitleInlineStyle(id, 1, 2, new() { Bold = true });
         var source = editor.Snapshot;
@@ -29,7 +29,7 @@ public sealed class SubtitleTextAlignmentPersistenceTests
         var restored = ProjectStore.Deserialize(bytes);
 
         Assert.Equal(ProjectDocument.CURRENT_VERSION, restored.Version);
-        Assert.Equal(style, restored.SubtitleTracks[0].DefaultStyle);
+        Assert.Equal(style, restored.Tracks[0].DefaultStyle);
         Assert.Equal(style, restored.Subtitles[0].Style);
         Assert.Equal(source.Subtitles[0].InlineSpans.ToArray(), restored.Subtitles[0].InlineSpans.ToArray());
         Assert.Equal(textAlign.ToString(), JsonNode.Parse(bytes)!["subtitles"]![0]!["style"]!["textAlign"]!.GetValue<string>());
@@ -55,13 +55,13 @@ public sealed class SubtitleTextAlignmentPersistenceTests
     {
         var style = new SubtitleStyle { Alignment = alignment };
         var editor = new ProjectEditor();
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Legacy", style);
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Legacy", style);
         editor.AddSubtitle(new(0), new(3), "Long line\nx");
         var bytes = ProjectStore.Serialize(editor.Snapshot);
         Assert.DoesNotContain("textAlign", Encoding.UTF8.GetString(bytes), StringComparison.Ordinal);
         var restored = ProjectStore.Deserialize(bytes);
         Assert.Equal(style, restored.Subtitles[0].Style);
-        Assert.Equal(style, restored.SubtitleTracks[0].DefaultStyle);
+        Assert.Equal(style, restored.Tracks[0].DefaultStyle);
         Assert.Null(restored.Subtitles[0].Style.TextAlign);
 
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "Legacy", style);
@@ -74,14 +74,14 @@ public sealed class SubtitleTextAlignmentPersistenceTests
     public void ExplicitNullAlignmentLoadsAsLegacyAndIsOmittedOnResave()
     {
         var editor = new ProjectEditor();
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Legacy", new());
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Legacy", new());
         editor.AddSubtitle(new(0), new(3), "Long line\nx");
         var project = JsonNode.Parse(ProjectStore.Serialize(editor.Snapshot))!;
         project["subtitles"]![0]!["style"]!["textAlign"] = null;
-        project["subtitleTracks"]![0]!["defaultStyle"]!["textAlign"] = null;
+        project["tracks"]![0]!["defaultStyle"]!["textAlign"] = null;
         var restored = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(project.ToJsonString()));
         Assert.Null(restored.Subtitles[0].Style.TextAlign);
-        Assert.Null(restored.SubtitleTracks[0].DefaultStyle!.TextAlign);
+        Assert.Null(restored.Tracks[0].DefaultStyle!.TextAlign);
         Assert.DoesNotContain("textAlign", Encoding.UTF8.GetString(ProjectStore.Serialize(restored)), StringComparison.Ordinal);
 
         var presets = JsonNode.Parse(SubtitleStylePresetStore.Serialize(new() { Presets = [new(Guid.NewGuid(), "Legacy", new())] }))!;
@@ -100,7 +100,7 @@ public sealed class SubtitleTextAlignmentPersistenceTests
     public void BothStoresRejectInvalidAlignmentValues(string value)
     {
         var editor = new ProjectEditor();
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Aligned", new());
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Aligned", new());
         editor.AddSubtitle(new(0), new(3), "Long line\nx");
         var bytes = ProjectStore.Serialize(editor.Snapshot);
         var subtitle = JsonNode.Parse(bytes)!;
@@ -108,7 +108,7 @@ public sealed class SubtitleTextAlignmentPersistenceTests
         Assert.Throws<InvalidDataException>(() => ProjectStore.Deserialize(Encoding.UTF8.GetBytes(subtitle.ToJsonString())));
 
         var track = JsonNode.Parse(bytes)!;
-        track["subtitleTracks"]![0]!["defaultStyle"]!["textAlign"] = JsonNode.Parse(value);
+        track["tracks"]![0]!["defaultStyle"]!["textAlign"] = JsonNode.Parse(value);
         Assert.Throws<InvalidDataException>(() => ProjectStore.Deserialize(Encoding.UTF8.GetBytes(track.ToJsonString())));
 
         var presets = JsonNode.Parse(SubtitleStylePresetStore.Serialize(new() { Presets = [new(Guid.NewGuid(), "Aligned", new())] }))!;

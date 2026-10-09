@@ -34,7 +34,7 @@ public sealed class SubtitleTimingAssociationResolverTests
         var document = Document(preset, line);
         document = document with
         {
-            SubtitleTracks = [document.SubtitleTracks[0] with { AutoApplyStyle = autoApply }]
+            Tracks = [document.Tracks[0] with { AutoApplyStyle = autoApply }]
         };
 
         Assert.Empty(Resolve(document, line.Id, preset));
@@ -113,7 +113,7 @@ public sealed class SubtitleTimingAssociationResolverTests
     {
         return new()
         {
-            SubtitleTracks = [SubtitleTrack.Default with
+            Tracks = [ProjectTrack.Default with
             {
                 DefaultStyle = preset.Style, StylePresetId = preset.Id, StylePresetName = preset.Name
             }],

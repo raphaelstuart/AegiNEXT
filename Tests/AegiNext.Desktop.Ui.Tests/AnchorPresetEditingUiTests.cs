@@ -65,7 +65,7 @@ public sealed class AnchorPresetEditingUiTests
     }
 
     [AvaloniaFact]
-    public async Task AllNineButtonsPreserveActualGroupedGlyphGeometryAndUndoRestoresTheSnapshot()
+    public async Task AllNineButtonsPreserveTransformedGlyphGeometryAndUndoRestoresTheSnapshot()
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
@@ -90,7 +90,7 @@ public sealed class AnchorPresetEditingUiTests
             var position = Assert.Single(window.DocumentSnapshot.Subtitles).Style.Position!;
             Assert.Equal(new ScenePoint(index % 3 / 2d, index / 3 / 2d), position.Anchor);
             Assert.Equal(new ScenePoint(0.5, 1), position.Pivot);
-            Assert.Same(layer.Transform, Assert.Single(window.DocumentSnapshot.Layers).Children[0].Transform);
+            Assert.Same(layer.Transform, Assert.Single(window.DocumentSnapshot.Layers).Transform);
             AssertSameCorners(before, renderer.GetLayerGeometry(window.DocumentSnapshot, MediaTime.Zero, layer.Id)!);
 
             window.GetCommand(WorkbenchCommand.UNDO).Execute(null);
@@ -148,7 +148,7 @@ public sealed class AnchorPresetEditingUiTests
                     StrokeWidth = 0, ShadowColor = SceneColor.Transparent
                 }
             }],
-            Layers = [new() { Kind = LayerKind.GROUP, Transform = new(X: 5, Y: 2, ScaleX: 0.8, ScaleY: 1.2), Children = [layer] }]
+            Layers = [layer]
         });
         context.Session.SelectLayer(layer.Id, [layer.Id]);
         window.Layouts.Activate(WorkbenchPanelIds.STYLES);

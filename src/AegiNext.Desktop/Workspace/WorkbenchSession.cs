@@ -65,6 +65,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private Task? disposeTask;
     private Task documentChangeTask = Task.CompletedTask;
     private TimingSession timingSession = new();
+    private ProjectClipIndex? clipIndex;
 
     internal WorkbenchSession(IWorkbenchDialogService dialogs,
         Func<Action<VideoPreviewUpdate>, VideoPreviewController>? controllerFactory = null,
@@ -172,6 +173,20 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     internal SubtitleStylePresetLibrary StyleLibrary => styleLibrary;
     internal EffectScriptPresetLibrary EffectScriptLibrary => effectScriptLibrary;
     internal EffectScriptLibraryCoordinator EffectScripts => effectScripts;
+
+    internal ProjectClipIndex ClipIndex
+    {
+        get
+        {
+            if (clipIndex is null || !ReferenceEquals(clipIndex.Document, editor.Snapshot))
+            {
+                clipIndex = new(editor.Snapshot);
+            }
+
+            return clipIndex;
+        }
+    }
+
     internal ProjectDocument DocumentSnapshot => editor.Snapshot;
     internal static CultureInfo InterfaceCulture => CultureInfo.GetCultureInfo(Localization.CurrentLanguageID);
     internal bool IsClosing => closing;
@@ -188,7 +203,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         Localization.Get("Workbench.Untitled"));
     internal string ScratchDirectory => scratchDirectory;
     internal MediaTime ProjectPosition => (playback.PendingPosition ?? controller.Snapshot.Position) - (controller.Snapshot.Start ?? MediaTime.Zero);
-    internal ProjectLayer? SelectedLayer => Flatten(editor.Snapshot.Layers).FirstOrDefault(value => value.Id == SelectedLayerId);
+    internal ProjectLayer? SelectedLayer => SelectedLayerId is { } id && ClipIndex.TryGetClip(id, out var clip) ? clip : null;
     internal SubtitleLine? SelectedCue => editor.Snapshot.Subtitles.FirstOrDefault(value => value.Id == SelectedCueId);
     internal AnalysisCoordinator Analysis => analysis;
     internal ExportCoordinator Export => export;
@@ -794,18 +809,6 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         SceneEditing.DraftTarget = null;
         SceneEditing.GestureTarget = null;
         changedEffectFields.Clear();
-    }
-
-    internal static IEnumerable<ProjectLayer> Flatten(ImmutableArray<ProjectLayer> layers)
-    {
-        foreach (var layer in layers)
-        {
-            yield return layer;
-            foreach (var child in Flatten(layer.Children))
-            {
-                yield return child;
-            }
-        }
     }
 
     internal static double ToSeconds(MediaTime time) => (double)time.Numerator / time.Denominator;

@@ -204,7 +204,7 @@ public sealed class SubtitleListAuditionUiTests
         var document = await PrepareAsync(context);
         await FreezeAsync(context);
         SelectRow(context.Window, document.Subtitles[0].Id);
-        context.Session.SelectTrack(document.Subtitles[0].TrackId);
+        context.Session.SelectTrack(context.Session.ClipIndex.GetSubtitleTrackId(document.Subtitles[0].Id));
         Assert.Null(context.Session.SelectedCueId);
         Assert.Empty(context.ViewModel.Subtitles.SelectedIds);
 

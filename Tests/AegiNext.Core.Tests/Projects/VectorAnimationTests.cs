@@ -11,7 +11,7 @@ public sealed class VectorAnimationTests
     {
         var track = new AnimationTrack(AnimationProperty.POSITION,
             [new(new(0), new ScenePoint(10, -20)), new(new(2), new ScenePoint(30, 40))]);
-        var layer = new ProjectLayer { End = new(2), Transform = new() { Position = new(500, 600) }, Tracks = [track] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(2), Transform = new() { Position = new(500, 600) }, Tracks = [track] };
         var evaluated = Assert.Single(SceneEvaluator.Evaluate(new ProjectDocument { Layers = [layer] }, new(1)));
         Assert.Equal(new ScenePoint(20, 10), evaluated.Transform.Position);
         Assert.Equal(new ScenePoint(10, -20), SceneEvaluator.EvaluateVectorTrack(track, new(-1)));
@@ -36,7 +36,7 @@ public sealed class VectorAnimationTests
             },
             new(new(8), new ScenePoint(210, 300))
         ]);
-        var once = LayerAnimationTiming.Clip(new() { Start = new(1), End = new(7), AnimationOffset = new(1), Tracks = [track] });
+        var once = LayerAnimationTiming.Clip(new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(1), End = new(7), AnimationOffset = new(1), Tracks = [track] });
         var twice = LayerAnimationTiming.Clip(once with { Start = new(2), End = new(6), AnimationOffset = new(2) });
         var clipped = Assert.Single(twice.Tracks);
         ProjectValidator.Validate(new() { Layers = [twice] });
@@ -53,9 +53,9 @@ public sealed class VectorAnimationTests
     [Fact]
     public void DimensionsAndLegacyComponentTracksCannotEnterTheAuthoritativeSnapshot()
     {
-        var scalarPosition = new ProjectLayer { Tracks = [new(AnimationProperty.POSITION, [new(MediaTime.Zero, 1)])] };
-        var vectorOpacity = new ProjectLayer { Tracks = [new(AnimationProperty.OPACITY, [new(MediaTime.Zero, new ScenePoint(0, 1))])] };
-        var legacy = new ProjectLayer { Tracks = [new(AnimationProperty.POSITION_X, [new(MediaTime.Zero, 1)])] };
+        var scalarPosition = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [new(AnimationProperty.POSITION, [new(MediaTime.Zero, 1)])] };
+        var vectorOpacity = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [new(AnimationProperty.OPACITY, [new(MediaTime.Zero, new ScenePoint(0, 1))])] };
+        var legacy = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [new(AnimationProperty.POSITION_X, [new(MediaTime.Zero, 1)])] };
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new() { Layers = [scalarPosition] }));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new() { Layers = [vectorOpacity] }));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new() { Layers = [legacy] }));

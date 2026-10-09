@@ -420,22 +420,16 @@ internal sealed partial class WorkbenchSession
             }
 
             ViewModel.Subtitles.SelectedRow = rows.FirstOrDefault(value => value.Id == SelectedCueId);
-            var layers = LayerItems(document.Layers, 0).ToArray();
-            if (!ViewModel.Effects.Layers.SequenceEqual(layers))
-            {
-                ViewModel.Effects.Layers = layers;
-            }
-
+            var layers = document.Layers;
             if (!layers.Any(value => value.Id == SelectedLayerId))
             {
-                SelectedLayerId = SelectedCueId is { } cueId ? Flatten(document.Layers).FirstOrDefault(layer => layer.SubtitleId == cueId)?.Id : null;
+                SelectedLayerId = SelectedCueId is { } cueId ? document.Layers.FirstOrDefault(layer => layer.SubtitleId == cueId)?.Id : null;
             }
 
             if (SelectedKeyTime is { } selectedTime && SelectedLayer?.Tracks.Any(track => track.Keyframes.Any(frame => frame.Time == selectedTime)) != true)
             {
                 SelectedKeyTime = null;
             }
-            ViewModel.Effects.SelectedItem = layers.FirstOrDefault(value => value.Id == SelectedLayerId);
             RefreshTitle();
             ViewModel.Timeline.Document = document;
             ViewModel.Timeline.SelectedCueId = SelectedCueId;
@@ -597,7 +591,7 @@ internal sealed partial class WorkbenchSession
         ResetSubtitleSelection(id);
         SelectedCueId = id;
         ViewModel.Effects.SelectedIds = [];
-        SelectedLayerId = Flatten(editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == id)?.Id;
+        SelectedLayerId = editor.Snapshot.Layers.FirstOrDefault(layer => layer.SubtitleId == id)?.Id;
         SelectedKeyTime = null;
         ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
     }
@@ -633,15 +627,4 @@ internal sealed partial class WorkbenchSession
         RefreshDocument();
     }
 
-    private static IEnumerable<LayerListItem> LayerItems(ImmutableArray<ProjectLayer> layers, int depth)
-    {
-        foreach (var layer in layers)
-        {
-            yield return new(layer.Id, new string(' ', depth * 3) + (layer.Name == "Subtitle" ? Localization.Get("Workbench.Subtitles") : layer.Name));
-            foreach (var child in LayerItems(layer.Children, depth + 1))
-            {
-                yield return child;
-            }
-        }
-    }
 }

@@ -33,7 +33,7 @@ public sealed partial class ProjectSceneRenderer
             surface.Canvas.Translate(-cropBounds.Left, -cropBounds.Top);
             var source = new ProjectLayer { Kind = LayerKind.SUBTITLE, SubtitleId = subtitle.Id };
             var layer = new EvaluatedLayer(source, localTime, new(), 1, subtitle.Style.Fill, subtitle.Style.Stroke,
-                subtitle.Style.StrokeWidth, 0, subtitle, []);
+                subtitle.Style.StrokeWidth, 0, subtitle);
             DrawSubtitle(document, surface.Canvas, layer, previewMode);
             surface.Canvas.ResetMatrix();
             return surface;

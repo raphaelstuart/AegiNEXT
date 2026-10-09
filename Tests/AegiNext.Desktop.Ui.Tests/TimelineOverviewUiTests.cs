@@ -125,21 +125,20 @@ public sealed class TimelineOverviewUiTests
     public void TwentyFourPixelOverviewRendersEveryTrackAtItsTimeAndRowAndStillNavigatesWithoutSeeking(
         double scaling, int trackCount, bool dark)
     {
-        var tracks = Enumerable.Range(0, trackCount).Select(index => new SubtitleTrack { Name = $"Track {index}" }).ToArray();
+        var tracks = Enumerable.Range(0, trackCount).Select(index => new ProjectTrack { Name = $"Track {index}" }).ToArray();
         var duration = Math.Max(10, trackCount / 2d + 2);
-        var empty = new ProjectDocument { SubtitleTracks = [.. tracks] };
+        var empty = new ProjectDocument { Tracks = [.. tracks] };
         var cues = tracks.Select((track, index) => new SubtitleLine
         {
-            TrackId = track.Id,
             Start = new(index + 2, 2),
             End = new((index + 2) * 5 + 2, 10)
         }).ToArray();
         var document = empty with
         {
             Subtitles = [.. cues],
-            Layers = [.. cues.Select(cue => new ProjectLayer
+            Layers = [.. cues.Select((cue, index) => new ProjectLayer
             {
-                Kind = LayerKind.SUBTITLE, SubtitleId = cue.Id, Start = cue.Start, End = cue.End
+                TrackId = tracks[index].Id, Kind = LayerKind.SUBTITLE, SubtitleId = cue.Id, Start = cue.Start, End = cue.End
             })]
         };
         using var timeline = new SubtitleTimelineControl();
@@ -173,7 +172,7 @@ public sealed class TimelineOverviewUiTests
             var origin = overview.TranslatePoint(new(), window)!.Value;
             var top = (int)Math.Round(origin.Y * window.RenderScaling);
             var bottom = (int)Math.Round((origin.Y + overview.Bounds.Height) * window.RenderScaling);
-            var band = (overview.Bounds.Height - 6) / (tracks.Length + 1);
+            var band = (overview.Bounds.Height - 6) / (tracks.Length);
             for (var index = 0; index < cues.Length; index++)
             {
                 var cue = cues[index];

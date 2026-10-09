@@ -118,7 +118,7 @@ internal sealed partial class WorkbenchSession
     private void RefreshEditingPreview()
     {
         var document = PreviewDocument;
-        var layer = Flatten(document.Layers).FirstOrDefault(value => value.Id == SelectedLayerId);
+        var layer = document.Layers.FirstOrDefault(value => value.Id == SelectedLayerId);
         ViewModel.Preview.Scene = new(document, layer, EditingPosition, SceneEditing.Mode,
             ProjectDirectory, SelectedKeyTime is not null || SceneEditing.GestureTarget is not null, playback.IsInteractive,
             preferences.PreviewQuality);

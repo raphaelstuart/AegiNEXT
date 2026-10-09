@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
-using System.ComponentModel;
 using System.Security.Cryptography;
+using AegiNext.Application.Tasks;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
@@ -277,7 +277,7 @@ public sealed class SubtitleListKeyboardUiTests
         var style = new SubtitleStyle { FontSize = 47 };
         document = document with
         {
-            SubtitleTracks = [SubtitleTrack.Default with
+            Tracks = [ProjectTrack.Default with
             {
                 DefaultStyle = style,
                 StylePresetId = Guid.NewGuid(),
@@ -299,7 +299,7 @@ public sealed class SubtitleListKeyboardUiTests
         Assert.Equal(new MediaTime(7, 2), created.Start);
         Assert.Equal(new MediaTime(31, 4), created.End);
         Assert.Equal(string.Empty, created.Text);
-        Assert.Equal(SubtitleTrack.DEFAULT_TRACK_ID, created.TrackId);
+        Assert.Equal(ProjectTrack.DEFAULT_TRACK_ID, context.Session.ClipIndex.GetSubtitleTrackId(created.Id));
         Assert.Equal(style, created.Style);
         var layer = Assert.Single(context.Session.DocumentSnapshot.Layers, layer => layer.SubtitleId == created.Id);
         Assert.Equal(created.Start, layer.Start);
@@ -426,12 +426,12 @@ public sealed class SubtitleListKeyboardUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var otherTrack = new SubtitleTrack { Name = "Other" };
+        var otherTrack = new ProjectTrack { Name = "Other" };
         var source = CreateDocument(2, context);
         var document = source with
         {
-            SubtitleTracks = [SubtitleTrack.Default, otherTrack],
-            Subtitles = source.Subtitles.SetItem(1, source.Subtitles[1] with { TrackId = otherTrack.Id })
+            Tracks = [ProjectTrack.Default, otherTrack],
+            Layers = source.Layers.SetItem(1, source.Layers[1] with { TrackId = otherTrack.Id })
         };
         var window = Prepare(context, document);
         await context.Controller.SeekAsync(new(10));
@@ -443,9 +443,9 @@ public sealed class SubtitleListKeyboardUiTests
         var created = Assert.Single(context.Session.DocumentSnapshot.Subtitles, line => !document.Subtitles.Any(old => old.Id == line.Id));
         Assert.Equal(new MediaTime(2), created.Start);
         Assert.Equal(new MediaTime(10), created.End);
-        Assert.Equal(SubtitleTrack.DEFAULT_TRACK_ID, created.TrackId);
+        Assert.Equal(ProjectTrack.DEFAULT_TRACK_ID, context.Session.ClipIndex.GetSubtitleTrackId(created.Id));
         AssertFocused(window, created.Id);
-        Assert.Equal(otherTrack.Id, context.Session.DocumentSnapshot.Subtitles[1].TrackId);
+        Assert.Equal(otherTrack.Id, context.Session.ClipIndex.GetSubtitleTrackId(context.Session.DocumentSnapshot.Subtitles[1].Id));
     }
 
     [AvaloniaFact]
@@ -488,6 +488,8 @@ public sealed class SubtitleListKeyboardUiTests
     public async Task PortableFontCreationPreservesANewTimeFieldFocusAcrossPreparationAndReattachment(bool reattach)
     {
         await using var context = new MainWindowTestContext();
+        await context.Session.ApplicationContext.Initialization;
+        await context.Session.Fonts.EnsureLoadedAsync();
         await context.OpenMediaAsync();
         await context.Session.Styles.Completion;
         var bytes = (await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans.ttf"),
@@ -500,63 +502,39 @@ public sealed class SubtitleListKeyboardUiTests
         await context.Controller.SeekAsync(new MediaTime(41, 4));
         await context.Controller.PlayAsync();
         Assert.True(RowInput(window, document.Subtitles[0].Id).Focus());
+        await context.Session.WaitForProjectIdleAsync();
+        Flush(window);
+        var tasks = context.Session.ApplicationContext.Tasks;
+        var concurrency = tasks.MaximumConcurrentTasks;
+        tasks.MaximumConcurrentTasks = 1;
+        var preparationGate = new TaskCenterTestTask("Subtitle creation preparation gate");
+        var gateHandle = tasks.Submit(preparationGate);
         Window targetWindow = window;
-        var interrupted = false;
-        var interaction = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void FocusTimeInputWhenAvailable()
-        {
-            if (!context.ViewModel.IsBusy)
-            {
-                Assert.True(RowInput(targetWindow, document.Subtitles[0].Id, 1).Focus());
-            }
-        }
-        void OnBusyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName != "IsBusy")
-            {
-                return;
-            }
-            if (!context.ViewModel.IsBusy && interrupted)
-            {
-                FocusTimeInputWhenAvailable();
-                return;
-            }
-            if (!context.ViewModel.IsBusy || interrupted)
-            {
-                return;
-            }
-            interrupted = true;
-            Dispatcher.UIThread.Post(() =>
-            {
-                try
-                {
-                    context.Clock.Advance(TimeSpan.FromSeconds(1));
-                    if (reattach)
-                    {
-                        context.Window.Layouts.Float(WorkbenchPanelIds.SUBTITLES);
-                        Flush(window);
-                        targetWindow = Assert.Single(context.Window.Layouts.FloatingWindows);
-                        targetWindow.Width = 1100;
-                        targetWindow.Height = 420;
-                        Flush(targetWindow);
-                    }
-                    FocusTimeInputWhenAvailable();
-                    interaction.SetResult();
-                }
-                catch (Exception error)
-                {
-                    interaction.SetException(error);
-                }
-            }, DispatcherPriority.Input);
-        }
-        context.ViewModel.PropertyChanged += OnBusyChanged;
         try
         {
+            await preparationGate.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.False(context.Session.IsProjectBusy);
+            Assert.Equal(preset.Id, context.ViewModel.Styles.SelectedPreset!.Id);
             UiTestActions.Press(window, Key.Enter);
-            await interaction.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.Contains(tasks.GetSnapshots(), task => task.Name == "Tasks.CreateSubtitleClips" &&
+                task.ScopeId == context.Session.TaskScope && task.State == AegiTaskState.Queued);
+            Assert.Same(document, context.Session.DocumentSnapshot);
+            context.Clock.Advance(TimeSpan.FromSeconds(1));
+            if (reattach)
+            {
+                context.Window.Layouts.Float(WorkbenchPanelIds.SUBTITLES);
+                Flush(window);
+                targetWindow = Assert.Single(context.Window.Layouts.FloatingWindows);
+                targetWindow.Width = 1100;
+                targetWindow.Height = 420;
+                Flush(targetWindow);
+            }
+            Assert.True(RowInput(targetWindow, document.Subtitles[0].Id, 1).Focus());
+            preparationGate.Finish.TrySetResult();
+            preparationGate.Cleanup.TrySetResult();
+            await gateHandle.Completion;
             await context.Session.WaitForProjectIdleAsync();
             Flush(targetWindow);
-            Assert.True(interrupted);
             Assert.Null(context.Session.LastError);
             var created = Assert.Single(context.Session.DocumentSnapshot.Subtitles, line => line.Id != document.Subtitles[0].Id);
             Assert.Equal(new MediaTime(2), created.Start);
@@ -567,7 +545,10 @@ public sealed class SubtitleListKeyboardUiTests
         }
         finally
         {
-            context.ViewModel.PropertyChanged -= OnBusyChanged;
+            preparationGate.Finish.TrySetResult();
+            preparationGate.Cleanup.TrySetResult();
+            await gateHandle.Completion;
+            tasks.MaximumConcurrentTasks = concurrency;
         }
     }
 

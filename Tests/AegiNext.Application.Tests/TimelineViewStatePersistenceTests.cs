@@ -7,21 +7,23 @@ namespace AegiNext.Application.Tests;
 public sealed class TimelineViewStatePersistenceTests
 {
     [Fact]
-    public async Task FileRoundTripPreservesIndependentAnimationRowsByScopeOwnerAndProperty()
+    public async Task FileRoundTripPreservesIndependentMixedTrackAnimationRowsByOwnerAndProperty()
     {
         using var directory = new TemporaryProjectDirectory();
-        var firstTrack = new SubtitleTrack { Name = "First" };
-        var secondTrack = new SubtitleTrack { Name = "Second" };
+        var firstTrack = new ProjectTrack { Name = "First" };
+        var secondTrack = new ProjectTrack { Name = "Second" };
         var firstScene = new ProjectLayer
         {
-            Id = firstTrack.Id,
+            Id = firstTrack.Id, TrackId = firstTrack.Id,
+            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20), Start = new(2), End = new(4),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.5)])]
         };
         var secondScene = new ProjectLayer
         {
+            TrackId = secondTrack.Id, Kind = LayerKind.SHAPE, Shape = new(ShapeKind.ELLIPSE, 20, 20), Start = new(2), End = new(4),
             Tracks = [new(AnimationProperty.FILL, [new(new(0), SceneColor.White)])]
         };
-        var editor = new ProjectEditor(new() { SubtitleTracks = [firstTrack, secondTrack] });
+        var editor = new ProjectEditor(new() { Tracks = [firstTrack, secondTrack] });
         var firstCue = editor.AddSubtitle(new(0), new(2), "First", firstTrack.Id);
         var secondCue = editor.AddSubtitle(new(0), new(2), "Second", secondTrack.Id);
         editor.SetKeyframe(firstCue, AnimationProperty.OPACITY, new(new(0), 0.5));
@@ -30,10 +32,10 @@ public sealed class TimelineViewStatePersistenceTests
         {
             CollapsedAnimationRows =
             [
-                new(TimelineRowScope.SUBTITLE_TRACK, firstTrack.Id, AnimationProperty.OPACITY),
-                new(TimelineRowScope.SUBTITLE_TRACK, secondTrack.Id, AnimationProperty.POSITION),
-                new(TimelineRowScope.SCENE_LAYER, firstScene.Id, AnimationProperty.OPACITY),
-                new(TimelineRowScope.SCENE_LAYER, secondScene.Id, AnimationProperty.FILL)
+                new(TimelineRowScope.TRACK, firstTrack.Id, AnimationProperty.OPACITY),
+                new(TimelineRowScope.TRACK, secondTrack.Id, AnimationProperty.POSITION),
+                new(TimelineRowScope.TRACK, firstTrack.Id, AnimationProperty.FILL),
+                new(TimelineRowScope.TRACK, secondTrack.Id, AnimationProperty.FILL)
             ]
         };
         var document = editor.Snapshot with
@@ -47,16 +49,16 @@ public sealed class TimelineViewStatePersistenceTests
         var loaded = await ProjectStore.LoadAsync(path);
 
         Assert.Equal(state.CollapsedAnimationRows.ToArray(), loaded.TimelineViewState.CollapsedAnimationRows.ToArray());
-        Assert.DoesNotContain(new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, firstTrack.Id,
+        Assert.DoesNotContain(new TimelineAnimationRowId(TimelineRowScope.TRACK, firstTrack.Id,
             AnimationProperty.POSITION), loaded.TimelineViewState.CollapsedAnimationRows);
-        Assert.DoesNotContain(new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, secondScene.Id,
+        Assert.DoesNotContain(new TimelineAnimationRowId(TimelineRowScope.TRACK, secondTrack.Id,
             AnimationProperty.OPACITY), loaded.TimelineViewState.CollapsedAnimationRows);
         Assert.Equal(ProjectStore.Serialize(document), ProjectStore.Serialize(loaded));
         Assert.Single(Directory.EnumerateFileSystemEntries(directory.Path));
     }
 
     [Fact]
-    public void VersionFiveWithoutTimelineViewStateDefaultsToExpandedRows()
+    public void CurrentVersionWithoutTimelineViewStateDefaultsToExpandedRows()
     {
         var root = JsonNode.Parse(ProjectStore.Serialize(new()))!.AsObject();
         Assert.True(root.Remove("timelineViewState"));
@@ -100,9 +102,9 @@ public sealed class TimelineViewStatePersistenceTests
             {
                 CollapsedAnimationRows =
                 [
-                    new(TimelineRowScope.SUBTITLE_TRACK, absentOwner, AnimationProperty.OPACITY),
-                    new(TimelineRowScope.SCENE_LAYER, absentOwner, AnimationProperty.MASK_NODE_POSITION),
-                    new(TimelineRowScope.SUBTITLE_TRACK, SubtitleTrack.DEFAULT_TRACK_ID, AnimationProperty.POSITION)
+                    new(TimelineRowScope.TRACK, absentOwner, AnimationProperty.OPACITY),
+                    new(TimelineRowScope.TRACK, absentOwner, AnimationProperty.MASK_NODE_POSITION),
+                    new(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.POSITION)
                 ]
             }
         };
@@ -129,8 +131,8 @@ public sealed class TimelineViewStatePersistenceTests
     [InlineData(7)]
     public void InvalidViewStateIsRejectedByValidatorAndSerializer(int mutation)
     {
-        var row = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK,
-            SubtitleTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK,
+            ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY);
         var state = new TimelineViewState { CollapsedAnimationRows = [row] };
         state = mutation switch
         {
@@ -167,7 +169,7 @@ public sealed class TimelineViewStatePersistenceTests
             TimelineViewState = new()
             {
                 CollapsedAnimationRows =
-                [new(TimelineRowScope.SUBTITLE_TRACK, SubtitleTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY)]
+                [new(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY)]
             }
         };
         var root = JsonNode.Parse(ProjectStore.Serialize(document))!.AsObject();

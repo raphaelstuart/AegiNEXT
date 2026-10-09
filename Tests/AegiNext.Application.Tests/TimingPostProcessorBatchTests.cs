@@ -102,9 +102,9 @@ public sealed class TimingPostProcessorBatchTests
     public void ParallelTracksDoNotConstrainLeadsOrConnectAdjacency()
     {
         var first = Line(new(1), new(2));
-        var otherTrack = new SubtitleTrack { Name = "Other" };
-        var second = Line(new(11, 5), new(3)) with { TrackId = otherTrack.Id };
-        var document = Document(first, second) with { SubtitleTracks = [SubtitleTrack.Default, otherTrack] };
+        var otherTrack = new ProjectTrack { Name = "Other" };
+        var second = Line(new(11, 5), new(3));
+        var document = Document(first, second) with { Tracks = [ProjectTrack.Default, otherTrack], Layers = [Layer(first), Layer(second) with { TrackId = otherTrack.Id }] };
         var options = Disabled() with { LeadOutEnabled = true, LeadOutMilliseconds = 350, AdjacencyEnabled = true };
 
         var result = TimingPostProcessor.Process(document,
@@ -166,9 +166,9 @@ public sealed class TimingPostProcessorBatchTests
     {
         var first = Line(new(1), new(2));
         var fixedLine = Line(new(21, 10), new(3));
-        var otherTrack = new SubtitleTrack { Name = "Other" };
-        var otherTarget = Line(new(4), new(5)) with { TrackId = otherTrack.Id };
-        var document = Document(first, fixedLine, otherTarget) with { SubtitleTracks = [SubtitleTrack.Default, otherTrack] };
+        var otherTrack = new ProjectTrack { Name = "Other" };
+        var otherTarget = Line(new(4), new(5));
+        var document = Document(first, fixedLine, otherTarget) with { Tracks = [ProjectTrack.Default, otherTrack], Layers = [Layer(first), Layer(fixedLine), Layer(otherTarget) with { TrackId = otherTrack.Id }] };
         var editor = new ProjectEditor(document);
         editor.Apply("Temporary", value => value with { Name = "temporary" });
         editor.Undo();
@@ -187,7 +187,7 @@ public sealed class TimingPostProcessorBatchTests
     }
 
     [Fact]
-    public void MixedConfigurationsPreserveCropContentOriginsKaraokeAndNestedGroups()
+    public void MixedConfigurationsPreserveCropContentOriginsKaraokeAndFlatClips()
     {
         var first = Line(new(2), new(4)) with
         {
@@ -201,8 +201,7 @@ public sealed class TimingPostProcessorBatchTests
             Tracks = [new(AnimationProperty.OPACITY, [new(new(1, 2), 0.25), new(new(3, 2), 0.75)])]
         };
         var secondLayer = Layer(second) with { AnimationOffset = new(1, 2) };
-        var group = new ProjectLayer { Kind = LayerKind.GROUP, Start = new(0), End = new(10), Children = [firstLayer, secondLayer] };
-        var document = Document(first, second) with { Layers = [group] };
+        var document = Document(first, second) with { Layers = [firstLayer, secondLayer] };
         var options = Disabled() with { LeadInEnabled = true, LeadInMilliseconds = 100 };
 
         var after = TimingPostProcessor.Process(document, new Dictionary<Guid, TimingPostProcessorOptions>
@@ -211,15 +210,13 @@ public sealed class TimingPostProcessorBatchTests
             [second.Id] = options with { LeadInMilliseconds = 250, LeadOutEnabled = true, LeadOutMilliseconds = 120 }
         });
 
-        Assert.Equal(firstLayer.Start - firstLayer.AnimationOffset, after.Layers[0].Children[0].Start - after.Layers[0].Children[0].AnimationOffset);
-        Assert.Equal(secondLayer.Start - secondLayer.AnimationOffset, after.Layers[0].Children[1].Start - after.Layers[0].Children[1].AnimationOffset);
-        Assert.Equal(new MediaTime(3, 20), after.Layers[0].Children[0].AnimationOffset);
-        Assert.Equal(new MediaTime(1, 4), after.Layers[0].Children[1].AnimationOffset);
-        Assert.Equal(firstLayer.Tracks, after.Layers[0].Children[0].Tracks);
+        Assert.Equal(firstLayer.Start - firstLayer.AnimationOffset, after.Layers[0].Start - after.Layers[0].AnimationOffset);
+        Assert.Equal(secondLayer.Start - secondLayer.AnimationOffset, after.Layers[1].Start - after.Layers[1].AnimationOffset);
+        Assert.Equal(new MediaTime(3, 20), after.Layers[0].AnimationOffset);
+        Assert.Equal(new MediaTime(1, 4), after.Layers[1].AnimationOffset);
+        Assert.Equal(firstLayer.Tracks, after.Layers[0].Tracks);
         Assert.Equal(first.Karaoke, after.Subtitles[0].Karaoke);
         Assert.Equal(first.InactiveKaraoke, after.Subtitles[0].InactiveKaraoke);
-        Assert.Equal(group.Start, after.Layers[0].Start);
-        Assert.Equal(group.End, after.Layers[0].End);
     }
 
     [Fact]

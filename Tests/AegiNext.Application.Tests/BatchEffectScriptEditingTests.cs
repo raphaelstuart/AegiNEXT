@@ -167,19 +167,19 @@ public sealed class BatchEffectScriptEditingTests
     }
 
     [Fact]
-    public void BatchUpdatesNestedClipsAndRetainsTheirGroupIdentity()
+    public void BatchUpdatesFlatClipsAndRetainsTheirIdentity()
     {
         var first = new SubtitleLine { Start = new(0), End = new(2), Text = "Nested" };
         var second = new SubtitleLine { Start = new(3), End = new(5), Text = "Root" };
-        var group = new ProjectLayer { Kind = LayerKind.GROUP, Children = [Layer(first)] };
-        var original = new ProjectDocument { Subtitles = [first, second], Layers = [group, Layer(second)] };
+        var firstLayer = Layer(first);
+        var original = new ProjectDocument { Subtitles = [first, second], Layers = [firstLayer, Layer(second)] };
         var editor = new ProjectEditor(original);
 
         editor.ApplyEffectScript([first.Id, second.Id], BuiltinEffectScripts.Get("fade-in-out").Script);
 
-        Assert.Equal(group.Id, editor.Snapshot.Layers[0].Id);
-        Assert.Same(group.Transform, editor.Snapshot.Layers[0].Transform);
-        Assert.Single(editor.Snapshot.Layers[0].Children[0].Tracks);
+        Assert.Equal(firstLayer.Id, editor.Snapshot.Layers[0].Id);
+        Assert.Same(firstLayer.Transform, editor.Snapshot.Layers[0].Transform);
+        Assert.Single(editor.Snapshot.Layers[0].Tracks);
         Assert.Single(editor.Snapshot.Layers[1].Tracks);
         ProjectValidator.Validate(editor.Snapshot);
         Assert.True(editor.Undo());

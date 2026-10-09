@@ -17,7 +17,7 @@ public sealed partial class SubtitleTimelineControl
     private Guid? hoveredSoloTrack;
     private double? verticalOffsetBeforeSolo;
 
-    /// <summary>请求切换稳定字幕轨道的 Solo，仅改变时间线投影。</summary>
+    /// <summary>请求切换稳定轨道的 Solo，仅改变时间线投影。</summary>
     public event EventHandler<TimelineTrackSoloEventArgs>? TrackSoloRequested;
 
     public Guid? SoloTrackId
@@ -25,7 +25,7 @@ public sealed partial class SubtitleTimelineControl
         get => soloTrackId;
         set
         {
-            var next = value is { } id && document.SubtitleTracks.Any(track => track.Id == id) ? value : null;
+            var next = value is { } id && document.Tracks.Any(track => track.Id == id) ? value : null;
             if (soloTrackId == next)
             {
                 return;
@@ -120,11 +120,11 @@ public sealed partial class SubtitleTimelineControl
         return true;
     }
 
-    private bool IsSubtitleTrackVisible(Guid trackId) => SoloTrackId is null || SoloTrackId == trackId;
+    private bool IsTrackVisible(Guid trackId) => SoloTrackId is null || SoloTrackId == trackId;
 
     private void ValidateTrackSoloDocument(ProjectDocument value)
     {
-        if (soloTrackId is { } solo && (soloDocumentId != value.Id || !value.SubtitleTracks.Any(track => track.Id == solo)))
+        if (soloTrackId is { } solo && (soloDocumentId != value.Id || !value.Tracks.Any(track => track.Id == solo)))
         {
             soloTrackId = null;
             soloDocumentId = null;
@@ -138,7 +138,7 @@ public sealed partial class SubtitleTimelineControl
 
     private Rect? GetTrackSoloToggleRectangle(TimelineRow row, double rowY)
     {
-        return row.TrackId.HasValue && HeaderWidth >= 26 + TRACK_SOLO_TOGGLE_SIZE + TRACK_SOLO_TOGGLE_INSET * 2
+        return HeaderWidth >= 26 + TRACK_SOLO_TOGGLE_SIZE + TRACK_SOLO_TOGGLE_INSET * 2
             ? new(HeaderWidth - TRACK_SOLO_TOGGLE_INSET - TRACK_SOLO_TOGGLE_SIZE,
                 rowY + TRACK_SOLO_TOGGLE_INSET, TRACK_SOLO_TOGGLE_SIZE, TRACK_SOLO_TOGGLE_SIZE)
             : null;
@@ -146,7 +146,7 @@ public sealed partial class SubtitleTimelineControl
 
     private Rect GetTrackHeaderNameRectangle(TimelineRow row, double rowY)
     {
-        var left = 26 + row.Depth * 8;
+        var left = 26;
         var right = GetTrackSoloToggleRectangle(row, rowY)?.Left - TRACK_SOLO_TOGGLE_INSET ?? HeaderWidth - 2;
         return new(left, rowY + 4, Math.Max(0, right - left), 20);
     }

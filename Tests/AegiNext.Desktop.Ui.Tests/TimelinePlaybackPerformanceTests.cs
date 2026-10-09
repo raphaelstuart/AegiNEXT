@@ -111,7 +111,7 @@ public sealed class TimelinePlaybackPerformanceTests
             await PumpUntilCompletedAsync(window.OpenMediaAsync(mediaPath, true));
             await WaitUntilAsync(() => controller!.Snapshot.PresentedFrameTime is not null, TimeSpan.FromSeconds(15), PumpUi);
             await PumpUntilCompletedAsync(session.WaitForProjectIdleAsync());
-            Assert.True(session.SelectTrack(document.SubtitleTracks[0].Id));
+            Assert.True(session.SelectTrack(document.Tracks[0].Id));
             Assert.True(timeline.Focus());
             Render(window, timeline);
             var point = timeline.TranslatePoint(new(timeline.HeaderWidth + 100, timeline.RulerHeight + 25), window)!.Value;
@@ -380,14 +380,13 @@ public sealed class TimelinePlaybackPerformanceTests
 
     private static ProjectDocument CreateDocument()
     {
-        var tracks = Enumerable.Range(0, TRACK_COUNT).Select(index => new SubtitleTrack
+        var tracks = Enumerable.Range(0, TRACK_COUNT).Select(index => new ProjectTrack
         {
-            Id = index == 0 ? SubtitleTrack.DEFAULT_TRACK_ID : Guid.NewGuid(),
+            Id = index == 0 ? ProjectTrack.DEFAULT_TRACK_ID : Guid.NewGuid(),
             Name = index == 0 ? "Timing samples" : $"Track {index:00}"
         }).ToImmutableArray();
         var subtitles = Enumerable.Range(0, SUBTITLE_COUNT).Select(index => new SubtitleLine
         {
-            TrackId = tracks[index % (TRACK_COUNT - 1) + 1].Id,
             Start = new(index / (TRACK_COUNT - 1) * 6),
             End = new(index / (TRACK_COUNT - 1) * 6 + 3),
             Text = $"字幕 {index:0000} ABC 123"
@@ -396,11 +395,11 @@ public sealed class TimelinePlaybackPerformanceTests
         {
             Name = "Timeline playback performance",
             FrameRate = new(60, 1),
-            SubtitleTracks = tracks,
+            Tracks = tracks,
             Subtitles = subtitles,
-            Layers = subtitles.Select(line => new ProjectLayer
+            Layers = subtitles.Select((line, index) => new ProjectLayer
             {
-                Id = line.Id, SubtitleId = line.Id, Kind = LayerKind.SUBTITLE, Start = line.Start, End = line.End
+                TrackId = tracks[index % (TRACK_COUNT - 1) + 1].Id, Id = line.Id, SubtitleId = line.Id, Kind = LayerKind.SUBTITLE, Start = line.Start, End = line.End
             }).ToImmutableArray()
         };
     }

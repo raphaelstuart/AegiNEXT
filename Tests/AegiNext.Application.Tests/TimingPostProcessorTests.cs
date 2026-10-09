@@ -68,15 +68,16 @@ public sealed class TimingPostProcessorTests
     {
         var otherTrack = Guid.NewGuid();
         var first = Line(new(1), new(2));
-        var second = Line(new(11, 5), new(3)) with { TrackId = otherTrack };
+        var second = Line(new(11, 5), new(3));
         var document = Document(first, second) with
         {
-            SubtitleTracks = [SubtitleTrack.Default, new() { Id = otherTrack, Name = "Other" }]
+            Tracks = [ProjectTrack.Default, new() { Id = otherTrack, Name = "Other" }],
+            Layers = [Layer(first), Layer(second) with { TrackId = otherTrack }]
         };
         var options = Disabled() with { AdjacencyEnabled = true, MaximumGapMilliseconds = 300 };
         Assert.Same(document, TimingPostProcessor.Process(document, options, Styles()));
 
-        var sameTrack = Document(first, second with { TrackId = first.TrackId, StyleName = "Signs" });
+        var sameTrack = Document(first, second with { StyleName = "Signs" });
         Assert.Same(sameTrack, TimingPostProcessor.Process(sameTrack, options, Styles()));
     }
 
@@ -123,7 +124,7 @@ public sealed class TimingPostProcessorTests
     }
 
     [Fact]
-    public void CropKeepsAbsoluteContentOriginAndBothKaraokeClocksInNestedLayers()
+    public void CropKeepsAbsoluteContentOriginAndBothKaraokeClocksInFlatClips()
     {
         var line = Line(new(2), new(4)) with
         {
@@ -135,20 +136,17 @@ public sealed class TimingPostProcessorTests
             AnimationOffset = new(1, 4),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(1, 2), 0.25), new(new(3, 2), 0.75)])]
         };
-        var group = new ProjectLayer { Kind = LayerKind.GROUP, Start = new(0), End = new(10), Children = [originalLayer] };
-        var document = Document(line) with { Layers = [group] };
+        var document = Document(line) with { Layers = [originalLayer] };
         var options = Disabled() with { LeadInEnabled = true, LeadInMilliseconds = 100 };
 
         var after = TimingPostProcessor.Process(document, options, Styles());
 
-        var changed = after.Layers[0].Children[0];
+        var changed = after.Layers[0];
         Assert.Equal(originalLayer.Start - originalLayer.AnimationOffset, changed.Start - changed.AnimationOffset);
         Assert.Equal(new MediaTime(3, 20), changed.AnimationOffset);
         Assert.Equal(originalLayer.Tracks, changed.Tracks);
         Assert.Equal(line.Karaoke, after.Subtitles[0].Karaoke);
         Assert.Equal(line.InactiveKaraoke, after.Subtitles[0].InactiveKaraoke);
-        Assert.Equal(group.Start, after.Layers[0].Start);
-        Assert.Equal(group.End, after.Layers[0].End);
     }
 
     [Fact]

@@ -697,8 +697,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
 
         if (firstCueId is { } id)
         {
-            var line = session.Editor.Snapshot.Subtitles.First(value => value.Id == id);
-            session.SelectTrack(line.TrackId);
+            session.SelectTrack(session.ClipIndex.GetSubtitleTrackId(id));
             session.SelectCue(id);
         }
     }

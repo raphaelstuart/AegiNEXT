@@ -19,7 +19,7 @@ public sealed class ProjectMergeResourcesTests
         {
             Assets = [image, font, missing, media],
             Media = new(media.Id, 0, null, new(0)),
-            SubtitleTracks = [new()
+            Tracks = [ProjectTrack.Default with
             {
                 DefaultStyle = new() { FontAssetId = font.Id },
                 StylePresetId = Guid.NewGuid(),
@@ -345,7 +345,7 @@ public sealed class ProjectMergeResourcesTests
             Assets = images.ToImmutableArray(),
             Layers = images.Select(image => new ProjectLayer
             {
-                Kind = LayerKind.IMAGE,
+                Kind = LayerKind.IMAGE, Start = new(Array.IndexOf(images, image)), End = new(Array.IndexOf(images, image) + 1),
                 Image = new(image.Id, 1, 1)
             }).ToImmutableArray()
         };

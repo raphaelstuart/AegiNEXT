@@ -11,7 +11,7 @@ public sealed class ClipBatchEditingTests
         var setup = new ProjectEditor();
         var first = setup.AddSubtitle(new(0), new(2), "AB");
         var second = setup.AddSubtitle(new(2), new(4), "next");
-        var otherTrack = setup.AddSubtitleTrack("Other");
+        var otherTrack = setup.AddTrack("Other");
         var third = setup.AddSubtitle(new(0), new(2), "parallel", otherTrack);
         var untouched = setup.AddSubtitle(new(10), new(12), "untouched");
         setup.UpdateSubtitle(first, line => line with
@@ -22,7 +22,7 @@ public sealed class ClipBatchEditingTests
         setup.SetKeyframe(first, AnimationProperty.OPACITY, new(new(1), 0.5));
         var shape = new ProjectLayer
         {
-            Kind = LayerKind.SHAPE, Start = new(1, 2), End = new(3, 2),
+            TrackId = setup.AddTrack("Shape"), Kind = LayerKind.SHAPE, Start = new(1, 2), End = new(3, 2),
             Shape = new(ShapeKind.RECTANGLE, 30, 40), AnimationOffset = new(1, 3)
         };
         setup.AddLayer(shape);
@@ -59,7 +59,7 @@ public sealed class ClipBatchEditingTests
         var setup = new ProjectEditor();
         var first = setup.AddSubtitle(new(0), new(2), "first");
         setup.AddSubtitle(new(2), new(4), "neighbour");
-        var shape = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.ELLIPSE, 30, 30) };
+        var shape = new ProjectLayer { TrackId = setup.AddTrack("Shape"), Kind = LayerKind.SHAPE, Shape = new(ShapeKind.ELLIPSE, 30, 30) };
         setup.AddLayer(shape);
         var before = setup.Snapshot;
         var editor = new ProjectEditor(before);
@@ -96,21 +96,17 @@ public sealed class ClipBatchEditingTests
     }
 
     [Fact]
-    public void InvalidMemberAndGroupRejectTheBatchWithoutChangingRedo()
+    public void InvalidMemberRejectsTheBatchWithoutChangingRedo()
     {
         var setup = new ProjectEditor();
         var id = setup.AddSubtitle(new(1), new(2), "one");
-        var group = new ProjectLayer();
-        setup.AddLayer(group);
         var editor = new ProjectEditor(setup.Snapshot);
         editor.ShiftClips([id], new(1));
         Assert.True(editor.Undo());
         var before = editor.Snapshot;
 
         Assert.Throws<KeyNotFoundException>(() => editor.ShiftClips([id, Guid.NewGuid()], new(1)));
-        Assert.Throws<InvalidOperationException>(() => editor.ShiftClips([id, group.Id], new(1)));
         Assert.Throws<KeyNotFoundException>(() => editor.RemoveClips([id, Guid.NewGuid()]));
-        Assert.Throws<InvalidOperationException>(() => editor.RemoveClips([id, group.Id]));
         Assert.Same(before, editor.Snapshot);
         Assert.True(editor.CanRedo);
         Assert.False(editor.CanUndo);
@@ -139,8 +135,8 @@ public sealed class ClipBatchEditingTests
         var setup = new ProjectEditor(new() { Assets = [font, imageAsset] });
         var first = setup.AddSubtitle(new(0), new(2), "first");
         var remaining = setup.AddSubtitle(new(2), new(4), "remaining");
-        var shape = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 10, 20) };
-        var image = new ProjectLayer { Kind = LayerKind.IMAGE, Image = new(imageAsset.Id, 30, 40) };
+        var shape = new ProjectLayer { TrackId = setup.AddTrack("Shape"), Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 10, 20) };
+        var image = new ProjectLayer { TrackId = setup.AddTrack("Image"), Kind = LayerKind.IMAGE, Image = new(imageAsset.Id, 30, 40) };
         setup.AddLayer(shape);
         setup.AddLayer(image);
         var before = setup.Snapshot;
@@ -153,7 +149,7 @@ public sealed class ClipBatchEditingTests
         Assert.Equal(remaining, Assert.Single(editor.Snapshot.Subtitles).Id);
         Assert.Equal(remaining, Assert.Single(editor.Snapshot.Layers).SubtitleId);
         Assert.Equal(before.Assets, editor.Snapshot.Assets);
-        Assert.Equal(before.SubtitleTracks, editor.Snapshot.SubtitleTracks);
+        Assert.Equal(before.Tracks, editor.Snapshot.Tracks);
         Assert.Equal(1, changes);
         var after = editor.Snapshot;
         Assert.True(editor.Undo());

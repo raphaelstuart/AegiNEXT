@@ -245,13 +245,13 @@ public sealed class TimelineExpandedClipsUiTests
         long expectedNumerator, long expectedDenominator)
     {
         var cue = new SubtitleLine { Start = new(1), End = new(2), Text = "Moving" };
-        var secondTrack = new SubtitleTrack { Name = "Other" };
-        var neighbor = new SubtitleLine { Start = new(301, 100), End = new(4), Text = "Boundary", TrackId = secondTrack.Id };
+        var secondTrack = new ProjectTrack { Name = "Other" };
+        var neighbor = new SubtitleLine { Start = new(301, 100), End = new(4), Text = "Boundary" };
         var layer = Layer(cue);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 100, IsSnapEnabled = true };
         timeline.SetDocument(new()
         {
-            SubtitleTracks = [SubtitleTrack.Default, secondTrack], Subtitles = [cue, neighbor], Layers = [layer, Layer(neighbor)]
+            Tracks = [ProjectTrack.Default, secondTrack], Subtitles = [cue, neighbor], Layers = [layer, Layer(neighbor) with { TrackId = secondTrack.Id }]
         }, cue.Id, layer);
         TimelineTimingEventArgs? moved = null;
         timeline.TimingChanged += (_, e) => moved = e;

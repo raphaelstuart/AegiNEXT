@@ -93,7 +93,7 @@ public sealed class InactiveKaraokeTimingTests
             case 2:
             case 3:
             {
-                editor.MoveSubtitleClip(line.Id, line.TrackId, line.Start + delta, line.End + delta,
+                editor.MoveSubtitleClip(line.Id, new ProjectClipIndex(editor.Snapshot).GetSubtitleTrackId(line.Id), line.Start + delta, line.End + delta,
                     entrypoint == 2 ? TimelineEditMode.CROP : TimelineEditMode.STRETCH, true);
                 break;
             }
@@ -140,7 +140,7 @@ public sealed class InactiveKaraokeTimingTests
     {
         if (clipOperation)
         {
-            editor.MoveSubtitleClip(id, editor.Snapshot.Subtitles[0].TrackId, start, end, mode, false);
+            editor.MoveSubtitleClip(id, new ProjectClipIndex(editor.Snapshot).GetSubtitleTrackId(id), start, end, mode, false);
         }
         else
         {

@@ -29,8 +29,6 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
     private ProjectDocument document = new();
     private ProjectLayer? selectedLayer;
     private MediaTime position = MediaTime.Zero;
-    private LayerListItem[] layers = [];
-    private LayerListItem? selectedItem;
     private string layerStart = string.Empty;
     private string layerEnd = string.Empty;
     private decimal? layerWidth = 300;
@@ -137,18 +135,6 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
                 OnPropertyChanged();
             }
         }
-    }
-
-    public LayerListItem[] Layers
-    {
-        get => layers;
-        set => SetProperty(ref layers, value);
-    }
-
-    public LayerListItem? SelectedItem
-    {
-        get => selectedItem;
-        set => SetProperty(ref selectedItem, value);
     }
 
     public Guid[] SelectedIds

@@ -14,14 +14,15 @@ public static partial class ProjectEditingOperations
     {
         ProjectValidator.Validate(document);
         var index = TrackIndex(document, trackId);
-        var track = document.SubtitleTracks[index] with
+        var subtitleIds = new ProjectClipIndex(document).GetTrackSubtitles(trackId).Select(line => line.Id).ToHashSet();
+        var track = document.Tracks[index] with
         {
             DefaultStyle = style,
             StylePresetId = presetId,
             StylePresetName = presetName
         };
-        if (track == document.SubtitleTracks[index] &&
-            (!updateExisting || document.Subtitles.Where(line => line.TrackId == trackId).All(line =>
+        if (track == document.Tracks[index] &&
+            (!updateExisting || document.Subtitles.Where(line => subtitleIds.Contains(line.Id)).All(line =>
                 line.Style == style && line.StyleName == presetName && line.StylePresetId == presetId && line.InlineSpans.IsEmpty)))
         {
             return document;
@@ -29,8 +30,8 @@ public static partial class ProjectEditingOperations
 
         return Verified(document with
         {
-            SubtitleTracks = document.SubtitleTracks.SetItem(index, track),
-            Subtitles = updateExisting ? document.Subtitles.Select(line => line.TrackId == trackId
+            Tracks = document.Tracks.SetItem(index, track),
+            Subtitles = updateExisting ? document.Subtitles.Select(line => subtitleIds.Contains(line.Id)
                 ? line with { Style = style, StyleName = presetName, StylePresetId = presetId, InlineSpans = [] } : line).ToImmutableArray() : document.Subtitles
         });
     }
@@ -40,10 +41,10 @@ public static partial class ProjectEditingOperations
     {
         ProjectValidator.Validate(document);
         var index = TrackIndex(document, trackId);
-        var track = document.SubtitleTracks[index];
+        var track = document.Tracks[index];
         return track.AutoApplyStyle == enabled ? document : Verified(document with
         {
-            SubtitleTracks = document.SubtitleTracks.SetItem(index, track with { AutoApplyStyle = enabled })
+            Tracks = document.Tracks.SetItem(index, track with { AutoApplyStyle = enabled })
         });
     }
 
@@ -53,12 +54,12 @@ public static partial class ProjectEditingOperations
     {
         ProjectValidator.Validate(document);
         ArgumentNullException.ThrowIfNull(lines);
-        var track = document.SubtitleTracks[TrackIndex(document, trackId)];
+        var track = document.Tracks[TrackIndex(document, trackId)];
         var style = track.AutoApplyStyle && track.DefaultStyle is { } defaultStyle
             ? defaultStyle : fallbackStyle ?? new SubtitleStyle();
         var imported = lines.Select(line => SubtitleKaraokeNormalization.Normalize(line with
         {
-            TrackId = trackId, Style = style,
+            Style = style,
             StyleName = track.AutoApplyStyle && track.DefaultStyle is not null ? track.StylePresetName! : line.StyleName,
             StylePresetId = track.AutoApplyStyle && track.DefaultStyle is not null ? track.StylePresetId : line.StylePresetId
         })).ToImmutableArray();
@@ -72,119 +73,137 @@ public static partial class ProjectEditingOperations
             Subtitles = document.Subtitles.AddRange(imported),
             Layers = document.Layers.AddRange(imported.Select(line => new ProjectLayer
             {
-                Id = line.Id, Name = "Subtitle", Kind = LayerKind.SUBTITLE, SubtitleId = line.Id,
+                Id = line.Id, Name = "Subtitle", Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, TrackId = trackId,
                 Start = line.Start, End = line.End
             }))
         });
     }
 
-    /// <summary>新增字幕轨道并验证完整快照，不重新创建任何图层。</summary>
-    public static ProjectDocument AddSubtitleTrack(ProjectDocument document, SubtitleTrack track)
+    /// <summary>新增轨道并验证完整快照，不重新创建任何片段。</summary>
+    public static ProjectDocument AddTrack(ProjectDocument document, ProjectTrack track)
     {
         ProjectValidator.Validate(document);
         ArgumentNullException.ThrowIfNull(track);
-        return Verified(document with { SubtitleTracks = document.SubtitleTracks.Add(track) });
+        return Verified(document with { Tracks = document.Tracks.Add(track) });
     }
 
-    /// <summary>重命名存在的字幕轨道，无变化时保留原快照。</summary>
-    public static ProjectDocument RenameSubtitleTrack(ProjectDocument document, Guid trackId, string name)
+    /// <summary>重命名存在的轨道，无变化时保留原快照。</summary>
+    public static ProjectDocument RenameTrack(ProjectDocument document, Guid trackId, string name)
     {
         ProjectValidator.Validate(document);
         var index = TrackIndex(document, trackId);
-        var track = document.SubtitleTracks[index];
+        var track = document.Tracks[index];
         return track.Name == name ? document : Verified(document with
         {
-            SubtitleTracks = document.SubtitleTracks.SetItem(index, track with { Name = name })
+            Tracks = document.Tracks.SetItem(index, track with { Name = name })
         });
     }
 
-    /// <summary>删除字幕轨道及其全部片段和图层；允许删除最后一条轨道，保留其他轨道和共享资源。</summary>
-    public static ProjectDocument RemoveSubtitleTrack(ProjectDocument document, Guid trackId)
+    /// <summary>删除轨道及其全部类型片段；允许删除最后一条轨道，保留其他轨道和共享资源。</summary>
+    public static ProjectDocument RemoveTrack(ProjectDocument document, Guid trackId)
     {
         ProjectValidator.Validate(document);
         var index = TrackIndex(document, trackId);
-        var subtitles = document.Subtitles.Where(line => line.TrackId == trackId).Select(line => line.Id).ToHashSet();
-        var layerIds = document.Layers.SelectMany(Descendants)
-            .Where(layer => layer.SubtitleId is { } id && subtitles.Contains(id))
+        var layerIds = document.Layers.Where(layer => layer.TrackId == trackId)
             .Select(layer => layer.Id).ToImmutableArray();
         var result = RemoveClips(document, layerIds);
-        return Verified(result with { SubtitleTracks = result.SubtitleTracks.RemoveAt(index) });
+        return Verified(result with { Tracks = result.Tracks.RemoveAt(index) });
     }
 
-    /// <summary>只改变字幕轨道显示顺序，合成图层的稳定身份和顺序保持原样。</summary>
-    public static ProjectDocument MoveSubtitleTrack(ProjectDocument document, Guid trackId, int newIndex)
+    /// <summary>调整轨道显示和叠覆顺序；最上方轨道最后绘制，所有片段身份保持原样。</summary>
+    public static ProjectDocument MoveTrack(ProjectDocument document, Guid trackId, int newIndex)
     {
         ProjectValidator.Validate(document);
         var index = TrackIndex(document, trackId);
         ArgumentOutOfRangeException.ThrowIfNegative(newIndex);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(newIndex, document.SubtitleTracks.Length);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(newIndex, document.Tracks.Length);
         return index == newIndex ? document : document with
         {
-            SubtitleTracks = document.SubtitleTracks.RemoveAt(index).Insert(newIndex, document.SubtitleTracks[index])
+            Tracks = document.Tracks.RemoveAt(index).Insert(newIndex, document.Tracks[index])
         };
     }
 
-    /// <summary>转移字幕所属轨道，不修改字幕时间或效果层；同轨重叠会整体拒绝。</summary>
+    /// <summary>转移字幕所属轨道，保留时间与片段效果；任一类型的同轨重叠会整体拒绝。</summary>
     public static ProjectDocument MoveSubtitleToTrack(ProjectDocument document, Guid subtitleId, Guid trackId)
     {
         ProjectValidator.Validate(document);
-        TrackIndex(document, trackId);
-        var index = SubtitleIndex(document, subtitleId);
-        var line = document.Subtitles[index];
-        return line.TrackId == trackId ? document : Verified(document with
-        {
-            Subtitles = document.Subtitles.SetItem(index, line with { TrackId = trackId })
-        });
+        var clip = new ProjectClipIndex(document).GetSubtitleClip(subtitleId);
+        return MoveClip(document, clip.Id, trackId, clip.Start, clip.End, TimelineEditMode.CROP, true);
     }
 
-    /// <summary>一次性修改片段的目标轨道及时间，支持移动、裁剪和拉伸；任一碰撞不返回部分修改。</summary>
+    /// <summary>原子调整字幕片段的轨道和区间，保留内容相位并按裁剪或拉伸处理动画。</summary>
     public static ProjectDocument MoveSubtitleClip(ProjectDocument document, Guid subtitleId, Guid trackId,
         MediaTime start, MediaTime end, TimelineEditMode mode, bool move)
     {
         ProjectValidator.Validate(document);
+        var clip = new ProjectClipIndex(document).GetSubtitleClip(subtitleId);
+        return MoveClip(document, clip.Id, trackId, start, end, mode, move);
+    }
+
+    /// <summary>一次性修改任意类型片段的轨道与时间；移动保持时长，裁剪和拉伸保留各自内容时钟。</summary>
+    public static ProjectDocument MoveClip(ProjectDocument document, Guid clipId, Guid trackId,
+        MediaTime start, MediaTime end, TimelineEditMode mode, bool move)
+    {
+        ProjectValidator.Validate(document);
         TrackIndex(document, trackId);
-        var index = SubtitleIndex(document, subtitleId);
-        var line = document.Subtitles[index];
-        if (start >= end || !Enum.IsDefined(mode) || move && end - start != line.End - line.Start)
+        var clipIndex = -1;
+        for (var index = 0; index < document.Layers.Length; index++)
+        {
+            if (document.Layers[index].Id == clipId)
+            {
+                clipIndex = index;
+                break;
+            }
+        }
+        if (clipIndex < 0)
+        {
+            throw new KeyNotFoundException("片段不存在。");
+        }
+
+        var clip = document.Layers[clipIndex];
+        if (start >= end || !Enum.IsDefined(mode) || move && end - start != clip.End - clip.Start)
         {
             throw new ArgumentException("片段区间或模式无效，整体移动必须保持时长。", nameof(end));
         }
-        if (line.TrackId == trackId && line.Start == start && line.End == end)
+        if (clip.TrackId == trackId && clip.Start == start && clip.End == end)
         {
             return document;
         }
 
-        var karaoke = line.Karaoke;
-        var inactiveKaraoke = line.InactiveKaraoke;
-        if (!move && mode == TimelineEditMode.STRETCH)
+        var changed = (move ? clip with { Start = start, End = end }
+            : LayerAnimationTiming.Retime(clip, start, end, mode)) with { TrackId = trackId };
+        var subtitles = document.Subtitles;
+        if (clip.SubtitleId is { } subtitleId)
         {
-            karaoke = ScaleTrackKaraoke(karaoke, end - start, line.End - line.Start);
-            inactiveKaraoke = ScaleTrackKaraoke(inactiveKaraoke, end - start, line.End - line.Start);
+            var subtitleIndex = SubtitleIndex(document, subtitleId);
+            var line = subtitles[subtitleIndex];
+            var karaoke = line.Karaoke;
+            var inactiveKaraoke = line.InactiveKaraoke;
+            if (!move && mode == TimelineEditMode.STRETCH)
+            {
+                karaoke = ScaleTrackKaraoke(karaoke, end - start, line.End - line.Start);
+                inactiveKaraoke = ScaleTrackKaraoke(inactiveKaraoke, end - start, line.End - line.Start);
+            }
+            subtitles = subtitles.SetItem(subtitleIndex, line with
+            {
+                Start = start, End = end, Karaoke = karaoke, InactiveKaraoke = inactiveKaraoke
+            });
         }
 
-        return Verified(document with
-        {
-            Subtitles = document.Subtitles.SetItem(index, line with
-            {
-                TrackId = trackId, Start = start, End = end, Karaoke = karaoke, InactiveKaraoke = inactiveKaraoke
-            }),
-            Layers = MapTrackLayers(document.Layers, layer => layer.SubtitleId != subtitleId ? layer : move
-                ? layer with { Start = start, End = end }
-                : LayerAnimationTiming.Retime(layer, start, end, mode))
-        });
+        return Verified(document with { Subtitles = subtitles, Layers = document.Layers.SetItem(clipIndex, changed) });
     }
 
     private static int TrackIndex(ProjectDocument document, Guid id)
     {
-        for (var index = 0; index < document.SubtitleTracks.Length; index++)
+        for (var index = 0; index < document.Tracks.Length; index++)
         {
-            if (document.SubtitleTracks[index].Id == id)
+            if (document.Tracks[index].Id == id)
             {
                 return index;
             }
         }
 
-        throw new KeyNotFoundException("字幕轨道不存在。");
+        throw new KeyNotFoundException("轨道不存在。");
     }
 
     private static ImmutableArray<ProjectLayer> MapTrackLayers(ImmutableArray<ProjectLayer> layers, Func<ProjectLayer, ProjectLayer> edit)
@@ -193,8 +212,7 @@ public static partial class ProjectEditingOperations
         for (var index = 0; index < layers.Length; index++)
         {
             var layer = layers[index];
-            var children = MapTrackLayers(layer.Children, edit);
-            var next = edit(children == layer.Children ? layer : layer with { Children = children });
+            var next = edit(layer);
             if (next != layer)
             {
                 changed ??= layers.ToBuilder();

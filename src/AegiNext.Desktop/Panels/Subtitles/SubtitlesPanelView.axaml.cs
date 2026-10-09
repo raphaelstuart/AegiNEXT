@@ -36,7 +36,7 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         var tracks = this.FindControl<ComboBox>("SubtitleTrackCombo")!;
         tracks.SelectionChanged += (_, _) =>
         {
-            if (tracks.SelectedItem is AegiNext.Core.Projects.SubtitleTrack track)
+            if (tracks.SelectedItem is AegiNext.Core.Projects.ProjectTrack track)
             {
                 viewModel.SelectTrack(track.Id);
             }

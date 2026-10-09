@@ -14,6 +14,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(6)]
     [InlineData(7)]
     [InlineData(8)]
+    [InlineData(9)]
     public async Task EscapedDuplicateKeysInsideNestedObjectsAreRejectedByAllEntriesBeforeMigration(int version)
     {
         using var directory = new TemporaryProjectDirectory();
@@ -45,9 +46,9 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData("anchorY")]
     [InlineData("property")]
     [InlineData("vectorCurve")]
-    public void CurrentVersionsRejectIgnoredLegacyAliasesInNestedLayers(string field)
+    public void CurrentVersionsRejectIgnoredLegacyAliasesInFlatClips(string field)
     {
-        foreach (var version in new[] { 5, 6, 7, 8 })
+        foreach (var version in new[] { 5, 6, 7, 8, 9 })
         {
             var root = JsonNode.Parse(ProjectStore.Serialize(CreateAnimatedDocument()))!.AsObject();
             root["version"] = version;
@@ -55,7 +56,7 @@ public sealed class ProjectStoreStrictParsingTests
             {
                 LegacySubtitleMarginsJsonFixture.DowngradeProject(root);
             }
-            var layer = root["layers"]![0]!["children"]![0]!.AsObject();
+            var layer = root["layers"]![0]!.AsObject();
             if (field == "property")
             {
                 layer["tracks"]![0]![field] = "OPACITY";
@@ -98,6 +99,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(6)]
     [InlineData(7)]
     [InlineData(8)]
+    [InlineData(9)]
     public void CurrentVersionsRejectIgnoredLegacyAliasesInPresets(int version)
     {
         var document = CreateAnimatedDocument() with
@@ -120,6 +122,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(6)]
     [InlineData(7)]
     [InlineData(8)]
+    [InlineData(9)]
     public async Task PlaybackOriginMigrationAndRequiredFieldsRemainStrictForFileAndElementEntries(int version)
     {
         using var directory = new TemporaryProjectDirectory();
@@ -173,12 +176,6 @@ public sealed class ProjectStoreStrictParsingTests
         var editor = new ProjectEditor();
         var id = editor.AddSubtitle(new(0), new(2), "subtitle");
         editor.SetKeyframe(id, AnimationProperty.OPACITY, new(new(0), 0.25));
-        return editor.Snapshot with
-        {
-            Layers = [new()
-            {
-                Children = editor.Snapshot.Layers
-            }]
-        };
+        return editor.Snapshot;
     }
 }

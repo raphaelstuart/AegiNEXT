@@ -1,5 +1,6 @@
 using AegiNext.Core.Editing;
 using AegiNext.Core.Timing;
+using AegiNext.Core.Projects;
 
 namespace AegiNext.Desktop.Controls;
 
@@ -25,4 +26,5 @@ public sealed class TimelineTimingEventArgs : EventArgs
     public bool IsMove { get; }
     public Guid? SubtitleId { get; init; }
     public Guid? TrackId { get; init; }
+    public ProjectDocument? ExpectedDocument { get; init; }
 }

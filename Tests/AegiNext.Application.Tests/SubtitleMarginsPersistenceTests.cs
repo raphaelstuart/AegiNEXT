@@ -44,7 +44,7 @@ public sealed class SubtitleMarginsPersistenceTests
         var document = Document(new(12.25, 73.5, 9.75));
         var restored = ProjectStore.Deserialize(ProjectStore.Serialize(document));
         Assert.Equal(document.Subtitles[0].Style, restored.Subtitles[0].Style);
-        Assert.Equal(document.SubtitleTracks[0].DefaultStyle, restored.SubtitleTracks[0].DefaultStyle);
+        Assert.Equal(document.Tracks[0].DefaultStyle, restored.Tracks[0].DefaultStyle);
         var collection = new SubtitleStylePresetCollection
         {
             Presets = [new(Guid.NewGuid(), "Independent", document.Subtitles[0].Style)]
@@ -65,7 +65,7 @@ public sealed class SubtitleMarginsPersistenceTests
     {
         foreach (var version in new[] { 3, 4, 5, 6, 7 })
         {
-            var original = Document(new()) with { SubtitleTracks = [SubtitleTrack.Default] };
+            var original = Document(new()) with { Tracks = [ProjectTrack.Default] };
             var root = JsonNode.Parse(ProjectStore.Serialize(original))!.AsObject();
             root["version"] = version;
             LegacySubtitleMarginsJsonFixture.DowngradeProject(root);
@@ -75,7 +75,7 @@ public sealed class SubtitleMarginsPersistenceTests
             }
             var restored = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(root.ToJsonString()));
 
-            Assert.Null(Assert.Single(restored.SubtitleTracks).DefaultStyle);
+            Assert.Null(Assert.Single(restored.Tracks).DefaultStyle);
             Assert.Equal(ProjectStore.Serialize(original), ProjectStore.Serialize(restored));
         }
     }
@@ -199,7 +199,7 @@ public sealed class SubtitleMarginsPersistenceTests
             Karaoke = [new(0, 1, new(0), new(1, 3), SceneColor.White)] };
         return new()
         {
-            SubtitleTracks = [SubtitleTrack.Default with
+            Tracks = [ProjectTrack.Default with
             {
                 DefaultStyle = style, StylePresetId = Guid.NewGuid(), StylePresetName = "Track default"
             }], Subtitles = [line],

@@ -61,8 +61,8 @@ public sealed class TimelineViewStatePersistenceUiTests
                 Assert.Same(preview, session.PreviewDocument);
             }
 
-            var row = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK,
-                committed.SubtitleTracks[0].Id, AnimationProperty.OPACITY);
+            var row = new TimelineAnimationRowId(TimelineRowScope.TRACK,
+                committed.Tracks[0].Id, AnimationProperty.OPACITY);
             session.SetTimelineAnimationRowCollapsed(row, true);
             Dispatcher.UIThread.RunJobs();
 
@@ -77,7 +77,9 @@ public sealed class TimelineViewStatePersistenceUiTests
             await session.Persistence.Completion;
             Dispatcher.UIThread.RunJobs();
 
-            Assert.False(session.HasUnsavedChanges);
+            Assert.True(session.HasProjectDrafts);
+            Assert.True(session.HasUnsavedChanges);
+            Assert.False(session.Editor.HasUnsavedChanges);
             Assert.Same(committed, session.DocumentSnapshot);
             Assert.Same(preview, session.PreviewDocument);
             Assert.Same(preview, session.ViewModel.Preview.Scene.Document);

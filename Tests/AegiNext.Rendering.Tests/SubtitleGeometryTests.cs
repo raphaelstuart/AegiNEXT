@@ -56,7 +56,7 @@ public sealed class SubtitleGeometryTests
     }
 
     [Fact]
-    public void ExplicitAnchorUsesActualGlyphPivotUnderRotationScaleAndParentTransform()
+    public void ExplicitAnchorUsesActualGlyphPivotUnderClipRotationAndScale()
     {
         var (document, layer) = CreateDocument("ABC\nDEF");
         var subtitle = document.Subtitles[0];
@@ -66,11 +66,7 @@ public sealed class SubtitleGeometryTests
             {
                 Position = new() { Anchor = new(0.25, 0.5), Pivot = new(0.5, 0.5), Offset = new(13, -7) }
             } }],
-            Layers = [new ProjectLayer
-            {
-                Kind = LayerKind.GROUP, Transform = new(X: 3, Y: 4, ScaleX: 2, ScaleY: 2),
-                Children = [layer with { Transform = new(X: 9, Y: 5, Rotation: 90, ScaleX: 1.5, ScaleY: 0.75) }]
-            }]
+            Layers = [layer with { Transform = new(X: 9, Y: 5, Rotation: 90, ScaleX: 1.5, ScaleY: 0.75) }]
         };
         using var renderer = CreateRenderer();
         var geometry = renderer.GetLayerGeometry(document, MediaTime.Zero, layer.Id)!;
@@ -79,8 +75,8 @@ public sealed class SubtitleGeometryTests
         Assert.InRange(geometry.LocalBounds.Width, 20, 100);
         Assert.InRange(geometry.LocalBounds.Height, 20, 80);
         Assert.Equal(new SKPoint(77, 73), geometry.BasePosition);
-        Assert.InRange(geometry.WorldPivot.X, 174.999f, 175.001f);
-        Assert.InRange(geometry.WorldPivot.Y, 159.999f, 160.001f);
+        Assert.InRange(geometry.WorldPivot.X, 85.999f, 86.001f);
+        Assert.InRange(geometry.WorldPivot.Y, 77.999f, 78.001f);
         Assert.Equal(4, geometry.WorldCorners.Count);
         Assert.Null(renderer.GetLayerGeometry(document, layer.End, layer.Id));
     }

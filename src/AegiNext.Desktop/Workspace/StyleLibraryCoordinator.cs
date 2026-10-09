@@ -162,9 +162,9 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         var inputRevision = session.TaskInputRevision;
         var preset = session.StyleLibrary.Snapshot.Presets.FirstOrDefault(value => value.Id == presetId) ??
             throw new KeyNotFoundException("字幕样式预设不存在。");
-        var track = captured.SubtitleTracks.FirstOrDefault(value => value.Id == trackId) ??
+        var track = captured.Tracks.FirstOrDefault(value => value.Id == trackId) ??
             throw new KeyNotFoundException("字幕轨道不存在。");
-        var count = captured.Subtitles.Count(line => line.TrackId == trackId);
+        var count = session.ClipIndex.GetTrackSubtitles(trackId).Length;
         var decision = count == 0 ? TrackStyleUpdateDecision.DEFAULT_ONLY :
             await dialogs.ConfirmTrackStyleChangeAsync(track.Name, preset.Name, count);
         if (decision != TrackStyleUpdateDecision.CANCEL)
@@ -216,7 +216,7 @@ internal sealed class StyleLibraryCoordinator(WorkbenchSession session, IWorkben
         ProjectDocument project, string directory, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var track = trackId is { } id ? project.SubtitleTracks.FirstOrDefault(value => value.Id == id) ??
+        var track = trackId is { } id ? project.Tracks.FirstOrDefault(value => value.Id == id) ??
             throw new KeyNotFoundException("字幕轨道不存在。") : null;
         if (track is { AutoApplyStyle: true, DefaultStyle: { } defaultStyle })
         {

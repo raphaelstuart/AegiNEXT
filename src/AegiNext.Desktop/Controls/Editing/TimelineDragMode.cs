@@ -7,5 +7,6 @@ internal enum TimelineDragMode
     MOVE,
     TRIM_START,
     TRIM_END,
+    TRACK_REORDER,
     KEYFRAME
 }

@@ -15,26 +15,26 @@ public sealed class ProjectMergeTests
         var result = ProjectEditingOperations.MergeProjects(template, [source, source]);
 
         Assert.Equal(template.Id, result.Document.Id);
-        Assert.Equal(2, result.ImportedTrackIds.Length);
-        Assert.Equal(8, result.ImportedLayerIds.Length);
+        Assert.Equal(6, result.ImportedTrackIds.Length);
+        Assert.Equal(6, result.ImportedLayerIds.Length);
         Assert.Equal(2, result.ImportedSubtitleIds.Length);
         Assert.Same(template.Subtitles[0], result.Document.Subtitles[0]);
         Assert.Same(template.Layers[0], result.Document.Layers[0]);
-        Assert.Equal(3, result.Document.SubtitleTracks.Length);
-        Assert.Equal(result.ImportedTrackIds, result.Document.SubtitleTracks.Skip(1).Select(track => track.Id));
+        Assert.Equal(9, result.Document.Tracks.Length);
+        Assert.Equal(result.ImportedTrackIds, result.Document.Tracks.Take(6).Skip(3).Concat(result.Document.Tracks.Take(3)).Select(track => track.Id));
         Assert.Equal(result.ImportedSubtitleIds, result.Document.Subtitles.Skip(1).Select(line => line.Id));
         var allLayers = Flatten(result.Document.Layers);
         Assert.Equal(allLayers.Length, allLayers.Select(layer => layer.Id).Distinct().Count());
-        Assert.Equal(result.ImportedLayerIds, allLayers.Skip(4).Select(layer => layer.Id));
-        Assert.Equal("Part／Subtitles", result.Document.SubtitleTracks[1].Name);
-        Assert.Equal("Part／Subtitles (2)", result.Document.SubtitleTracks[2].Name);
+        Assert.Equal(result.ImportedLayerIds, allLayers.Skip(3).Select(layer => layer.Id));
+        Assert.Equal("Part／Subtitles", result.Document.Tracks[3].Name);
+        Assert.Equal("Part／Subtitles (2)", result.Document.Tracks[0].Name);
         for (var index = 1; index < result.Document.Subtitles.Length; index++)
         {
             var line = result.Document.Subtitles[index];
             var layer = allLayers.Single(value => value.SubtitleId == line.Id);
             Assert.NotEqual(template.Subtitles[0].Id, line.Id);
             Assert.Equal(line.Id, layer.Id);
-            Assert.Equal(result.Document.SubtitleTracks[index].Id, line.TrackId);
+            Assert.Equal(result.ImportedTrackIds[(index - 1) * 3], layer.TrackId);
         }
         ProjectValidator.Validate(result.Document);
     }
@@ -47,8 +47,8 @@ public sealed class ProjectMergeTests
 
         var result = ProjectEditingOperations.MergeProjects(target, [new(source, "Segment", "/source")]);
 
-        var original = source.Layers[0].Children[1];
-        var copy = result.Document.Layers[0].Children[1];
+        var original = source.Layers[1];
+        var copy = result.Document.Layers[1];
         Assert.Equal(original.Start, copy.Start);
         Assert.Equal(original.End, copy.End);
         Assert.Equal(original.AnimationOffset, copy.AnimationOffset);
@@ -105,12 +105,12 @@ public sealed class ProjectMergeTests
         var line = Assert.Single(result.Document.Subtitles);
         Assert.Equal(result.Document.Assets[0].Id, line.Style.FontAssetId);
         Assert.Equal(result.Document.Assets[1].Id, line.InlineSpans[0].Style.FontAssetId);
-        Assert.Equal(result.Document.Assets[2].Id, result.Document.Layers[0].Children[2].Image!.AssetId);
-        var track = result.Document.SubtitleTracks[1];
+        Assert.Equal(result.Document.Assets[2].Id, result.Document.Layers[2].Image!.AssetId);
+        var track = result.Document.Tracks[0];
         Assert.Equal(result.Document.Assets[3].Id, track.DefaultStyle!.FontAssetId);
-        Assert.Equal(source.SubtitleTracks[0].StylePresetId, track.StylePresetId);
-        Assert.Equal(source.SubtitleTracks[0].StylePresetName, track.StylePresetName);
-        Assert.Equal(source.SubtitleTracks[0].AutoApplyStyle, track.AutoApplyStyle);
+        Assert.Equal(source.Tracks[0].StylePresetId, track.StylePresetId);
+        Assert.Equal(source.Tracks[0].StylePresetName, track.StylePresetName);
+        Assert.Equal(source.Tracks[0].AutoApplyStyle, track.AutoApplyStyle);
         Assert.Equal(source.Subtitles[0].Style with { FontAssetId = line.Style.FontAssetId }, line.Style);
         Assert.Equal(source.Subtitles[0].InlineSpans[0].Style with { FontAssetId = line.InlineSpans[0].Style.FontAssetId },
             line.InlineSpans[0].Style);
@@ -126,7 +126,7 @@ public sealed class ProjectMergeTests
             Name = "Master", FrameRate = new(24000, 1001),
             TimelineViewState = new()
             {
-                CollapsedAnimationRows = [new(TimelineRowScope.SUBTITLE_TRACK, source.SubtitleTracks[0].Id, AnimationProperty.OPACITY)]
+                CollapsedAnimationRows = [new(TimelineRowScope.TRACK, source.Tracks[0].Id, AnimationProperty.OPACITY)]
             }
         };
 
@@ -164,8 +164,8 @@ public sealed class ProjectMergeTests
         Assert.True(editor.HasUnsavedChanges);
         var merged = editor.Snapshot;
         var reopened = ProjectStore.Deserialize(ProjectStore.Serialize(merged));
-        Assert.Equal(result.ImportedTrackIds, reopened.SubtitleTracks.Skip(1).Select(track => track.Id));
-        Assert.Equal(result.ImportedLayerIds, Flatten(reopened.Layers).Skip(4).Select(layer => layer.Id));
+        Assert.Equal(result.ImportedTrackIds, reopened.Tracks.Take(6).Skip(3).Concat(reopened.Tracks.Take(3)).Select(track => track.Id));
+        Assert.Equal(result.ImportedLayerIds, Flatten(reopened.Layers).Skip(3).Select(layer => layer.Id));
         Assert.True(editor.Undo());
         Assert.Same(original, editor.Snapshot);
         Assert.False(editor.CanUndo);
@@ -224,8 +224,8 @@ public sealed class ProjectMergeTests
 
         var result = ProjectEditingOperations.MergeProjects(new(), [new(source, label, "/a"), new(source, label, "/b")]);
 
-        var names = result.Document.SubtitleTracks.Skip(1).Select(track => track.Name).ToArray();
-        Assert.Equal(2, names.Distinct(StringComparer.Ordinal).Count());
+        var names = result.Document.Tracks.Take(6).Select(track => track.Name).ToArray();
+        Assert.Equal(6, names.Distinct(StringComparer.Ordinal).Count());
         Assert.All(names, name =>
         {
             Assert.InRange(name.Length, 1, 128);
@@ -258,26 +258,25 @@ public sealed class ProjectMergeTests
     public void LayerIdentityDistinctFromItsSubtitleStaysDistinctAfterMerge()
     {
         var source = CreateDocument();
-        var group = source.Layers[0];
         source = source with
         {
-            Layers = [group with { Children = group.Children.SetItem(1, group.Children[1] with { Id = Guid.NewGuid() }) }]
+            Layers = source.Layers.SetItem(1, source.Layers[1] with { Id = Guid.NewGuid() })
         };
 
         var result = ProjectEditingOperations.MergeProjects(new(), [new(source, "Distinct", "/source")]);
 
-        var layer = result.Document.Layers[0].Children[1];
+        var layer = result.Document.Layers[1];
         var line = Assert.Single(result.Document.Subtitles);
         Assert.Equal(line.Id, layer.SubtitleId);
         Assert.NotEqual(line.Id, layer.Id);
-        Assert.NotEqual(source.Layers[0].Children[1].Id, layer.Id);
+        Assert.NotEqual(source.Layers[1].Id, layer.Id);
     }
 
     [Fact]
     public void RepeatedLocalMaskAndOperationIdsAreRemappedSeparatelyForEachLayer()
     {
         var source = CreateDocument();
-        var originalLayer = source.Layers[0].Children[1];
+        var originalLayer = source.Layers[1];
         var secondLine = source.Subtitles[0] with { Id = Guid.NewGuid(), Start = new(40), End = new(42) };
         var secondLayer = originalLayer with
         {
@@ -291,8 +290,8 @@ public sealed class ProjectMergeTests
 
         var result = ProjectEditingOperations.MergeProjects(new(), [new(source, "Repeated local", "/source")]);
 
-        var first = result.Document.Layers[0].Children[1];
-        var second = result.Document.Layers[1];
+        var first = result.Document.Layers[1];
+        var second = result.Document.Layers[3];
         var firstNode = Assert.IsType<VectorClipMask>(first.Mask).Contours[0].Nodes[0].Id;
         var secondNode = Assert.IsType<VectorClipMask>(second.Mask).Contours[0].Nodes[0].Id;
         Assert.NotEqual(firstNode, secondNode);
@@ -366,12 +365,12 @@ public sealed class ProjectMergeTests
             Assert.Equal(targetAssets[0].Id, line.Style.FontAssetId);
             Assert.Equal(targetAssets[1].Id, line.InlineSpans[0].Style.FontAssetId);
         });
-        Assert.All(result.Document.SubtitleTracks.Skip(1), track => Assert.Equal(targetAssets[3].Id, track.DefaultStyle!.FontAssetId));
-        Assert.All(result.Document.Layers, group => Assert.Equal(targetAssets[2].Id, group.Children[2].Image!.AssetId));
+        Assert.All(result.Document.Tracks.Where(track => track.DefaultStyle is not null), track => Assert.Equal(targetAssets[3].Id, track.DefaultStyle!.FontAssetId));
+        Assert.All(result.Document.Layers.Where(clip => clip.Kind == LayerKind.IMAGE), clip => Assert.Equal(targetAssets[2].Id, clip.Image!.AssetId));
         var intoEmpty = ProjectEditingOperations.MergeProjects(new(), [new(source, "A", "/a"), new(source, "B", "/b")]);
         Assert.Equal(4, intoEmpty.Document.Assets.Length);
         Assert.Equal(intoEmpty.Document.Subtitles[0].Style.FontAssetId, intoEmpty.Document.Subtitles[1].Style.FontAssetId);
-        Assert.Equal(intoEmpty.Document.Layers[0].Children[2].Image!.AssetId, intoEmpty.Document.Layers[1].Children[2].Image!.AssetId);
+        Assert.Equal(intoEmpty.Document.Layers[2].Image!.AssetId, intoEmpty.Document.Layers[5].Image!.AssetId);
     }
 
     [Fact]
@@ -430,8 +429,9 @@ public sealed class ProjectMergeTests
         var trackFont = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.FONT, "assets/track.ttf");
         var unused = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.FONT, "assets/unused.ttf");
         var media = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.MEDIA, "media/video.mkv");
-        var track = SubtitleTrack.Default with
+        var track = ProjectTrack.Default with
         {
+            Name = "Subtitles",
             DefaultStyle = new() { FontAssetId = trackFont.Id },
             StylePresetId = Guid.NewGuid(), StylePresetName = "Track style", AutoApplyStyle = false
         };
@@ -466,20 +466,21 @@ public sealed class ProjectMergeTests
             ],
             MotionPath = new(new(new(0, 0), [new(new(1, 2), new(3, 4), new(5, 6))]), new(2))
         };
-        var shape = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.ELLIPSE, 30, 40) };
-        var imageLayer = new ProjectLayer { Kind = LayerKind.IMAGE, Start = new(4), End = new(6), Image = new(image.Id, 50, 60) };
-        var group = new ProjectLayer { Start = new(0), End = new(100), Children = [shape, subtitle, imageLayer] };
+        var shapeTrack = new ProjectTrack { Name = "Shape" };
+        var imageTrack = new ProjectTrack { Name = "Image" };
+        var shape = new ProjectLayer { TrackId = shapeTrack.Id, Kind = LayerKind.SHAPE, Shape = new(ShapeKind.ELLIPSE, 30, 40) };
+        var imageLayer = new ProjectLayer { TrackId = imageTrack.Id, Kind = LayerKind.IMAGE, Start = new(4), End = new(6), Image = new(image.Id, 50, 60) };
         var preset = new EffectPreset(Guid.NewGuid(), "Effect", [subtitle.Tracks[1]], subtitle.MotionPath, BlendMode.MULTIPLY);
         return new()
         {
-            Assets = [font, inlineFont, image, trackFont, unused, media], SubtitleTracks = [track],
-            Subtitles = [line], Layers = [group], Presets = [preset],
+            Assets = [font, inlineFont, image, trackFont, unused, media], Tracks = [track, shapeTrack, imageTrack],
+            Subtitles = [line], Layers = [shape, subtitle, imageLayer], Presets = [preset],
             Media = new(media.Id, 0, 1, new(100)) { PlaybackOrigin = new(120) }
         };
     }
 
     private static ImmutableArray<ProjectLayer> Flatten(ImmutableArray<ProjectLayer> layers)
     {
-        return layers.SelectMany(layer => new[] { layer }.Concat(Flatten(layer.Children))).ToImmutableArray();
+        return layers;
     }
 }

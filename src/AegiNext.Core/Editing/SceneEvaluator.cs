@@ -18,7 +18,7 @@ public static class SceneEvaluator
     public static ImmutableArray<EvaluatedLayer> Evaluate(PreparedProjectScene scene, MediaTime time)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        return EvaluateLayers(scene.Document.Layers, scene.Subtitles, time);
+        return EvaluateLayers(scene.Clips.LayersInDrawingOrder, scene.Subtitles, time);
     }
 
     /// <summary>求关键帧插值或按源顺序叠加原生变换，所有面板、脚本、预览及压制共用此结果。</summary>
@@ -292,7 +292,7 @@ public static class SceneEvaluator
             result.Add(new(layer, local, transform, Get(values, AnimationProperty.OPACITY, layer.Opacity),
                 GetColor(values, AnimationProperty.FILL, fill), GetColor(values, AnimationProperty.STROKE, stroke),
                 Get(values, AnimationProperty.STROKE_WIDTH, subtitle?.Style.StrokeWidth ?? layer.StrokeWidth),
-                Get(values, AnimationProperty.BLUR, layer.Blur), subtitle, EvaluateLayers(layer.Children, subtitles, time))
+                Get(values, AnimationProperty.BLUR, layer.Blur), subtitle)
             {
                 Mask = EvaluateMask(layer.Mask, values),
                 HasFillAnimation = values.ContainsKey(new(AnimationProperty.FILL)),

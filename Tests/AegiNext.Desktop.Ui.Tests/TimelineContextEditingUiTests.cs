@@ -50,7 +50,7 @@ public sealed class TimelineContextEditingUiTests
         Assert.Empty(context.Session.DocumentSnapshot.Layers);
         Assert.Empty(context.ViewModel.Timeline.SelectedLayerIds);
         Assert.Null(context.Session.SelectedKeyTime);
-        Assert.Equal(first.TrackId, context.Session.CurrentTrackId);
+        Assert.Equal(ProjectTrack.DEFAULT_TRACK_ID, context.Session.CurrentTrackId);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.DocumentSnapshot);
         Assert.False(context.Session.Editor.CanUndo);
@@ -86,8 +86,8 @@ public sealed class TimelineContextEditingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var destinationTrack = new SubtitleTrack { Name = "Destination" };
-        var original = context.Session.DocumentSnapshot with { SubtitleTracks = [SubtitleTrack.Default, destinationTrack] };
+        var destinationTrack = new ProjectTrack { Name = "Destination" };
+        var original = context.Session.DocumentSnapshot with { Tracks = [ProjectTrack.Default, destinationTrack] };
         context.Session.Editor.Reset(original);
         await context.Controller.SeekAsync(new(1));
         var timeline = Prepare(context);
@@ -102,7 +102,7 @@ public sealed class TimelineContextEditingUiTests
         var created = Assert.Single(context.Session.DocumentSnapshot.Subtitles);
         Assert.Equal(new MediaTime(6), created.Start);
         Assert.Equal(new MediaTime(6001, 1000), created.End);
-        Assert.Equal(destinationTrack.Id, created.TrackId);
+        Assert.Equal(destinationTrack.Id, context.Session.ClipIndex.GetSubtitleTrackId(created.Id));
         Assert.Equal(string.Empty, created.Text);
         Assert.Equal(created.Id, context.Session.SelectedCueId);
         Assert.Equal(created.Id, Assert.Single(context.Session.DocumentSnapshot.Layers).SubtitleId);
@@ -157,7 +157,7 @@ public sealed class TimelineContextEditingUiTests
         var beforePaste = context.Session.DocumentSnapshot;
         context.Session.Editor.Reset(beforePaste);
         Flush(context.Window);
-        var row = timeline.GetTrackHeaderRectangle(first.TrackId)!.Value;
+        var row = timeline.GetTrackHeaderRectangle(ProjectTrack.DEFAULT_TRACK_ID)!.Value;
         menu = OpenMenu(context, timeline, new(timeline.HeaderWidth + 6 * timeline.PixelsPerSecond, row.Bottom - 14));
         Assert.Equal(new[] { first.Id, second.Id }.Order(), context.ViewModel.Timeline.SelectedLayerIds.Order());
         await ExecuteAsync(menu, "PasteTimelineClipsMenuItem");
@@ -196,7 +196,7 @@ public sealed class TimelineContextEditingUiTests
         var menu = OpenMenu(context, timeline, timeline.GetClipRectangle(second.Id)!.Value.Center);
         await ExecuteAsync(menu, "CopyTimelineClipsMenuItem");
         menu.Close();
-        var row = timeline.GetTrackHeaderRectangle(first.TrackId)!.Value;
+        var row = timeline.GetTrackHeaderRectangle(ProjectTrack.DEFAULT_TRACK_ID)!.Value;
         menu = OpenMenu(context, timeline, new(timeline.HeaderWidth + 2.5 * timeline.PixelsPerSecond, row.Bottom - 14));
         await ExecuteAsync(menu, "PasteTimelineClipsMenuItem");
         menu.Close();
@@ -227,7 +227,7 @@ public sealed class TimelineContextEditingUiTests
         Assert.False(context.Session.Editor.CanUndo);
         await context.Controller.SeekAsync(new(10));
         Flush(context.Window);
-        var track = timeline.GetTrackHeaderRectangle(first.TrackId)!.Value;
+        var track = timeline.GetTrackHeaderRectangle(ProjectTrack.DEFAULT_TRACK_ID)!.Value;
         context.Window.MouseMove(timeline.TranslatePoint(new(timeline.HeaderWidth + 6 * timeline.PixelsPerSecond,
             track.Bottom - 14), context.Window)!.Value);
         Assert.True(timeline.Focus());

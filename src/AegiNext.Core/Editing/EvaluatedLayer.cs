@@ -1,13 +1,12 @@
-using System.Collections.Immutable;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 
 namespace AegiNext.Core.Editing;
 
-/// <summary>某一工程时刻的局部图层结果；树结构保留组的隔离合成与蒙版顺序。</summary>
+/// <summary>某一工程时刻的平面片段结果，保留片段的局部效果和蒙版。</summary>
 public sealed record EvaluatedLayer(ProjectLayer Source, MediaTime LocalTime, LayerTransform Transform,
     double Opacity, SceneColor Fill, SceneColor Stroke, double StrokeWidth, double Blur,
-    SubtitleLine? Subtitle, ImmutableArray<EvaluatedLayer> Children)
+    SubtitleLine? Subtitle)
 {
     public ClipMask? Mask { get; init; }
     public bool HasFillAnimation { get; init; }

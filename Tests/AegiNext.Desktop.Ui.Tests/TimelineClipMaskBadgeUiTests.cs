@@ -98,7 +98,7 @@ public sealed class TimelineClipMaskBadgeUiTests
             Flush(window);
             if (collapsed)
             {
-                timeline.ToggleTrackCollapse(cue.TrackId);
+                timeline.ToggleTrackCollapse(ProjectTrack.DEFAULT_TRACK_ID);
             }
             if (!narrow)
             {

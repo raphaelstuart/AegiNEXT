@@ -57,16 +57,18 @@ internal static class GpuPreviewVerification
             results.Add(new { Name = "surface-HDR-text", Passed = true });
         }
         Compare("extended-premultiplied", document);
-        Compare("group-opacity", document with
+        Compare("clip-opacity", document with
         {
-            Layers = [new ProjectLayer { Kind = LayerKind.GROUP, Opacity = 0.5, Children = [rectangle] }]
+            Layers = [rectangle with { Opacity = 0.5 }]
         });
         Compare("blur", document with { Layers = [rectangle with { Blur = 2 }] });
+        var foreground = new ProjectTrack();
         foreach (var blend in Enum.GetValues<BlendMode>())
         {
             Compare("blend-" + blend, document with
             {
-                Layers = [rectangle with { Fill = new(2, 0.5, 0.25) }, rectangle with { Id = Guid.NewGuid(), Blend = blend, Fill = new(3, 0.25, 0.5) }]
+                Tracks = [foreground, ProjectTrack.Default],
+                Layers = [rectangle with { Fill = new(2, 0.5, 0.25) }, rectangle with { Id = Guid.NewGuid(), TrackId = foreground.Id, Blend = blend, Fill = new(3, 0.25, 0.5) }]
             });
         }
 

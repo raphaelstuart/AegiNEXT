@@ -337,7 +337,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
                 a.HasFillAnimation != b.HasFillAnimation || a.HasStrokeAnimation != b.HasStrokeAnimation ||
                 a.HasStrokeWidthAnimation != b.HasStrokeWidthAnimation || a.Transform != b.Transform || !a.Opacity.Equals(b.Opacity) ||
                 a.Fill != b.Fill || a.Stroke != b.Stroke || !a.StrokeWidth.Equals(b.StrokeWidth) || !a.Blur.Equals(b.Blur) || !EquivalentMask(a.Mask, b.Mask) ||
-                (a.Subtitle is { Karaoke.IsEmpty: false } && a.LocalTime != b.LocalTime) || !Equivalent(a.Children, b.Children))
+                (a.Subtitle is { Karaoke.IsEmpty: false } && a.LocalTime != b.LocalTime))
             {
                 return false;
             }
@@ -388,13 +388,6 @@ public sealed partial class ProjectSceneRenderer : IDisposable
                     break;
                 case LayerKind.IMAGE:
                     DrawImage(document, canvas, layer.Source.Image!);
-                    break;
-                case LayerKind.GROUP:
-                    foreach (var child in layer.Children)
-                    {
-                        DrawLayer(document, canvas, child, renderWidth, renderHeight, blurScale, cancellationToken);
-                    }
-
                     break;
                 default:
                     throw new InvalidDataException("未知图层类型。");
@@ -495,10 +488,6 @@ public sealed partial class ProjectSceneRenderer : IDisposable
                 return geometry;
             }
 
-            if (FindGeometry(document, layer.Children, id, geometry.LocalToWorld) is { } child)
-            {
-                return child;
-            }
         }
 
         return null;
@@ -506,7 +495,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
 
     private ProjectLayerGeometry Geometry(ProjectDocument document, EvaluatedLayer layer, SKMatrix parentToWorld)
     {
-        var bounds = SKRect.Empty;
+        SKRect bounds;
         var pivot = SKPoint.Empty;
         var basePosition = SKPoint.Empty;
         var hasInk = true;
@@ -535,15 +524,6 @@ public sealed partial class ProjectSceneRenderer : IDisposable
             case LayerKind.IMAGE:
                 var image = layer.Source.Image!;
                 bounds = new(0, 0, (float)image.Width, (float)image.Height);
-                break;
-            case LayerKind.GROUP:
-                foreach (var child in layer.Children)
-                {
-                    var childGeometry = Geometry(document, child, SKMatrix.Identity);
-                    var childBounds = childGeometry.LocalToWorld.MapRect(childGeometry.LocalBounds);
-                    bounds = bounds.IsEmpty ? childBounds : SKRect.Union(bounds, childBounds);
-                }
-
                 break;
             default:
                 throw new InvalidDataException("未知图层类型。");

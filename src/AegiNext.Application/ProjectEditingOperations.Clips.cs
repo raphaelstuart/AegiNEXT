@@ -32,7 +32,7 @@ public static partial class ProjectEditingOperations
         });
     }
 
-    /// <summary>按合成顺序捕获片段、字幕行及源轨道顺序，以指定轨道或主选择字幕轨道为复制基准。</summary>
+    /// <summary>按合成顺序捕获片段、字幕行及源轨道顺序，以指定轨道或主选择片段轨道为复制基准。</summary>
     public static ClipClipboardContent CaptureClips(ProjectDocument document, IReadOnlyCollection<Guid> layerIds, Guid primaryId,
         Guid? referenceTrackId = null)
     {
@@ -51,11 +51,11 @@ public static partial class ProjectEditingOperations
         }
         else
         {
-            referenceTrackId = FindClipboardReferenceTrackId(selected, lines, primaryId);
+            referenceTrackId = selected.Single(clip => clip.Id == primaryId).TrackId;
         }
 
         return new(document.Id, primaryId, selected.Min(layer => layer.Start), selected,
-            lines, document.SubtitleTracks.Select(track => track.Id).ToImmutableArray(), referenceTrackId);
+            lines, document.Tracks.Select(track => track.Id).ToImmutableArray(), referenceTrackId);
     }
 
     /// <summary>将最早起点对齐指定时间，保留原轨或将冻结的源基准对齐目标轨；越界或碰撞整批拒绝。</summary>
@@ -65,19 +65,19 @@ public static partial class ProjectEditingOperations
         ProjectValidator.Validate(document);
         ArgumentNullException.ThrowIfNull(content);
         ArgumentOutOfRangeException.ThrowIfLessThan(start, MediaTime.Zero);
-        var mappedSubtitles = ValidateClipClipboard(document, content, targetTrackId);
+        var mappedLayers = ValidateClipClipboard(document, content, targetTrackId);
 
         var offset = start - content.EarliestStart;
-        var subtitleIds = mappedSubtitles.ToDictionary(line => line.Id, _ => Guid.NewGuid());
+        var subtitleIds = content.Subtitles.ToDictionary(line => line.Id, _ => Guid.NewGuid());
         var layerIds = content.Layers.ToDictionary(layer => layer.Id,
             layer => layer.SubtitleId is { } subtitleId && layer.Id == subtitleId ? subtitleIds[subtitleId] : Guid.NewGuid());
-        var subtitles = mappedSubtitles.Select(line => line with
+        var subtitles = content.Subtitles.Select(line => line with
         {
             Id = subtitleIds[line.Id], Start = line.Start + offset, End = line.End + offset,
             Karaoke = line.Karaoke.Select(clip => clip with { Id = Guid.NewGuid() }).ToImmutableArray(),
             InactiveKaraoke = line.InactiveKaraoke.Select(clip => clip with { Id = Guid.NewGuid() }).ToImmutableArray()
         }).ToImmutableArray();
-        var layers = content.Layers.Select(layer => CloneClipboardLayer(layer, layerIds[layer.Id], subtitleIds, offset)).ToImmutableArray();
+        var layers = mappedLayers.Select(layer => CloneClipboardLayer(layer, layerIds[layer.Id], subtitleIds, offset)).ToImmutableArray();
         var result = Verified(document with
         {
             Subtitles = document.Subtitles.AddRange(subtitles),
@@ -109,7 +109,7 @@ public static partial class ProjectEditingOperations
     {
         ArgumentNullException.ThrowIfNull(layerIds);
         var selection = layerIds.ToHashSet();
-        var layers = document.Layers.SelectMany(Descendants).Where(layer => selection.Contains(layer.Id)).ToImmutableArray();
+        var layers = new ProjectClipIndex(document).LayersInDrawingOrder.Where(layer => selection.Contains(layer.Id)).ToImmutableArray();
         if (layers.Length != selection.Count)
         {
             throw new KeyNotFoundException("所选片段不存在。");
@@ -125,13 +125,13 @@ public static partial class ProjectEditingOperations
 
     private static void RequireSupportedClip(ProjectLayer layer)
     {
-        if (layer.Kind is not (LayerKind.SUBTITLE or LayerKind.SHAPE or LayerKind.IMAGE) || !layer.Children.IsEmpty)
+        if (layer.Kind is not (LayerKind.SUBTITLE or LayerKind.SHAPE or LayerKind.IMAGE))
         {
-            throw new InvalidOperationException("片段操作只支持字幕、形状和图片，不支持组。");
+            throw new InvalidOperationException("片段操作只支持字幕、形状和图片。");
         }
     }
 
-    private static ImmutableArray<SubtitleLine> ValidateClipClipboard(ProjectDocument document, ClipClipboardContent content,
+    private static ImmutableArray<ProjectLayer> ValidateClipClipboard(ProjectDocument document, ClipClipboardContent content,
         Guid? targetTrackId)
     {
         if (content.SourceProjectId != document.Id)
@@ -146,10 +146,10 @@ public static partial class ProjectEditingOperations
             throw new InvalidDataException("片段剪贴板内容或主选择无效。");
         }
 
-        var subtitles = targetTrackId is { } target
-            ? MapClipboardSubtitleTracks(document, content, target) : content.Subtitles;
-        ProjectValidator.Validate(document with { Layers = content.Layers, Subtitles = subtitles });
-        foreach (var layer in content.Layers)
+        var layers = targetTrackId is { } target
+            ? MapClipboardTracks(document, content, target) : content.Layers;
+        ProjectValidator.Validate(document with { Layers = layers, Subtitles = content.Subtitles });
+        foreach (var layer in layers)
         {
             RequireSupportedClip(layer);
         }
@@ -161,10 +161,10 @@ public static partial class ProjectEditingOperations
             throw new InvalidDataException("片段剪贴板的字幕引用或起点无效。");
         }
 
-        return subtitles;
+        return layers;
     }
 
-    private static ImmutableArray<SubtitleLine> MapClipboardSubtitleTracks(ProjectDocument document, ClipClipboardContent content,
+    private static ImmutableArray<ProjectLayer> MapClipboardTracks(ProjectDocument document, ClipClipboardContent content,
         Guid targetTrackId)
     {
         var targetIndex = TrackIndex(document, targetTrackId);
@@ -175,42 +175,23 @@ public static partial class ProjectEditingOperations
         }
 
         var sourceIndices = content.SourceTrackIds.Select((id, index) => (id, index)).ToDictionary(pair => pair.id, pair => pair.index);
-        var referenceTrackId = content.ReferenceTrackId ?? FindClipboardReferenceTrackId(content.Layers, content.Subtitles, content.PrimaryId);
-        if (referenceTrackId is { } reference && !sourceIndices.ContainsKey(reference) ||
-            content.Subtitles.Any(line => !sourceIndices.ContainsKey(line.TrackId)))
+        var referenceTrackId = content.ReferenceTrackId ?? content.Layers.Single(clip => clip.Id == content.PrimaryId).TrackId;
+        if (!sourceIndices.TryGetValue(referenceTrackId, out var anchorIndex) ||
+            content.Layers.Any(clip => !sourceIndices.ContainsKey(clip.TrackId)))
         {
             throw new InvalidDataException("片段剪贴板的源轨道或基准不在捕获的轨道顺序中。");
         }
 
-        if (content.Subtitles.IsEmpty)
+        return content.Layers.Select(clip =>
         {
-            return content.Subtitles;
-        }
-
-        if (referenceTrackId is not { } anchor)
-        {
-            throw new InvalidDataException("跨轨粘贴的字幕片段缺少源轨道基准。");
-        }
-
-        var anchorIndex = sourceIndices[anchor];
-        return content.Subtitles.Select(line =>
-        {
-            var mappedIndex = targetIndex + sourceIndices[line.TrackId] - anchorIndex;
-            if (mappedIndex < 0 || mappedIndex >= document.SubtitleTracks.Length)
+            var mappedIndex = targetIndex + sourceIndices[clip.TrackId] - anchorIndex;
+            if (mappedIndex < 0 || mappedIndex >= document.Tracks.Length)
             {
-                throw new InvalidOperationException("粘贴片段的轨道范围超出当前字幕轨道。");
+                throw new InvalidOperationException("粘贴片段的轨道范围超出当前轨道。");
             }
 
-            return line with { TrackId = document.SubtitleTracks[mappedIndex].Id };
+            return clip with { TrackId = document.Tracks[mappedIndex].Id };
         }).ToImmutableArray();
-    }
-
-    private static Guid? FindClipboardReferenceTrackId(ImmutableArray<ProjectLayer> layers, ImmutableArray<SubtitleLine> subtitles,
-        Guid primaryId)
-    {
-        var primary = layers.First(layer => layer.Id == primaryId);
-        var subtitleId = primary.SubtitleId ?? layers.FirstOrDefault(layer => layer.SubtitleId.HasValue)?.SubtitleId;
-        return subtitleId is { } id ? subtitles.FirstOrDefault(line => line.Id == id)?.TrackId : null;
     }
 
     private static ProjectLayer CloneClipboardLayer(ProjectLayer layer, Guid id, Dictionary<Guid, Guid> subtitleIds, MediaTime offset)
@@ -242,30 +223,6 @@ public static partial class ProjectEditingOperations
 
     private static ImmutableArray<ProjectLayer> RemoveSelectedClipLayers(ImmutableArray<ProjectLayer> layers, HashSet<Guid> selection)
     {
-        ImmutableArray<ProjectLayer>.Builder? changed = null;
-        for (var index = 0; index < layers.Length; index++)
-        {
-            var layer = layers[index];
-            if (selection.Contains(layer.Id))
-            {
-                if (changed is null)
-                {
-                    changed = ImmutableArray.CreateBuilder<ProjectLayer>();
-                    changed.AddRange(layers.AsSpan(0, index));
-                }
-                continue;
-            }
-
-            var children = RemoveSelectedClipLayers(layer.Children, selection);
-            var next = children == layer.Children ? layer : layer with { Children = children };
-            if (changed is null && next != layer)
-            {
-                changed = ImmutableArray.CreateBuilder<ProjectLayer>();
-                changed.AddRange(layers.AsSpan(0, index));
-            }
-            changed?.Add(next);
-        }
-
-        return changed?.ToImmutable() ?? layers;
+        return layers.Where(layer => !selection.Contains(layer.Id)).ToImmutableArray();
     }
 }

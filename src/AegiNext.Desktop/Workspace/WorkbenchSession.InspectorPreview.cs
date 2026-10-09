@@ -94,7 +94,7 @@ internal sealed partial class WorkbenchSession
         {
             return;
         }
-        var layer = Flatten(document.Layers).FirstOrDefault(value => value.Id == SelectedLayerId);
+        var layer = document.Layers.FirstOrDefault(value => value.Id == SelectedLayerId);
         if (layer?.SubtitleId is not { } id)
         {
             return;

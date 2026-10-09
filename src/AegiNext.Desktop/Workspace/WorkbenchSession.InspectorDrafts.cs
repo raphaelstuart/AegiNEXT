@@ -97,7 +97,7 @@ internal sealed partial class WorkbenchSession
             }
 
             var originalPlacement = ResolvePlacement(editor.Snapshot, selected);
-            var preparedLayer = Flatten(prepared.Layers).Single(value => value.Id == selected.Id);
+            var preparedLayer = prepared.Layers.Single(value => value.Id == selected.Id);
             var preparedPlacement = ResolvePlacement(prepared, preparedLayer);
             var target = AnimationTarget!;
             var positionX = InspectorVector(selected, AnimationProperty.POSITION, selected.Transform.Position).X;

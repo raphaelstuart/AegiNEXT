@@ -20,9 +20,9 @@ public sealed class MotionPathBezierEditingUiTests
     [InlineData(0.8, false)]
     [InlineData(0.2, true)]
     [InlineData(0.8, true)]
-    public async Task ShiftClickSplitsTheProjectedCubicAtTheClickedParameterOnReleaseWithOneUndo(double progress, bool grouped)
+    public async Task ShiftClickSplitsTheProjectedCubicAtTheClickedParameterOnReleaseWithOneUndo(double progress, bool transformed)
     {
-        var (document, layer) = CreateScene(grouped);
+        var (document, layer) = CreateScene(transformed);
         var originalPath = layer.MotionPath!.Path;
         var editor = new ProjectEditor(document);
         using var canvas = new EffectCanvasControl { EditMode = CanvasEditMode.PATH };
@@ -32,7 +32,7 @@ public sealed class MotionPathBezierEditingUiTests
         try
         {
             await PresentAsync(window, canvas);
-            var point = Project(canvas, document, layer, Evaluate(originalPath, 0, progress), grouped);
+            var point = Project(canvas, document, layer, Evaluate(originalPath, 0, progress));
             Assert.Same(canvas, window.InputHitTest(point));
             window.MouseDown(point, MouseButton.Left, RawInputModifiers.Shift);
             Assert.True(canvas.HasActiveDrag);
@@ -277,9 +277,9 @@ public sealed class MotionPathBezierEditingUiTests
     }
 
     [AvaloniaFact]
-    public async Task OrdinaryHandleDragUsesTheParentTransformAndCommitsOnlyAtRelease()
+    public async Task OrdinaryHandleDragPreservesTheClipTransformAndCommitsOnlyAtRelease()
     {
-        var (document, layer) = CreateScene(grouped: true);
+        var (document, layer) = CreateScene(transformed: true);
         using var canvas = new EffectCanvasControl { EditMode = CanvasEditMode.PATH };
         canvas.SetScene(document, layer, MediaTime.Zero);
         var edits = new List<CanvasLayerEditEventArgs>();
@@ -289,8 +289,8 @@ public sealed class MotionPathBezierEditingUiTests
         {
             await PresentAsync(window, canvas);
             var original = layer.MotionPath!.Path.Segments[0].Control1;
-            var point = Project(canvas, document, layer, original, true);
-            var destination = Project(canvas, document, layer, new(original.X + 18, original.Y - 13), true);
+            var point = Project(canvas, document, layer, original);
+            var destination = Project(canvas, document, layer, new(original.X + 18, original.Y - 13));
             window.MouseDown(point, MouseButton.Left);
             Assert.True(canvas.HasActiveDrag);
             window.MouseMove(destination, RawInputModifiers.LeftMouseButton);
@@ -591,7 +591,7 @@ public sealed class MotionPathBezierEditingUiTests
         }
     }
 
-    private static (ProjectDocument Document, ProjectLayer Layer) CreateScene(bool grouped = false, bool singleSegment = false)
+    private static (ProjectDocument Document, ProjectLayer Layer) CreateScene(bool transformed = false, bool singleSegment = false)
     {
         var path = new PathGeometry(new(0, 0),
             [new(new(40, -100), new(120, 100), new(160, 0)), new(new(200, -80), new(280, 80), new(320, 0))]);
@@ -602,14 +602,13 @@ public sealed class MotionPathBezierEditingUiTests
         var layer = new ProjectLayer
         {
             Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20),
-            Transform = grouped ? new(-120, 100) : new(100, 180),
+            Transform = transformed ? new(250, 180, ScaleX: 1.25, ScaleY: 0.85, Rotation: 25) : new(100, 180),
             Fill = new(0.2, 0.7, 0.4), StrokeWidth = 2, Blur = 0.5, Blend = BlendMode.SCREEN,
             MotionPath = new(path, new(7), true),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.7), new(new(5), 0.9)]),
                 new(AnimationProperty.PATH_PROGRESS, [new(new(0), 0), new(new(5), 0.8)])]
         };
-        var parent = new ProjectLayer { Transform = new(400, 100, ScaleX: 1.25, ScaleY: 0.85, Rotation: 25), Children = [layer] };
-        return (new() { Width = 1000, Height = 600, Layers = grouped ? [parent] : [layer] }, layer);
+        return (new() { Width = 1000, Height = 600, Layers = [layer] }, layer);
     }
 
     private static Window Show(EffectCanvasControl canvas)
@@ -634,25 +633,16 @@ public sealed class MotionPathBezierEditingUiTests
     private static ScenePoint Evaluate(PathGeometry path, int segmentIndex, double progress) =>
         SceneEvaluator.EvaluatePath(path, (segmentIndex + progress) / path.Segments.Length);
 
-    private static Point Project(EffectCanvasControl canvas, ProjectDocument document, ProjectLayer layer, ScenePoint value, bool grouped = false)
+    private static Point Project(EffectCanvasControl canvas, ProjectDocument document, ProjectLayer layer, ScenePoint value)
     {
         var matrix = Matrix.CreateTranslation(layer.Transform.X, layer.Transform.Y);
-        if (grouped)
-        {
-            var parent = document.Layers[0].Transform;
-            matrix *= Matrix.CreateScale(parent.ScaleX, parent.ScaleY) * Matrix.CreateRotation(parent.Rotation * Math.PI / 180) *
-                Matrix.CreateTranslation(parent.X, parent.Y);
-        }
         var board = canvas.ProjectRectangle;
         matrix *= Matrix.CreateScale(board.Width / document.Width, board.Height / document.Height) * Matrix.CreateTranslation(board.X, board.Y);
         return new Point(value.X, value.Y) * matrix;
     }
 
     private static ProjectLayer FindLayer(ProjectDocument document, Guid id) =>
-        document.Layers.SelectMany(Flatten).Single(layer => layer.Id == id);
-
-    private static IEnumerable<ProjectLayer> Flatten(ProjectLayer layer) =>
-        new[] { layer }.Concat(layer.Children.SelectMany(Flatten));
+        document.Layers.Single(layer => layer.Id == id);
 
     private static void AssertUntouchedLayerFields(ProjectLayer original, ProjectLayer changed)
     {

@@ -25,7 +25,7 @@ internal sealed partial class WorkbenchSession
             {
                 return;
             }
-            var lines = editor.Snapshot.Subtitles.Where(line => line.TrackId == trackId).OrderBy(line => line.Start).ToArray();
+            var lines = ClipIndex.GetTrackSubtitles(trackId).ToArray();
             var index = Array.FindIndex(lines, line => line.Id == sourceId);
             if (index < 0)
             {
@@ -48,7 +48,7 @@ internal sealed partial class WorkbenchSession
                 throw new InvalidDataException(Localization.Get("Workbench.SubtitleContinuationTimeRequired"));
             }
 
-            var cue = new SubtitleLine { TrackId = trackId, Start = start, End = position, Text = string.Empty };
+            var cue = new SubtitleLine { Start = start, End = position, Text = string.Empty };
             var presetId = ViewModel.Styles.SelectedPreset?.Id;
             InvalidateTimingSession();
             await CreateSubtitleClipsAsync([cue], trackId, presetId);

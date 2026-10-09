@@ -34,7 +34,7 @@ public sealed class TimelineTimingPostProcessorUiTests
         var preset = Preset(100, 200) with { Name = "nano", Style = new() { FontSize = 42 } };
         await SeedAsync(context.Session, preset);
         Assert.DoesNotContain(context.Session.StyleLibrary.Snapshot.Presets, value => value.Name == "Default");
-        var track = SubtitleTrack.Default with
+        var track = ProjectTrack.Default with
         {
             DefaultStyle = preset.Style, StylePresetId = preset.Id, StylePresetName = preset.Name, AutoApplyStyle = true
         };
@@ -53,8 +53,8 @@ public sealed class TimelineTimingPostProcessorUiTests
         var originalSecond = document.Subtitles.Single(value => value.Id == second.Id);
         Assert.Equal("Default", originalFirst.StyleName);
         Assert.Null(originalFirst.StylePresetId);
-        Assert.Equal(document.SubtitleTracks[0].DefaultStyle, originalFirst.Style);
-        Assert.NotSame(document.SubtitleTracks[0].DefaultStyle, originalFirst.Style);
+        Assert.Equal(document.Tracks[0].DefaultStyle, originalFirst.Style);
+        Assert.NotSame(document.Tracks[0].DefaultStyle, originalFirst.Style);
         context.Session.Editor.Reset(document);
         var timeline = Prepare(context.Window, context.Session);
         Select(context.Window, timeline, LayerFor(document, originalFirst).Id);
@@ -86,16 +86,21 @@ public sealed class TimelineTimingPostProcessorUiTests
         var firstPreset = Preset(100, 200);
         var secondPreset = Preset(300, 450);
         await SeedAsync(context.Session, firstPreset, secondPreset);
-        var otherTrack = new SubtitleTrack { Name = "Other track" };
+        var otherTrack = new ProjectTrack { Name = "Other track" };
         var first = Cue(firstPreset, 2, 3);
-        var second = Cue(secondPreset, 2, 3) with { TrackId = otherTrack.Id };
+        var second = Cue(secondPreset, 2, 3);
         var unselected = Cue(firstPreset, 5, 6);
+        var shapeTrack = new ProjectTrack { Name = "Shape track" };
         var shape = new ProjectLayer
         {
-            Name = "Primary shape", Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 80, 50),
+            TrackId = shapeTrack.Id, Name = "Primary shape", Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 80, 50),
             Start = new(1), End = new(7)
         };
-        var document = Document([first, second, unselected], [SubtitleTrack.Default, otherTrack], shape);
+        var document = Document([first, second, unselected], [ProjectTrack.Default, otherTrack, shapeTrack], shape);
+        document = document with
+        {
+            Layers = document.Layers.Select(clip => clip.SubtitleId == second.Id ? clip with { TrackId = otherTrack.Id } : clip).ToImmutableArray()
+        };
         context.Session.Editor.Reset(document);
         using var panel = new TimelinePanelView(context.ViewModel.Timeline, context.Session);
         var window = new Window { Width = 720, Height = 360, Content = panel };
@@ -311,9 +316,9 @@ public sealed class TimelineTimingPostProcessorUiTests
     };
 
     private static ProjectDocument Document(ImmutableArray<SubtitleLine> lines,
-        ImmutableArray<SubtitleTrack> tracks = default, ProjectLayer? shape = null) => new()
+        ImmutableArray<ProjectTrack> tracks = default, ProjectLayer? shape = null) => new()
     {
-        SubtitleTracks = tracks.IsDefault ? [SubtitleTrack.Default] : tracks,
+        Tracks = tracks.IsDefault ? [ProjectTrack.Default] : tracks,
         Subtitles = lines,
         Layers = [.. lines.Select(line => new ProjectLayer
         {

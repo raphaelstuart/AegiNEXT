@@ -19,6 +19,59 @@ public sealed class ClipMaskExportTests
     [ExportTheory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task IndependentWorkerUsesTopTrackOrderAfterReorderRegardlessOfClipStorageOrder(bool reverseClips)
+    {
+        var directory = Directory.CreateTempSubdirectory("aeginext-track-export-").FullName;
+        try
+        {
+            var sourcePath = Path.Combine(directory, "background.mkv");
+            await CreateStaticSourceAsync(sourcePath);
+            var media = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.MEDIA, string.Empty, ExternalPath: sourcePath);
+            var whiteTrack = new ProjectTrack();
+            var blackTrack = new ProjectTrack();
+            var white = new ProjectLayer
+            {
+                TrackId = whiteTrack.Id,
+                Kind = LayerKind.SHAPE,
+                Shape = new(ShapeKind.RECTANGLE, WIDTH, HEIGHT),
+                Fill = SceneColor.White
+            };
+            var black = white with { Id = Guid.NewGuid(), TrackId = blackTrack.Id, Fill = SceneColor.Black };
+            var project = new ProjectDocument
+            {
+                Width = WIDTH,
+                Height = HEIGHT,
+                Assets = [media],
+                Media = new(media.Id, 0, null, MediaTime.Zero),
+                Tracks = [whiteTrack, blackTrack],
+                Layers = reverseClips ? [black, white] : [white, black]
+            };
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var document = pass == 0 ? project : project with { Tracks = [blackTrack, whiteTrack] };
+                var outputPath = Path.Combine(directory, $"track-order-{pass}.mkv");
+                var result = await new VideoExporter().ExportAsync(Request(document, directory, outputPath));
+                Assert.Equal((ulong)FRAME_COUNT, result.Frames);
+                using var decoder = FfmpegVideoDecoder.Open(outputPath, 0, options: new() { Mode = VideoDecodeMode.Software });
+                for (var frameIndex = 0; frameIndex < FRAME_COUNT; frameIndex++)
+                {
+                    using var frame = Assert.IsType<DecodedVideoFrame>(decoder.ReadFrame());
+                    Assert.Equal("yuv420p", frame.Info.PixelFormat);
+                    var luma = Luma(frame, frame.CopyPlane(0), frame.GetPlaneInfo(0).RowBytes, WIDTH / 2, HEIGHT / 2);
+                    Assert.InRange(luma, pass == 0 ? 230 : 14, pass == 0 ? 255 : 18);
+                }
+                Assert.Null(decoder.ReadFrame());
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [ExportTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task IndependentWorkerBurnsNodeMaskAnimationAndPreservesSiblingAndBackground(bool inverted)
     {
         var directory = Directory.CreateTempSubdirectory("aeginext-mask-export-").FullName;
@@ -176,10 +229,10 @@ public sealed class ClipMaskExportTests
                 ShadowColor = SceneColor.Black, ShadowOffset = new(3, 3), ShadowBlur = 1
             }
         };
-        var siblingTrack = new SubtitleTrack { Name = "Sibling" };
+        var siblingTrack = new ProjectTrack { Name = "Sibling" };
         var sibling = new SubtitleLine
         {
-            TrackId = siblingTrack.Id, Text = "KEEP KEEP", Style = target.Style with
+            Text = "KEEP KEEP", Style = target.Style with
             {
                 FontSize = 14, StrokeWidth = 0, ShadowColor = SceneColor.Transparent, ShadowBlur = 0
             }
@@ -187,13 +240,13 @@ public sealed class ClipMaskExportTests
         return new()
         {
             Width = WIDTH, Height = HEIGHT, FrameRate = new(25, 1), Assets = [media, font],
-            Media = new(media.Id, 0, null, MediaTime.Zero), SubtitleTracks = [SubtitleTrack.Default, siblingTrack],
+            Media = new(media.Id, 0, null, MediaTime.Zero), Tracks = [ProjectTrack.Default, siblingTrack],
             Subtitles = [target, sibling],
             Layers =
             [
                 new()
                 {
-                    Id = sibling.Id, Kind = LayerKind.SUBTITLE, SubtitleId = sibling.Id, Start = sibling.Start, End = sibling.End,
+                    Id = sibling.Id, TrackId = siblingTrack.Id, Kind = LayerKind.SUBTITLE, SubtitleId = sibling.Id, Start = sibling.Start, End = sibling.End,
                     Transform = new(X: 0, Y: 36)
                 },
                 new()

@@ -21,7 +21,7 @@ internal sealed partial class WorkbenchSession
         }
         var start = ProjectPosition < MediaTime.Zero ? MediaTime.Zero : ProjectPosition;
         var presetId = ViewModel.Styles.SelectedPreset?.Id;
-        var cue = new SubtitleLine { Start = start, End = start + new MediaTime(2), Text = string.Empty, TrackId = trackId };
+        var cue = new SubtitleLine { Start = start, End = start + new MediaTime(2), Text = string.Empty };
         await CreateSubtitleClipsAsync([cue], trackId, presetId);
 
         SelectCue(cue.Id);

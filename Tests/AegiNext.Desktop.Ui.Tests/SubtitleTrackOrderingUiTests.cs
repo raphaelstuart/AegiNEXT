@@ -21,7 +21,7 @@ public sealed class SubtitleTrackOrderingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var ids = PrepareThreeTracks(context);
+        var ids = await PrepareThreeTracksAsync(context);
         var window = context.Window;
         var original = window.DocumentSnapshot;
         var menu = TimelineTrackTestActions.OpenMenu(context, ids[0]);
@@ -70,7 +70,7 @@ public sealed class SubtitleTrackOrderingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var ids = PrepareThreeTracks(context);
+        var ids = await PrepareThreeTracksAsync(context);
         var window = context.Window;
         var original = window.DocumentSnapshot;
         var selectedIds = context.ViewModel.Effects.SelectedIds.ToArray();
@@ -106,13 +106,13 @@ public sealed class SubtitleTrackOrderingUiTests
         }
     }
 
-    private static Guid[] PrepareThreeTracks(MainWindowTestContext context)
+    private static async Task<Guid[]> PrepareThreeTracksAsync(MainWindowTestContext context)
     {
         var window = context.Window;
-        window.GetCommand(WorkbenchCommand.ADD_SUBTITLE).Execute(null);
+        await context.Session.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
         var first = Assert.Single(window.DocumentSnapshot.Subtitles);
-        var second = context.Session.Editor.AddSubtitleTrack("Second");
-        var third = context.Session.Editor.AddSubtitleTrack("Third");
+        var second = context.Session.Editor.AddTrack("Second");
+        var third = context.Session.Editor.AddTrack("Third");
         context.Session.Editor.AddSubtitle(MediaTime.Zero, new(2), "Second clip", second);
         context.Session.Editor.AddSubtitle(MediaTime.Zero, new(2), "Third clip", third);
         context.Session.Editor.Apply("Track ordering scene fixture", document => document with
@@ -131,15 +131,15 @@ public sealed class SubtitleTrackOrderingUiTests
         window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
         Assert.True(window.ViewModel.TryCommitDrafts());
-        Assert.Equal(first.TrackId, context.Session.CurrentTrackId);
-        return [first.TrackId, second, third];
+        Assert.Equal(new ProjectClipIndex(window.DocumentSnapshot).GetSubtitleTrackId(first.Id), context.Session.CurrentTrackId);
+        return [new ProjectClipIndex(window.DocumentSnapshot).GetSubtitleTrackId(first.Id), second, third];
     }
 
     private static void AssertTrackState(MainWindowTestContext context, ProjectDocument original,
         Guid[] expectedOrder, Guid[] selectedIds)
     {
         var document = context.Window.DocumentSnapshot;
-        Assert.Equal(expectedOrder, document.SubtitleTracks.Select(track => track.Id));
+        Assert.Equal(expectedOrder, document.Tracks.Select(track => track.Id));
         Assert.Equal(original.Layers, document.Layers);
         Assert.Equal(original.Subtitles, document.Subtitles);
         for (var index = 0; index < original.Layers.Length; index++)
@@ -147,7 +147,7 @@ public sealed class SubtitleTrackOrderingUiTests
             Assert.Same(original.Layers[index], document.Layers[index]);
             Assert.Same(original.Subtitles[index], document.Subtitles[index]);
         }
-        Assert.Equal(original.Subtitles[0].TrackId, context.Session.CurrentTrackId);
+        Assert.Equal(new ProjectClipIndex(original).GetSubtitleTrackId(original.Subtitles[0].Id), context.Session.CurrentTrackId);
         if (selectedIds.Length == 0)
         {
             Assert.Null(context.Session.SelectedCue);
@@ -160,7 +160,7 @@ public sealed class SubtitleTrackOrderingUiTests
         }
         Assert.Equal(selectedIds, context.ViewModel.Effects.SelectedIds);
         Assert.Equal(original.Subtitles[0].Id, Assert.Single(context.ViewModel.Subtitles.VisibleRows).Id);
-        Assert.Equal(original.Subtitles[0].TrackId, Assert.IsType<SubtitleTrack>(
+        Assert.Equal(new ProjectClipIndex(original).GetSubtitleTrackId(original.Subtitles[0].Id), Assert.IsType<ProjectTrack>(
             UiTestActions.Find<ComboBox>(context.Window, "SubtitleTrackCombo").SelectedItem).Id);
     }
 

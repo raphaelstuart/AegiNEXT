@@ -27,8 +27,8 @@ internal sealed partial class WorkbenchSession
             throw new InvalidOperationException(Localization.Get("Workbench.TimelineTimingInvalid"));
         }
 
-        if (editor.Snapshot.Subtitles.Any(line => line.Id != cue.Id && line.TrackId == cue.TrackId &&
-            start < line.End && line.Start < end))
+        if (ClipIndex.GetTrackClips(ClipIndex.GetSubtitleTrackId(cue.Id)).Any(clip => clip.SubtitleId != cue.Id &&
+            start < clip.End && clip.Start < end))
         {
             throw new InvalidOperationException(Localization.Get("Workbench.TimelineClipCollision"));
         }

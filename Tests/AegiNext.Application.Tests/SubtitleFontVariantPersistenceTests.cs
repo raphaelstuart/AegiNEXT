@@ -15,12 +15,12 @@ public sealed class SubtitleFontVariantPersistenceTests
     {
         var style = Style() with { FontVariant = Style().FontVariant!.Value with { PostScriptName = postScriptName } };
         var editor = new ProjectEditor();
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Named face", style);
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Named face", style);
         var id = editor.AddSubtitle(new(0), new(2), "AB");
         editor.ApplySubtitleInlineStyle(id, 1, 1, new() { FontVariant = style.FontVariant!.Value with { Name = "Black", Weight = 900 } });
         var source = editor.Snapshot;
         var restored = ProjectStore.Deserialize(ProjectStore.Serialize(source));
-        Assert.Equal(style, restored.SubtitleTracks[0].DefaultStyle);
+        Assert.Equal(style, restored.Tracks[0].DefaultStyle);
         Assert.Equal(style, restored.Subtitles[0].Style);
         Assert.Equal(source.Subtitles[0].InlineSpans.ToArray(), restored.Subtitles[0].InlineSpans.ToArray());
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "Named face", style);

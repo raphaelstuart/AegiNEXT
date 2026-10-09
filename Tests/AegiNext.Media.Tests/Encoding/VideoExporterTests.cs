@@ -118,7 +118,7 @@ public sealed class VideoExporterTests
         var subtitle = new SubtitleLine { Text = "TEST", Style = style };
         var project = CreateProject(fixture.MediaPath, 1, 96, 64) with
         {
-            SubtitleTracks = [SubtitleTrack.Default with { DefaultStyle = style, StylePresetId = presetId, StylePresetName = "Track default" }],
+            Tracks = [ProjectTrack.Default with { DefaultStyle = style, StylePresetId = presetId, StylePresetName = "Track default" }],
             Subtitles = [subtitle],
             Layers = [new()
             {

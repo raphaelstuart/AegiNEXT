@@ -24,7 +24,7 @@ public sealed class TrackStyleWorkflowTests
         context.Dialogs.TrackStyleChoice = decision;
         var track = Assert.IsType<Guid>(session.CurrentTrackId);
         var cue = context.Editor.AddSubtitle(new(0), new(2), "existing", track);
-        var otherTrack = context.Editor.AddSubtitleTrack("Other");
+        var otherTrack = context.Editor.AddTrack("Other");
         var otherCue = context.Editor.AddSubtitle(new(0), new(2), "other", otherTrack);
         context.Editor.SetKeyframe(cue, AnimationProperty.OPACITY, new(new(1), 0.4));
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "New preset", new() { FontSize = 97 });
@@ -57,10 +57,11 @@ public sealed class TrackStyleWorkflowTests
         await context.InitializeAsync();
         var session = context.Session;
         session.SetProjectLocation(null, context.DirectoryPath);
-        var other = context.Editor.AddSubtitleTrack("Other");
+        var originalTrackId = Assert.IsType<Guid>(session.CurrentTrackId);
+        var other = context.Editor.AddTrack("Other");
         var otherCue = context.Editor.AddSubtitle(new(0), new(3), "other", other);
-        context.Editor.SetSubtitleTrackStyle(Assert.IsType<Guid>(session.CurrentTrackId), Guid.NewGuid(), "Saved track", new() { FontSize = 40 });
-        context.Editor.SetSubtitleTrackAutoApplyStyle(Assert.IsType<Guid>(session.CurrentTrackId), false);
+        context.Editor.SetSubtitleTrackStyle(originalTrackId, Guid.NewGuid(), "Saved track", new() { FontSize = 40 });
+        context.Editor.SetSubtitleTrackAutoApplyStyle(originalTrackId, false);
         var bytes = (await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotoSans.ttf"))).ToImmutableArray();
         var digest = Convert.ToHexStringLower(SHA256.HashData(bytes.AsSpan()));
         Assert.Equal("bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d", digest);
@@ -81,7 +82,7 @@ public sealed class TrackStyleWorkflowTests
         Assert.Equal(2, imported.Length);
         Assert.All(imported, line =>
         {
-            Assert.Equal(session.CurrentTrackId, line.TrackId);
+            Assert.Equal(session.CurrentTrackId, session.ClipIndex.GetSubtitleTrackId(line.Id));
             Assert.Equal(preset.Style with { FontAssetId = asset.Id }, line.Style);
         });
         Assert.Equal(new MediaTime(1, 8), imported[0].Start);
@@ -89,7 +90,7 @@ public sealed class TrackStyleWorkflowTests
         Assert.Equal("First", imported[0].Text);
         Assert.Equal(imported[0].Id, session.SelectedCue?.Id);
         Assert.Same(before.Subtitles.Single(line => line.Id == otherCue), context.Editor.Snapshot.Subtitles.Single(line => line.Id == otherCue));
-        Assert.Equal(40, context.Editor.Snapshot.SubtitleTracks[0].DefaultStyle!.FontSize);
+        Assert.Equal(40, context.Editor.Snapshot.Tracks.Single(track => track.Id == originalTrackId).DefaultStyle!.FontSize);
         Assert.True(context.Editor.Undo());
         Assert.Same(before, context.Editor.Snapshot);
     }

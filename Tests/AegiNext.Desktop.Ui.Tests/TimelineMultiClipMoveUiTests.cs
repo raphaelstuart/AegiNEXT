@@ -21,17 +21,16 @@ public sealed class TimelineMultiClipMoveUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var otherTrack = new SubtitleTrack { Name = "Other track" };
+        var otherTrack = new ProjectTrack { Name = "Other track" };
         var first = new SubtitleLine { Start = new(1), End = new(3), Text = "First" };
         var second = new SubtitleLine
         {
-            Start = new(4), End = new(6), Text = "Second",
-            TrackId = crossTrack ? otherTrack.Id : first.TrackId
+            Start = new(4), End = new(6), Text = "Second"
         };
         var document = new ProjectDocument
         {
-            SubtitleTracks = crossTrack ? [SubtitleTrack.Default, otherTrack] : [SubtitleTrack.Default],
-            Subtitles = [first, second], Layers = [Layer(first), Layer(second)]
+            Tracks = crossTrack ? [ProjectTrack.Default, otherTrack] : [ProjectTrack.Default],
+            Subtitles = [first, second], Layers = [Layer(first), Layer(second) with { TrackId = crossTrack ? otherTrack.Id : ProjectTrack.DEFAULT_TRACK_ID }]
         };
         context.Session.Editor.Reset(document);
         var timeline = Prepare(context);
@@ -256,8 +255,8 @@ public sealed class TimelineMultiClipMoveUiTests
         context.Window.MouseUp(blankPoint, MouseButton.Left);
         Flush(context.Window);
 
-        Assert.Equal(first.TrackId, context.Session.CurrentTrackId);
-        Assert.Equal(first.TrackId, context.ViewModel.Timeline.SelectedTrackId);
+        Assert.Equal(ProjectTrack.DEFAULT_TRACK_ID, context.Session.CurrentTrackId);
+        Assert.Equal(ProjectTrack.DEFAULT_TRACK_ID, context.ViewModel.Timeline.SelectedTrackId);
         Assert.Null(context.Session.SelectedCue);
         Assert.Null(context.Session.SelectedLayer);
         Assert.Null(context.Session.SelectedKeyTime);

@@ -63,9 +63,7 @@ internal static class WorkspaceDraftOperations
         var builder = ImmutableArray.CreateBuilder<ProjectLayer>(layers.Length);
         foreach (var layer in layers)
         {
-            var children = MapLayers(layer.Children, edit);
-            var candidate = children == layer.Children ? layer : layer with { Children = children };
-            var next = edit(candidate);
+            var next = edit(layer);
             changed |= next != layer;
             builder.Add(next);
         }

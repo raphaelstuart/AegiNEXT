@@ -201,10 +201,10 @@ public sealed partial class ProjectEditor
     /// <summary>在现有轨道新增字幕行及同标识字幕层，作为一个事务；没有轨道时拒绝创建。</summary>
     public Guid AddSubtitle(MediaTime start, MediaTime end, string text, Guid? trackId = null, SubtitleStyle? fallbackStyle = null)
     {
-        var targetTrackId = trackId ?? Snapshot.SubtitleTracks.FirstOrDefault()?.Id
-            ?? throw new InvalidOperationException("请先新增字幕轨道。");
-        var line = new SubtitleLine { Start = start, End = end, Text = text, TrackId = targetTrackId };
-        AddSubtitles([line], line.TrackId, fallbackStyle);
+        var targetTrackId = trackId ?? Snapshot.Tracks.FirstOrDefault()?.Id
+            ?? throw new InvalidOperationException("请先新增轨道。");
+        var line = new SubtitleLine { Start = start, End = end, Text = text };
+        AddSubtitles([line], targetTrackId, fallbackStyle);
         return line.Id;
     }
 
@@ -213,10 +213,19 @@ public sealed partial class ProjectEditor
     {
         ArgumentNullException.ThrowIfNull(lines);
         var imported = lines.ToImmutableArray();
-        Apply("Import subtitles", document => document with
+        Apply("Import subtitles", document =>
         {
-            Subtitles = document.Subtitles.AddRange(imported),
-            Layers = document.Layers.AddRange(imported.Select(CreateSubtitleLayer))
+            if (imported.IsEmpty)
+            {
+                return document;
+            }
+            var trackId = document.Tracks.FirstOrDefault()?.Id
+                ?? throw new InvalidOperationException("请先新增轨道。");
+            return document with
+            {
+                Subtitles = document.Subtitles.AddRange(imported),
+                Layers = document.Layers.AddRange(imported.Select(line => CreateSubtitleLayer(line) with { TrackId = trackId }))
+            };
         });
     }
 
@@ -355,14 +364,14 @@ public sealed partial class ProjectEditor
         UpdateLayer(id, value => LayerAnimationTiming.Retime(value, start, end, mode));
     }
 
-    /// <summary>添加独立根图层；分组可在一次 Apply 中重组。</summary>
+    /// <summary>添加具有明确轨道归属的平面片段。</summary>
     public void AddLayer(ProjectLayer layer)
     {
         ArgumentNullException.ThrowIfNull(layer);
         Apply("Add layer", document => document with { Layers = document.Layers.Add(layer) });
     }
 
-    /// <summary>更新任意深度图层，保持稳定标识。</summary>
+    /// <summary>更新平面片段，保持稳定标识。</summary>
     public void UpdateLayer(Guid id, Func<ProjectLayer, ProjectLayer> edit)
     {
         ArgumentNullException.ThrowIfNull(edit);
@@ -505,17 +514,10 @@ public sealed partial class ProjectEditor
             {
                 return layer;
             }
-
-            if (layer.Children.Any(child => ContainsLayer(child, id)))
-            {
-                return FindLayer(layer.Children, id);
-            }
         }
 
         throw new KeyNotFoundException("图层不存在。");
     }
-
-    private static bool ContainsLayer(ProjectLayer layer, Guid id) => layer.Id == id || layer.Children.Any(child => ContainsLayer(child, id));
 
     private static ImmutableArray<ProjectLayer> MapLayers(ImmutableArray<ProjectLayer> layers, Func<ProjectLayer, ProjectLayer> map)
     {
@@ -523,8 +525,7 @@ public sealed partial class ProjectEditor
         for (var index = 0; index < layers.Length; index++)
         {
             var layer = layers[index];
-            var children = MapLayers(layer.Children, map);
-            var next = map(children == layer.Children ? layer : layer with { Children = children });
+            var next = map(layer);
             if (next != layer)
             {
                 changed ??= layers.ToBuilder();
@@ -537,7 +538,7 @@ public sealed partial class ProjectEditor
 
     private static ImmutableArray<ProjectLayer> RemoveLayers(ImmutableArray<ProjectLayer> layers, Func<ProjectLayer, bool> remove)
     {
-        return layers.Where(layer => !remove(layer)).Select(layer => layer with { Children = RemoveLayers(layer.Children, remove) }).ToImmutableArray();
+        return layers.Where(layer => !remove(layer)).ToImmutableArray();
     }
 
     private static MediaTime Scale(MediaTime time, MediaTime newDuration, MediaTime oldDuration)

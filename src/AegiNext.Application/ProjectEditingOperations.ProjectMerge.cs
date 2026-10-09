@@ -6,7 +6,7 @@ namespace AegiNext.Application;
 
 public static partial class ProjectEditingOperations
 {
-    /// <summary>收集工程内容实际使用的字体和图片身份；包含轨道默认字体、整行与局部字体及递归图片层。</summary>
+    /// <summary>收集工程内容实际使用的字体和图片身份；包含轨道默认字体、整行与局部字体及图片片段。</summary>
     public static IReadOnlyCollection<Guid> GetMergeAssetIds(ProjectDocument document)
     {
         ProjectValidator.Validate(document);
@@ -51,14 +51,14 @@ public static partial class ProjectEditingOperations
         }
 
         var assets = document.Assets.ToBuilder();
-        var tracks = document.SubtitleTracks.ToBuilder();
+        var tracks = document.Tracks.ToBuilder();
         var subtitles = document.Subtitles.ToBuilder();
         var layers = document.Layers.ToBuilder();
         var presets = document.Presets.ToBuilder();
         var importedTrackIds = ImmutableArray.CreateBuilder<Guid>();
         var importedLayerIds = ImmutableArray.CreateBuilder<Guid>();
         var importedSubtitleIds = ImmutableArray.CreateBuilder<Guid>();
-        var names = document.SubtitleTracks.Select(track => track.Name).ToHashSet(StringComparer.Ordinal);
+        var names = document.Tracks.Select(track => track.Name).ToHashSet(StringComparer.Ordinal);
         var reusableAssets = new Dictionary<(ProjectAssetKind Kind, string Hash, string Path), Guid>();
         foreach (var asset in document.Assets)
         {
@@ -71,7 +71,7 @@ public static partial class ProjectEditingOperations
         {
             var dependencyIds = CollectMergeAssetIds(source.Document).ToHashSet();
             var assetIds = new Dictionary<Guid, Guid>();
-            var trackIds = source.Document.SubtitleTracks.ToDictionary(track => track.Id, _ => NewMergeId(reservedIds));
+            var trackIds = source.Document.Tracks.ToDictionary(track => track.Id, _ => NewMergeId(reservedIds));
             var subtitleIds = source.Document.Subtitles.ToDictionary(line => line.Id, _ => NewMergeId(reservedIds));
             foreach (var asset in source.Document.Assets.Where(asset => dependencyIds.Contains(asset.Id)))
             {
@@ -90,10 +90,11 @@ public static partial class ProjectEditingOperations
                 }
             }
 
-            foreach (var track in source.Document.SubtitleTracks)
+            var sourceTracks = ImmutableArray.CreateBuilder<ProjectTrack>();
+            foreach (var track in source.Document.Tracks)
             {
                 var id = trackIds[track.Id];
-                tracks.Add(track with
+                sourceTracks.Add(track with
                 {
                     Id = id,
                     Name = CreateMergeTrackName(source.Name, track.Name, names),
@@ -102,13 +103,14 @@ public static partial class ProjectEditingOperations
                 importedTrackIds.Add(id);
             }
 
+            tracks.InsertRange(0, sourceTracks);
+
             foreach (var line in source.Document.Subtitles)
             {
                 var id = subtitleIds[line.Id];
                 subtitles.Add(line with
                 {
                     Id = id,
-                    TrackId = trackIds[line.TrackId],
                     Style = RemapMergeStyle(line.Style, assetIds),
                     InlineSpans = line.InlineSpans.Select(span => span with
                     {
@@ -123,7 +125,7 @@ public static partial class ProjectEditingOperations
 
             foreach (var layer in source.Document.Layers)
             {
-                layers.Add(CloneMergeLayer(layer, subtitleIds, assetIds, reservedIds, importedLayerIds));
+                layers.Add(CloneMergeLayer(layer, trackIds, subtitleIds, assetIds, reservedIds, importedLayerIds));
             }
 
             foreach (var preset in source.Document.Presets)
@@ -141,7 +143,7 @@ public static partial class ProjectEditingOperations
 
         var merged = SubtitleKaraokeNormalization.Normalize(document with
         {
-            Assets = assets.ToImmutable(), SubtitleTracks = tracks.ToImmutable(), Subtitles = subtitles.ToImmutable(),
+            Assets = assets.ToImmutable(), Tracks = tracks.ToImmutable(), Subtitles = subtitles.ToImmutable(),
             Layers = layers.ToImmutable(), Presets = presets.ToImmutable()
         });
         return new(merged, importedTrackIds.ToImmutable(), importedLayerIds.ToImmutable(), importedSubtitleIds.ToImmutable());
@@ -150,7 +152,7 @@ public static partial class ProjectEditingOperations
     private static Guid[] CollectMergeAssetIds(ProjectDocument document)
     {
         var ids = new HashSet<Guid>();
-        foreach (var track in document.SubtitleTracks)
+        foreach (var track in document.Tracks)
         {
             if (track.DefaultStyle?.FontAssetId is { } fontId)
             {
@@ -173,7 +175,7 @@ public static partial class ProjectEditingOperations
             }
         }
 
-        foreach (var layer in document.Layers.SelectMany(Descendants))
+        foreach (var layer in document.Layers)
         {
             if (layer.Image is { } image)
             {
@@ -186,9 +188,9 @@ public static partial class ProjectEditingOperations
     private static void ValidateMergeBudget(ProjectDocument document, ProjectMergeSource[] sources)
     {
         var assets = (long)document.Assets.Length;
-        var tracks = (long)document.SubtitleTracks.Length;
+        var tracks = (long)document.Tracks.Length;
         var subtitles = (long)document.Subtitles.Length;
-        var layers = (long)document.Layers.SelectMany(Descendants).Count();
+        var layers = (long)document.Layers.Length;
         var presets = (long)document.Presets.Length;
         var assetKeys = new HashSet<(ProjectAssetKind Kind, string Hash, string Path)>();
         foreach (var asset in document.Assets)
@@ -209,9 +211,9 @@ public static partial class ProjectEditingOperations
                 }
                 assets++;
             }
-            tracks += source.Document.SubtitleTracks.Length;
+            tracks += source.Document.Tracks.Length;
             subtitles += source.Document.Subtitles.Length;
-            layers += source.Document.Layers.SelectMany(Descendants).Count();
+            layers += source.Document.Layers.Length;
             presets += source.Document.Presets.Length;
             if (assets > 10000 || tracks > 10000 || subtitles > 100000 || layers > 10000 || presets > 10000)
             {
@@ -231,7 +233,7 @@ public static partial class ProjectEditingOperations
         return style.FontAssetId is { } fontId ? style with { FontAssetId = assetIds[fontId] } : style;
     }
 
-    private static ProjectLayer CloneMergeLayer(ProjectLayer layer, Dictionary<Guid, Guid> subtitleIds,
+    private static ProjectLayer CloneMergeLayer(ProjectLayer layer, Dictionary<Guid, Guid> trackIds, Dictionary<Guid, Guid> subtitleIds,
         Dictionary<Guid, Guid> assetIds, HashSet<Guid> reservedIds, ImmutableArray<Guid>.Builder importedLayerIds)
     {
         var id = layer.SubtitleId is { } subtitleId && layer.Id == subtitleId
@@ -252,12 +254,11 @@ public static partial class ProjectEditingOperations
         return layer with
         {
             Id = id,
+            TrackId = trackIds[layer.TrackId],
             SubtitleId = layer.SubtitleId is { } referencedId ? subtitleIds[referencedId] : null,
             Image = layer.Image is { } image ? image with { AssetId = assetIds[image.AssetId] } : null,
             Mask = mask,
-            Tracks = CloneMergeAnimationTracks(layer.Tracks, maskIds, reservedIds),
-            Children = layer.Children.Select(child => CloneMergeLayer(child, subtitleIds, assetIds, reservedIds, importedLayerIds))
-                .ToImmutableArray()
+            Tracks = CloneMergeAnimationTracks(layer.Tracks, maskIds, reservedIds)
         };
     }
 
@@ -275,13 +276,13 @@ public static partial class ProjectEditingOperations
     {
         ids.Add(document.Id);
         ids.UnionWith(document.Assets.Select(asset => asset.Id));
-        ids.UnionWith(document.SubtitleTracks.Select(track => track.Id));
+        ids.UnionWith(document.Tracks.Select(track => track.Id));
         foreach (var line in document.Subtitles)
         {
             ids.Add(line.Id);
             ids.UnionWith(line.Karaoke.Concat(line.InactiveKaraoke).Select(segment => segment.Id));
         }
-        foreach (var layer in document.Layers.SelectMany(Descendants))
+        foreach (var layer in document.Layers)
         {
             ids.Add(layer.Id);
             ids.UnionWith(layer.Tracks.SelectMany(track => track.Transforms).Select(operation => operation.Id));

@@ -29,8 +29,9 @@ public static class TimingPostProcessor
             throw new TimingPostProcessorException("Keyframe snapping requires an available video timing index.");
         }
 
+        var clips = new ProjectClipIndex(document);
         var timings = new Dictionary<Guid, (MediaTime Start, MediaTime End)>();
-        foreach (var track in targets.GroupBy(line => line.TrackId))
+        foreach (var track in targets.GroupBy(line => clips.GetSubtitleTrackId(line.Id)))
         {
             var lines = track.OrderBy(line => line.Start).ToArray();
             AddLeads(lines, options);
@@ -89,7 +90,8 @@ public static class TimingPostProcessor
             throw new TimingPostProcessorException("Keyframe snapping requires an available video timing index.");
         }
 
-        var tracks = document.Subtitles.GroupBy(line => line.TrackId)
+        var clips = new ProjectClipIndex(document);
+        var tracks = document.Subtitles.GroupBy(line => clips.GetSubtitleTrackId(line.Id))
             .Where(track => track.Any(line => configurations.ContainsKey(line.Id)))
             .Select(track => track.OrderBy(line => line.Start).ToArray()).ToArray();
         foreach (var lines in tracks)

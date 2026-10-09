@@ -68,22 +68,22 @@ public sealed class TimelineDrawingCacheScalingUiTests
     public void TimelineLabelsKeepTheirPixelsWhenResizingAcrossTheCacheBudget(double scaling, bool dark)
     {
         using var environment = new UiTestEnvironment();
-        var firstTrack = SubtitleTrack.Default with { Name = "中文 ABC 123", StylePresetName = "Style 中文" };
-        var secondTrack = new SubtitleTrack { Name = "日本語 ABC 456", StylePresetName = "Style 日本語" };
-        var firstCue = new SubtitleLine { TrackId = firstTrack.Id, Start = new(1), End = new(4), Text = "字幕 ABC 123" };
-        var secondCue = new SubtitleLine { TrackId = secondTrack.Id, Start = new(1), End = new(4), Text = "字幕 DEF 456" };
+        var firstTrack = ProjectTrack.Default with { Name = "中文 ABC 123", StylePresetName = "Style 中文" };
+        var secondTrack = new ProjectTrack { Name = "日本語 ABC 456", StylePresetName = "Style 日本語" };
+        var firstCue = new SubtitleLine { Start = new(1), End = new(4), Text = "字幕 ABC 123" };
+        var secondCue = new SubtitleLine { Start = new(1), End = new(4), Text = "字幕 DEF 456" };
         var firstLayer = new ProjectLayer
         {
             SubtitleId = firstCue.Id, Kind = LayerKind.SUBTITLE, Start = firstCue.Start, End = firstCue.End
         };
         var secondLayer = new ProjectLayer
         {
-            SubtitleId = secondCue.Id, Kind = LayerKind.SUBTITLE, Start = secondCue.Start, End = secondCue.End,
+            TrackId = secondTrack.Id, SubtitleId = secondCue.Id, Kind = LayerKind.SUBTITLE, Start = secondCue.Start, End = secondCue.End,
             Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.2), new(new(2), 0.8)])]
         };
         var document = new ProjectDocument
         {
-            SubtitleTracks = [firstTrack, secondTrack], Subtitles = [firstCue, secondCue], Layers = [firstLayer, secondLayer]
+            Tracks = [firstTrack, secondTrack], Subtitles = [firstCue, secondCue], Layers = [firstLayer, secondLayer]
         };
         using var timeline = new SubtitleTimelineControl { IsWaveformVisible = false, IsSpectrumVisible = false };
         timeline.SetDocument(document, secondCue.Id, secondLayer, trackId: secondTrack.Id);

@@ -66,7 +66,7 @@ public sealed class EffectScriptTests
         Assert.Equal("slide-pop", script.Id);
         foreach (var duration in new MediaTime[] { new(2, 5), new(5) })
         {
-            var layer = new ProjectLayer { End = duration, Transform = new(100, 200, 2, 3) };
+            var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = duration, Transform = new(100, 200, 2, 3) };
             var tracks = EffectScriptCompiler.Compile(script, layer);
             Assert.Equal(3, tracks.Length);
             ProjectValidator.Validate(new() { Layers = [layer with { Tracks = tracks }] });
@@ -88,7 +88,7 @@ public sealed class EffectScriptTests
         Assert.Equal(id, EffectScriptParser.Parse(template.Source).Id);
         foreach (var duration in new MediaTime[] { new(1, 1000), new(2, 5), new(3, 5), new(10), new(1001, 30000) })
         {
-            var layer = new ProjectLayer { Start = new(7), End = new MediaTime(7) + duration, AnimationOffset = new(3) };
+            var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(7), End = new MediaTime(7) + duration, AnimationOffset = new(3) };
             var tracks = EffectScriptCompiler.Compile(template.Script, layer);
             foreach (var track in tracks)
             {
@@ -208,7 +208,7 @@ public sealed class EffectScriptTests
     [Fact]
     public void UnrepresentableExactTimeReportsACompilationErrorWithoutQuantizing()
     {
-        var target = new ProjectLayer { End = new(1, long.MaxValue) };
+        var target = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(1, long.MaxValue) };
         var error = Assert.Throws<EffectScriptException>(() => EffectScriptCompiler.Compile(BuiltinEffectScripts.Get("fade-in-out").Script, target));
         Assert.IsType<OverflowException>(error.InnerException);
     }
@@ -231,7 +231,7 @@ public sealed class EffectScriptTests
         var script = BuiltinEffectScripts.Get("fade-in-out").Script;
         foreach (var offset in new MediaTime[] { new(5), new(-1), new(-3) })
         {
-            var target = new ProjectLayer { Start = new(10), End = new(12), AnimationOffset = offset };
+            var target = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(10), End = new(12), AnimationOffset = offset };
             var (minimum, maximum) = LayerAnimationTiming.GetRange(target);
             var track = Assert.Single(EffectScriptCompiler.Compile(script, target));
             Assert.Equal(offset, minimum);

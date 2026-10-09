@@ -174,11 +174,12 @@ public sealed class SubtitleMarginsDraftWorkflowTests
     public async Task ShapeEditingIgnoresSubtitleMarginDraftsAndLeavesSubtitlesUnchanged()
     {
         var document = Document();
+        var shapeTrack = new ProjectTrack { Name = "Shapes" };
         var shape = new ProjectLayer
         {
-            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 100, 100), End = new(4)
+            TrackId = shapeTrack.Id, Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 100, 100), End = new(4)
         };
-        document = document with { Layers = document.Layers.Add(shape) };
+        document = document with { Tracks = document.Tracks.Add(shapeTrack), Layers = document.Layers.Add(shape) };
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
         context.Session.SelectLayer(shape.Id, [shape.Id]);

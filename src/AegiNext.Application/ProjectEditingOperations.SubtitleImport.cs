@@ -28,7 +28,7 @@ public static partial class ProjectEditingOperations
         });
     }
 
-    /// <summary>一次准备整批字幕的新独立轨道；保留样式与来源顺序，将重叠区间分到必要轨道。</summary>
+    /// <summary>一次准备整批字幕的新独立轨道；保留样式与来源叠覆顺序，将重叠区间分到独立轨道。</summary>
     public static ProjectDocument ImportSubtitleLines(ProjectDocument document, IEnumerable<SubtitleLine> lines, string name)
     {
         ProjectValidator.Validate(document);
@@ -45,35 +45,25 @@ public static partial class ProjectEditingOperations
         {
             throw new InvalidDataException("字幕导入数量或轨道名称超过预算。");
         }
-        var tracks = ImmutableArray.CreateBuilder<SubtitleTrack>();
-        var available = new PriorityQueue<int, (MediaTime End, int Slot)>();
-        foreach (var item in imported.Select((line, index) => (Line: line, Index: index)).OrderBy(item => item.Line.Start).ThenBy(item => item.Index))
+        var slots = new SubtitleImportTrackAllocator(imported).Allocate(imported);
+        var trackCount = slots.Max() + 1;
+        if (document.Tracks.Length + trackCount > 10000)
         {
-            int slot;
-            if (available.TryPeek(out var nextSlot, out var next) && next.End <= item.Line.Start)
-            {
-                slot = nextSlot;
-                available.Dequeue();
-            }
-            else
-            {
-                slot = tracks.Count;
-                if (document.SubtitleTracks.Length + tracks.Count >= 10000)
-                {
-                    throw new InvalidDataException("导入轨道数量超过预算。");
-                }
-                tracks.Add(new() { Name = slot == 0 ? name : $"{name} ({slot + 1})", AutoApplyStyle = false });
-            }
-            available.Enqueue(slot, (item.Line.End, slot));
-            imported[item.Index] = item.Line with { TrackId = tracks[slot].Id };
+            throw new InvalidDataException("导入轨道数量超过预算。");
         }
+        var tracks = Enumerable.Range(0, trackCount).Select(slot => new ProjectTrack
+        {
+            Name = slot == trackCount - 1 ? name : $"{name} ({trackCount - slot})",
+            AutoApplyStyle = false
+        }).ToArray();
         return Verified(document with
         {
-            SubtitleTracks = document.SubtitleTracks.AddRange(tracks),
+            Tracks = document.Tracks.InsertRange(0, tracks.Reverse()),
             Subtitles = document.Subtitles.AddRange(imported),
-            Layers = document.Layers.AddRange(imported.Select(line => new ProjectLayer
+            Layers = document.Layers.AddRange(imported.Select((line, index) => new ProjectLayer
             {
                 Id = line.Id, Name = "Subtitle", Kind = LayerKind.SUBTITLE, SubtitleId = line.Id,
+                TrackId = tracks[slots[index]].Id,
                 Start = line.Start, End = line.End
             }))
         });

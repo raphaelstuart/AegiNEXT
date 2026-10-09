@@ -262,13 +262,15 @@ public sealed class SubtitleMoveWorkflowTests
         var first = new SubtitleLine { Start = new(1), End = new(2), Text = "First" };
         var second = new SubtitleLine { Start = new(3), End = new(4), Text = "Second" };
         var untouched = new SubtitleLine { Start = new(6), End = new(7), Text = "Untouched" };
+        var shapeTrack = new ProjectTrack { Name = "Shapes" };
         var shape = new ProjectLayer
         {
-            Kind = LayerKind.SHAPE, Start = new(3, 2), End = new(5, 2),
+            TrackId = shapeTrack.Id, Kind = LayerKind.SHAPE, Start = new(3, 2), End = new(5, 2),
             Shape = new(ShapeKind.RECTANGLE, 30, 40), AnimationOffset = new(1, 3)
         };
         return new()
         {
+            Tracks = [ProjectTrack.Default, shapeTrack],
             Subtitles = [first, second, untouched],
             Layers = [SubtitleLayer(first), SubtitleLayer(second), SubtitleLayer(untouched), shape]
         };

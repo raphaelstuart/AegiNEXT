@@ -43,24 +43,42 @@ static async Task RunBenchmark(string[] args, GRContext? graphicsContext = null,
     var document = new ProjectDocument { Width = 3840, Height = 2160 };
     var subtitles = ImmutableArray.CreateBuilder<SubtitleLine>();
     var layers = ImmutableArray.CreateBuilder<ProjectLayer>();
+#if BASELINE_ASSEMBLIES
     var tracks = ImmutableArray.CreateBuilder<SubtitleTrack>();
+#else
+    var tracks = ImmutableArray.CreateBuilder<ProjectTrack>();
+#endif
     for (var index = 0; index < (empty ? 0 : 4); index++)
     {
+#if BASELINE_ASSEMBLIES
         var track = new SubtitleTrack { Name = "Track " + index };
+#else
+        var track = new ProjectTrack { Name = "Track " + index };
+#endif
         var cue = new SubtitleLine
         {
-            TrackId = track.Id, End = new(600), Text = "Animated natural subtitle " + index,
+#if BASELINE_ASSEMBLIES
+            TrackId = track.Id,
+#endif
+            End = new(600), Text = "Animated natural subtitle " + index,
             Style = new() { FontFamily = "Arial", FontSize = 84, Alignment = TextAlignment.BOTTOM_CENTER }
         };
         tracks.Add(track);
         subtitles.Add(cue);
         layers.Add(new()
         {
+#if !BASELINE_ASSEMBLIES
+            TrackId = track.Id,
+#endif
             Kind = LayerKind.SUBTITLE, SubtitleId = cue.Id, End = cue.End, Transform = new(Y: -index * 140),
             Tracks = [new(AnimationProperty.POSITION, [new(new(0), new ScenePoint(-120, -index * 140)), new(new(600), new ScenePoint(120, -index * 140))])]
         });
     }
+#if BASELINE_ASSEMBLIES
     document = document with { SubtitleTracks = tracks.ToImmutable(), Subtitles = subtitles.ToImmutable(), Layers = layers.ToImmutable() };
+#else
+    document = document with { Tracks = tracks.ToImmutable(), Subtitles = subtitles.ToImmutable(), Layers = layers.ToImmutable() };
+#endif
     var observations = new List<PreviewBenchmarkSample>();
     var initialization = new List<double>();
     var sessions = new List<VideoDecodeSessionInfo>();

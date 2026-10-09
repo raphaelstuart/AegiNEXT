@@ -73,9 +73,9 @@ public sealed class MaskAllNodesTimelineUiTests
             timeline.SelectedMaskNodeId = second.Id;
             using var otherSelected = Capture(timeline);
             Assert.False(Pixels(selected, point).SequenceEqual(Pixels(otherSelected, point)));
-            timeline.ToggleTrackCollapse(cue.TrackId);
+            timeline.ToggleTrackCollapse(layer.TrackId);
             Assert.Empty(timeline.GetAnimationTargets(layer.Id));
-            timeline.ToggleTrackCollapse(cue.TrackId);
+            timeline.ToggleTrackCollapse(layer.TrackId);
             Assert.Equal(new[] { firstTarget, thirdTarget, secondTarget }, timeline.GetAnimationTargets(layer.Id));
             if (Environment.GetEnvironmentVariable("AEGINEXT_MASK_NODE_CAPTURE_DIRECTORY") is { } directory)
             {

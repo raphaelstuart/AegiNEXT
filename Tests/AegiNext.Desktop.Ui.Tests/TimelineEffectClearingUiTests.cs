@@ -25,7 +25,7 @@ public sealed class TimelineEffectClearingUiTests
         var second = Line(3);
         var shape = new ProjectLayer
         {
-            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20),
+            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20), Start = new(6), End = new(8),
             Tracks = [new(AnimationProperty.OPACITY, [])
             {
                 InitialValue = 1, Transforms = [new(Guid.NewGuid(), new(0), new(2), 0.5)]
@@ -74,17 +74,17 @@ public sealed class TimelineEffectClearingUiTests
         await using var context = new MainWindowTestContext();
         var first = Line(0);
         var second = Line(3);
-        var otherTrack = new SubtitleTrack { Name = "Other" };
-        var other = Line(6) with { TrackId = otherTrack.Id };
+        var otherTrack = new ProjectTrack { Name = "Other" };
+        var other = Line(6);
         var document = new ProjectDocument
         {
-            SubtitleTracks = [SubtitleTrack.Default, otherTrack], Subtitles = [first, second, other],
-            Layers = [NodeLayer(first), NodeLayer(second), NodeLayer(other)]
+            Tracks = [ProjectTrack.Default, otherTrack], Subtitles = [first, second, other],
+            Layers = [NodeLayer(first), NodeLayer(second), NodeLayer(other) with { TrackId = otherTrack.Id }]
         };
         context.Session.Editor.Reset(document);
         context.Session.SelectLayer(first.Id, [first.Id]);
         var timeline = Prepare(context);
-        var row = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, first.TrackId, AnimationProperty.MASK_NODE_POSITION);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.MASK_NODE_POSITION);
         if (collapsed)
         {
             context.ViewModel.Timeline.SetAnimationRowCollapsed(new(row, true));
@@ -137,7 +137,7 @@ public sealed class TimelineEffectClearingUiTests
         context.Session.Editor.Reset(document);
         context.Session.SelectLayer(first.Id, [first.Id]);
         var timeline = Prepare(context);
-        var row = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, first.TrackId, AnimationProperty.MASK_NODE_POSITION);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.MASK_NODE_POSITION);
         if (collapsed)
         {
             context.ViewModel.Timeline.SetAnimationRowCollapsed(new(row, true));
@@ -215,6 +215,7 @@ public sealed class TimelineEffectClearingUiTests
     public async Task ClassicTimingRightClickOnCurveOrKeyframeOpensClipPropertyMenuWithoutRetiming(bool marker)
     {
         await using var context = new MainWindowTestContext();
+        await context.Session.ApplicationContext.Initialization;
         var first = Line(0);
         var second = Line(3);
         var document = new ProjectDocument { Subtitles = [first, second], Layers = [Layer(first), Layer(second)] };

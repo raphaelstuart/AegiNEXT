@@ -17,7 +17,7 @@ public sealed class ExportWireFontVariantTests
         };
         var document = new ProjectDocument
         {
-            SubtitleTracks = [SubtitleTrack.Default with { DefaultStyle = style, StylePresetId = Guid.NewGuid(), StylePresetName = "Named face" }],
+            Tracks = [ProjectTrack.Default with { DefaultStyle = style, StylePresetId = Guid.NewGuid(), StylePresetName = "Named face" }],
             Subtitles = [line],
             Layers = [new() { Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End }]
         };

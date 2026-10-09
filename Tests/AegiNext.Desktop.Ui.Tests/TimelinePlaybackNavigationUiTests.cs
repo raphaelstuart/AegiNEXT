@@ -23,7 +23,7 @@ public sealed class TimelinePlaybackNavigationUiTests
         await context.OpenMediaAsync();
         for (var track = 0; track < 20; track++)
         {
-            context.Session.Editor.AddSubtitleTrack($"Track {track}");
+            context.Session.Editor.AddTrack($"Track {track}");
         }
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         context.ViewModel.Timeline.PixelsPerSecond = 200;
@@ -113,7 +113,7 @@ public sealed class TimelinePlaybackNavigationUiTests
         }
         else
         {
-            var trackId = context.Session.DocumentSnapshot.SubtitleTracks[0].Id;
+            var trackId = context.Session.DocumentSnapshot.Tracks[0].Id;
             if (layout == "HeaderCollapse")
             {
                 var rectangle = timeline.GetTrackHeaderRectangle(trackId)!.Value;

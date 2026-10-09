@@ -2,6 +2,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Views;
 using AegiNext.Desktop.Workspace;
 using Avalonia;
@@ -10,6 +11,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
@@ -41,7 +43,7 @@ public sealed class TimelineTrackDeletionUiTests
             Assert.Contains("business-surface", dialog.Classes);
             Assert.True(UiTestActions.Find<Button>(dialog, "CancelButton").IsDefault);
             Assert.False(UiTestActions.Find<Button>(dialog, "DeleteButton").IsDefault);
-            Assert.Contains(SubtitleTrack.Default.Name, UiTestActions.Find<TextBlock>(dialog, "TrackDeletionMessage").Text);
+            Assert.Contains(ProjectTrack.Default.Name, UiTestActions.Find<TextBlock>(dialog, "TrackDeletionMessage").Text);
             if (action == "Escape")
             {
                 dialog.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.None, null);
@@ -64,7 +66,7 @@ public sealed class TimelineTrackDeletionUiTests
                 Assert.Same(before, context.Session.DocumentSnapshot);
                 return;
             }
-            Assert.Empty(context.Session.DocumentSnapshot.SubtitleTracks);
+            Assert.Empty(context.Session.DocumentSnapshot.Tracks);
             Assert.Empty(context.Session.DocumentSnapshot.Subtitles);
             Assert.Empty(context.Session.DocumentSnapshot.Layers);
             Assert.Null(context.ViewModel.Subtitles.SelectedTrack);
@@ -75,7 +77,7 @@ public sealed class TimelineTrackDeletionUiTests
             Assert.True(context.Session.Editor.Undo());
             Assert.Same(before, context.Session.DocumentSnapshot);
             Assert.True(context.Session.Editor.Redo());
-            Assert.Empty(context.Session.DocumentSnapshot.SubtitleTracks);
+            Assert.Empty(context.Session.DocumentSnapshot.Tracks);
         }
         finally
         {
@@ -95,7 +97,7 @@ public sealed class TimelineTrackDeletionUiTests
         menu.Close();
         await context.ViewModel.Timeline.DeleteTrackCommand.ExecutionTask!;
         Assert.Empty(context.Window.OwnedWindows.OfType<TrackDeletionDialog>());
-        Assert.Empty(context.Session.DocumentSnapshot.SubtitleTracks);
+        Assert.Empty(context.Session.DocumentSnapshot.Tracks);
         var before = context.Session.DocumentSnapshot;
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         Assert.True(timeline.Focus());
@@ -106,11 +108,15 @@ public sealed class TimelineTrackDeletionUiTests
         Assert.Null(context.Session.LastError);
 
         await context.ViewModel.Timeline.AddTrackCommand.ExecuteAsync(null);
-        Assert.Single(context.Session.DocumentSnapshot.SubtitleTracks);
+        Assert.Single(context.Session.DocumentSnapshot.Tracks);
         Assert.True(timeline.Focus());
         UiTestActions.Press(context.Window, Key.F8);
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(context.Session.CurrentTrackId, Assert.Single(context.Session.DocumentSnapshot.Subtitles).TrackId);
+        var timing = Assert.IsAssignableFrom<IAsyncRelayCommand>(context.Window.GetCommand(WorkbenchCommand.TIMING_ENTER));
+        Assert.NotNull(timing.ExecutionTask);
+        await timing.ExecutionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await context.Session.WaitForProjectIdleAsync();
+        Assert.Equal(context.Session.CurrentTrackId, context.Session.ClipIndex.GetSubtitleTrackId(Assert.Single(context.Session.DocumentSnapshot.Subtitles).Id));
         Assert.Null(context.Session.LastError);
     }
 

@@ -7,10 +7,10 @@ namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class WorkbenchSession
 {
-    private Guid? currentTrackId = SubtitleTrack.DEFAULT_TRACK_ID;
+    private Guid? currentTrackId = ProjectTrack.DEFAULT_TRACK_ID;
 
-    internal Guid? CurrentTrackId => editor.Snapshot.SubtitleTracks.Any(track => track.Id == currentTrackId)
-        ? currentTrackId : editor.Snapshot.SubtitleTracks.FirstOrDefault()?.Id;
+    internal Guid? CurrentTrackId => editor.Snapshot.Tracks.Any(track => track.Id == currentTrackId)
+        ? currentTrackId : editor.Snapshot.Tracks.FirstOrDefault()?.Id;
 
     internal Task ApplySubtitleTrackStyleAsync(Guid trackId, Guid presetId)
     {
@@ -21,7 +21,7 @@ internal sealed partial class WorkbenchSession
     {
         return RunCommandAsync(() => EditAsync(() =>
         {
-            var track = editor.Snapshot.SubtitleTracks.Single(value => value.Id == trackId);
+            var track = editor.Snapshot.Tracks.Single(value => value.Id == trackId);
             editor.SetSubtitleTrackAutoApplyStyle(trackId, !track.AutoApplyStyle);
         }));
     }
@@ -32,9 +32,9 @@ internal sealed partial class WorkbenchSession
         {
             return false;
         }
-        if (!editor.Snapshot.SubtitleTracks.Any(track => track.Id == trackId))
+        if (!editor.Snapshot.Tracks.Any(track => track.Id == trackId))
         {
-            throw new KeyNotFoundException("字幕轨道不存在。");
+            throw new KeyNotFoundException("轨道不存在。");
         }
         if (!TryCommitDrafts())
         {
@@ -59,16 +59,16 @@ internal sealed partial class WorkbenchSession
     internal void RefreshSubtitleTracks()
     {
         currentTrackId = CurrentTrackId;
-        ViewModel.Subtitles.UpdateTracks(editor.Snapshot.SubtitleTracks, currentTrackId);
+        ViewModel.Subtitles.UpdateTracks(editor.Snapshot.Tracks, currentTrackId);
         ViewModel.Timeline.SelectedTrackId = currentTrackId;
     }
 
     internal void SyncCurrentTrackForSelection()
     {
         ViewModel.Timeline.ValidateTrackSoloSelection();
-        if (SelectedCue is { } cue)
+        if (SelectedLayer is { } clip)
         {
-            currentTrackId = cue.TrackId;
+            currentTrackId = clip.TrackId;
         }
 
         RefreshSubtitleTracks();
@@ -77,20 +77,20 @@ internal sealed partial class WorkbenchSession
     internal void AddSubtitleTrack()
     {
         var prefix = Localization.Get("Workbench.SubtitleTrack");
-        var names = editor.Snapshot.SubtitleTracks.Select(track => track.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var names = editor.Snapshot.Tracks.Select(track => track.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var number = 1;
         while (names.Contains($"{prefix} {number}"))
         {
             number++;
         }
 
-        var id = editor.AddSubtitleTrack($"{prefix} {number}");
+        var id = editor.AddTrack($"{prefix} {number}");
         SelectTrack(id);
     }
 
     internal void RenameSubtitleTrack(Guid trackId, string name)
     {
-        editor.RenameSubtitleTrack(trackId, name);
+        editor.RenameTrack(trackId, name);
         RefreshSubtitleTracks();
     }
 
@@ -105,8 +105,8 @@ internal sealed partial class WorkbenchSession
 
             var source = editor.Snapshot;
             var generation = projectGeneration;
-            var track = source.SubtitleTracks.Single(value => value.Id == trackId);
-            var count = source.Subtitles.Count(line => line.TrackId == trackId);
+            var track = source.Tracks.Single(value => value.Id == trackId);
+            var count = ClipIndex.GetTrackClips(trackId).Length;
             if (count > 0)
             {
                 var accepted = false;
@@ -124,7 +124,7 @@ internal sealed partial class WorkbenchSession
             {
                 return;
             }
-            await EditAsync(() => editor.RemoveSubtitleTrack(trackId));
+            await EditAsync(() => editor.RemoveTrack(trackId));
         });
     }
 
@@ -141,12 +141,12 @@ internal sealed partial class WorkbenchSession
             {
                 return;
             }
-            var tracks = editor.Snapshot.SubtitleTracks;
+            var tracks = editor.Snapshot.Tracks;
             var index = tracks.IndexOf(tracks.Single(track => track.Id == trackId));
             var target = index + direction;
             if (target >= 0 && target < tracks.Length)
             {
-                editor.MoveSubtitleTrack(trackId, target);
+                editor.MoveTrack(trackId, target);
             }
         }));
     }
@@ -157,7 +157,7 @@ internal sealed partial class WorkbenchSession
         currentTrackId = trackId;
         ResetSubtitleSelection(subtitleId);
         SelectedCueId = subtitleId;
-        SelectedLayerId = Flatten(editor.Snapshot.Layers).Single(layer => layer.SubtitleId == subtitleId).Id;
+        SelectedLayerId = ClipIndex.GetSubtitleClip(subtitleId).Id;
         SelectedKeyTime = null;
         RefreshDocument();
     }
@@ -171,9 +171,52 @@ internal sealed partial class WorkbenchSession
             currentTrackId = trackId;
             ResetSubtitleSelection(subtitleId);
             SelectedCueId = subtitleId;
-            SelectedLayerId = Flatten(editor.Snapshot.Layers).Single(layer => layer.SubtitleId == subtitleId).Id;
+            SelectedLayerId = ClipIndex.GetSubtitleClip(subtitleId).Id;
             SelectedKeyTime = null;
             RefreshDocument();
         }));
+    }
+
+    internal Task MoveTrackAsync(Guid trackId, int newIndex, ProjectDocument expectedDocument)
+    {
+        return RunCommandAsync(() =>
+        {
+            if (!ReferenceEquals(expectedDocument, editor.Snapshot))
+            {
+                return Task.CompletedTask;
+            }
+
+            return EditAsync(() =>
+            {
+                if (ReferenceEquals(expectedDocument, editor.Snapshot))
+                {
+                    editor.MoveTrack(trackId, newIndex);
+                }
+            });
+        });
+    }
+
+    internal Task CommitClipMoveAsync(Guid clipId, Guid trackId, MediaTime start, MediaTime end,
+        TimelineEditMode mode, bool move, ProjectDocument? expectedDocument = null)
+    {
+        return RunCommandAsync(() =>
+        {
+            if (expectedDocument is not null && !ReferenceEquals(expectedDocument, editor.Snapshot))
+            {
+                return Task.CompletedTask;
+            }
+
+            return EditAsync(() =>
+            {
+                if (expectedDocument is not null && !ReferenceEquals(expectedDocument, editor.Snapshot))
+                {
+                    return;
+                }
+
+                editor.MoveClip(clipId, trackId, start, end, mode, move);
+                currentTrackId = trackId;
+                SelectLayer(clipId, [clipId]);
+            });
+        });
     }
 }

@@ -19,7 +19,7 @@ public sealed class EffectCanvasPresentationUiTests
     [AvaloniaTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task VideoEditingShowsTheSubtitleAnchorInItsActualParentSpace(bool grouped)
+    public async Task VideoEditingShowsTheProjectAnchorForTransformedSubtitleClips(bool transformed)
     {
         using var canvas = new EffectCanvasControl();
         var cue = new SubtitleLine
@@ -31,9 +31,12 @@ public sealed class EffectCanvasPresentationUiTests
                 Position = new() { Anchor = new(0.25, 0.25), Pivot = new(0.5, 0.5), Offset = new(50, 0) }
             }
         };
-        var layer = new ProjectLayer { Kind = LayerKind.SUBTITLE, SubtitleId = cue.Id, End = cue.End };
-        var parent = new ProjectLayer { End = cue.End, Transform = new(40, 10, ScaleX: 2, ScaleY: 2), Children = [layer] };
-        var document = new ProjectDocument { Width = 400, Height = 400, Subtitles = [cue], Layers = grouped ? [parent] : [layer] };
+        var layer = new ProjectLayer
+        {
+            Kind = LayerKind.SUBTITLE, SubtitleId = cue.Id, End = cue.End,
+            Transform = transformed ? new(40, 10, ScaleX: 2, ScaleY: 2) : new()
+        };
+        var document = new ProjectDocument { Width = 400, Height = 400, Subtitles = [cue], Layers = [layer] };
         ProjectValidator.Validate(document);
         canvas.SetScene(document, layer, MediaTime.Zero);
         var window = new Window { Width = 424, Height = 424, Content = canvas };
@@ -42,12 +45,12 @@ public sealed class EffectCanvasPresentationUiTests
         {
             using var pixels = await CaptureAsync(window, canvas);
             var board = canvas.ProjectRectangle;
-            var anchor = grouped ? new Point(240, 210) : new Point(100, 100);
+            var anchor = new Point(100, 100);
             var x = (int)Math.Round(board.X + anchor.X / document.Width * board.Width);
             var y = (int)Math.Round(board.Y + anchor.Y / document.Height * board.Height);
             var marker = pixels.GetPixel(x, y);
             Assert.True(marker.Red > 200 && marker.Green > 150 && marker.Blue < 80,
-                $"The gold anchor marker must use the subtitle's parent transform, got {marker} at {x},{y}.");
+                $"The gold anchor marker must use the project anchor coordinates, got {marker} at {x},{y}.");
             Assert.Same(cue, document.Subtitles[0]);
             Assert.Equal(new ScenePoint(50, 0), cue.Style.Position!.Offset);
         }
@@ -278,15 +281,15 @@ public sealed class EffectCanvasPresentationUiTests
     }
 
     [AvaloniaFact]
-    public async Task PointerDragUsesActualParentRotationAndCommitsOnceAtRelease()
+    public async Task PointerDragPreservesTheRotatedScaledClipAndCommitsOnceAtRelease()
     {
         using var canvas = new EffectCanvasControl();
         var child = new ProjectLayer
         {
-            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20), Transform = new(20, 10)
+            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20),
+            Transform = new(80, 140, ScaleX: 2, ScaleY: 2, Rotation: 90)
         };
-        var group = new ProjectLayer { Transform = new(100, 100, ScaleX: 2, ScaleY: 2, Rotation: 90), Children = [child] };
-        canvas.SetScene(new() { Width = 600, Height = 400, Layers = [group] }, child, new(0));
+        canvas.SetScene(new() { Width = 600, Height = 400, Layers = [child] }, child, new(0));
         var commits = new List<CanvasLayerEditEventArgs>();
         canvas.LayerEdited += (_, e) => commits.Add(e);
         var window = new Window { Width = 624, Height = 424, Content = canvas };
@@ -296,7 +299,7 @@ public sealed class EffectCanvasPresentationUiTests
             using var pixels = await CaptureAsync(window, canvas);
             var board = canvas.ProjectRectangle;
             var scale = board.Width / 600;
-            var origin = new Point(board.X + 80 * scale, board.Y + 140 * scale);
+            var origin = new Point(board.X + 60 * scale, board.Y + 180 * scale);
             var delta = new Vector(40 * scale, 0);
             Assert.Same(canvas, window.InputHitTest(origin));
             window.MouseDown(origin, MouseButton.Left);
@@ -306,8 +309,9 @@ public sealed class EffectCanvasPresentationUiTests
             window.MouseUp(origin + delta, MouseButton.Left);
             var edit = Assert.Single(commits);
             Assert.Equal(child.Id, edit.LayerId);
-            Assert.Equal(20, edit.Transform.X, 5);
-            Assert.Equal(-10, edit.Transform.Y, 5);
+            Assert.Equal(120, edit.Transform.X, 5);
+            Assert.Equal(140, edit.Transform.Y, 5);
+            Assert.Equal(child.Transform with { X = edit.Transform.X, Y = edit.Transform.Y }, edit.Transform);
             Assert.False(canvas.HasActiveDrag);
         }
         finally
@@ -355,8 +359,12 @@ public sealed class EffectCanvasPresentationUiTests
             Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 80, 40),
             End = new(2), Transform = new(100, 100), Fill = new(0, 0, 1)
         };
-        var second = first with { Id = Guid.NewGuid(), Transform = new(240, 100), Fill = new(1, 0, 0) };
-        var document = new ProjectDocument { Width = 400, Height = 400, Layers = [first, second] };
+        var secondTrack = new ProjectTrack { Name = "Second shape" };
+        var second = first with { Id = Guid.NewGuid(), TrackId = secondTrack.Id, Transform = new(240, 100), Fill = new(1, 0, 0) };
+        var document = new ProjectDocument
+        {
+            Width = 400, Height = 400, Tracks = [ProjectTrack.Default, secondTrack], Layers = [first, second]
+        };
         canvas.SetScene(document, first, first.End, editorPose: true);
         var window = new Window { Width = 400, Height = 400, Content = canvas };
         window.Show();

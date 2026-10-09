@@ -30,7 +30,7 @@ public sealed class TimelineSoloAlignmentUiTests
         using var environment = new UiTestEnvironment();
         Localization.SetLanguage(language);
         var document = new ProjectDocument();
-        var trackId = document.SubtitleTracks[0].Id;
+        var trackId = document.Tracks[0].Id;
         using var timeline = new SubtitleTimelineControl
         {
             Width = 520, Height = 180,
@@ -86,7 +86,7 @@ public sealed class TimelineSoloAlignmentUiTests
     {
         using var environment = new UiTestEnvironment();
         var document = WithStyleBadge(new());
-        var trackId = document.SubtitleTracks[0].Id;
+        var trackId = document.Tracks[0].Id;
         using var timeline = new SubtitleTimelineControl();
         timeline.SetDocument(document, null, null);
         timeline.SoloTrackId = active ? trackId : null;
@@ -114,7 +114,7 @@ public sealed class TimelineSoloAlignmentUiTests
     {
         using var environment = new UiTestEnvironment();
         var document = new ProjectDocument();
-        var trackId = document.SubtitleTracks[0].Id;
+        var trackId = document.Tracks[0].Id;
         using var timeline = new SubtitleTimelineControl();
         timeline.SetDocument(document, null, null);
         timeline.SoloTrackId = active ? trackId : null;
@@ -159,10 +159,10 @@ public sealed class TimelineSoloAlignmentUiTests
 
     private static ProjectDocument WithStyleBadge(ProjectDocument document)
     {
-        var track = document.SubtitleTracks[0];
+        var track = document.Tracks[0];
         return document with
         {
-            SubtitleTracks = document.SubtitleTracks.SetItem(0, track with
+            Tracks = document.Tracks.SetItem(0, track with
             {
                 StylePresetId = Guid.NewGuid(), StylePresetName = "Style 中文 ABC 123", DefaultStyle = new()
             })

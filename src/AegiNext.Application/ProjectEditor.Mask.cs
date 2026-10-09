@@ -69,14 +69,14 @@ public sealed partial class ProjectEditor
             return;
         }
 
-        var originals = EnumerateMaskLayers(previous.Layers)
+        var originals = previous.Layers
             .Where(ClipMaskAnimation.IsTopologyLocked).ToDictionary(layer => layer.Id);
         if (originals.Count == 0)
         {
             return;
         }
 
-        foreach (var layer in EnumerateMaskLayers(current.Layers))
+        foreach (var layer in current.Layers)
         {
             if (originals.TryGetValue(layer.Id, out var original) && ClipMaskAnimation.IsTopologyLocked(layer) &&
                 !ClipMaskAnimation.HasSameTopology(original.Mask, layer.Mask))
@@ -86,15 +86,4 @@ public sealed partial class ProjectEditor
         }
     }
 
-    private static IEnumerable<ProjectLayer> EnumerateMaskLayers(ImmutableArray<ProjectLayer> layers)
-    {
-        foreach (var layer in layers)
-        {
-            yield return layer;
-            foreach (var child in EnumerateMaskLayers(layer.Children))
-            {
-                yield return child;
-            }
-        }
-    }
 }

@@ -23,14 +23,14 @@ internal static class LegacyProjectJsonFixture
     {
         root["version"] = version;
         LegacySubtitleMarginsJsonFixture.DowngradeProject(root);
-        DowngradeTracks(root);
+        DowngradeAnimationTracks(root);
         foreach (var preset in root["presets"]!.AsArray().OfType<JsonObject>())
         {
             preset["mask"] = null;
         }
     }
 
-    private static void DowngradeTracks(JsonNode? node)
+    private static void DowngradeAnimationTracks(JsonNode? node)
     {
         if (node is JsonObject value)
         {
@@ -41,14 +41,14 @@ internal static class LegacyProjectJsonFixture
             }
             foreach (var property in value)
             {
-                DowngradeTracks(property.Value);
+                DowngradeAnimationTracks(property.Value);
             }
         }
         else if (node is JsonArray values)
         {
             foreach (var item in values)
             {
-                DowngradeTracks(item);
+                DowngradeAnimationTracks(item);
             }
         }
     }

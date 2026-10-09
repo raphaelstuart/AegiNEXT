@@ -88,7 +88,7 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
             if (SetProperty(ref document, value))
             {
                 ValidateTrackSoloDocument(value);
-                documentDuration = Math.Max(1, Flatten(value.Layers).Select(layer => Seconds(layer.End))
+                documentDuration = Math.Max(1, value.Layers.Select(layer => Seconds(layer.End))
                     .Concat(value.Subtitles.Select(cue => Seconds(cue.End))).DefaultIfEmpty(1).Max());
                 OnPropertyChanged(nameof(FullDuration));
                 RefreshTrackCommands();
@@ -156,14 +156,14 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
     public StylePresetListItem[] StylePresets => session.StyleLibrary.Snapshot.Presets
         .Select(preset => new StylePresetListItem(preset.Id, preset.Name)).ToArray();
     public bool CanDeleteTrack => !session.IsClosing && !session.IsProjectBusy && SelectedTrackId is { } id &&
-        Document.SubtitleTracks.Any(track => track.Id == id);
+        Document.Tracks.Any(track => track.Id == id);
     public bool CanMoveTrackUp => SelectedTrackIndex > 0;
-    public bool CanMoveTrackDown => SelectedTrackIndex >= 0 && SelectedTrackIndex < Document.SubtitleTracks.Length - 1;
+    public bool CanMoveTrackDown => SelectedTrackIndex >= 0 && SelectedTrackIndex < Document.Tracks.Length - 1;
     public bool IsRenamingTrack => renamingTrackId.HasValue;
     public bool CanConfirmTrackRename => IsRenamingTrack && !string.IsNullOrWhiteSpace(TrackNameDraft) &&
         TrackNameDraft.Length <= 128 && !TrackNameDraft.Any(char.IsControl);
     private int SelectedTrackIndex => SelectedTrackId is { } id
-        ? Document.SubtitleTracks.IndexOf(Document.SubtitleTracks.FirstOrDefault(track => track.Id == id)!) : -1;
+        ? Document.Tracks.IndexOf(Document.Tracks.FirstOrDefault(track => track.Id == id)!) : -1;
 
     public string TrackNameDraft
     {
@@ -183,7 +183,7 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
         if (SelectedTrackId is { } id && session.SelectTrack(id))
         {
             renamingTrackId = id;
-            TrackNameDraft = Document.SubtitleTracks.Single(track => track.Id == id).Name;
+            TrackNameDraft = Document.Tracks.Single(track => track.Id == id).Name;
             OnPropertyChanged(nameof(IsRenamingTrack));
             ConfirmTrackRenameCommand.NotifyCanExecuteChanged();
         }
@@ -198,7 +198,7 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
 
         var name = TrackNameDraft;
         await session.RunCommandAsync(() => session.EditAsync(() => session.RenameSubtitleTrack(id, name)));
-        if (session.DocumentSnapshot.SubtitleTracks.FirstOrDefault(track => track.Id == id)?.Name == name)
+        if (session.DocumentSnapshot.Tracks.FirstOrDefault(track => track.Id == id)?.Name == name)
         {
             CancelTrackRename();
         }
@@ -221,7 +221,7 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
         OnPropertyChanged(nameof(CanDeleteTrack));
         OnPropertyChanged(nameof(CanMoveTrackUp));
         OnPropertyChanged(nameof(CanMoveTrackDown));
-        if (renamingTrackId is { } id && !Document.SubtitleTracks.Any(track => track.Id == id))
+        if (renamingTrackId is { } id && !Document.Tracks.Any(track => track.Id == id))
         {
             CancelTrackRename();
         }
@@ -496,32 +496,21 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
     public Task SeekAsync(MediaTime time) => session.RunCommandAsync(() => session.SeekProjectTimeAsync(time));
     /// <summary>同步字幕选择。</summary>
     public void SelectCue(Guid id) => session.SelectCue(id);
-    /// <summary>同步非字幕片段对应的图层选择。</summary>
+    /// <summary>同步非字幕片段选择。</summary>
     public void SelectLayer(Guid id) => session.SelectLayer(id, [id]);
     /// <summary>将时间线的主层和多选集合同步到同一会话选择。</summary>
     public bool SelectLayers(TimelineSelectionEventArgs value) => session.SelectTimelineLayers(value);
-    /// <summary>切换当前字幕轨道，不改变工程合成顺序。</summary>
+    /// <summary>切换当前轨道，保留工程合成顺序。</summary>
     public bool SelectTrack(Guid id) => session.SelectTrack(id);
     /// <summary>一次完成的时间线手势对应一次工程事务。</summary>
-    public Task CommitTimingAsync(TimelineTimingEventArgs value)
-    {
-        if (value.SubtitleId is { } cueId && value.TrackId is { } trackId)
-        {
-            return session.CommitSubtitleClipMoveAsync(cueId, trackId, value.Start, value.End, value.Mode, value.IsMove);
-        }
+    public Task CommitTimingAsync(TimelineTimingEventArgs value) => value.TrackId is { } trackId
+        ? session.CommitClipMoveAsync(value.Id, trackId, value.Start, value.End, value.Mode, value.IsMove, value.ExpectedDocument)
+        : Task.CompletedTask;
 
-        return session.RunCommandAsync(() => session.EditAsync(() =>
-        {
-            if (value.IsMove)
-            {
-                session.Editor.ShiftLayer(value.Id, value.Start - value.OriginalStart);
-            }
-            else
-            {
-                session.Editor.SetLayerTiming(value.Id, value.Start, value.End, value.Mode);
-            }
-        }));
-    }
+    /// <summary>按手势冻结的工程快照提交一次轨道重排。</summary>
+    public Task CommitTrackReorderAsync(TimelineTrackReorderEventArgs value) =>
+        session.MoveTrackAsync(value.TrackId, value.Index, value.ExpectedDocument);
+
     /// <summary>按经典鼠标输入修改当前主选字幕的单个时间边界。</summary>
     public Task CommitClassicTimingAsync(TimelineClassicTimingEventArgs value) => session.CommitClassicTimingAsync(value);
     /// <summary>选择关键帧并同步属性检查器。</summary>
@@ -610,23 +599,11 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
     private bool HasAnimationTracks(IReadOnlyCollection<Guid> ids, AnimationProperty? property = null)
     {
         var selected = ids.ToHashSet();
-        return Flatten(Document.Layers).Any(layer => selected.Contains(layer.Id) &&
+        return Document.Layers.Any(layer => selected.Contains(layer.Id) &&
             layer.Tracks.Any(track => property is null || track.Property == property));
     }
     /// <summary>视口尺寸改变后重新计算滚动范围。</summary>
     public void RefreshViewport() => session.Tick();
-
-    private static IEnumerable<ProjectLayer> Flatten(IEnumerable<ProjectLayer> layers)
-    {
-        foreach (var layer in layers)
-        {
-            yield return layer;
-            foreach (var child in Flatten(layer.Children))
-            {
-                yield return child;
-            }
-        }
-    }
 
     private static double Seconds(MediaTime value) => (double)value.Numerator / value.Denominator;
 }

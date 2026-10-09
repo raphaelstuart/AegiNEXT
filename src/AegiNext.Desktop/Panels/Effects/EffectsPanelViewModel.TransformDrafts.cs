@@ -75,7 +75,7 @@ internal sealed partial class EffectsPanelViewModel
         {
             throw new InvalidOperationException(Localization.Get("Workbench.SubtitleDraftConflict"));
         }
-        var layer = WorkbenchSession.Flatten(document.Layers).Single(layer => layer.Id == operationLayer);
+        var layer = document.Layers.Single(layer => layer.Id == operationLayer);
         var track = layer.Tracks.Single(track => track.Target == operationTarget);
         var operation = track.Transforms.Single(operation => operation.Id == operationIdentity);
         double Read(string key, NumericValueDraft field)

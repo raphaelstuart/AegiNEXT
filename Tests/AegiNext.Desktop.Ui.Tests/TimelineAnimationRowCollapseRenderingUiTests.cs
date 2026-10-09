@@ -32,7 +32,7 @@ public sealed class TimelineAnimationRowCollapseRenderingUiTests
         };
         var document = new ProjectDocument { Subtitles = [cue], Layers = [layer] };
         var editor = new ProjectEditor(document);
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, cue.TrackId, AnimationProperty.MASK_NODE_POSITION);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.MASK_NODE_POSITION);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 80, IsSnapEnabled = false };
         timeline.SetDocument(document, cue.Id, layer);
         AcceptCollapseRequests(timeline);
@@ -122,7 +122,7 @@ public sealed class TimelineAnimationRowCollapseRenderingUiTests
         var layer = CreateMaskedLayer(cue, operationNode, keyNode) with { Tracks = [operationTrack, keyTrack] };
         var document = new ProjectDocument { Subtitles = [cue], Layers = [layer] };
         var editor = new ProjectEditor(document);
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, cue.TrackId, AnimationProperty.MASK_NODE_POSITION);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.MASK_NODE_POSITION);
         using var timeline = new SubtitleTimelineControl
         {
             PixelsPerSecond = 80, IsSnapEnabled = false, SelectedMaskNodeId = operationNode.Id, EffectTarget = operationTarget
@@ -213,7 +213,7 @@ public sealed class TimelineAnimationRowCollapseRenderingUiTests
             Name = "动画 Line ABC 123", Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20), Start = new(1), End = new(5),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(1), 0.25), new(new(3), 0.75)])]
         };
-        var rowId = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, layer.Id, AnimationProperty.OPACITY);
+        var rowId = new TimelineAnimationRowId(TimelineRowScope.TRACK, layer.TrackId, AnimationProperty.OPACITY);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 80, IsSnapEnabled = false };
         timeline.SetDocument(new() { Layers = [layer] }, null, layer);
         AcceptCollapseRequests(timeline);

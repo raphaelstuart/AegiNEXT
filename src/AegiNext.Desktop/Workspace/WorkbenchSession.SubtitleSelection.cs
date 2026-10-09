@@ -18,7 +18,7 @@ internal sealed partial class WorkbenchSession
         }
 
         var requested = ids.ToHashSet();
-        var selected = editor.Snapshot.Subtitles.Where(line => requested.Contains(line.Id) && line.TrackId == CurrentTrackId)
+        var selected = editor.Snapshot.Subtitles.Where(line => requested.Contains(line.Id) && ClipIndex.GetSubtitleTrackId(line.Id) == CurrentTrackId)
             .OrderBy(line => line.Start).Select(line => line.Id).ToImmutableArray();
         primaryId = primaryId is { } candidate && selected.Contains(candidate) ? candidate : selected.IsEmpty ? null : selected[0];
         if (primaryId == SelectedCueId && selectedSubtitleIds.SequenceEqual(selected))
@@ -38,7 +38,7 @@ internal sealed partial class WorkbenchSession
         selectedSubtitleIds = selected;
         subtitleSelectionPrimaryId = primaryId;
         SelectedCueId = primaryId;
-        var layers = Flatten(editor.Snapshot.Layers).ToArray();
+        var layers = editor.Snapshot.Layers.ToArray();
         SelectedLayerId = layers.FirstOrDefault(layer => layer.SubtitleId == primaryId && primaryId is not null)?.Id;
         ViewModel.Effects.SelectedIds = layers.Where(layer => layer.SubtitleId is { } id && selected.Contains(id))
             .Select(layer => layer.Id).ToArray();
@@ -79,7 +79,7 @@ internal sealed partial class WorkbenchSession
             ResetSubtitleSelection(SelectedCueId);
         }
 
-        var surviving = editor.Snapshot.Subtitles.Where(line => line.TrackId == CurrentTrackId && selectedSubtitleIds.Contains(line.Id))
+        var surviving = editor.Snapshot.Subtitles.Where(line => ClipIndex.GetSubtitleTrackId(line.Id) == CurrentTrackId && selectedSubtitleIds.Contains(line.Id))
             .OrderBy(line => line.Start).Select(line => line.Id).ToImmutableArray();
         if (SelectedCueId is { } primary && !surviving.Contains(primary))
         {
@@ -101,9 +101,9 @@ internal sealed partial class WorkbenchSession
 
         var selectedLayers = ViewModel.Effects.SelectedIds.ToHashSet();
         selectedLayers.Add(SelectedLayer!.Id);
-        var selected = Flatten(editor.Snapshot.Layers).Where(layer => selectedLayers.Contains(layer.Id))
+        var selected = editor.Snapshot.Layers.Where(layer => selectedLayers.Contains(layer.Id))
             .Where(layer => layer.SubtitleId is not null).Select(layer => layer.SubtitleId!.Value).ToHashSet();
-        selectedSubtitleIds = editor.Snapshot.Subtitles.Where(line => line.TrackId == primary.TrackId && selected.Contains(line.Id))
+        selectedSubtitleIds = editor.Snapshot.Subtitles.Where(line => ClipIndex.GetSubtitleTrackId(line.Id) == ClipIndex.GetSubtitleTrackId(primary.Id) && selected.Contains(line.Id))
             .OrderBy(line => line.Start).Select(line => line.Id).ToImmutableArray();
         subtitleSelectionPrimaryId = primary.Id;
     }
@@ -111,7 +111,7 @@ internal sealed partial class WorkbenchSession
     private bool CanMergeSubtitleSelection()
     {
         return SelectedCue is { } cue && (selectedSubtitleIds.Length > 1 || editor.Snapshot.Subtitles.Any(line =>
-            line.TrackId == cue.TrackId && line.Start > cue.Start));
+            ClipIndex.GetSubtitleTrackId(line.Id) == ClipIndex.GetSubtitleTrackId(cue.Id) && line.Start > cue.Start));
     }
 
     private Guid[] MergeSubtitleTargets()
@@ -126,7 +126,7 @@ internal sealed partial class WorkbenchSession
             return selectedSubtitleIds.ToArray();
         }
 
-        var next = editor.Snapshot.Subtitles.Where(line => line.TrackId == cue.TrackId && line.Start > cue.Start)
+        var next = editor.Snapshot.Subtitles.Where(line => ClipIndex.GetSubtitleTrackId(line.Id) == ClipIndex.GetSubtitleTrackId(cue.Id) && line.Start > cue.Start)
             .OrderBy(line => line.Start).FirstOrDefault();
         return next is null ? [] : [cue.Id, next.Id];
     }

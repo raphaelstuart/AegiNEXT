@@ -204,7 +204,7 @@ internal sealed partial class WorkbenchSession
                     if (TryCommitDrafts() && SelectedCue is not null)
                     {
                         var subtitleIds = SelectedSubtitleIds.ToHashSet();
-                        var layerIds = Flatten(editor.Snapshot.Layers)
+                        var layerIds = editor.Snapshot.Layers
                             .Where(layer => layer.SubtitleId is { } subtitleId && subtitleIds.Contains(subtitleId))
                             .Select(layer => layer.Id).ToArray();
                         editor.RemoveClips(layerIds);

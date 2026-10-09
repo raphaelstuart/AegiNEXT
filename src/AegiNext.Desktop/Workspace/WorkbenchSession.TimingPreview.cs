@@ -38,12 +38,12 @@ internal sealed partial class WorkbenchSession
             timingBoundaryTrackId != trackId || timingBoundaryStart != start)
         {
             MediaTime? nextStart = null;
-            foreach (var line in source.Subtitles)
+            foreach (var clip in ClipIndex.GetTrackClips(trackId))
             {
-                if (line.Id != cueId && line.TrackId == trackId && line.Start > start &&
-                    (nextStart is null || line.Start < nextStart.Value))
+                if (clip.SubtitleId != cueId && clip.Start > start &&
+                    (nextStart is null || clip.Start < nextStart.Value))
                 {
-                    nextStart = line.Start;
+                    nextStart = clip.Start;
                 }
             }
             timingBoundarySource = source;
@@ -182,11 +182,10 @@ internal sealed partial class WorkbenchSession
         for (var index = 0; index < layers.Length; index++)
         {
             var layer = layers[index];
-            var children = OverlayTimingPreviewLayers(layer.Children, preview);
             var end = layer.SubtitleId == preview.CueId ? preview.End : layer.End;
-            if (layer.End != end || children != layer.Children)
+            if (layer.End != end)
             {
-                result = result.SetItem(index, layer with { End = end, Children = children });
+                result = result.SetItem(index, layer with { End = end });
             }
         }
 
@@ -202,7 +201,7 @@ internal sealed partial class WorkbenchSession
         }
 
         var source = editor.Snapshot;
-        if (source.Subtitles.Any(line => line.TrackId == trackId && line.Start <= start && start < line.End))
+        if (ClipIndex.GetTrackClips(trackId).Any(clip => clip.Start <= start && start < clip.End))
         {
             throw new InvalidOperationException(Localization.Get("Workbench.TimelineClipCollision"));
         }
@@ -257,7 +256,7 @@ internal sealed partial class WorkbenchSession
             try
             {
                 editor.Apply("Create subtitle clips", _ => ProjectEditingOperations.CreateSubtitleClips(prepared.Project,
-                    [new() { Id = entered.CueId, TrackId = trackId, Start = start, End = initialEnd, Text = string.Empty,
+                    [new() { Id = entered.CueId, Start = start, End = initialEnd, Text = string.Empty,
                         StyleName = prepared.StyleName, StylePresetId = prepared.StylePresetId }],
                     trackId, prepared.Style));
             }

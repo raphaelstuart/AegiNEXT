@@ -7,18 +7,18 @@ namespace AegiNext.Rendering.Tests;
 public sealed class ProjectRenderSurfacePoolTests
 {
     [Fact]
-    public void RecursiveGroupsKeepIndependentSurfacesAndMatchFreshAllocationPixels()
+    public void FlatClipsReuseSequentialSurfacesAndMatchFreshAllocationPixels()
     {
-        var document = NestedDocument();
+        var document = MixedClipDocument();
         using var renderer = Renderer();
         using var fresh = Renderer(0);
         using var actual = renderer.Render(document, MediaTime.Zero);
         using var expected = fresh.Render(document, MediaTime.Zero);
         Assert.Equal(Pixels(expected), Pixels(actual));
-        Assert.Equal(3, renderer.RenderSurfaceStatistics.Allocations);
-        Assert.Equal(3, renderer.RenderSurfaceStatistics.PeakActiveLeases);
+        Assert.Equal(1, renderer.RenderSurfaceStatistics.Allocations);
+        Assert.Equal(1, renderer.RenderSurfaceStatistics.PeakActiveLeases);
         Assert.Equal(0, renderer.RenderSurfaceStatistics.ActiveLeases);
-        Assert.Equal(3, renderer.RenderSurfaceStatistics.RetainedSurfaces);
+        Assert.Equal(1, renderer.RenderSurfaceStatistics.RetainedSurfaces);
         var allocations = renderer.RenderSurfaceStatistics.Allocations;
         for (var frame = 1; frame <= 3; frame++)
         {
@@ -28,8 +28,8 @@ public sealed class ProjectRenderSurfacePoolTests
         }
 
         Assert.Equal(allocations, renderer.RenderSurfaceStatistics.Allocations);
-        Assert.True(renderer.RenderSurfaceStatistics.Reuses >= 13);
-        Assert.Equal(3L * document.Width * document.Height * 8, renderer.RenderSurfaceStatistics.RetainedBytes);
+        Assert.True(renderer.RenderSurfaceStatistics.Reuses >= 7);
+        Assert.Equal((long)document.Width * document.Height * 8, renderer.RenderSurfaceStatistics.RetainedBytes);
     }
 
     [Fact]
@@ -69,28 +69,28 @@ public sealed class ProjectRenderSurfacePoolTests
     }
 
     [Fact]
-    public void ResourceFailureReturnsEveryRecursiveLeaseAndTheNextFrameMatchesFreshRendering()
+    public void ResourceFailureReturnsEveryClipLeaseAndTheNextFrameMatchesFreshRendering()
     {
         var resolver = new FailOnceProjectAssetResolver(new GeneratedImageProjectAssetResolver()) { FailNextOpen = true };
-        var document = ImageGroupDocument();
+        var document = ImageDocument();
         using var renderer = new ProjectSceneRenderer(resolver);
         using var fresh = new ProjectSceneRenderer(new GeneratedImageProjectAssetResolver(), null, 0);
         Assert.Throws<IOException>(() => renderer.Render(document, MediaTime.Zero));
         Assert.Equal(0, renderer.RenderSurfaceStatistics.ActiveLeases);
-        Assert.Equal(2, renderer.RenderSurfaceStatistics.Allocations);
+        Assert.Equal(1, renderer.RenderSurfaceStatistics.Allocations);
         using var actual = renderer.Render(document, MediaTime.Zero);
         using var expected = fresh.Render(document, MediaTime.Zero);
         Assert.Equal(Pixels(expected), Pixels(actual));
-        Assert.Equal(2, renderer.RenderSurfaceStatistics.Allocations);
-        Assert.True(renderer.RenderSurfaceStatistics.Reuses >= 4);
+        Assert.Equal(1, renderer.RenderSurfaceStatistics.Allocations);
+        Assert.True(renderer.RenderSurfaceStatistics.Reuses >= 3);
     }
 
     [Fact]
-    public void ResourceCancellationReturnsEveryRecursiveLeaseAndPreviewRecovers()
+    public void ResourceCancellationReturnsEveryClipLeaseAndPreviewRecovers()
     {
         using var cancellation = new CancellationTokenSource();
         var resolver = new CancellingProjectAssetResolver(new GeneratedImageProjectAssetResolver(), cancellation);
-        var document = ImageGroupDocument();
+        var document = ImageDocument();
         using var renderer = new ProjectSceneRenderer(resolver);
         using var fresh = new ProjectSceneRenderer(new GeneratedImageProjectAssetResolver(), null, 0);
         Assert.Throws<OperationCanceledException>(() =>
@@ -106,21 +106,21 @@ public sealed class ProjectRenderSurfacePoolTests
     }
 
     [Fact]
-    public void BoundedRendererReleasesOverflowWithoutChangingRecursivePixels()
+    public void BoundedRendererReleasesOverflowWithoutChangingClipPixels()
     {
-        var document = NestedDocument();
+        var document = MixedClipDocument();
         var bytes = (long)document.Width * document.Height * 8;
-        using var renderer = Renderer(bytes);
+        using var renderer = Renderer(bytes / 2);
         using var fresh = Renderer(0);
         using var actual = renderer.Render(document, MediaTime.Zero);
         using var expected = fresh.Render(document, MediaTime.Zero);
         Assert.Equal(Pixels(expected), Pixels(actual));
-        Assert.Equal(bytes, renderer.RenderSurfaceStatistics.RetainedBytes);
+        Assert.Equal(0, renderer.RenderSurfaceStatistics.RetainedBytes);
         Assert.Equal(2, renderer.RenderSurfaceStatistics.ReleasedSurfaces);
         renderer.RenderInto(document, new(1, 30), actual);
         fresh.RenderInto(document, new(1, 30), expected);
         Assert.Equal(Pixels(expected), Pixels(actual));
-        Assert.Equal(bytes, renderer.RenderSurfaceStatistics.RetainedBytes);
+        Assert.Equal(0, renderer.RenderSurfaceStatistics.RetainedBytes);
         Assert.Equal(4, renderer.RenderSurfaceStatistics.ReleasedSurfaces);
         Assert.Equal(0, renderer.RenderSurfaceStatistics.ActiveLeases);
     }
@@ -128,7 +128,7 @@ public sealed class ProjectRenderSurfacePoolTests
     [Fact]
     public void RendererDisposalReleasesIdleSurfacesAndLeavesCallerOwnedResultsAvailable()
     {
-        var document = NestedDocument();
+        var document = MixedClipDocument();
         var renderer = Renderer();
         using var result = renderer.Render(document, MediaTime.Zero);
         var expected = Pixels(result);
@@ -147,39 +147,41 @@ public sealed class ProjectRenderSurfacePoolTests
         return new(new DirectoryProjectAssetResolver(AppContext.BaseDirectory), null, maximumRetainedBytes);
     }
 
-    private static ProjectDocument NestedDocument()
+    private static ProjectDocument MixedClipDocument()
     {
+        var front = new ProjectTrack { Name = "Foreground" };
         return new()
         {
             Width = 32, Height = 24, ReferenceWhiteNits = 406,
-            Layers = [new()
-            {
-                Kind = LayerKind.GROUP, Opacity = 0.75, Transform = new(3, 2), Children = [new()
+            Tracks = [front, ProjectTrack.Default],
+            Layers =
+            [
+                new()
                 {
-                    Kind = LayerKind.GROUP, Opacity = 0.5, Transform = new(4, 3), Children =
-                    [
-                        new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 8, 8), Fill = new(4, 2, 0.5, 0.75), Blur = 0.5 },
-                        new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 5, 6), Transform = new(3, 2),
-                            Fill = new(0, 1, 0, 0.5), Blend = BlendMode.SCREEN }
-                    ]
-                }]
-            }]
+                    Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 8, 8), Transform = new(7, 5),
+                    Opacity = 0.375, Fill = new(4, 2, 0.5, 0.75), Blur = 0.5
+                },
+                new()
+                {
+                    TrackId = front.Id, Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 5, 6),
+                    Transform = new(10, 7), Fill = new(0, 1, 0, 0.5), Blend = BlendMode.SCREEN
+                }
+            ]
         };
     }
 
-    private static ProjectDocument ImageGroupDocument()
+    private static ProjectDocument ImageDocument()
     {
         var image = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.IMAGE, "generated-lease.png");
+        var front = new ProjectTrack { Name = "Image" };
         return new()
         {
-            Width = 128, Height = 64, Assets = [image], Layers = [new()
-            {
-                Kind = LayerKind.GROUP, Children =
-                [
-                    new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 128, 64), Fill = new(0.5, 0.25, 0, 0.5) },
-                    new() { Kind = LayerKind.IMAGE, Image = new(image.Id, 24, 12), Transform = new(4, 2) }
-                ]
-            }]
+            Width = 128, Height = 64, Assets = [image], Tracks = [front, ProjectTrack.Default],
+            Layers =
+            [
+                new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 128, 64), Fill = new(0.5, 0.25, 0, 0.5) },
+                new() { TrackId = front.Id, Kind = LayerKind.IMAGE, Image = new(image.Id, 24, 12), Transform = new(4, 2) }
+            ]
         };
     }
 

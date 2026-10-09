@@ -99,7 +99,7 @@ internal sealed class EffectScriptLibraryCoordinator(WorkbenchSession session, I
             return Task.CompletedTask;
         }
         var selected = session.TimelineClipIds().ToHashSet();
-        var layerIds = WorkbenchSession.Flatten(session.Editor.Snapshot.Layers)
+        var layerIds = session.Editor.Snapshot.Layers
             .Where(layer => layer.SubtitleId is not null && selected.Contains(layer.Id)).Select(layer => layer.Id).ToArray();
         if (layerIds.Length == 0)
         {

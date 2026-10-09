@@ -14,14 +14,14 @@ public sealed class TrackDeletionWorkflowTests
     [InlineData(true, true)]
     public async Task OnlyPopulatedTracksRequireConfirmationAndDeletionIsOneUndo(bool populated, bool accepted)
     {
-        var otherTrack = new SubtitleTrack { Name = "Other" };
+        var otherTrack = new ProjectTrack { Name = "Other" };
         var line = new SubtitleLine { Start = new(0), End = new(2), Text = "Delete" };
-        var other = new SubtitleLine { Start = new(0), End = new(2), Text = "Keep", TrackId = otherTrack.Id };
+        var other = new SubtitleLine { Start = new(0), End = new(2), Text = "Keep" };
         await using var context = new WorkspaceSessionTestContext(new()
         {
-            SubtitleTracks = [SubtitleTrack.Default, otherTrack],
+            Tracks = [ProjectTrack.Default, otherTrack],
             Subtitles = populated ? [line, other] : [other],
-            Layers = populated ? [SubtitleLayer(line), SubtitleLayer(other)] : [SubtitleLayer(other)]
+            Layers = populated ? [SubtitleLayer(line), SubtitleLayer(other) with { TrackId = otherTrack.Id }] : [SubtitleLayer(other) with { TrackId = otherTrack.Id }]
         });
         await context.InitializeAsync();
         var session = context.Session;
@@ -41,7 +41,7 @@ public sealed class TrackDeletionWorkflowTests
         Assert.Null(session.LastError);
         if (populated)
         {
-            Assert.Equal(SubtitleTrack.Default.Name, context.Dialogs.DeletedTrackName);
+            Assert.Equal(ProjectTrack.Default.Name, context.Dialogs.DeletedTrackName);
             Assert.Equal(1, context.Dialogs.DeletedTrackSubtitleCount);
         }
         if (populated && !accepted)
@@ -53,7 +53,7 @@ public sealed class TrackDeletionWorkflowTests
             return;
         }
 
-        Assert.Equal(otherTrack.Id, Assert.Single(context.Editor.Snapshot.SubtitleTracks).Id);
+        Assert.Equal(otherTrack.Id, Assert.Single(context.Editor.Snapshot.Tracks).Id);
         Assert.Same(other, Assert.Single(context.Editor.Snapshot.Subtitles));
         Assert.Equal(other.Id, Assert.Single(context.Editor.Snapshot.Layers).SubtitleId);
         Assert.Null(session.SelectedCue);
@@ -79,7 +79,7 @@ public sealed class TrackDeletionWorkflowTests
 
         await session.ViewModel.Timeline.DeleteTrackCommand.ExecuteAsync(null);
 
-        Assert.Empty(context.Editor.Snapshot.SubtitleTracks);
+        Assert.Empty(context.Editor.Snapshot.Tracks);
         Assert.Null(session.CurrentTrackId);
         Assert.Null(session.ViewModel.Subtitles.SelectedTrack);
         Assert.Null(session.ViewModel.Timeline.SelectedTrackId);
@@ -96,16 +96,16 @@ public sealed class TrackDeletionWorkflowTests
         Assert.Same(empty, context.Editor.Snapshot);
         Assert.False(session.CanExecuteCommand(WorkbenchCommand.TIMING_EXIT));
         Assert.True(context.Editor.Undo());
-        Assert.Equal(SubtitleTrack.DEFAULT_TRACK_ID, session.CurrentTrackId);
+        Assert.Equal(ProjectTrack.DEFAULT_TRACK_ID, session.CurrentTrackId);
         Assert.True(context.Editor.Redo());
         Assert.Null(session.CurrentTrackId);
 
         await session.ViewModel.Timeline.AddTrackCommand.ExecuteAsync(null);
-        var track = Assert.Single(context.Editor.Snapshot.SubtitleTracks);
+        var track = Assert.Single(context.Editor.Snapshot.Tracks);
         Assert.Equal(track.Id, session.CurrentTrackId);
         Assert.True(session.CanExecuteCommand(WorkbenchCommand.ADD_SUBTITLE));
         await session.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
-        Assert.Equal(track.Id, Assert.Single(context.Editor.Snapshot.Subtitles).TrackId);
+        Assert.Equal(track.Id, Assert.Single(context.Editor.Snapshot.Layers).TrackId);
         Assert.Null(session.LastError);
     }
 
@@ -131,7 +131,7 @@ public sealed class TrackDeletionWorkflowTests
             decision.SetResult(true);
             await deletion;
             Assert.Same(changed, context.Editor.Snapshot);
-            Assert.Single(context.Editor.Snapshot.SubtitleTracks);
+            Assert.Single(context.Editor.Snapshot.Tracks);
             Assert.Single(context.Editor.Snapshot.Subtitles);
             Assert.False(context.Session.IsProjectBusy);
             Assert.Null(context.Session.LastError);
@@ -177,7 +177,7 @@ public sealed class TrackDeletionWorkflowTests
 
         await context.Session.ViewModel.Timeline.DeleteTrackCommand.ExecuteAsync(null);
 
-        Assert.Empty(context.Editor.Snapshot.SubtitleTracks);
+        Assert.Empty(context.Editor.Snapshot.Tracks);
         Assert.False(context.Session.CanExecuteCommand(WorkbenchCommand.TIMING_EXIT));
         var before = context.Editor.Snapshot;
         await context.Session.ExecuteCommandAsync(WorkbenchCommand.TIMING_EXIT);
@@ -186,30 +186,31 @@ public sealed class TrackDeletionWorkflowTests
     }
 
     [Fact]
-    public async Task ZeroTracksSupportsShapeClipboardButRejectsSubtitleClipboard()
+    public async Task DeletingTheLastMixedTrackRemovesAllClipsAndRejectsEveryClipboardKind()
     {
-        var shape = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 20, 20) };
+        var shape = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 20, 20), End = new(2) };
         await using var context = new WorkspaceSessionTestContext(new() { Layers = [shape] });
         await context.InitializeAsync();
         var session = context.Session;
-        var cue = context.Editor.AddSubtitle(new(0), new(2), "Copied subtitle");
-        await session.CopyTimelineClipsAsync(cue, [cue]);
+        var cue = context.Editor.AddSubtitle(new(3), new(5), "Copied subtitle");
+        session.SelectLayer(shape.Id, [shape.Id]);
+        await session.CopyTimelineClipsAsync(shape.Id, [shape.Id]);
         context.Dialogs.TrackDeletionChoice = true;
         await session.ViewModel.Timeline.DeleteTrackCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, context.Dialogs.DeletedTrackSubtitleCount);
+        Assert.Empty(context.Editor.Snapshot.Tracks);
+        Assert.Empty(context.Editor.Snapshot.Layers);
+        Assert.Empty(context.Editor.Snapshot.Subtitles);
+        Assert.False(session.CanCopyTimelineClips);
         Assert.False(session.CanPasteTimelineClips);
         var before = context.Editor.Snapshot;
-        await session.PasteTimelineClipsAsync(new(3));
+        await session.PasteTimelineClipsAsync(new(6));
         Assert.Same(before, context.Editor.Snapshot);
-
-        session.SelectLayer(shape.Id, [shape.Id]);
-        Assert.True(session.CanCopyTimelineClips);
-        await session.CopyTimelineClipsAsync(shape.Id, [shape.Id]);
-        Assert.True(session.CanPasteTimelineClips);
-        await session.PasteTimelineClipsAsync(new(3));
-        Assert.Empty(context.Editor.Snapshot.SubtitleTracks);
-        Assert.Empty(context.Editor.Snapshot.Subtitles);
-        Assert.Equal(2, context.Editor.Snapshot.Layers.Length);
         Assert.Null(session.LastError);
+        Assert.True(context.Editor.Undo());
+        Assert.Equal(cue, context.Editor.Snapshot.Subtitles[0].Id);
+        Assert.True(session.CanPasteTimelineClips);
     }
 
     [Theory]
@@ -217,7 +218,7 @@ public sealed class TrackDeletionWorkflowTests
     [InlineData(true)]
     public async Task ImportIntoZeroTrackProjectCreatesOnlyTheImportedTrack(bool ass)
     {
-        await using var context = new WorkspaceSessionTestContext(new() { SubtitleTracks = [] });
+        await using var context = new WorkspaceSessionTestContext(new() { Tracks = [] });
         await context.InitializeAsync();
         context.Session.SetProjectLocation(null, context.DirectoryPath);
         context.Dialogs.OpenPath = Path.Combine(context.DirectoryPath, ass ? "import.ass" : "import.srt");
@@ -230,9 +231,9 @@ public sealed class TrackDeletionWorkflowTests
         await context.Session.ExecuteCommandAsync(ass ? WorkbenchCommand.IMPORT_ASS : WorkbenchCommand.IMPORT_SUBTITLES);
 
         Assert.Null(context.Session.LastError);
-        var track = Assert.Single(context.Editor.Snapshot.SubtitleTracks);
+        var track = Assert.Single(context.Editor.Snapshot.Tracks);
         Assert.Equal("import", track.Name);
-        Assert.Equal(track.Id, Assert.Single(context.Editor.Snapshot.Subtitles).TrackId);
+        Assert.Equal(track.Id, Assert.Single(context.Editor.Snapshot.Layers).TrackId);
         Assert.Equal(track.Id, context.Session.CurrentTrackId);
         Assert.True(context.Editor.Undo());
         Assert.Same(before, context.Editor.Snapshot);
@@ -242,7 +243,7 @@ public sealed class TrackDeletionWorkflowTests
     [Fact]
     public async Task SrtImportIntoZeroTracksUsesSelectedPresetWithoutAnExtraEmptyTrack()
     {
-        await using var context = new WorkspaceSessionTestContext(new() { SubtitleTracks = [] });
+        await using var context = new WorkspaceSessionTestContext(new() { Tracks = [] });
         await context.InitializeAsync();
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "Selected", new() { FontSize = 77, Bold = true });
         await context.Session.Styles.UpsertAsync(preset);
@@ -254,7 +255,7 @@ public sealed class TrackDeletionWorkflowTests
         await context.Session.ExecuteCommandAsync(WorkbenchCommand.IMPORT_SUBTITLES);
 
         Assert.Null(context.Session.LastError);
-        Assert.Single(context.Editor.Snapshot.SubtitleTracks);
+        Assert.Single(context.Editor.Snapshot.Tracks);
         Assert.Equal(preset.Style, Assert.Single(context.Editor.Snapshot.Subtitles).Style);
     }
 

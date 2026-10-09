@@ -13,7 +13,7 @@ internal sealed partial class WorkbenchSession
 
     internal bool CanCopyTimelineClips => !closing && !IsProjectBusy && TimelineClipIds().Length > 0;
     internal bool CanPasteTimelineClips => !closing && !IsProjectBusy && timelineClipboard is { } content &&
-        content.SourceProjectId == editor.Snapshot.Id && (content.Subtitles.IsEmpty || CurrentTrackId.HasValue);
+        content.SourceProjectId == editor.Snapshot.Id && CurrentTrackId.HasValue;
 
     internal ImmutableArray<Guid> TimelineClipIds()
     {
@@ -23,7 +23,7 @@ internal sealed partial class WorkbenchSession
             selected.Add(primary);
         }
 
-        return [.. Flatten(editor.Snapshot.Layers).Where(layer => layer.Kind != LayerKind.GROUP && selected.Contains(layer.Id))
+        return [.. editor.Snapshot.Layers.Where(layer => selected.Contains(layer.Id))
             .Select(layer => layer.Id)];
     }
 
@@ -75,7 +75,7 @@ internal sealed partial class WorkbenchSession
             {
                 try
                 {
-                    if (requiresTargetTrack && !content.Subtitles.IsEmpty && targetTrackId is null)
+                    if (requiresTargetTrack && targetTrackId is null)
                     {
                         throw new InvalidOperationException(Localization.Get("Workbench.TimelinePasteFailed"));
                     }
@@ -133,24 +133,16 @@ internal sealed partial class WorkbenchSession
 
     internal static ImmutableArray<Guid> TimelineAnimationRowLayerIds(ProjectDocument source, TimelineAnimationRowId row)
     {
-        if (row.Scope == TimelineRowScope.SUBTITLE_TRACK)
+        if (row.Scope != TimelineRowScope.TRACK)
         {
-            if (!source.SubtitleTracks.Any(track => track.Id == row.OwnerId))
-            {
-                throw new KeyNotFoundException("字幕轨道不存在。");
-            }
-            var subtitles = source.Subtitles.Where(line => line.TrackId == row.OwnerId).Select(line => line.Id).ToHashSet();
-            return [.. Flatten(source.Layers).Where(layer => layer.SubtitleId is { } id && subtitles.Contains(id)).Select(layer => layer.Id)];
+            throw new ArgumentOutOfRangeException(nameof(row));
         }
-        if (row.Scope == TimelineRowScope.SCENE_LAYER)
+        if (!source.Tracks.Any(track => track.Id == row.OwnerId))
         {
-            if (!Flatten(source.Layers).Any(layer => layer.Id == row.OwnerId))
-            {
-                throw new KeyNotFoundException("图层不存在。");
-            }
-            return [row.OwnerId];
+            throw new KeyNotFoundException("轨道不存在。");
         }
-        throw new ArgumentOutOfRangeException(nameof(row));
+
+        return [.. source.Layers.Where(clip => clip.TrackId == row.OwnerId).Select(clip => clip.Id)];
     }
 
     private void ClearTimelineAnimationTracks(IReadOnlyCollection<Guid> layerIds, AnimationProperty? property)

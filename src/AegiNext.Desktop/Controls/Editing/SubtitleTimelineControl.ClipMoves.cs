@@ -25,8 +25,7 @@ public sealed partial class SubtitleTimelineControl
             return;
         }
 
-        foreach (var layer in layersById.Values.Where(layer => layer.Kind != LayerKind.GROUP &&
-                     (layer.Id == id || selectedIds.Contains(id) && selectedIds.Contains(layer.Id))))
+        foreach (var layer in layersById.Values.Where(layer => layer.Id == id || selectedIds.Contains(id) && selectedIds.Contains(layer.Id)))
         {
             movingClips.Add(layer.Id, layer);
         }
@@ -52,15 +51,9 @@ public sealed partial class SubtitleTimelineControl
     private bool BatchDropIsValid()
     {
         var offset = pendingStart - originalStart;
-        var movedSubtitleIds = movingClips.Values.Where(layer => layer.SubtitleId.HasValue)
-            .Select(layer => layer.SubtitleId!.Value).ToHashSet();
-        var others = document.Subtitles.Where(cue => !movedSubtitleIds.Contains(cue.Id)).ToArray();
-        return movingClips.Values.Where(layer => layer.SubtitleId.HasValue).All(layer =>
-        {
-            var cue = cuesById[layer.SubtitleId!.Value];
-            return !others.Any(other => other.TrackId == cue.TrackId &&
-                cue.Start + offset < other.End && other.Start < cue.End + offset);
-        });
+        var others = document.Layers.Where(clip => !movingClips.ContainsKey(clip.Id)).ToArray();
+        return movingClips.Values.All(clip => !others.Any(other => other.TrackId == clip.TrackId &&
+            clip.Start + offset < other.End && other.Start < clip.End + offset));
     }
 
     private ProjectLayer? ContextClipAt(Point point, TimelineRow row)

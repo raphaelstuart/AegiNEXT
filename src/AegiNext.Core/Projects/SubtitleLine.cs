@@ -8,7 +8,6 @@ namespace AegiNext.Core.Projects;
 public sealed record SubtitleLine
 {
     public Guid Id { get; init; } = Guid.NewGuid();
-    public Guid TrackId { get; init; } = SubtitleTrack.DEFAULT_TRACK_ID;
     public MediaTime Start { get; init; }
     public MediaTime End { get; init; } = new(2);
     public string Text { get; init; } = string.Empty;

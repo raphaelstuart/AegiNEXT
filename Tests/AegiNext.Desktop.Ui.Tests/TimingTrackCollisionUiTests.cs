@@ -12,15 +12,17 @@ public sealed class TimingTrackCollisionUiTests
     public async Task EnterCollisionPreservesTheProjectAndSelectionThenAnEmptyTrackAcceptsTheSameTime()
     {
         await using var context = new MainWindowTestContext();
+        await context.Session.ApplicationContext.Initialization;
         await context.OpenMediaAsync();
         var window = context.Window;
-        window.GetCommand(WorkbenchCommand.ADD_SUBTITLE).Execute(null);
+        await window.ViewModel.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
         var original = Assert.Single(window.DocumentSnapshot.Subtitles);
         var selectedLayer = context.Session.SelectedLayer;
         await context.Controller.SeekAsync(new(1, 3));
         var before = window.DocumentSnapshot;
 
         UiTestActions.Press(window, Key.F8);
+        await context.Session.WaitForProjectIdleAsync();
         Dispatcher.UIThread.RunJobs();
 
         Assert.Same(before, window.DocumentSnapshot);
@@ -28,14 +30,15 @@ public sealed class TimingTrackCollisionUiTests
         Assert.Same(selectedLayer, context.Session.SelectedLayer);
         Assert.False(window.GetCommand(WorkbenchCommand.TIMING_EXIT).CanExecute(null));
         Assert.False(string.IsNullOrWhiteSpace(window.ViewModel.Error));
-        var alternateTrack = context.Session.Editor.AddSubtitleTrack("Alternate timing");
+        var alternateTrack = context.Session.Editor.AddTrack("Alternate timing");
         context.Session.SelectTrack(alternateTrack);
         UiTestActions.Press(window, Key.F8);
+        await context.Session.WaitForProjectIdleAsync();
         Dispatcher.UIThread.RunJobs();
 
         var active = window.DocumentSnapshot.Subtitles.Single(line => line.Id != original.Id);
         Assert.Equal(new MediaTime(1, 3), active.Start);
-        Assert.Equal(alternateTrack, active.TrackId);
+        Assert.Equal(alternateTrack, context.Session.ClipIndex.GetSubtitleTrackId(active.Id));
         Assert.Equal(original, window.DocumentSnapshot.Subtitles.Single(line => line.Id == original.Id));
         Assert.True(window.GetCommand(WorkbenchCommand.TIMING_EXIT).CanExecute(null));
         await context.Controller.PlayAsync();
@@ -50,12 +53,14 @@ public sealed class TimingTrackCollisionUiTests
     public async Task ExitUsesTheClampedFollowingEndAndCompletesBeforeTheNextCue()
     {
         await using var context = new MainWindowTestContext();
+        await context.Session.ApplicationContext.Initialization;
         await context.OpenMediaAsync();
         var window = context.Window;
         context.Session.Editor.AddSubtitle(new(3), new(4), "Following cue", context.Session.CurrentTrackId);
         var following = Assert.Single(window.DocumentSnapshot.Subtitles);
         await context.Controller.PlayAsync();
         UiTestActions.Press(window, Key.F8);
+        await context.Session.WaitForProjectIdleAsync();
         var active = window.DocumentSnapshot.Subtitles.Single(line => line.Id != following.Id);
         var before = window.DocumentSnapshot;
         Assert.Equal(MediaTime.Zero, active.Start);

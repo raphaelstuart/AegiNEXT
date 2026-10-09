@@ -17,10 +17,10 @@ public sealed class TimelineTrackCollapseUiTests
     public void HeaderExpanderRequestsStableIdentityAndWaitsForTheStateConsumer()
     {
         var editor = new ProjectEditor();
-        var track = editor.Snapshot.SubtitleTracks[0].Id;
+        var track = editor.Snapshot.Tracks[0].Id;
         var cue = editor.AddSubtitle(new(0), new(4), "Animated", track);
         editor.SetKeyframe(cue, AnimationProperty.OPACITY, new(new(1), 0.5));
-        var row = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, track, AnimationProperty.OPACITY);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, track, AnimationProperty.OPACITY);
         using var timeline = new SubtitleTimelineControl();
         timeline.SetDocument(editor.Snapshot, null, null);
         timeline.TimelineViewState = new() { CollapsedAnimationRows = [row] };
@@ -68,17 +68,16 @@ public sealed class TimelineTrackCollapseUiTests
     }
 
     [AvaloniaFact]
-    public void OverallSceneGroupAndChildStateComeFromTheViewStateAndKeepIndependentAnimationCollapse()
+    public void TrackAndClipStateComeFromTheViewStateAndKeepIndependentAnimationCollapse()
     {
         var child = new ProjectLayer
         {
             Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(1), 0.5)])]
         };
-        var group = new ProjectLayer { Kind = LayerKind.GROUP, Children = [child] };
-        var row = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, child.Id, AnimationProperty.OPACITY);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, child.TrackId, AnimationProperty.OPACITY);
         using var timeline = new SubtitleTimelineControl();
-        timeline.SetDocument(new() { Layers = [group] }, null, null);
+        timeline.SetDocument(new() { Layers = [child] }, null, null);
         timeline.TimelineViewState = new() { CollapsedAnimationRows = [row] };
         var requests = new List<TimelineTrackCollapseEventArgs>();
         timeline.TrackCollapseRequested += (_, e) =>
@@ -96,27 +95,20 @@ public sealed class TimelineTrackCollapseUiTests
         {
             Prepare(window);
 
-            ClickExpander(window, timeline, group.Id);
+            ClickExpander(window, timeline, child.TrackId);
 
-            Assert.Equal(group.Id, Assert.Single(requests).Id);
-            Assert.True(timeline.IsTrackCollapsed(group.Id));
+            Assert.Equal(child.TrackId, Assert.Single(requests).Id);
+            Assert.True(timeline.IsTrackCollapsed(child.TrackId));
             Assert.Null(timeline.GetTrackExpanderRectangle(child.Id));
             Assert.Null(timeline.GetAnimationRowRectangle(row));
-            timeline.TimelineViewState = timeline.TimelineViewState with { CollapsedTrackIds = [group.Id, child.Id] };
 
-            ClickExpander(window, timeline, group.Id);
+            ClickExpander(window, timeline, child.TrackId);
 
-            Assert.False(timeline.IsTrackCollapsed(group.Id));
-            Assert.True(timeline.IsTrackCollapsed(child.Id));
+            Assert.False(timeline.IsTrackCollapsed(child.TrackId));
             Assert.NotNull(timeline.GetClipRectangle(child.Id));
-            Assert.Null(timeline.GetAnimationRowRectangle(row));
-
-            ClickExpander(window, timeline, child.Id);
-
-            Assert.False(timeline.IsTrackCollapsed(child.Id));
             Assert.True(timeline.IsAnimationRowCollapsed(row));
             Assert.Equal(40, timeline.GetAnimationRowRectangle(row)!.Value.Height);
-            Assert.Equal(new[] { group.Id, group.Id, child.Id }, requests.Select(request => request.Id));
+            Assert.Equal(new[] { child.TrackId, child.TrackId }, requests.Select(request => request.Id));
         }
         finally
         {

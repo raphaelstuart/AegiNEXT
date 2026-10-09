@@ -15,7 +15,7 @@ public sealed class LayerAnimationTimingTests
     public void RepeatedCroppingPreservesEverySampleOfTheOriginalCurve(KeyframeInterpolation interpolation)
     {
         var track = new AnimationTrack(AnimationProperty.ROTATION, [new(new(0), 12, interpolation), new(new(8), 212)]);
-        var layer = new ProjectLayer { Start = new(1), End = new(7), AnimationOffset = new(1), Tracks = [track] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(1), End = new(7), AnimationOffset = new(1), Tracks = [track] };
         var once = LayerAnimationTiming.Clip(layer);
         var twice = LayerAnimationTiming.Clip(once with { Start = new(2), End = new(6), AnimationOffset = new(2) });
         var clipped = Assert.Single(twice.Tracks);
@@ -38,6 +38,7 @@ public sealed class LayerAnimationTimingTests
     {
         var layer = new ProjectLayer
         {
+            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1),
             Start = new(3), End = new(5), AnimationOffset = new(3),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.2), new(new(1), 0.8)])]
         };
@@ -52,6 +53,7 @@ public sealed class LayerAnimationTimingTests
     {
         var layer = new ProjectLayer
         {
+            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1),
             Start = new(10), End = new(12), AnimationOffset = new(5),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(5), 0), new(new(7), 1)])]
         };

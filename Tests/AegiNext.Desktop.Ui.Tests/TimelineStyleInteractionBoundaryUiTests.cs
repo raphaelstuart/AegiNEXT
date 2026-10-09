@@ -20,8 +20,11 @@ public sealed class TimelineStyleInteractionBoundaryUiTests
     public async Task FloatingLineHeightDraftSurvivesSoloAndAllTrackButtonsWithoutContentUndoOrFocusChanges(bool invalid)
     {
         await using var context = new MainWindowTestContext();
-        var firstTrack = context.Session.DocumentSnapshot.SubtitleTracks[0].Id;
-        var otherTrack = context.Session.Editor.AddSubtitleTrack("Other");
+        await context.Session.ApplicationContext.Initialization;
+        await context.Session.Fonts.EnsureLoadedAsync();
+        Dispatcher.UIThread.RunJobs();
+        var firstTrack = context.Session.DocumentSnapshot.Tracks[0].Id;
+        var otherTrack = context.Session.Editor.AddTrack("Other");
         var first = context.Session.Editor.AddSubtitle(new(0), new(2), "First\nSecond", firstTrack);
         var second = context.Session.Editor.AddSubtitle(new(3), new(5), "Other", otherTrack);
         context.Session.Editor.SetKeyframe(first, AnimationProperty.OPACITY, new(new(1), 0.5));
@@ -29,7 +32,7 @@ public sealed class TimelineStyleInteractionBoundaryUiTests
         context.Session.SelectCue(first);
         var committed = context.Session.DocumentSnapshot;
         context.Session.Editor.Reset(committed);
-        var row = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, firstTrack, AnimationProperty.OPACITY);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, firstTrack, AnimationProperty.OPACITY);
         context.Session.SetTimelineAnimationRowCollapsed(row, true);
         context.Window.Layouts.Activate(WorkbenchPanelIds.STYLES);
         context.Window.Layouts.Float(WorkbenchPanelIds.STYLES);
@@ -80,7 +83,7 @@ public sealed class TimelineStyleInteractionBoundaryUiTests
             Assert.False(timeline.IsTrackCollapsed(otherTrack));
             Assert.True(timeline.IsAnimationRowCollapsed(row));
             Assert.NotNull(timeline.GetAnimationRowRectangle(row));
-            Assert.NotNull(timeline.GetAnimationRowRectangle(new(TimelineRowScope.SUBTITLE_TRACK, otherTrack, AnimationProperty.OPACITY)));
+            Assert.NotNull(timeline.GetAnimationRowRectangle(new(TimelineRowScope.TRACK, otherTrack, AnimationProperty.OPACITY)));
             Assert.Equal(viewport.StartSeconds, timeline.Viewport.StartSeconds);
             Assert.Equal(viewport.PixelsPerSecond, timeline.Viewport.PixelsPerSecond);
             AssertDraftUnchanged(context, text, rawText, committed, preview, selection);

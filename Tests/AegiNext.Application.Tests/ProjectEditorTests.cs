@@ -7,12 +7,12 @@ namespace AegiNext.Application.Tests;
 public sealed class ProjectEditorTests
 {
     [Fact]
-    public void EqualSubtitleAndNestedLayerEditsPreserveSavedSnapshotAndRedoHistory()
+    public void EqualSubtitleAndFlatLayerEditsPreserveSavedSnapshotAndRedoHistory()
     {
         var initial = new ProjectEditor();
         var id = initial.AddSubtitle(new(0), new(2), "same");
         var child = Assert.Single(initial.Snapshot.Layers);
-        var document = initial.Snapshot with { Layers = [new() { Children = [child] }] };
+        var document = initial.Snapshot;
         var editor = new ProjectEditor(document);
         editor.UpdateSubtitle(id, line => line with { Text = "changed" });
         Assert.True(editor.Undo());
@@ -220,6 +220,7 @@ public sealed class ProjectEditorTests
     {
         var layer = new ProjectLayer
         {
+            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 10, 10),
             Start = new(10), End = new(12), AnimationOffset = new(5)
         };
         var editor = new ProjectEditor(new() { Layers = [layer] });

@@ -566,19 +566,9 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
 
     private ImmutableArray<ProjectLayer> ExtendEditorEndpoint(ImmutableArray<ProjectLayer> layers, Guid id)
     {
-        return layers.Select(layer =>
-        {
-            var children = ExtendEditorEndpoint(layer.Children, id);
-            var contains = layer.Id == id || children.Any(child => Contains(child, id));
-            return layer with
-            {
-                Children = children,
-                End = contains && layer.End == position ? layer.End + new MediaTime(1, 1000000) : layer.End
-            };
-        }).ToImmutableArray();
+        return layers.Select(layer => layer.Id == id && layer.End == position
+            ? layer with { End = layer.End + new MediaTime(1, 1000000) } : layer).ToImmutableArray();
     }
-
-    private static bool Contains(ProjectLayer layer, Guid id) => layer.Id == id || layer.Children.Any(child => Contains(child, id));
 
     private ProjectLayer PrepareRenderedDraft(ProjectLayer layerDraft)
     {
@@ -904,8 +894,7 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
 
     private static ImmutableArray<ProjectLayer> ReplaceLayers(ImmutableArray<ProjectLayer> layers, ProjectLayer replacement)
     {
-        return layers.Select(layer => layer.Id == replacement.Id ? replacement :
-            layer.Children.IsEmpty ? layer : layer with { Children = ReplaceLayers(layer.Children, replacement) }).ToImmutableArray();
+        return layers.Select(layer => layer.Id == replacement.Id ? replacement : layer).ToImmutableArray();
     }
 
     private static Matrix ToMatrix(SKMatrix value) => new(value.ScaleX, value.SkewY, value.SkewX, value.ScaleY, value.TransX, value.TransY);

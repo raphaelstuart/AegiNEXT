@@ -18,7 +18,7 @@ public static class SubtitleFormatLossAnalysis
                 diagnostics.Add(new("Srt.Appearance", "SRT 仅保留文字和时间，局部样式、卡拉 OK 与排版将被舍弃。", SubtitleId: line.Id));
             }
         }
-        foreach (var layer in Flatten(document.Layers))
+        foreach (var layer in document.Layers)
         {
             if (layer.Mask is not null)
             {
@@ -35,9 +35,9 @@ public static class SubtitleFormatLossAnalysis
 
     internal static void AddCompositionLoss(ProjectDocument document, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, bool supportsMasks = false)
     {
-        foreach (var layer in Flatten(document.Layers))
+        foreach (var layer in document.Layers)
         {
-            if (layer.Kind != LayerKind.SUBTITLE && layer.Kind != LayerKind.GROUP ||
+            if (layer.Kind != LayerKind.SUBTITLE ||
                 layer.Tracks.Any(track => !supportsMasks || !AnimationPropertyMetadata.IsMaskProperty(track.Property)) || layer.MotionPath is not null || !supportsMasks && layer.Mask is not null ||
                 layer.Transform != new LayerTransform() || !layer.Opacity.Equals(1d) || layer.Blend != BlendMode.NORMAL)
             {
@@ -46,15 +46,4 @@ public static class SubtitleFormatLossAnalysis
         }
     }
 
-    internal static IEnumerable<ProjectLayer> Flatten(IEnumerable<ProjectLayer> layers)
-    {
-        foreach (var layer in layers)
-        {
-            yield return layer;
-            foreach (var child in Flatten(layer.Children))
-            {
-                yield return child;
-            }
-        }
-    }
 }

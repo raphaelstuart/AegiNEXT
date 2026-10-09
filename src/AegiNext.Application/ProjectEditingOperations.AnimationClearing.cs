@@ -5,7 +5,7 @@ namespace AegiNext.Application;
 
 public static partial class ProjectEditingOperations
 {
-    /// <summary>整体清除所选非组片段的动画轨道，保留静态内容、运动路径和逐字高亮。</summary>
+    /// <summary>整体清除所选片段的动画轨道，保留静态内容、运动路径和逐字高亮。</summary>
     public static ProjectDocument ClearAnimationTracks(ProjectDocument document, IReadOnlyCollection<Guid> layerIds)
     {
         ProjectValidator.Validate(document);
@@ -24,7 +24,7 @@ public static partial class ProjectEditingOperations
             throw new ArgumentOutOfRangeException(nameof(property));
         }
         var selection = layerIds.ToHashSet();
-        if (document.Layers.SelectMany(Descendants).Count(layer => selection.Contains(layer.Id)) != selection.Count)
+        if (document.Layers.Count(layer => selection.Contains(layer.Id)) != selection.Count)
         {
             throw new KeyNotFoundException("待清除动画的图层不存在。");
         }

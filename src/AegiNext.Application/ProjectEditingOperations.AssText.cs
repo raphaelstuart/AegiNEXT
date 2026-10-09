@@ -37,7 +37,6 @@ public static partial class ProjectEditingOperations
 
     private static ImmutableArray<ProjectLayer> MapAssLayers(ImmutableArray<ProjectLayer> layers, ProjectLayer changed)
     {
-        return layers.Select(layer => layer.Id == changed.Id ? changed : layer.Children.IsEmpty ? layer :
-            layer with { Children = MapAssLayers(layer.Children, changed) }).ToImmutableArray();
+        return layers.Select(layer => layer.Id == changed.Id ? changed : layer).ToImmutableArray();
     }
 }

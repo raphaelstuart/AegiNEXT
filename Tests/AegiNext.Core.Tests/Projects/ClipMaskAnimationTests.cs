@@ -62,7 +62,7 @@ public sealed class ClipMaskAnimationTests
     {
         var track = new AnimationTrack(AnimationProperty.ROTATION,
             [new(new(0), 12, KeyframeInterpolation.POWER) { Exponent = exponent }, new(new(8), 212)]);
-        var layer = new ProjectLayer { Start = new(1), End = new(7), AnimationOffset = new(1), Tracks = [track] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(1), End = new(7), AnimationOffset = new(1), Tracks = [track] };
         var clipped = LayerAnimationTiming.Clip(LayerAnimationTiming.Clip(layer) with { Start = new(2), End = new(6), AnimationOffset = new(2) });
         Assert.Equal(exponent, clipped.Tracks[0].Keyframes[0].Exponent);
         for (var index = 0; index <= 80; index++)
@@ -95,7 +95,7 @@ public sealed class ClipMaskAnimationTests
     {
         var operation = new AnimationTransformOperation(Guid.NewGuid(), new(-1), new(4), 100, 0.75);
         var track = new AnimationTrack(AnimationProperty.ROTATION, []) { InitialValue = 0, Transforms = [operation] };
-        var layer = new ProjectLayer { Start = new(10), End = new(14), Tracks = [track] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(10), End = new(14), Tracks = [track] };
         var crop = LayerAnimationTiming.Retime(layer, new(11), new(13), TimelineEditMode.CROP);
         Assert.Same(track, Assert.Single(crop.Tracks));
         Assert.Equal(new MediaTime(1), crop.AnimationOffset);
@@ -138,7 +138,7 @@ public sealed class ClipMaskAnimationTests
         {
             InitialValue = 10, Transforms = [new(Guid.NewGuid(), new(1), new(3), 90, 0)]
         };
-        ProjectValidator.Validate(new() { Layers = [new() { Tracks = [track] }] });
+        ProjectValidator.Validate(new() { Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [track] }] });
         Assert.Equal(10, SceneEvaluator.EvaluateScalarTrack(track, new(999, 1000)));
         Assert.Equal(90, SceneEvaluator.EvaluateScalarTrack(track, new(1)));
         Assert.Equal(90, SceneEvaluator.EvaluateScalarTrack(track, new(2)));

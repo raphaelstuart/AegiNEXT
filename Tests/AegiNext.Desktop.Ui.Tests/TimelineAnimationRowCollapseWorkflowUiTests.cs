@@ -23,8 +23,7 @@ namespace AegiNext.Desktop.Ui.Tests;
 public sealed class TimelineAnimationRowCollapseWorkflowUiTests
 {
     [AvaloniaTheory]
-    [InlineData(TimelineRowScope.SUBTITLE_TRACK)]
-    [InlineData(TimelineRowScope.SCENE_LAYER)]
+    [InlineData(TimelineRowScope.TRACK)]
     public async Task PointerCollapsePreservesContentSnapshotRedoAndTheCurrentViewAcrossContentUndo(TimelineRowScope scope)
     {
         using var environment = new UiTestEnvironment();
@@ -97,7 +96,7 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
         var dialogs = new StartupTestDialogService();
         await using var session = await CreateSessionAsync(environment, dialogs, CreateDocument());
         var original = session.DocumentSnapshot;
-        var row = GetRowId(original, TimelineRowScope.SUBTITLE_TRACK);
+        var row = GetRowId(original, TimelineRowScope.TRACK);
         var window = ShowWindow(session);
         try
         {
@@ -142,7 +141,9 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
             Assert.Equal(rawText, session.ViewModel.Styles.FontSizeText);
             Assert.Same(original, session.DocumentSnapshot);
             Assert.Same(preview, session.PreviewDocument);
-            Assert.False(session.HasUnsavedChanges);
+            Assert.True(session.HasProjectDrafts);
+            Assert.True(session.HasUnsavedChanges);
+            Assert.Empty(session.ViewModel.Timeline.TimelineViewState.CollapsedAnimationRows);
             Assert.False(session.Editor.CanUndo);
         }
         finally
@@ -162,7 +163,7 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
         var dialogs = new StartupTestDialogService();
         await using var session = await CreateSessionAsync(environment, dialogs, CreateDocument());
         var original = session.DocumentSnapshot;
-        var row = GetRowId(original, TimelineRowScope.SUBTITLE_TRACK);
+        var row = GetRowId(original, TimelineRowScope.TRACK);
         session.Editor.Apply("Resize project", document => document with { Width = 1280 });
         await session.WaitForProjectIdleAsync();
         Assert.True(session.Editor.Undo());
@@ -201,7 +202,9 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
                 Assert.Same(original, session.DocumentSnapshot);
                 Assert.Same(preview, session.PreviewDocument);
                 Assert.Same(preview, session.ViewModel.Preview.Scene.Document);
-                Assert.Equal(collapsed, session.HasUnsavedChanges);
+                Assert.True(session.HasProjectDrafts);
+                Assert.True(session.HasUnsavedChanges);
+                Assert.Equal(collapsed, session.ViewModel.Timeline.TimelineViewState.CollapsedAnimationRows.Contains(row));
                 Assert.False(session.Editor.HasUnsavedChanges);
                 Assert.False(session.Editor.CanUndo);
                 Assert.True(session.Editor.CanRedo);
@@ -224,7 +227,7 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
         var dialogs = new StartupTestDialogService();
         await using var session = await CreateSessionAsync(environment, dialogs, CreateDocument());
         var original = session.DocumentSnapshot;
-        var row = GetRowId(original, TimelineRowScope.SUBTITLE_TRACK);
+        var row = GetRowId(original, TimelineRowScope.TRACK);
         var layerId = original.Subtitles[0].Id;
         session.ViewModel.Timeline.IsSnapEnabled = false;
         var window = ShowWindow(session);
@@ -282,8 +285,7 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
     }
 
     [AvaloniaTheory]
-    [InlineData(TimelineRowScope.SUBTITLE_TRACK)]
-    [InlineData(TimelineRowScope.SCENE_LAYER)]
+    [InlineData(TimelineRowScope.TRACK)]
     public async Task ManualSaveAndProjectSwitchRestoreCompactRowsWhileLegacyEmptyStateOpensExpanded(TimelineRowScope scope)
     {
         using var environment = new UiTestEnvironment();
@@ -347,7 +349,7 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
         var dialogs = new StartupTestDialogService();
         await using var session = await CreateSessionAsync(environment, dialogs, CreateDocument());
         var original = session.DocumentSnapshot;
-        var row = GetRowId(original, TimelineRowScope.SUBTITLE_TRACK);
+        var row = GetRowId(original, TimelineRowScope.TRACK);
         var window = ShowWindow(session);
         try
         {
@@ -391,7 +393,7 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
         var dialogs = new StartupTestDialogService();
         await using var session = await CreateSessionAsync(environment, dialogs, CreateDocument());
         var original = session.DocumentSnapshot;
-        var row = GetRowId(original, TimelineRowScope.SUBTITLE_TRACK);
+        var row = GetRowId(original, TimelineRowScope.TRACK);
         var panel = new TimelinePanelView(session.ViewModel.Timeline, session);
         var window = new Window { Width = 1000, Height = 300, Content = panel };
         window.Show();
@@ -486,11 +488,6 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
                 {
                     Id = cue.Id, Kind = LayerKind.SUBTITLE, SubtitleId = cue.Id, Start = cue.Start, End = cue.End,
                     Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.25), new(new(2), 0.75)])]
-                },
-                new()
-                {
-                    Name = "Scene group", Kind = LayerKind.GROUP, End = new(4),
-                    Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.5), new(new(2), 1)])]
                 }
             ]
         };
@@ -498,10 +495,7 @@ public sealed class TimelineAnimationRowCollapseWorkflowUiTests
 
     private static TimelineAnimationRowId GetRowId(ProjectDocument document, TimelineRowScope scope)
     {
-        var owner = scope == TimelineRowScope.SUBTITLE_TRACK
-            ? Assert.Single(document.SubtitleTracks).Id
-            : Assert.Single(document.Layers, layer => layer.Kind == LayerKind.GROUP).Id;
-        return new(scope, owner, AnimationProperty.OPACITY);
+        return new(scope, Assert.Single(document.Tracks).Id, AnimationProperty.OPACITY);
     }
 
     private static MainWindow ShowWindow(WorkbenchSession session)

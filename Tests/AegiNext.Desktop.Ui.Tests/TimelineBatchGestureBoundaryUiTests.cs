@@ -25,8 +25,9 @@ public sealed class TimelineBatchGestureBoundaryUiTests
     {
         var first = Shape(new(123, 1000), new(1123, 1000));
         var second = Shape(new(3456, 1000), new(4456, 1000));
-        var boundary = Shape(new(137, 100), new(237, 100));
-        var document = new ProjectDocument { Layers = [first, second, boundary] };
+        var boundaryTrack = new ProjectTrack { Name = "Snap boundary" };
+        var boundary = Shape(new(137, 100), new(237, 100)) with { TrackId = boundaryTrack.Id };
+        var document = new ProjectDocument { Tracks = [ProjectTrack.Default, boundaryTrack], Layers = [first, second, boundary] };
         var editor = new ProjectEditor(document);
         using var timeline = new SubtitleTimelineControl { IsSnapEnabled = snap, IsStepEnabled = true };
         Connect(timeline, editor, first, [first.Id, second.Id]);
@@ -66,8 +67,9 @@ public sealed class TimelineBatchGestureBoundaryUiTests
     {
         var first = Shape(new(1), new(2));
         var second = Shape(new(4), new(5));
-        var boundary = Shape(endEdge ? new(301, 100) : new(201, 100), endEdge ? new(351, 100) : new(251, 100));
-        var document = new ProjectDocument { Layers = [first, second, boundary] };
+        var boundaryTrack = new ProjectTrack { Name = "Snap boundary" };
+        var boundary = Shape(endEdge ? new(301, 100) : new(201, 100), endEdge ? new(351, 100) : new(251, 100)) with { TrackId = boundaryTrack.Id };
+        var document = new ProjectDocument { Tracks = [ProjectTrack.Default, boundaryTrack], Layers = [first, second, boundary] };
         var editor = new ProjectEditor(document);
         using var timeline = new SubtitleTimelineControl { IsSnapEnabled = true };
         Connect(timeline, editor, first, [first.Id, second.Id]);
@@ -102,8 +104,9 @@ public sealed class TimelineBatchGestureBoundaryUiTests
     {
         var first = Shape(new(1), new(2));
         var second = Shape(new(401, 100), new(501, 100));
-        var boundary = Shape(new(502, 100), new(602, 100));
-        var document = new ProjectDocument { Layers = [first, second, boundary] };
+        var boundaryTrack = new ProjectTrack { Name = "Snap boundary" };
+        var boundary = Shape(new(502, 100), new(602, 100)) with { TrackId = boundaryTrack.Id };
+        var document = new ProjectDocument { Tracks = [ProjectTrack.Default, boundaryTrack], Layers = [first, second, boundary] };
         var editor = new ProjectEditor(document);
         using var timeline = new SubtitleTimelineControl { IsSnapEnabled = true };
         Connect(timeline, editor, first, [first.Id, second.Id]);
@@ -234,8 +237,9 @@ public sealed class TimelineBatchGestureBoundaryUiTests
     {
         var first = Shape(new(123, 1000), new(1123, 1000));
         var second = Shape(new(3456, 1000), new(4456, 1000));
-        var boundary = Shape(new(125, 1000), new(875, 1000));
-        var document = new ProjectDocument { Layers = [first, second, boundary] };
+        var boundaryTrack = new ProjectTrack { Name = "Snap boundary" };
+        var boundary = Shape(new(125, 1000), new(875, 1000)) with { TrackId = boundaryTrack.Id };
+        var document = new ProjectDocument { Tracks = [ProjectTrack.Default, boundaryTrack], Layers = [first, second, boundary] };
         var editor = new ProjectEditor(document);
         using var timeline = new SubtitleTimelineControl { IsSnapEnabled = true, IsStepEnabled = true };
         Connect(timeline, editor, first, [first.Id, second.Id]);

@@ -96,8 +96,6 @@ internal static class WorkbenchIcon
             "Keyframe" => MaterialIconKind.Diamond,
             "Path" or "ClearPath" or "OrientPath" => MaterialIconKind.VectorPolyline,
             "Mask" or "VIEW_MASKS" or "ClearMask" or "InvertMask" => MaterialIconKind.DramaMasks,
-            "Group" => MaterialIconKind.Group,
-            "Ungroup" => MaterialIconKind.Ungroup,
             "Bold" => MaterialIconKind.FormatBold,
             "Italic" => MaterialIconKind.FormatItalic,
             "AlignLeft" => MaterialIconKind.FormatAlignLeft,

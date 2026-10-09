@@ -104,7 +104,7 @@ public sealed class ProjectFrameCacheTests
         };
         document = document with
         {
-            Layers = [new() { Children = [document.Layers[0] with { Tracks = [new(property, [new(MediaTime.Zero, first), new(new(2), last)])] }] }]
+            Layers = [document.Layers[0] with { Tracks = [new(property, [new(MediaTime.Zero, first), new(new(2), last)])] }]
         };
         using var renderer = Renderer();
         var pixels = new float[document.Width * document.Height * 4];
@@ -169,7 +169,7 @@ public sealed class ProjectFrameCacheTests
     [InlineData(AnimationProperty.BLUR)]
     [InlineData(AnimationProperty.MASK_POSITION)]
     [InlineData(AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT)]
-    public void AnimatedChildResultsInvalidateTheGroupFrame(AnimationProperty property)
+    public void AnimatedClipResultsInvalidateTheFrame(AnimationProperty property)
     {
         var isMask = property is AnimationProperty.MASK_POSITION or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT;
         var document = isMask ? SubtitleDocument() : ShapeDocument();
@@ -195,7 +195,7 @@ public sealed class ProjectFrameCacheTests
             Mask = isMask ? new RectangleClipMask { TopLeft = new(0, 0), BottomRight = new(document.Width, document.Height) } : null,
             Tracks = [new(property, [new(MediaTime.Zero, first), new(new(2), last)])]
         };
-        document = document with { Layers = [new() { Children = [child] }] };
+        document = document with { Layers = [child] };
         using var renderer = Renderer();
         var pixels = new float[document.Width * document.Height * 4];
         Assert.True(renderer.CopyCachedFramePixels(document, MediaTime.Zero, pixels));
@@ -471,13 +471,15 @@ public sealed class ProjectFrameCacheTests
     {
         var document = SubtitleDocument();
         var subtitle = document.Subtitles[0] with { Start = new(1), End = new(2) };
+        var frontTrack = new ProjectTrack();
         return document with
         {
             Subtitles = [subtitle],
+            Tracks = [frontTrack, ProjectTrack.Default],
             Layers =
             [
                 new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 128, 64), Fill = new(1, 0, 0) },
-                document.Layers[0] with { Start = subtitle.Start, End = subtitle.End }
+                document.Layers[0] with { TrackId = frontTrack.Id, Start = subtitle.Start, End = subtitle.End }
             ]
         };
     }

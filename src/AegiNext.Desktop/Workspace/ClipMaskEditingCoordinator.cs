@@ -196,7 +196,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         {
             throw new InvalidOperationException(Localization.Get("Workbench.SubtitleDraftConflict"));
         }
-        var layer = WorkbenchSession.Flatten(document.Layers).Single(value => value.Id == frozen.LayerId);
+        var layer = document.Layers.Single(value => value.Id == frozen.LayerId);
         var mask = layer.Mask ?? throw new InvalidOperationException(Localization.Get("Workbench.ClipMask"));
         var changed = document;
         foreach (var group in Fields.Where(field => field.Target is not null).GroupBy(field => field.Target!.Value))

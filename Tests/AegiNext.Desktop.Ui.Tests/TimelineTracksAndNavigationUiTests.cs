@@ -16,10 +16,10 @@ public sealed class TimelineTracksAndNavigationUiTests
     [AvaloniaFact]
     public void SubtitleClipsCanCrossNeighboursAndCrossTrackCollisionsNeverCommit()
     {
-        var secondTrack = new SubtitleTrack { Name = "Second" };
+        var secondTrack = new ProjectTrack { Name = "Second" };
         var first = new SubtitleLine { Start = new(1), End = new(3), Text = "moving" };
         var next = new SubtitleLine { Start = new(4), End = new(6), Text = "neighbour" };
-        var obstacle = new SubtitleLine { TrackId = secondTrack.Id, End = new(2), Text = "target occupied" };
+        var obstacle = new SubtitleLine { End = new(2), Text = "target occupied" };
         var moving = new ProjectLayer
         {
             Kind = LayerKind.SUBTITLE, SubtitleId = first.Id, Start = first.Start, End = first.End,
@@ -27,8 +27,8 @@ public sealed class TimelineTracksAndNavigationUiTests
         };
         var editor = new ProjectEditor(new()
         {
-            SubtitleTracks = [SubtitleTrack.Default, secondTrack], Subtitles = [first, next, obstacle],
-            Layers = [moving, Layer(next), Layer(obstacle)]
+            Tracks = [ProjectTrack.Default, secondTrack], Subtitles = [first, next, obstacle],
+            Layers = [moving, Layer(next), Layer(obstacle) with { TrackId = secondTrack.Id }]
         });
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 60 };
         timeline.SetDocument(editor.Snapshot, first.Id, moving);
@@ -68,7 +68,7 @@ public sealed class TimelineTracksAndNavigationUiTests
             origin = timeline.GetClipRectangle(moving.Id)!.Value.Center;
             Drag(window, origin, new(origin.X, targetY));
             var moved = editor.Snapshot.Subtitles.Single(cue => cue.Id == first.Id);
-            Assert.Equal(secondTrack.Id, moved.TrackId);
+            Assert.Equal(secondTrack.Id, new ProjectClipIndex(editor.Snapshot).GetSubtitleTrackId(moved.Id));
             Assert.Equal(new MediaTime(6), moved.Start);
             Assert.Equal(new MediaTime(8), moved.End);
             var effects = editor.Snapshot.Layers.Single(layer => layer.SubtitleId == first.Id);
@@ -111,7 +111,7 @@ public sealed class TimelineTracksAndNavigationUiTests
         context.Window.MouseUp(secondPoint, MouseButton.Left, RawInputModifiers.Control);
         Assert.Equal(originalIds.Order(), context.ViewModel.Timeline.SelectedLayerIds.Order());
         Assert.All(context.Session.DocumentSnapshot.Layers, layer => Assert.Equal(LayerKind.SUBTITLE, layer.Kind));
-        var trackId = context.Session.DocumentSnapshot.SubtitleTracks[0].Id;
+        var trackId = context.Session.DocumentSnapshot.Tracks[0].Id;
         var header = timeline.GetTrackHeaderRectangle(trackId)!.Value;
         var collapse = timeline.TranslatePoint(new(12, header.Top + 12), context.Window)!.Value;
         context.Window.MouseDown(collapse, MouseButton.Left);
@@ -124,8 +124,8 @@ public sealed class TimelineTracksAndNavigationUiTests
     [AvaloniaFact]
     public void WheelMagnifyAndOverviewOnlyNavigateTheViewport()
     {
-        var tracks = Enumerable.Range(0, 9).Select(index => new SubtitleTrack { Name = $"Track {index}" }).ToArray();
-        var document = new ProjectDocument { SubtitleTracks = [.. tracks] };
+        var tracks = Enumerable.Range(0, 9).Select(index => new ProjectTrack { Name = $"Track {index}" }).ToArray();
+        var document = new ProjectDocument { Tracks = [.. tracks] };
         using var timeline = new SubtitleTimelineControl();
         var overview = new TimelineOverviewControl();
         var grid = new Grid { RowDefinitions = new("28,*") };

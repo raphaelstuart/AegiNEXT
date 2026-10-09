@@ -19,7 +19,7 @@ public sealed class EffectScriptComposerTests
             new(new(0), 12, KeyframeInterpolation.POWER) { Exponent = exponent, CurveStart = 0.2, CurveEnd = 0.9 },
             new(new(4), 212)
         ]);
-        var layer = new ProjectLayer { End = new(4), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(4), Tracks = [original] };
         var script = MiddleScript(original, EffectScriptProperty.ROTATION, 500);
 
         var composed = Assert.Single(EffectScriptComposer.Compose(script, layer));
@@ -45,7 +45,7 @@ public sealed class EffectScriptComposerTests
             },
             new(new(4), new ScenePoint(40, -40))
         ]);
-        var layer = new ProjectLayer { End = new(4), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(4), Tracks = [original] };
         var changed = new ScenePoint(100, -300);
         var script = MiddleScript(original, EffectScriptProperty.POSITION, changed);
 
@@ -78,7 +78,7 @@ public sealed class EffectScriptComposerTests
             },
             new(new(4), new SceneColor(3, 1, -2, 0.8))
         ]);
-        var layer = new ProjectLayer { End = new(4), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(4), Tracks = [original] };
         var changed = new SceneColor(12, -3, 5, 0.4);
         var script = MiddleScript(original, EffectScriptProperty.FILL, changed);
 
@@ -119,7 +119,7 @@ public sealed class EffectScriptComposerTests
             new(new(0), 0), new(new(1), 2), new(new(2), 4),
             new(new(5, 2), 14), new(new(3), 6), new(new(4), 8), new(new(5), 10)
         ]);
-        var layer = new ProjectLayer { End = new(5), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(5), Tracks = [original] };
 
         var composed = Assert.Single(EffectScriptComposer.Compose(script, layer));
 
@@ -149,7 +149,7 @@ public sealed class EffectScriptComposerTests
             new(new(3), 40, KeyframeInterpolation.EASE_IN),
             new(new(4), 50)
         ]);
-        var layer = new ProjectLayer { End = new(4), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(4), Tracks = [original] };
 
         var composed = Assert.Single(EffectScriptComposer.Compose(MiddleScript(original, EffectScriptProperty.ROTATION, 100), layer));
 
@@ -224,7 +224,7 @@ public sealed class EffectScriptComposerTests
         var script = BuiltinEffectScripts.Get(id).Script;
         foreach (var duration in new MediaTime[] { new(1, 5), new(4) })
         {
-            var layer = new ProjectLayer { End = duration, AnimationOffset = new(-3), Opacity = 0.8, Transform = new(100, 200, 2, 3) };
+            var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = duration, AnimationOffset = new(-3), Opacity = 0.8, Transform = new(100, 200, 2, 3) };
             var expected = EffectScriptCompiler.Compile(script, layer);
 
             var composed = EffectScriptComposer.Compose(script, layer);
@@ -244,7 +244,7 @@ public sealed class EffectScriptComposerTests
     public void IsolatedZeroLengthDeclarationRejectsADifferentExistingValue()
     {
         var original = new AnimationTrack(AnimationProperty.OPACITY, [new(new(0), 0.5)]);
-        var layer = new ProjectLayer { End = new(2), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(2), Tracks = [original] };
 
         Assert.Throws<EffectScriptException>(() => EffectScriptComposer.Compose(ZeroLengthOpacityScript(), layer));
 
@@ -260,7 +260,7 @@ public sealed class EffectScriptComposerTests
             new(new(1), 1, KeyframeInterpolation.POWER) { Exponent = 2.5 },
             new(new(2), 0.5)
         ]);
-        var layer = new ProjectLayer { End = new(2), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(2), Tracks = [original] };
 
         var composed = EffectScriptComposer.Compose(ZeroLengthOpacityScript(), layer);
 
@@ -279,7 +279,7 @@ public sealed class EffectScriptComposerTests
     public void MatchingZeroLengthDeclarationDoesNotPadASingleKeyExistingTrack()
     {
         var original = new AnimationTrack(AnimationProperty.OPACITY, [new(new(1, 2), 1)]);
-        var layer = new ProjectLayer { End = new(2), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(2), Tracks = [original] };
 
         var composed = EffectScriptComposer.Compose(ZeroLengthOpacityScript(), layer);
 
@@ -296,7 +296,7 @@ public sealed class EffectScriptComposerTests
         var original = new AnimationTrack(AnimationProperty.OPACITY,
             Enumerable.Range(0, AnimationPropertyMetadata.GetMaximumTrackEntries(AnimationProperty.OPACITY))
                 .Select(index => new Keyframe(new(index, 2500), 0.8)).ToImmutableArray());
-        var layer = new ProjectLayer { End = new(4), Opacity = 0.8, Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(4), Opacity = 0.8, Tracks = [original] };
         Validate(layer, layer.Tracks);
         var script = EffectScriptParser.Parse("""
             effect "budget-overlay" version 1
@@ -322,7 +322,7 @@ public sealed class EffectScriptComposerTests
     public void ZeroLengthDeclarationInsideMergedFullCoverageDoesNotCompareAgainstReplacedOldAnimation()
     {
         var original = new AnimationTrack(AnimationProperty.OPACITY, [new(new(0), 0.5)]);
-        var layer = new ProjectLayer { End = new(2), Tracks = [original] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(2), Tracks = [original] };
         var script = EffectScriptParser.Parse("""
             effect "collapsed-stay" version 1
             short-clip compress
@@ -357,7 +357,7 @@ public sealed class EffectScriptComposerTests
             InitialValue = 15,
             Transforms = [new(Guid.NewGuid(), new(0), new(4), 30)]
         };
-        var layer = new ProjectLayer { End = new(4), Tracks = [original, ordered] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(4), Tracks = [original, ordered] };
 
         var composed = EffectScriptComposer.Compose(MiddleScript(original, EffectScriptProperty.OPACITY, 0.2), layer);
 

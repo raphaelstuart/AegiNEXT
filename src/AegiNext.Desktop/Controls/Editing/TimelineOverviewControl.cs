@@ -88,10 +88,9 @@ public sealed class TimelineOverviewControl : Control, IDisposable
         {
             CancelGesture();
             clipDrawing.Dispose();
-            var indices = value.SubtitleTracks.Select((track, index) => (track.Id, index)).ToDictionary(item => item.Id, item => item.index);
-            var cues = value.Subtitles.ToDictionary(cue => cue.Id);
-            clips = Flatten(value.Layers).Select(layer => (Seconds(layer.Start), Seconds(layer.End),
-                layer.SubtitleId is { } cueId ? indices[cues[cueId].TrackId] : value.SubtitleTracks.Length,
+            var indices = value.Tracks.Select((track, index) => (track.Id, index)).ToDictionary(item => item.Id, item => item.index);
+            clips = value.Layers.Select(layer => (Seconds(layer.Start), Seconds(layer.End),
+                indices[layer.TrackId],
                 layer.Kind == LayerKind.SUBTITLE, layer.SubtitleId)).ToArray();
             clipsByCue.Clear();
             foreach (var group in clips.Select((clip, index) => (clip.CueId, Index: index))
@@ -148,7 +147,7 @@ public sealed class TimelineOverviewControl : Control, IDisposable
 
     private void DrawClip(DrawingContext context, double start, double end, int row, bool subtitle)
     {
-        var band = Math.Max(0, Bounds.Height - 6) / Math.Max(1, document.SubtitleTracks.Length + 1);
+        var band = Math.Max(0, Bounds.Height - 6) / Math.Max(1, document.Tracks.Length);
         var x = start / duration * Bounds.Width;
         var width = Math.Max(1, (end - start) / duration * Bounds.Width);
         context.DrawRectangle(subtitle ? subtitleBrush : layerBrush, null, new(x, 3 + row * band, width, band * 0.75));
@@ -272,18 +271,6 @@ public sealed class TimelineOverviewControl : Control, IDisposable
             : value.Normalize(duration, double.MaxValue);
         InvalidateVisual();
         ViewportChanged?.Invoke(this, new(viewport));
-    }
-
-    private static IEnumerable<ProjectLayer> Flatten(IEnumerable<ProjectLayer> layers)
-    {
-        foreach (var layer in layers)
-        {
-            yield return layer;
-            foreach (var child in Flatten(layer.Children))
-            {
-                yield return child;
-            }
-        }
     }
 
     private static double Seconds(MediaTime value) => (double)value.Numerator / value.Denominator;

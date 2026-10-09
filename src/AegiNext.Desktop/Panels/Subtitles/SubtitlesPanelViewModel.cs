@@ -16,8 +16,8 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
     private SubtitleRow? selectedRow;
     private string? validationError;
     private Guid? invalidRowId;
-    private ImmutableArray<SubtitleTrack> tracks = [];
-    private SubtitleTrack? selectedTrack;
+    private ImmutableArray<ProjectTrack> tracks = [];
+    private ProjectTrack? selectedTrack;
     private ProjectDocument? moveContextDocument;
     private Guid[] moveContextIds = [];
 
@@ -63,10 +63,10 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
     internal void NotifySelectionChanged() => OnPropertyChanged(nameof(SelectedIds));
 
     public SubtitleRow[] VisibleRows => visibleRows;
-    public ImmutableArray<SubtitleTrack> Tracks => tracks;
-    public SubtitleTrack? SelectedTrack => selectedTrack;
+    public ImmutableArray<ProjectTrack> Tracks => tracks;
+    public ProjectTrack? SelectedTrack => selectedTrack;
 
-    internal void UpdateTracks(ImmutableArray<SubtitleTrack> values, Guid? currentId)
+    internal void UpdateTracks(ImmutableArray<ProjectTrack> values, Guid? currentId)
     {
         if (!tracks.SequenceEqual(values))
         {
@@ -86,7 +86,9 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
 
     private void RefreshVisibleRows()
     {
-        var values = Rows.Where(row => row.Original.TrackId == SelectedTrack?.Id).OrderBy(row => row.Original.Start).ToArray();
+        var subtitleIds = SelectedTrack is { } track
+            ? session.ClipIndex.GetTrackSubtitles(track.Id).Select(line => line.Id).ToHashSet() : [];
+        var values = Rows.Where(row => subtitleIds.Contains(row.Id)).OrderBy(row => row.Original.Start).ToArray();
         if (!visibleRows.SequenceEqual(values))
         {
             visibleRows = values;

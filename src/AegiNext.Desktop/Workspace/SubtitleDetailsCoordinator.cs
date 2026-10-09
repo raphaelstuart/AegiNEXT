@@ -21,7 +21,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
     private string source = string.Empty;
     private bool sourceDirty;
     private AssTextEditResult? sourceEdit;
-    private ProjectLayer? SourceLayer => WorkbenchSession.Flatten(session.Editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == original?.Id);
+    private ProjectLayer? SourceLayer => session.Editor.Snapshot.Layers.FirstOrDefault(layer => layer.SubtitleId == original?.Id);
     private ImmutableArray<AssSourceMapEntry> sourceMap = [];
     private int styleSelectionStart;
     private int styleSelectionLength;
@@ -144,7 +144,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         return draft == original ? document : document with { Subtitles = document.Subtitles.Select(line => line.Id == draft.Id ? draft : line).ToImmutableArray() };
     }
     internal MediaTime ContentOrigin => draft is null ? MediaTime.Zero : draft.Start -
-        (WorkbenchSession.Flatten(session.Editor.Snapshot.Layers).FirstOrDefault(layer => layer.SubtitleId == draft.Id)?.AnimationOffset ?? MediaTime.Zero);
+        (session.Editor.Snapshot.Layers.FirstOrDefault(layer => layer.SubtitleId == draft.Id)?.AnimationOffset ?? MediaTime.Zero);
 
     internal void Synchronize()
     {

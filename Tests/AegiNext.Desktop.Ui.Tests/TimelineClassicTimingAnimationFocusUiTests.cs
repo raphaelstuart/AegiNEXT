@@ -66,7 +66,7 @@ public sealed class TimelineClassicTimingAnimationFocusUiTests
         var undoLabel = context.Session.Editor.UndoLabel;
         var redoLabel = context.Session.Editor.RedoLabel;
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
-        var animationRow = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, cue.TrackId, AnimationProperty.OPACITY);
+        var animationRow = new TimelineAnimationRowId(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY);
         var requests = new List<TimelineAnimationRowCollapseEventArgs>();
         timeline.AnimationRowCollapseRequested += (_, e) => requests.Add(e);
         Assert.True(timeline.IsClassicTimingEnabled);

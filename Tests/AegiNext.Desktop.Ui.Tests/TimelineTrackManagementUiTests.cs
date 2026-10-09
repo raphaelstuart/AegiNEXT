@@ -1,12 +1,14 @@
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Panels.Timeline;
+using AegiNext.Desktop.Shortcuts;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
@@ -24,7 +26,7 @@ public sealed class TimelineTrackManagementUiTests
         context.Session.Editor.SetKeyframe(layer.Id, AnimationProperty.OPACITY, new(new(1), 0.25));
         var originalAnimation = context.Session.SelectedLayer!.Tracks;
         Assert.True(context.Session.SelectKeyframe(new(layer.Id, AnimationProperty.OPACITY, new(1), new(1))));
-        var otherTrack = context.Session.Editor.AddSubtitleTrack("Keyboard destination");
+        var otherTrack = context.Session.Editor.AddTrack("Keyboard destination");
         var menu = TimelineTrackTestActions.OpenMenu(context, firstTrack);
         Assert.True(menu.IsOpen);
         Assert.Null(context.Session.SelectedCue);
@@ -42,8 +44,12 @@ public sealed class TimelineTrackManagementUiTests
         Assert.True(timeline.Focus());
         UiTestActions.Press(context.Window, Key.Enter, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
         Dispatcher.UIThread.RunJobs();
+        var create = Assert.IsAssignableFrom<IAsyncRelayCommand>(context.Window.GetCommand(WorkbenchCommand.ADD_SUBTITLE));
+        Assert.NotNull(create.ExecutionTask);
+        await create.ExecutionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await context.Session.WaitForProjectIdleAsync();
         var created = Assert.Single(context.Session.DocumentSnapshot.Subtitles, cue => cue.Id != cueId);
-        Assert.Equal(otherTrack, created.TrackId);
+        Assert.Equal(otherTrack, context.Session.ClipIndex.GetSubtitleTrackId(created.Id));
         Assert.Equal(created.Id, context.Session.SelectedCue!.Id);
         Assert.Equal(originalAnimation, context.Session.DocumentSnapshot.Layers.Single(value => value.Id == layer.Id).Tracks);
     }
@@ -78,7 +84,7 @@ public sealed class TimelineTrackManagementUiTests
         Assert.Equal("Dialogue", context.ViewModel.Timeline.TrackNameDraft);
         UiTestActions.Click(context.Window, "ConfirmTrackRenameButton");
         Assert.False(context.ViewModel.Timeline.IsRenamingTrack);
-        Assert.Equal("Dialogue", Assert.Single(context.Session.DocumentSnapshot.SubtitleTracks).Name);
+        Assert.Equal("Dialogue", Assert.Single(context.Session.DocumentSnapshot.Tracks).Name);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.DocumentSnapshot);
     }

@@ -152,9 +152,9 @@ public static class ProjectStore
         if (root.ValueKind != JsonValueKind.Object ||
             !root.TryGetProperty("version", out var version) ||
             version.ValueKind != JsonValueKind.Number ||
-            !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or 6 or 7 or ProjectDocument.CURRENT_VERSION))
+            !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or 6 or 7 or 8 or ProjectDocument.CURRENT_VERSION))
         {
-            throw new InvalidDataException($"只支持项目版本 3、4、5、6、7 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
+            throw new InvalidDataException($"只支持项目版本 3、4、5、6、7、8 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
         }
 
         if (number >= 5)
@@ -182,6 +182,7 @@ public static class ProjectStore
         }
 
         PlaybackOriginJsonMigration.Upgrade(content, number);
+        FlatClipJsonMigration.Upgrade(content, options);
         content["version"] = ProjectDocument.CURRENT_VERSION;
         var document = content.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
         return SubtitleKaraokeNormalization.Normalize(document);
@@ -206,7 +207,7 @@ public static class ProjectStore
                         !(info.Type == typeof(AnimationCurve) && property.Name == "exponent") &&
                         !(info.Type == typeof(AnimationTrack) && property.Name is "initialValue" or "transforms") &&
                         !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "inactiveKaraoke" or "styleName" or "stylePresetId") &&
-                        !(info.Type == typeof(SubtitleTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName" or "autoApplyStyle");
+                        !(info.Type == typeof(ProjectTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName" or "autoApplyStyle");
                     if (info.Type == typeof(SubtitleLine) && property.Name == "inactiveKaraoke")
                     {
                         property.ShouldSerialize = static (instance, _) => !((SubtitleLine)instance).InactiveKaraoke.IsEmpty;

@@ -406,20 +406,17 @@ public sealed class SubtitleContentEditingTests
             KaraokeStyle = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "highlight", new() { Fill = new(4, 2, 1) })
         };
         var other = new SubtitleLine { Text = "other", Start = new(12), End = new(14) };
-        var group = new ProjectLayer
+        var otherLayer = new ProjectLayer
         {
-            End = new(20), Children = [setup.Snapshot.Layers[0], new()
-            {
-                Id = other.Id, Kind = LayerKind.SUBTITLE, SubtitleId = other.Id, Start = other.Start, End = other.End
-            }]
+            Id = other.Id, Kind = LayerKind.SUBTITLE, SubtitleId = other.Id, Start = other.Start, End = other.End
         };
-        var before = setup.Snapshot with { Subtitles = [line, other], Layers = [group] };
+        var before = setup.Snapshot with { Subtitles = [line, other], Layers = [setup.Snapshot.Layers[0], otherLayer] };
         var editor = new ProjectEditor(before);
         editor.ReplaceSubtitleTextRange(line.Id, 1, 0, "XY");
         var after = editor.Snapshot;
         var result = after.Subtitles[0];
         Assert.Same(other, after.Subtitles[1]);
-        Assert.Same(group, after.Layers[0]);
+        Assert.Equal(before.Layers, after.Layers);
         Assert.Same(line.KaraokeStyle, result.KaraokeStyle);
         Assert.Equal(new SubtitleInlineSpan(1, 3, local), Assert.Single(result.InlineSpans));
         foreach (var value in result.Karaoke.Skip(1).Take(3))

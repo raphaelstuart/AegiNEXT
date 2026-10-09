@@ -205,19 +205,19 @@ public sealed class SubtitleFontVariantHostUiTests
             Bold = true
         });
         await context.Session.Styles.UpsertAsync(preset);
-        var trackId = context.Session.Editor.AddSubtitleTrack("Named variant track");
+        var trackId = context.Session.Editor.AddTrack("Named variant track");
         var original = context.Session.DocumentSnapshot;
         context.Session.Editor.Reset(original);
         await context.Session.ApplySubtitleTrackStyleAsync(trackId, preset.Id);
         var styled = context.Session.DocumentSnapshot;
-        var track = styled.SubtitleTracks.Single(value => value.Id == trackId);
+        var track = styled.Tracks.Single(value => value.Id == trackId);
         Assert.Equal(black.Variant, track.DefaultStyle?.FontVariant);
         Assert.True(track.DefaultStyle?.Bold);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.DocumentSnapshot);
         Assert.False(context.Session.Editor.CanUndo);
         Assert.True(context.Session.Editor.Redo());
-        Assert.Equal(black.Variant, context.Session.DocumentSnapshot.SubtitleTracks.Single(value => value.Id == trackId).DefaultStyle?.FontVariant);
+        Assert.Equal(black.Variant, context.Session.DocumentSnapshot.Tracks.Single(value => value.Id == trackId).DefaultStyle?.FontVariant);
         Assert.True(context.Session.SelectTrack(trackId));
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         Assert.True(timeline.Focus());
@@ -225,12 +225,12 @@ public sealed class SubtitleFontVariantHostUiTests
         await context.Session.WaitForProjectIdleAsync();
         Flush(context.Window);
         var cue = Assert.Single(context.Session.DocumentSnapshot.Subtitles);
-        Assert.Equal(trackId, cue.TrackId);
+        Assert.Equal(trackId, context.Session.ClipIndex.GetSubtitleTrackId(cue.Id));
         Assert.Equal(black.Variant, cue.Style.FontVariant);
         Assert.Equal(preset.Style, cue.Style);
         Assert.True(context.Session.Editor.Undo());
         Assert.Empty(context.Session.DocumentSnapshot.Subtitles);
-        Assert.Equal(black.Variant, context.Session.DocumentSnapshot.SubtitleTracks.Single(value => value.Id == trackId).DefaultStyle?.FontVariant);
+        Assert.Equal(black.Variant, context.Session.DocumentSnapshot.Tracks.Single(value => value.Id == trackId).DefaultStyle?.FontVariant);
     }
 
     [AvaloniaFact(SkipUnless = nameof(HasMacNotoFonts), Skip = "Requires macOS with installed Noto Sans SC in the system font catalog.")]

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
@@ -12,9 +13,9 @@ public sealed class ProjectMergeWorkflowTests
 {
     private const string IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=";
 
-    /// <summary>同一模板的多个分支应保留原时间和合成树，并作为一次撤销事务导入。</summary>
+    /// <summary>同一模板的多个分支应保留原时间和混合轨道片段，并作为一次撤销事务导入。</summary>
     [Fact]
-    public async Task TemplateBranchesKeepIndependentTracksOriginalTimesAndCompleteGroupsWithOneUndoRedo()
+    public async Task TemplateBranchesKeepIndependentTracksOriginalTimesAndMixedClipsWithOneUndoRedo()
     {
         var template = CreateTemplate();
         await using var context = new WorkspaceSessionTestContext(template);
@@ -33,18 +34,17 @@ public sealed class ProjectMergeWorkflowTests
 
         Assert.Null(context.Session.LastError);
         var merged = context.Editor.Snapshot;
-        Assert.Equal(3, merged.SubtitleTracks.Length);
-        Assert.Equal(template.SubtitleTracks, merged.SubtitleTracks.Take(template.SubtitleTracks.Length));
+        Assert.Equal(9, merged.Tracks.Length);
+        Assert.Equal(template.Tracks, merged.Tracks.TakeLast(template.Tracks.Length));
         Assert.Equal(template.Subtitles, merged.Subtitles.Take(template.Subtitles.Length));
         Assert.Equal(template.Layers, merged.Layers.Take(template.Layers.Length));
-        Assert.Equal(3, merged.SubtitleTracks.Select(track => track.Id).Distinct().Count());
+        Assert.Equal(9, merged.Tracks.Select(track => track.Id).Distinct().Count());
         Assert.Equal(3, merged.Subtitles.Select(cue => cue.Id).Distinct().Count());
-        Assert.Equal(3, merged.Subtitles.Select(cue => cue.TrackId).Distinct().Count());
+        Assert.Equal(3, merged.Subtitles.Select(cue => new ProjectClipIndex(merged).GetSubtitleTrackId(cue.Id)).Distinct().Count());
         Assert.Equal(template.Assets.Length + 1, merged.Assets.Length);
-        Assert.Equal(12, merged.Layers.SelectMany(group => group.Children.Select(child => child.Id).Prepend(group.Id))
-            .Distinct().Count());
-        AssertImportedBranch(sourceA, merged, merged.Subtitles[1], merged.Layers[1], context.Session.ProjectDirectory);
-        AssertImportedBranch(sourceB, merged, merged.Subtitles[2], merged.Layers[2], context.Session.ProjectDirectory);
+        Assert.Equal(9, merged.Layers.Select(clip => clip.Id).Distinct().Count());
+        AssertImportedBranch(sourceA, merged, merged.Subtitles[1], merged.Layers[3], context.Session.ProjectDirectory);
+        AssertImportedBranch(sourceB, merged, merged.Subtitles[2], merged.Layers[6], context.Session.ProjectDirectory);
         Assert.Equal(template.Id, merged.Id);
         Assert.Equal(template.Name, merged.Name);
         Assert.Equal(template.FrameRate, merged.FrameRate);
@@ -415,30 +415,30 @@ public sealed class ProjectMergeWorkflowTests
         {
             Name = "Subtitle", Kind = LayerKind.SUBTITLE, SubtitleId = cue.Id, Start = cue.Start, End = cue.End
         };
+        var shapeTrack = new ProjectTrack { Name = "Shapes" };
+        var imageTrack = new ProjectTrack { Name = "Images" };
         var shape = new ProjectLayer
         {
-            Name = "Shape", Kind = LayerKind.SHAPE, Start = new(1), End = new(3),
+            TrackId = shapeTrack.Id, Name = "Shape", Kind = LayerKind.SHAPE, Start = new(1), End = new(3),
             Shape = new(ShapeKind.RECTANGLE, 30, 40), Opacity = 0.5,
             Transform = new() { X = 25, Y = 35, Rotation = 12 }
         };
         var image = new ProjectLayer
         {
-            Name = "Image", Kind = LayerKind.IMAGE, Start = new(3), End = new(4), Image = new(asset.Id, 1, 1)
+            TrackId = imageTrack.Id, Name = "Image", Kind = LayerKind.IMAGE, Start = new(3), End = new(4), Image = new(asset.Id, 1, 1)
         };
-        var group = new ProjectLayer
+        return new()
         {
-            Name = "Composition", Kind = LayerKind.GROUP, Start = MediaTime.Zero, End = new(60),
-            Children = [subtitle, shape, image], Transform = new() { X = 15, Y = 25, ScaleX = 0.75, ScaleY = 0.75 }
+            Name = "Shared template", Assets = [asset], Tracks = [ProjectTrack.Default, shapeTrack, imageTrack],
+            Subtitles = [cue], Layers = [subtitle, shape, image]
         };
-        return new() { Name = "Shared template", Assets = [asset], Subtitles = [cue], Layers = [group] };
     }
 
     private static ProjectDocument CreateBranch(ProjectDocument template, string text, MediaTime start)
     {
         var cue = template.Subtitles[0] with { Start = start, End = start + new MediaTime(5, 3), Text = text };
-        var group = template.Layers[0];
-        var subtitle = group.Children[0] with { Start = cue.Start, End = cue.End };
-        return template with { Subtitles = [cue], Layers = [group with { Children = group.Children.SetItem(0, subtitle) }] };
+        var subtitle = template.Layers[0] with { Start = cue.Start, End = cue.End };
+        return template with { Subtitles = [cue], Layers = template.Layers.SetItem(0, subtitle) };
     }
 
     private static async Task<string> WriteSourceAsync(string rootDirectory, string name, ProjectDocument document,
@@ -456,25 +456,25 @@ public sealed class ProjectMergeWorkflowTests
     }
 
     private static void AssertImportedBranch(ProjectDocument source, ProjectDocument merged, SubtitleLine cue,
-        ProjectLayer group, string destination)
+        ProjectLayer subtitle, string destination)
     {
-        var originalCue = source.Subtitles[0];
-        Assert.Equal(originalCue with { Id = cue.Id, TrackId = cue.TrackId }, cue);
-        var originalGroup = source.Layers[0];
-        Assert.NotEqual(originalGroup.Id, group.Id);
-        Assert.Equal(originalGroup with { Id = group.Id, Children = group.Children }, group);
-        Assert.Equal(3, group.Children.Length);
-        Assert.Equal(cue.Id, group.Children[0].SubtitleId);
-        Assert.Equal(cue.Start, group.Children[0].Start);
-        Assert.Equal(cue.End, group.Children[0].End);
-        Assert.Equal(originalGroup.Children[0] with { Id = group.Children[0].Id, SubtitleId = cue.Id }, group.Children[0]);
-        Assert.Equal(originalGroup.Children[1] with { Id = group.Children[1].Id }, group.Children[1]);
-        var image = group.Children[2];
+        Assert.Equal(JsonSerializer.Serialize(source.Subtitles[0] with { Id = cue.Id }), JsonSerializer.Serialize(cue));
+        var offset = merged.Layers.IndexOf(subtitle);
+        var shape = merged.Layers[offset + 1];
+        var image = merged.Layers[offset + 2];
+        Assert.NotEqual(source.Layers[0].Id, subtitle.Id);
+        Assert.Equal(JsonSerializer.Serialize(source.Layers[0] with { Id = subtitle.Id, TrackId = subtitle.TrackId, SubtitleId = cue.Id }),
+            JsonSerializer.Serialize(subtitle));
+        Assert.Equal(JsonSerializer.Serialize(source.Layers[1] with { Id = shape.Id, TrackId = shape.TrackId }),
+            JsonSerializer.Serialize(shape));
+        Assert.NotEqual(subtitle.TrackId, shape.TrackId);
+        Assert.NotEqual(shape.TrackId, image.TrackId);
+        Assert.Equal(JsonSerializer.Serialize(source.Layers[2] with { Id = image.Id, TrackId = image.TrackId, Image = image.Image }),
+            JsonSerializer.Serialize(image));
         var asset = merged.Assets.Single(item => item.Id == image.Image!.AssetId);
         Assert.Equal(ProjectAssetKind.IMAGE, asset.Kind);
         Assert.NotEqual(source.Assets[0].Id, asset.Id);
-        Assert.Equal(originalGroup.Children[2] with { Id = image.Id, Image = image.Image }, image);
-        Assert.Equal(source.Layers[0].Children[2].Image! with { AssetId = asset.Id }, image.Image);
+        Assert.Equal(source.Layers[2].Image! with { AssetId = asset.Id }, image.Image);
         Assert.True(File.Exists(ProjectAssetLocation.Resolve(asset, destination)));
         Assert.Equal(ImageBytes(), File.ReadAllBytes(ProjectAssetLocation.Resolve(asset, destination)));
         ProjectValidator.Validate(merged);

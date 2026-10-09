@@ -6,6 +6,12 @@ internal static class LegacySubtitleMarginsJsonFixture
 {
     internal static void DowngradeProject(JsonObject root)
     {
+        LegacyTrackJsonFixture.DowngradeProject(root);
+        if (root["version"]!.GetValue<int>() >= 8)
+        {
+            return;
+        }
+
         foreach (var line in root["subtitles"]!.AsArray().OfType<JsonObject>())
         {
             DowngradeStyle(line["style"]!.AsObject());

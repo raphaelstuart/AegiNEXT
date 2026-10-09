@@ -90,8 +90,7 @@ public static class LayerAnimationTiming
         for (var index = 0; index < layers.Length; index++)
         {
             var layer = layers[index];
-            var children = NormalizeLayers(layer.Children);
-            var next = Clip(children == layer.Children ? layer : layer with { Children = children });
+            var next = Clip(layer);
             if (next != layer)
             {
                 changed ??= layers.ToBuilder();

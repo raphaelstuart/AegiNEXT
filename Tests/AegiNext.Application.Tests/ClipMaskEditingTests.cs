@@ -5,27 +5,27 @@ namespace AegiNext.Application.Tests;
 public sealed class ClipMaskEditingTests
 {
     [Fact]
-    public void SetAndClearNestedSubtitleMaskAreSingleTransactionsAndPresetsPreserveMask()
+    public void SetAndClearFlatSubtitleMaskAreSingleTransactionsAndPresetsPreserveMask()
     {
         var initial = new ProjectEditor();
         var id = initial.AddSubtitle(new(0), new(2), "masked");
-        var document = initial.Snapshot with { Layers = [new() { Children = initial.Snapshot.Layers }] };
+        var document = initial.Snapshot;
         var editor = new ProjectEditor(document);
         var changes = 0;
         editor.Changed += (_, _) => changes++;
         var mask = new RectangleClipMask { TopLeft = new(10, 20), BottomRight = new(100, 80) };
         editor.SetClipMask(id, mask);
-        Assert.Same(mask, editor.Snapshot.Layers[0].Children[0].Mask);
+        Assert.Same(mask, editor.Snapshot.Layers[0].Mask);
         Assert.Equal(1, changes);
         Assert.True(editor.Undo());
         Assert.Same(document, editor.Snapshot);
         Assert.False(editor.CanUndo);
         Assert.True(editor.Redo());
         editor.ApplyPreset(id, new(Guid.NewGuid(), "opacity", [new(AnimationProperty.OPACITY, [new(new(0), 0.5)])]));
-        Assert.Same(mask, editor.Snapshot.Layers[0].Children[0].Mask);
+        Assert.Same(mask, editor.Snapshot.Layers[0].Mask);
         var beforeClear = editor.Snapshot;
         editor.ClearClipMask(id);
-        Assert.Null(editor.Snapshot.Layers[0].Children[0].Mask);
+        Assert.Null(editor.Snapshot.Layers[0].Mask);
         Assert.True(editor.Undo());
         Assert.Same(beforeClear, editor.Snapshot);
     }
@@ -33,7 +33,7 @@ public sealed class ClipMaskEditingTests
     [Fact]
     public void MaskEditRejectsInvalidTargetsAndGenericLayerEditCannotBypassValidation()
     {
-        var layer = new ProjectLayer();
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 10, 10) };
         var editor = new ProjectEditor(new() { Layers = [layer] });
         var original = editor.Snapshot;
         var mask = new RectangleClipMask { TopLeft = new(10, 20), BottomRight = new(100, 80) };

@@ -25,7 +25,7 @@ public sealed class SubtitleStylePresetTests
         var asset = Assert.Single(prepared.Project.Assets);
         Assert.Equal(asset.Id, prepared.Style.FontAssetId);
         Assert.Equal(bytes.ToArray(), await File.ReadAllBytesAsync(ProjectAssetLocation.Resolve(asset, directory.Path)));
-        var styled = ProjectEditingOperations.SetSubtitleTrackStyle(prepared.Project, SubtitleTrack.DEFAULT_TRACK_ID,
+        var styled = ProjectEditingOperations.SetSubtitleTrackStyle(prepared.Project, ProjectTrack.DEFAULT_TRACK_ID,
             preset.Id, preset.Name, prepared.Style);
         var editor = new ProjectEditor(styled);
         editor.AddSubtitle(new(0), new(2), "Later");

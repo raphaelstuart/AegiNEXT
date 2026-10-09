@@ -89,10 +89,10 @@ public sealed class SubtitleFormatWorkflowTests
         context.Dialogs.OpenPath = path;
         await context.Session.ExecuteCommandAsync(WorkbenchCommand.IMPORT_SUBTITLES);
         Assert.Null(context.Session.LastError);
-        Assert.Equal(3, context.Editor.Snapshot.SubtitleTracks.Length);
+        Assert.Equal(3, context.Editor.Snapshot.Tracks.Length);
         Assert.Equal(2, context.Editor.Snapshot.Subtitles.Length);
         Assert.Equal(2, context.Editor.Snapshot.Layers.Length);
-        Assert.DoesNotContain(context.Editor.Snapshot.Subtitles, line => line.TrackId == original.SubtitleTracks[0].Id);
+        Assert.DoesNotContain(context.Editor.Snapshot.Layers, clip => clip.TrackId == original.Tracks[0].Id);
         Assert.NotNull(context.Session.SelectedCueId);
         Assert.True(context.Editor.Undo());
         Assert.Same(original, context.Editor.Snapshot);

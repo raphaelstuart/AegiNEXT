@@ -122,12 +122,12 @@ public sealed class TimelineClipAppearanceUiTests
             timeline.SetClipPalette(DiagnosticPalette() with { StartLine = "#00FF0080", EndLine = "#FF000080" });
             var rectangle = timeline.GetClipRectangle(scene.Selected.Id)!.Value;
             using var before = Capture(timeline);
-            var otherTrack = new SubtitleTrack { Name = "Overlapping track" };
-            var duplicate = scene.Selected with { Id = Guid.NewGuid(), TrackId = otherTrack.Id };
-            var duplicateLayer = Layer(duplicate);
+            var otherTrack = new ProjectTrack { Name = "Overlapping track" };
+            var duplicate = scene.Selected with { Id = Guid.NewGuid() };
+            var duplicateLayer = Layer(duplicate) with { TrackId = otherTrack.Id };
             var document = scene.Document with
             {
-                SubtitleTracks = [SubtitleTrack.Default, otherTrack],
+                Tracks = [ProjectTrack.Default, otherTrack],
                 Subtitles = [.. scene.Document.Subtitles, duplicate],
                 Layers = [.. scene.Document.Layers, duplicateLayer]
             };

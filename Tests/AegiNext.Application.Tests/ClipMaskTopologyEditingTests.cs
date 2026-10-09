@@ -5,7 +5,7 @@ namespace AegiNext.Application.Tests;
 public sealed class ClipMaskTopologyEditingTests
 {
     [Fact]
-    public void RemoveNodePreservesOtherIdentitiesHandlesPivotAndTracksInOneNestedTransaction()
+    public void RemoveNodePreservesOtherIdentitiesHandlesPivotAndTracksInOneFlatTransaction()
     {
         var first = new MaskNode { Position = new(10, 20) };
         var second = new MaskNode { Position = new(30, 40), InHandle = new(-3, 4), OutHandle = new(5, -6) };
@@ -17,14 +17,14 @@ public sealed class ClipMaskTopologyEditingTests
             Inverted = true, Contours = [contour, other],
             Transform = new() { Pivot = new(40, 50), Position = new(4, 5), Scale = new(2, 3), Rotation = 12 }
         };
-        var editor = Editor(mask, nested: true);
+        var editor = Editor(mask);
         var original = editor.Snapshot;
-        var layer = original.Layers[0].Children[0];
+        var layer = original.Layers[0];
         var changes = 0;
         editor.Changed += (_, _) => changes++;
         editor.RemoveClipMaskNode(layer.Id, first.Id);
 
-        var resultLayer = editor.Snapshot.Layers[0].Children[0];
+        var resultLayer = editor.Snapshot.Layers[0];
         var result = Assert.IsType<VectorClipMask>(resultLayer.Mask);
         Assert.Equal(contour.Id, result.Contours[0].Id);
         Assert.Equal<MaskNode>([second, third], result.Contours[0].Nodes);
@@ -39,7 +39,7 @@ public sealed class ClipMaskTopologyEditingTests
         Assert.Same(original, editor.Snapshot);
         Assert.False(editor.CanUndo);
         Assert.True(editor.Redo());
-        Assert.Equal(2, Assert.IsType<VectorClipMask>(editor.Snapshot.Layers[0].Children[0].Mask).Contours[0].Nodes.Length);
+        Assert.Equal(2, Assert.IsType<VectorClipMask>(editor.Snapshot.Layers[0].Mask).Contours[0].Nodes.Length);
     }
 
     [Fact]
@@ -182,14 +182,14 @@ public sealed class ClipMaskTopologyEditingTests
         Assert.Throws<InvalidOperationException>(() => rectangle.RemoveClipMaskNode(rectangle.Snapshot.Layers[0].Id, Guid.NewGuid()));
         Assert.Throws<InvalidOperationException>(() => rectangle.RemoveClipMaskContour(rectangle.Snapshot.Layers[0].Id, Guid.NewGuid()));
         Assert.False(rectangle.CanUndo);
-        var group = new ProjectLayer();
-        var nonSubtitle = new ProjectEditor(new() { Layers = [group] });
-        Assert.Throws<InvalidDataException>(() => nonSubtitle.RemoveClipMaskNode(group.Id, Guid.NewGuid()));
-        Assert.Throws<InvalidDataException>(() => nonSubtitle.RemoveClipMaskContour(group.Id, Guid.NewGuid()));
+        var shape = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 10, 10) };
+        var nonSubtitle = new ProjectEditor(new() { Layers = [shape] });
+        Assert.Throws<InvalidDataException>(() => nonSubtitle.RemoveClipMaskNode(shape.Id, Guid.NewGuid()));
+        Assert.Throws<InvalidDataException>(() => nonSubtitle.RemoveClipMaskContour(shape.Id, Guid.NewGuid()));
         Assert.False(nonSubtitle.CanUndo);
     }
 
-    private static ProjectEditor Editor(ClipMask mask, bool nested = false)
+    private static ProjectEditor Editor(ClipMask mask)
     {
         var setup = new ProjectEditor();
         var id = setup.AddSubtitle(new(0), new(2), "mask");
@@ -198,7 +198,7 @@ public sealed class ClipMaskTopologyEditingTests
         setup.SetKeyframe(id, AnimationProperty.MASK_POSITION, new(new(0), new ScenePoint(4, 5)));
         setup.SetAnimationTransform(id, new(AnimationProperty.MASK_ROTATION), 0,
             new(Guid.NewGuid(), new(0), new(2), 90, 2));
-        var document = nested ? setup.Snapshot with { Layers = [new() { Children = setup.Snapshot.Layers }] } : setup.Snapshot;
+        var document = setup.Snapshot;
         return new(document);
     }
 }

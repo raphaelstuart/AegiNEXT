@@ -81,8 +81,8 @@ public sealed partial class SubtitleTimelineControl
 
     private (TimelineRow? Owner, TimelineAnimationRow? Animation) FindAnimationRow(TimelineAnimationRowId id)
     {
-        var owner = rows.FirstOrDefault(row => row.Id == id.OwnerId &&
-            (row.TrackId.HasValue ? TimelineRowScope.SUBTITLE_TRACK : TimelineRowScope.SCENE_LAYER) == id.Scope);
+        var owner = rows.FirstOrDefault(row => row.TrackId == id.OwnerId &&
+            TimelineRowScope.TRACK == id.Scope);
         return (owner, owner?.Animations.FirstOrDefault(animation => animation.Id == id));
     }
 

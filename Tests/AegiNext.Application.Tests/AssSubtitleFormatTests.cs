@@ -7,7 +7,7 @@ namespace AegiNext.Application.Tests;
 
 public sealed class AssSubtitleFormatTests
 {
-    private static readonly string[] expectedOrder = ["later", "earlier"];
+    private static readonly string[] expectedOrder = ["earlier", "later"];
     [Fact]
     public void BomUnicodeCommasAndEscapesPreserveTextAndMapScriptResolution()
     {
@@ -71,7 +71,7 @@ public sealed class AssSubtitleFormatTests
     }
 
     [Fact]
-    public void ExportPreservesLayerOrderAndDeduplicatesStaticStyles()
+    public void ExportUsesTrackClipTimeOrderAndDeduplicatesStaticStyles()
     {
         var first = new SubtitleLine { Start = new(3), End = new(4), Text = "later" };
         var second = new SubtitleLine { Start = new(0), End = new(1), Text = "earlier" };

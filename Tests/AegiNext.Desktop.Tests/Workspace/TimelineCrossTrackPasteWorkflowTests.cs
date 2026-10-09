@@ -16,7 +16,7 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
         await context.InitializeAsync();
         var session = context.Session;
         var ids = document.Layers.Select(layer => layer.Id).ToArray();
-        var targetTrack = document.SubtitleTracks[1];
+        var targetTrack = document.Tracks[1];
         session.SelectLayer(ids[1], ids);
         await session.CopyTimelineClipsAsync(ids[1], ids);
         var changes = 0;
@@ -28,7 +28,7 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
         var pasted = context.Editor.Snapshot;
         var copies = pasted.Subtitles.Skip(document.Subtitles.Length).ToArray();
         Assert.Equal(2, copies.Length);
-        Assert.All(copies, cue => Assert.Equal(targetTrack.Id, cue.TrackId));
+        Assert.All(copies, cue => Assert.Equal(targetTrack.Id, new ProjectClipIndex(pasted).GetSubtitleTrackId(cue.Id)));
         Assert.Equal(new MediaTime(10), copies[0].Start);
         Assert.Equal(new MediaTime(12), copies[1].Start);
         Assert.Equal(document.Subtitles.Select(cue => cue.End - cue.Start), copies.Select(cue => cue.End - cue.Start));
@@ -50,30 +50,30 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
     [Fact]
     public async Task ShapePrimaryFreezesCurrentSourceTrackAndPreservesTrackGapsAfterHeaderSelection()
     {
-        var sourceA = new SubtitleTrack { Name = "Source A" };
-        var target = new SubtitleTrack { Name = "Target" };
-        var sourceB = new SubtitleTrack { Name = "Source B" };
-        var gap = new SubtitleTrack { Name = "Gap" };
-        var destinationB = new SubtitleTrack { Name = "Destination B" };
-        var first = new SubtitleLine { TrackId = sourceA.Id, Start = new(3), End = new(4), Text = "First" };
-        var second = new SubtitleLine { TrackId = sourceB.Id, Start = new(5), End = new(6), Text = "Second" };
+        var sourceA = new ProjectTrack { Name = "Source A" };
+        var target = new ProjectTrack { Name = "Target" };
+        var sourceB = new ProjectTrack { Name = "Source B" };
+        var gap = new ProjectTrack { Name = "Gap" };
+        var destinationB = new ProjectTrack { Name = "Destination B" };
+        var first = new SubtitleLine { Start = new(3), End = new(4), Text = "First" };
+        var second = new SubtitleLine { Start = new(5), End = new(6), Text = "Second" };
         var shape = new ProjectLayer
         {
             Kind = LayerKind.SHAPE, Start = new(1), End = new(2), Shape = new(ShapeKind.RECTANGLE, 30, 40)
         };
         var document = new ProjectDocument
         {
-            SubtitleTracks = [SubtitleTrack.Default, sourceA, target, sourceB, gap, destinationB],
+            Tracks = [ProjectTrack.Default, sourceA, target, sourceB, gap, destinationB],
             Subtitles = [first, second],
-            Layers = [shape, Layer(first), Layer(second)]
+            Layers = [shape, Layer(first) with { TrackId = sourceA.Id }, Layer(second) with { TrackId = sourceB.Id }]
         };
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
         var session = context.Session;
         var ids = document.Layers.Select(layer => layer.Id).ToArray();
-        Assert.True(session.SelectTrack(SubtitleTrack.DEFAULT_TRACK_ID));
+        Assert.True(session.SelectTrack(ProjectTrack.DEFAULT_TRACK_ID));
         session.SelectLayer(shape.Id, ids);
-        Assert.Equal(SubtitleTrack.DEFAULT_TRACK_ID, session.CurrentTrackId);
+        Assert.Equal(ProjectTrack.DEFAULT_TRACK_ID, session.CurrentTrackId);
         await session.CopyTimelineClipsAsync(shape.Id, ids);
 
         Assert.True(session.SelectTrack(target.Id));
@@ -86,11 +86,11 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
 
         Assert.Null(session.LastError);
         var pasted = context.Editor.Snapshot;
-        var copiedShape = pasted.Layers[3];
-        Assert.Equal(LayerKind.SHAPE, copiedShape.Kind);
+        var copiedShape = Assert.Single(pasted.Layers.Skip(document.Layers.Length), clip => clip.Kind == LayerKind.SHAPE);
+        Assert.Equal(target.Id, copiedShape.TrackId);
         Assert.Equal(new MediaTime(10), copiedShape.Start);
-        Assert.Equal(sourceB.Id, pasted.Subtitles[2].TrackId);
-        Assert.Equal(destinationB.Id, pasted.Subtitles[3].TrackId);
+        Assert.Equal(sourceB.Id, new ProjectClipIndex(pasted).GetSubtitleTrackId(pasted.Subtitles[2].Id));
+        Assert.Equal(destinationB.Id, new ProjectClipIndex(pasted).GetSubtitleTrackId(pasted.Subtitles[3].Id));
         Assert.Equal(new MediaTime(12), pasted.Subtitles[2].Start);
         Assert.Equal(new MediaTime(14), pasted.Subtitles[3].Start);
         Assert.Equal(copiedShape.Id, session.SelectedLayerId);
@@ -119,7 +119,7 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
     }
 
     [Fact]
-    public async Task GraphicsOnlyClipboardCanPasteToNullTrackTargetWithOneUndo()
+    public async Task GraphicsOnlyClipboardAlsoRejectsNullTrackTargetWithoutMutation()
     {
         var shape = new ProjectLayer
         {
@@ -135,17 +135,7 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
 
         await session.PasteTimelineClipsAtTargetAsync(new TimelineClipContextEventArgs(null, null, new(10)), document);
 
-        Assert.Null(session.LastError);
-        var pasted = context.Editor.Snapshot;
-        Assert.Empty(pasted.Subtitles);
-        var copy = pasted.Layers[1];
-        Assert.NotEqual(shape.Id, copy.Id);
-        Assert.Equal(shape with { Id = copy.Id, Start = new(10), End = new(12) }, copy);
-        Assert.Equal(copy.Id, session.SelectedLayerId);
-        Assert.Equal(new[] { copy.Id }, session.ViewModel.Timeline.SelectedLayerIds);
-        Assert.True(context.Editor.Undo());
-        Assert.Same(document, context.Editor.Snapshot);
-        Assert.False(context.Editor.CanUndo);
+        AssertPasteRejected(context, document, [shape.Id], shape.Id);
     }
 
     [Fact]
@@ -154,11 +144,11 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
         var source = CreateDocument();
         var obstacle = new SubtitleLine
         {
-            TrackId = source.SubtitleTracks[1].Id, Start = new(12), End = new(13), Text = "Obstacle"
+            Start = new(12), End = new(13), Text = "Obstacle"
         };
         var document = source with
         {
-            Subtitles = source.Subtitles.Add(obstacle), Layers = source.Layers.Add(Layer(obstacle))
+            Subtitles = source.Subtitles.Add(obstacle), Layers = source.Layers.Add(Layer(obstacle) with { TrackId = source.Tracks[1].Id })
         };
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
@@ -167,10 +157,10 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
         session.SelectLayer(ids[1], ids);
         await session.CopyTimelineClipsAsync(ids[1], ids);
 
-        await session.PasteTimelineClipsAtTargetAsync(new TimelineClipContextEventArgs(obstacle.TrackId, obstacle.Id, new(10)), document);
+        await session.PasteTimelineClipsAtTargetAsync(new TimelineClipContextEventArgs(source.Tracks[1].Id, obstacle.Id, new(10)), document);
 
         AssertPasteRejected(context, document, ids, ids[1]);
-        Assert.Equal(SubtitleTrack.DEFAULT_TRACK_ID, session.CurrentTrackId);
+        Assert.Equal(ProjectTrack.DEFAULT_TRACK_ID, session.CurrentTrackId);
     }
 
     [Fact]
@@ -188,7 +178,7 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
         var changes = 0;
         context.Editor.Changed += (_, _) => changes++;
 
-        await session.PasteTimelineClipsAtTargetAsync(new TimelineClipContextEventArgs(document.SubtitleTracks[1].Id, null, new(10)), document);
+        await session.PasteTimelineClipsAtTargetAsync(new TimelineClipContextEventArgs(document.Tracks[1].Id, null, new(10)), document);
 
         Assert.Null(session.LastError);
         Assert.Same(changed, context.Editor.Snapshot);
@@ -208,7 +198,7 @@ public sealed class TimelineCrossTrackPasteWorkflowTests
         var second = new SubtitleLine { Start = new(3), End = new(4), Text = "Second" };
         return new()
         {
-            SubtitleTracks = [SubtitleTrack.Default, new() { Name = "Target" }],
+            Tracks = [ProjectTrack.Default, new() { Name = "Target" }],
             Subtitles = [first, second],
             Layers = [Layer(first), Layer(second)]
         };

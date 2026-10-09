@@ -25,7 +25,7 @@ public sealed class TimelineTrackStylesUiTests
         await context.Session.Styles.Completion;
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "Timing", new() { FontSize = 43, Italic = true });
         await context.Session.Styles.UpsertAsync(preset);
-        var trackId = context.Session.Editor.AddSubtitleTrack("Timing track");
+        var trackId = context.Session.Editor.AddTrack("Timing track");
         await context.Session.ApplySubtitleTrackStyleAsync(trackId, preset.Id);
         Assert.True(context.Session.SelectTrack(trackId));
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
@@ -33,14 +33,18 @@ public sealed class TimelineTrackStylesUiTests
 
         UiTestActions.Press(context.Window, Key.F8);
         Dispatcher.UIThread.RunJobs();
+        var timing = Assert.IsAssignableFrom<IAsyncRelayCommand>(context.Window.GetCommand(WorkbenchCommand.TIMING_ENTER));
+        Assert.NotNull(timing.ExecutionTask);
+        await timing.ExecutionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await context.Session.WaitForProjectIdleAsync();
 
         var cue = Assert.Single(context.Session.DocumentSnapshot.Subtitles);
-        Assert.Equal(trackId, cue.TrackId);
+        Assert.Equal(trackId, context.Session.ClipIndex.GetSubtitleTrackId(cue.Id));
         Assert.Equal(preset.Style, cue.Style);
         Assert.Equal(cue.Id, context.Session.SelectedCue?.Id);
         Assert.True(context.Session.Editor.Undo());
         Assert.Empty(context.Session.DocumentSnapshot.Subtitles);
-        Assert.Equal(preset.Style, context.Session.DocumentSnapshot.SubtitleTracks.Single(track => track.Id == trackId).DefaultStyle);
+        Assert.Equal(preset.Style, context.Session.DocumentSnapshot.Tracks.Single(track => track.Id == trackId).DefaultStyle);
     }
 
     [AvaloniaFact]
@@ -51,7 +55,7 @@ public sealed class TimelineTrackStylesUiTests
         await context.Session.Styles.Completion;
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "Dialogue", new() { FontSize = 47, Bold = true });
         await context.Session.Styles.UpsertAsync(preset);
-        var emptyTrack = context.Session.Editor.AddSubtitleTrack("Empty");
+        var emptyTrack = context.Session.Editor.AddTrack("Empty");
         var original = context.Session.DocumentSnapshot;
         var menu = TimelineTrackTestActions.OpenMenu(context, emptyTrack);
         var trackStyles = TimelineTrackTestActions.Item(menu, "SubtitleTrackStyleMenuItem");
@@ -62,7 +66,7 @@ public sealed class TimelineTrackStylesUiTests
         await ((IAsyncRelayCommand)choice.Command).ExecutionTask!;
         menu.Close();
         Assert.Empty(context.Session.DocumentSnapshot.Subtitles);
-        Assert.Equal(preset.Style, context.Session.DocumentSnapshot.SubtitleTracks.Single(track => track.Id == emptyTrack).DefaultStyle);
+        Assert.Equal(preset.Style, context.Session.DocumentSnapshot.Tracks.Single(track => track.Id == emptyTrack).DefaultStyle);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.DocumentSnapshot);
         Assert.True(context.Session.Editor.Redo());
@@ -72,8 +76,12 @@ public sealed class TimelineTrackStylesUiTests
         Assert.True(timeline.Focus());
         UiTestActions.Press(context.Window, Key.Enter, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
         Dispatcher.UIThread.RunJobs();
+        var create = Assert.IsAssignableFrom<IAsyncRelayCommand>(context.Window.GetCommand(WorkbenchCommand.ADD_SUBTITLE));
+        Assert.NotNull(create.ExecutionTask);
+        await create.ExecutionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await context.Session.WaitForProjectIdleAsync();
         var created = Assert.Single(context.Session.DocumentSnapshot.Subtitles);
-        Assert.Equal(emptyTrack, created.TrackId);
+        Assert.Equal(emptyTrack, context.Session.ClipIndex.GetSubtitleTrackId(created.Id));
         Assert.Equal(preset.Style, created.Style);
         var badge = timeline.GetTrackStyleBadgeRectangle(emptyTrack)!.Value;
         Assert.True(timeline.GetTrackHeaderRectangle(emptyTrack)!.Value.Contains(badge));
@@ -90,7 +98,7 @@ public sealed class TimelineTrackStylesUiTests
         automatic.Command!.Execute(automatic.CommandParameter);
         await ((IAsyncRelayCommand)automatic.Command).ExecutionTask!;
         menu.Close();
-        var track = context.Session.DocumentSnapshot.SubtitleTracks.Single(value => value.Id == emptyTrack);
+        var track = context.Session.DocumentSnapshot.Tracks.Single(value => value.Id == emptyTrack);
         Assert.False(track.AutoApplyStyle);
         Assert.Equal(preset.Style, track.DefaultStyle);
         Assert.Equal(created.Style, Assert.Single(context.Session.DocumentSnapshot.Subtitles).Style);
@@ -108,7 +116,7 @@ public sealed class TimelineTrackStylesUiTests
         await context.Session.Styles.UpsertAsync(preset);
         var trackId = Assert.IsType<Guid>(context.Session.CurrentTrackId);
         var cue = context.Session.Editor.AddSubtitle(new(0), new(2), "existing", trackId);
-        var otherTrack = context.Session.Editor.AddSubtitleTrack("Other");
+        var otherTrack = context.Session.Editor.AddTrack("Other");
         var otherCue = context.Session.Editor.AddSubtitle(new(0), new(2), "Other", otherTrack);
         context.Session.Editor.SetKeyframe(cue, AnimationProperty.OPACITY, new(new(1), 0.4));
         var before = context.Session.DocumentSnapshot;
@@ -133,7 +141,7 @@ public sealed class TimelineTrackStylesUiTests
             return;
         }
 
-        Assert.Equal(preset.Style, context.Session.DocumentSnapshot.SubtitleTracks.Single(value => value.Id == trackId).DefaultStyle);
+        Assert.Equal(preset.Style, context.Session.DocumentSnapshot.Tracks.Single(value => value.Id == trackId).DefaultStyle);
         Assert.Equal(updateExisting ? preset.Style : before.Subtitles.Single(value => value.Id == cue).Style,
             context.Session.DocumentSnapshot.Subtitles.Single(value => value.Id == cue).Style);
         Assert.Same(before.Subtitles.Single(value => value.Id == otherCue),
@@ -157,7 +165,7 @@ public sealed class TimelineTrackStylesUiTests
         await context.Session.ToggleTrackAutoApplyStyleAsync(Assert.IsType<Guid>(context.Session.CurrentTrackId));
         await context.Session.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
         Assert.Equal(currentPreset.Style, Assert.Single(context.Session.DocumentSnapshot.Subtitles).Style);
-        Assert.Equal(trackPreset.Style, context.Session.DocumentSnapshot.SubtitleTracks[0].DefaultStyle);
+        Assert.Equal(trackPreset.Style, context.Session.DocumentSnapshot.Tracks[0].DefaultStyle);
         await context.Session.Styles.DeleteAsync(currentPreset.Id);
         await context.Session.Styles.DeleteAsync(trackPreset.Id);
         await context.Session.SeekProjectTimeAsync(new(3));

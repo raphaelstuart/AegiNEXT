@@ -131,7 +131,7 @@ internal sealed partial class WorkbenchSession
     private HashSet<Guid> SelectedTimelineSubtitleIds(ProjectDocument source)
     {
         var clips = TimelineClipIds().ToHashSet();
-        return Flatten(source.Layers).Where(layer => layer.Kind == LayerKind.SUBTITLE && clips.Contains(layer.Id) &&
+        return source.Layers.Where(layer => layer.Kind == LayerKind.SUBTITLE && clips.Contains(layer.Id) &&
             layer.SubtitleId.HasValue).Select(layer => layer.SubtitleId!.Value).ToHashSet();
     }
 

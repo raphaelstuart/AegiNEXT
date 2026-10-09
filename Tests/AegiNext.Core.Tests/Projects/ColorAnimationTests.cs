@@ -14,7 +14,7 @@ public sealed class ColorAnimationTests
             [new(new(0), new SceneColor(-2, 4, 12, 0)), new(new(4), new SceneColor(2, 8, 20, 1))]);
         var evaluated = Assert.Single(SceneEvaluator.Evaluate(new ProjectDocument
         {
-            Layers = [new() { End = new(4), Tracks = [track] }]
+            Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(4), Tracks = [track] }]
         }, new(2)));
         Assert.Equal(new SceneColor(0, 6, 16, 0.5), evaluated.Fill);
         Assert.Equal(new SceneColor(-2, 4, 12, 0), SceneEvaluator.EvaluateColorTrack(track, new(-1)));
@@ -34,7 +34,7 @@ public sealed class ColorAnimationTests
             },
             new(new(8), new SceneColor(3, 10, 12, 1))
         ]);
-        var original = new ProjectLayer { End = new(8), Tracks = [track] };
+        var original = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(8), Tracks = [track] };
         var once = LayerAnimationTiming.Clip(original with { Start = new(1), End = new(7), AnimationOffset = new(1) });
         var twice = LayerAnimationTiming.Clip(once with { Start = new(2), End = new(6), AnimationOffset = new(2) });
         var stretched = LayerAnimationTiming.Retime(twice, new(2), new(10), TimelineEditMode.STRETCH);
@@ -68,13 +68,13 @@ public sealed class ColorAnimationTests
         {
             Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new()
             {
-                Layers = [new() { Tracks = [new(AnimationProperty.FILL, [frame])] }]
+                Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [new(AnimationProperty.FILL, [frame])] }]
             }));
         }
 
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(new()
         {
-            Layers = [new() { Tracks = [new(AnimationProperty.FILL_RED, [new(new(0), 1)])] }]
+            Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Tracks = [new(AnimationProperty.FILL_RED, [new(new(0), 1)])] }]
         }));
         Assert.Equal(19, (int)AnimationProperty.FILL);
         Assert.Equal(20, (int)AnimationProperty.STROKE);
@@ -91,7 +91,7 @@ public sealed class ColorAnimationTests
             Enumerable.Range(0, 10000).Select(index => new Keyframe(new(index * 2 + 1), index % 20)).ToImmutableArray());
         var tracks = LegacyAnimationTrackMigration.Merge([red, green], AnimationProperty.FILL, new SceneColor(0, 0, 7, 0.75));
         Assert.Equal(20000, Assert.Single(tracks).Keyframes.Length);
-        ProjectValidator.Validate(new() { Layers = [new() { End = new(20000), Tracks = tracks }] });
+        ProjectValidator.Validate(new() { Layers = [new() { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), End = new(20000), Tracks = tracks }] });
         Assert.Equal(7, SceneEvaluator.EvaluateColorTrack(tracks[0], new(19999)).Blue);
         Assert.Equal(0.75, SceneEvaluator.EvaluateColorTrack(tracks[0], new(19999)).Alpha);
     }

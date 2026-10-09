@@ -43,8 +43,7 @@ internal sealed partial class ProjectWorkflowCoordinator
         if (!merged.ImportedSubtitleIds.IsEmpty)
         {
             var id = merged.ImportedSubtitleIds[0];
-            var line = session.Editor.Snapshot.Subtitles.First(value => value.Id == id);
-            session.SelectTrack(line.TrackId);
+            session.SelectTrack(session.ClipIndex.GetSubtitleTrackId(id));
             session.SelectCue(id);
         }
         else

@@ -17,7 +17,7 @@
         <ComboBox Name="SubtitleTrackCombo" Width="160" Margin="0,0,8,4" ItemsSource="{Binding Tracks}"
                   SelectedItem="{Binding SelectedTrack, Mode=OneWay}">
           <ComboBox.ItemTemplate>
-            <DataTemplate x:DataType="projects:SubtitleTrack">
+            <DataTemplate x:DataType="projects:ProjectTrack">
               <TextBlock Text="{Binding Name}" />
             </DataTemplate>
           </ComboBox.ItemTemplate>

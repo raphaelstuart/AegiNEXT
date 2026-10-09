@@ -20,12 +20,13 @@ public sealed class SelectedTimingPostProcessorWorkflowTests
         using var directory = new TemporaryWorkbenchDirectory();
         var firstPreset = Preset(LeadOptions(100, 200));
         var secondPreset = Preset(LeadOptions(300, 450));
-        var secondTrack = new SubtitleTrack { Name = "Other track" };
+        var secondTrack = new ProjectTrack { Name = "Other track" };
         var first = Cue(firstPreset, 2, 3);
-        var second = Cue(secondPreset, 2, 3) with { TrackId = secondTrack.Id };
+        var second = Cue(secondPreset, 2, 3);
         var unselected = Cue(firstPreset, 5, 6);
-        var shape = Shape();
-        var document = Document([first, second, unselected], [SubtitleTrack.Default, secondTrack], shape);
+        var shapeTrack = new ProjectTrack { Name = "Shapes" };
+        var shape = Shape() with { TrackId = shapeTrack.Id };
+        var document = Document([first, second, unselected], [ProjectTrack.Default, secondTrack, shapeTrack], shape, new Dictionary<Guid, Guid> { [second.Id] = secondTrack.Id });
         var editor = new ProjectEditor(document);
         await using var session = CreateSession(directory.Path, editor);
         await SeedAsync(session, firstPreset, secondPreset);
@@ -89,13 +90,14 @@ public sealed class SelectedTimingPostProcessorWorkflowTests
         var options = NoStages() with { AdjacencyEnabled = true, MaximumGapMilliseconds = 300, BiasPercent = 50 };
         var firstPreset = Preset(options);
         var secondPreset = Preset(crossTrack ? options : options with { BiasPercent = 90 });
-        var otherTrack = new SubtitleTrack { Name = "Independent" };
+        var otherTrack = new ProjectTrack { Name = "Independent" };
         var first = Cue(firstPreset, 1, 2);
         var second = Cue(secondPreset, 3, 4) with
         {
-            Start = new(2200, 1000), TrackId = crossTrack ? otherTrack.Id : first.TrackId
+            Start = new(2200, 1000)
         };
-        var document = Document([first, second], crossTrack ? [SubtitleTrack.Default, otherTrack] : [SubtitleTrack.Default]);
+        var document = Document([first, second], crossTrack ? [ProjectTrack.Default, otherTrack] : [ProjectTrack.Default],
+            trackIds: new Dictionary<Guid, Guid> { [second.Id] = crossTrack ? otherTrack.Id : ProjectTrack.DEFAULT_TRACK_ID });
         var editor = new ProjectEditor(document);
         await using var session = CreateSession(directory.Path, editor);
         await SeedAsync(session, firstPreset, secondPreset);
@@ -171,7 +173,7 @@ public sealed class SelectedTimingPostProcessorWorkflowTests
         using var directory = new TemporaryWorkbenchDirectory();
         var preset = Preset(NoStages() with { LeadInEnabled = true, LeadInMilliseconds = 0 });
         var cue = Cue(preset, 2, 3) with { StylePresetId = null };
-        var track = SubtitleTrack.Default with
+        var track = ProjectTrack.Default with
         {
             DefaultStyle = trackIdentity ? preset.Style : null,
             StylePresetId = trackIdentity ? preset.Id : null,
@@ -388,15 +390,28 @@ public sealed class SelectedTimingPostProcessorWorkflowTests
     };
 
     private static ProjectDocument Document(ImmutableArray<SubtitleLine> lines,
-        ImmutableArray<SubtitleTrack> tracks = default, ProjectLayer? shape = null) => new()
+        ImmutableArray<ProjectTrack> tracks = default, ProjectLayer? shape = null,
+        IReadOnlyDictionary<Guid, Guid>? trackIds = null)
     {
-        SubtitleTracks = tracks.IsDefault ? [SubtitleTrack.Default] : tracks,
-        Subtitles = lines,
-        Layers = [.. lines.Select(line => new ProjectLayer
+        var projectTracks = tracks.IsDefault ? ImmutableArray.Create(ProjectTrack.Default) : tracks;
+        if (shape is not null)
         {
-            Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End
-        }), .. (shape is null ? ImmutableArray<ProjectLayer>.Empty : [shape])]
-    };
+            if (!projectTracks.Any(track => track.Id == shape.TrackId))
+            {
+                projectTracks = projectTracks.Add(new() { Id = shape.TrackId, Name = "Shapes" });
+            }
+        }
+        return new()
+        {
+            Tracks = projectTracks,
+            Subtitles = lines,
+            Layers = [.. lines.Select(line => new ProjectLayer
+            {
+                TrackId = trackIds?.GetValueOrDefault(line.Id, ProjectTrack.DEFAULT_TRACK_ID) ?? ProjectTrack.DEFAULT_TRACK_ID,
+                Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End
+            }), .. (shape is null ? ImmutableArray<ProjectLayer>.Empty : [shape])]
+        };
+    }
 
     private static ProjectLayer LayerFor(ProjectDocument document, SubtitleLine line) =>
         document.Layers.Single(layer => layer.SubtitleId == line.Id);

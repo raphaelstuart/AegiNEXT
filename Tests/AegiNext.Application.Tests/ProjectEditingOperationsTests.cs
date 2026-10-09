@@ -142,92 +142,52 @@ public sealed class ProjectEditingOperationsTests
     {
         var editor = new ProjectEditor();
         var first = editor.AddSubtitle(new(0), new(2), "a");
-        var otherTrack = editor.AddSubtitleTrack("Other");
+        var otherTrack = editor.AddTrack("Other");
         var second = editor.AddSubtitle(new(1), new(3), "b", otherTrack);
         var third = editor.AddSubtitle(new(4), new(5), "c");
         Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.MergeSubtitles(editor.Snapshot, first, second));
-        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.MergeSubtitles(editor.Snapshot, first, third));
+        Assert.Equal("a\nc", ProjectEditingOperations.MergeSubtitles(editor.Snapshot, first, third).Subtitles[0].Text);
         editor.SetSubtitleTiming(second, new(2), new(3), TimelineEditMode.CROP);
-        editor.MoveSubtitleToTrack(second, SubtitleTrack.DEFAULT_TRACK_ID);
+        editor.MoveSubtitleToTrack(second, ProjectTrack.DEFAULT_TRACK_ID);
         editor.SetKeyframe(second, AnimationProperty.OPACITY, new(new(1), 0.5));
         Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.MergeSubtitles(editor.Snapshot, first, second));
     }
 
     [Fact]
-    public void GroupUngroupAndReorderPreserveSiblingOrderAndStableIds()
-    {
-        var first = Shape("first");
-        var second = Shape("second");
-        var third = Shape("third");
-        var original = new ProjectDocument { Layers = [first, second, third] };
-        var grouped = ProjectEditingOperations.GroupLayers(original, [second.Id, first.Id], "pair");
-        var group = grouped.Layers[0];
-        Assert.Equal(first.Id, group.Children[0].Id);
-        Assert.Equal(second.Id, group.Children[1].Id);
-        Assert.Equal(third.Id, grouped.Layers[1].Id);
-        var moved = ProjectEditingOperations.MoveLayer(grouped, second.Id, 0);
-        Assert.Equal(second.Id, moved.Layers[0].Children[0].Id);
-        var ungrouped = ProjectEditingOperations.UngroupLayer(moved, group.Id);
-        Assert.Equal(second.Id, ungrouped.Layers[0].Id);
-        Assert.Equal(first.Id, ungrouped.Layers[1].Id);
-        Assert.Equal(third.Id, ungrouped.Layers[2].Id);
-        Assert.Equal(first.Id, original.Layers[0].Id);
-    }
-
-    [Fact]
-    public void GroupRejectsNoncontiguousCrossParentAndNonNormalBlendSelections()
-    {
-        var first = Shape("first");
-        var second = Shape("second");
-        var third = Shape("third");
-        var original = new ProjectDocument { Layers = [first, second, third] };
-        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.GroupLayers(original, [first.Id, third.Id]));
-        var grouped = ProjectEditingOperations.GroupLayers(original, [first.Id, second.Id]);
-        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.GroupLayers(grouped, [first.Id, third.Id]));
-        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.GroupLayers(original with
-        {
-            Layers = [first, second with { Blend = BlendMode.MULTIPLY }, third]
-        }, [first.Id, second.Id]));
-    }
-
-    [Fact]
-    public void UngroupRejectsGroupEffectsOrTimeClipping()
-    {
-        var child = Shape("child");
-        var group = new ProjectLayer { Children = [child], Opacity = 0.5 };
-        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.UngroupLayer(new() { Layers = [group] }, group.Id));
-        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.UngroupLayer(new()
-        {
-            Layers = [group with { Opacity = 1, End = new(1) }]
-        }, group.Id));
-    }
-
-    [Fact]
-    public void RecursiveRemovalDeletesOnlyOwnedSubtitleRowsAndIsOneUndoTransaction()
+    public void ClipRemovalDeletesOnlySelectedSubtitleRowsAndIsOneUndoRedoTransaction()
     {
         var editor = new ProjectEditor();
         var first = editor.AddSubtitle(new(0), new(1), "a");
         var second = editor.AddSubtitle(new(1), new(2), "b");
         var third = editor.AddSubtitle(new(2), new(3), "c");
-        editor.Apply("Group", document => ProjectEditingOperations.GroupLayers(document, [first, second]));
+        var shape = Shape("kept") with { Start = new(3) };
+        editor.AddLayer(shape);
         var original = editor.Snapshot;
-        var groupId = original.Layers[0].Id;
-        editor.Apply("Remove group", document => ProjectEditingOperations.RemoveLayer(document, groupId));
+        var changes = 0;
+        editor.Changed += (_, _) => changes++;
+
+        editor.RemoveClips([first, second]);
+        var removed = editor.Snapshot;
         Assert.Equal(third, Assert.Single(editor.Snapshot.Subtitles).Id);
-        Assert.Equal(third, Assert.Single(editor.Snapshot.Layers).Id);
+        Assert.Equal(2, removed.Layers.Length);
+        Assert.Same(original.Layers[2], removed.Layers[0]);
+        Assert.Same(shape, removed.Layers[1]);
+        Assert.Equal(1, changes);
         Assert.True(editor.Undo());
         Assert.Same(original, editor.Snapshot);
+        Assert.Equal(2, changes);
+        Assert.True(editor.Redo());
+        Assert.Same(removed, editor.Snapshot);
+        Assert.Equal(3, changes);
     }
 
     [Fact]
-    public void InvalidTreeEditsLeaveSourceSnapshotUnchanged()
+    public void InvalidClipRemovalLeavesSourceSnapshotUnchanged()
     {
         var layer = Shape("only");
         var project = new ProjectDocument { Layers = [layer] };
-        Assert.Throws<ArgumentOutOfRangeException>(() => ProjectEditingOperations.MoveLayer(project, layer.Id, 1));
-        Assert.Throws<KeyNotFoundException>(() => ProjectEditingOperations.RemoveLayer(project, Guid.NewGuid()));
-        Assert.Throws<ArgumentException>(() => ProjectEditingOperations.GroupLayers(project, [layer.Id, layer.Id]));
-        Assert.Same(project, ProjectEditingOperations.MoveLayer(project, layer.Id, 0));
+        Assert.Throws<KeyNotFoundException>(() => ProjectEditingOperations.RemoveClips(project, [layer.Id, Guid.NewGuid()]));
+        Assert.Same(project, ProjectEditingOperations.RemoveClips(project, []));
         Assert.Equal(layer.Id, Assert.Single(project.Layers).Id);
     }
 

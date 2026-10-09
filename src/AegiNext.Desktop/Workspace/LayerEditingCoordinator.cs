@@ -189,7 +189,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
         {
             return false;
         }
-        var layer = WorkbenchSession.Flatten(session.Editor.Snapshot.Layers).FirstOrDefault(value => value.Id == e.LayerId);
+        var layer = session.Editor.Snapshot.Layers.FirstOrDefault(value => value.Id == e.LayerId);
         var selectedTrack = layer?.Tracks.FirstOrDefault(track => track.Target == e.Target);
         if (layer is null || (e.OperationId is { } operationId ? selectedTrack?.Transforms.Any(operation => operation.Id == operationId) != true :
                 selectedTrack?.Keyframes.FirstOrDefault(frame => frame.Time == e.OldTime) is null))

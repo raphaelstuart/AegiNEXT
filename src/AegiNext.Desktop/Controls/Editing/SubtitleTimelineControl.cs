@@ -25,6 +25,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private static readonly Cursor resizeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Geometry clipMaskBadgeIcon = Geometry.Parse(MaterialIconDataProvider.GetData(WorkbenchIcon.ResolveKind("Mask")));
     private ProjectDocument document = new();
+    private ProjectClipIndex clipIndex = new(new());
+    private ProjectDocument? timingDragDocument;
     private Dictionary<Guid, ProjectLayer> layersById = [];
     private Dictionary<Guid, SubtitleLine> cuesById = [];
     private Dictionary<Guid, TimelineRow> rowsByLayer = [];
@@ -54,7 +56,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private bool markersDirty = true;
     private TimelineHoverState? hover;
     private Guid? hoveredMaskClipId;
-    private IReadOnlyList<TimelineRow> rows = [];
+    private List<TimelineRow> rows = [];
     private double duration = 60;
     private Guid? pendingTrackId;
     private Guid? originalTrackId;
@@ -82,6 +84,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     public SubtitleTimelineControl()
     {
         InitializeTrackSolo();
+        InitializeTrackReorder();
         Focusable = true;
         ClipToBounds = true;
         ActualThemeVariantChanged += (_, _) => RefreshTheme();
@@ -245,7 +248,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         ValidateTrackSoloDocument(value);
         if (documentChanged)
         {
-            layersById = Flatten(value.Layers).ToDictionary(item => item.Id);
+            clipIndex = new(value);
+            layersById = value.Layers.ToDictionary(item => item.Id);
             cuesById = value.Subtitles.ToDictionary(item => item.Id);
             subtitleLayersByCue = layersById.Values.Where(item => item.SubtitleId.HasValue)
                 .ToDictionary(item => item.SubtitleId!.Value);
@@ -486,13 +490,11 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             if (row is not null)
             {
                 CancelDrag();
-                if (row.TrackId is { } trackId)
+                var selection = new TimelineSelectionEventArgs(row.TrackId);
+                TrackSelected?.Invoke(this, selection);
+                if (selection.SelectionAccepted)
                 {
-                    TrackSelected?.Invoke(this, new(trackId));
-                }
-                else if (row.Clips.Count > 0)
-                {
-                    SelectClip(row.Clips[0], e.KeyModifiers);
+                    BeginTrackReorder(row.TrackId, point, e.Pointer);
                 }
 
                 InvalidateVisual();
@@ -547,7 +549,6 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                 var initialDocument = document;
                 var accepted = SelectClip(clip, e.KeyModifiers);
                 if (!accepted || !ReferenceEquals(initialDocument, document) ||
-                    clip.Kind == LayerKind.GROUP ||
                     mode == TimelineDragMode.MOVE && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Shift)) != 0)
                 {
                     e.Handled = true;
@@ -555,8 +556,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                 }
 
                 BeginTimingDrag(clip.Id, clip.Start, clip.End, mode, point.X, stretching);
-                originalTrackId = pendingTrackId = clip.SubtitleId is { } cueId
-                    ? cuesById[cueId].TrackId : null;
+                originalTrackId = pendingTrackId = clip.TrackId;
                 capturedPointer = e.Pointer;
                 e.Pointer.Capture(this);
                 UpdateCursor(point);
@@ -646,6 +646,9 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         snapTarget = null;
         switch (dragMode)
         {
+            case TimelineDragMode.TRACK_REORDER:
+                UpdateTrackReorder(point);
+                break;
             case TimelineDragMode.SEEK:
                 RequestSeek(TimeAt(point.X, e.KeyModifiers));
                 break;
@@ -689,7 +692,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             InvalidateVisual();
         }
 
-        if (dragMode is not (TimelineDragMode.NONE or TimelineDragMode.SEEK))
+        if (dragMode is not (TimelineDragMode.NONE or TimelineDragMode.SEEK or TimelineDragMode.TRACK_REORDER))
         {
             InvalidateSceneDrawing();
         }
@@ -709,13 +712,19 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             RequestSeek(TimeAt(e.GetPosition(this).X, e.KeyModifiers));
         }
 
+        var trackReorder = mode == TimelineDragMode.TRACK_REORDER ? CompleteTrackReorder(e.GetPosition(this)) : null;
+        var expectedTimingDocument = timingDragDocument;
         var targetTrack = pendingTrackId;
         var canCommit = validDrop;
         var batchMove = IsBatchMove && canCommit && pendingStart != originalStart
             ? new TimelineClipsMoveEventArgs(dragId, movingClips.Keys, pendingStart - originalStart) : null;
         var wasBatchMove = IsBatchMove;
         CancelDrag();
-        if (mode == TimelineDragMode.KEYFRAME && pendingKey != originalKey)
+        if (trackReorder is not null)
+        {
+            TrackReorderCompleted?.Invoke(this, trackReorder);
+        }
+        else if (mode == TimelineDragMode.KEYFRAME && pendingKey != originalKey)
         {
             KeyframeMoved?.Invoke(this, new(dragId, dragTarget, originalKey, pendingKey,
                 originalAnimationValue, dragComponents) { OperationId = dragOperationId, IsOperationStart = dragOperationStart });
@@ -732,7 +741,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                 stretching ? TimelineEditMode.STRETCH : TimelineEditMode.CROP, mode == TimelineDragMode.MOVE)
             {
                 SubtitleId = editedLayer.SubtitleId,
-                TrackId = targetTrack
+                TrackId = targetTrack,
+                ExpectedDocument = expectedTimingDocument
             });
         }
 
@@ -752,6 +762,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     {
         clipPasteDisposed = true;
         DisposeTrackSolo();
+        DisposeTrackReorder();
         clipPastePointer = null;
         Localization.LanguageChanged -= OnLanguageChanged;
         CancelDrag();
@@ -806,6 +817,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     {
         CancelDrag();
         dragMode = mode;
+        timingDragDocument = document;
         dragId = id;
         dragPointer = pointer;
         stretching = stretch;
@@ -847,6 +859,8 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         var wasDragging = HasActiveDrag;
         snapTarget = null;
         dragMode = TimelineDragMode.NONE;
+        timingDragDocument = null;
+        ClearTrackReorder();
         movingClips.Clear();
         markersDirty = true;
         ClearHover();
@@ -1360,7 +1374,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     internal double EffectTop => selectedLayer is { } layer && CurveRectangle(layer.Id, EffectTarget) is { } curve ? curve.Top : RulerHeight;
     internal double EffectHeight => selectedLayer is { } layer && CurveRectangle(layer.Id, EffectTarget) is { } curve ? curve.Height : 1;
 
-    /// <summary>返回实际绘制的片段范围；折叠的场景子节点返回 null。</summary>
+    /// <summary>返回实际绘制的片段范围；隐藏的轨道片段返回 null。</summary>
     public Rect? GetClipRectangle(Guid layerId)
     {
         foreach (var row in rows)
@@ -1457,13 +1471,13 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             ? row.StyleBadgeRectangle(RowY(row), HeaderWidth) : null;
     }
 
-    /// <summary>取得字幕轨道的紧凑显示状态。</summary>
+    /// <summary>取得轨道的紧凑显示状态。</summary>
     public bool IsTrackCollapsed(Guid trackId) => collapsedTrackIds.Contains(trackId);
 
     /// <summary>切换轨道的紧凑显示，不修改字幕或动画数据。</summary>
     public void ToggleTrackCollapse(Guid trackId)
     {
-        if (!document.SubtitleTracks.Any(track => track.Id == trackId))
+        if (!document.Tracks.Any(track => track.Id == trackId))
         {
             return;
         }
@@ -1489,40 +1503,33 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private void RebuildRows()
     {
         var result = new List<TimelineRow>();
-        var flattened = layersById.Values.ToArray();
-        var byCue = flattened.Where(layer => layer.SubtitleId.HasValue).ToDictionary(layer => layer.SubtitleId!.Value);
         var top = 0d;
-        foreach (var track in document.SubtitleTracks)
+        foreach (var track in document.Tracks)
         {
-            if (!IsSubtitleTrackVisible(track.Id))
+            if (!IsTrackVisible(track.Id))
             {
                 continue;
             }
-            var clips = document.Subtitles.Where(cue => cue.TrackId == track.Id).OrderBy(cue => cue.Start)
-                .Select(cue => byCue[cue.Id]).ToArray();
+            var clips = clipIndex.GetTrackClips(track.Id);
             var collapsed = collapsedTrackIds.Contains(track.Id);
             var displayedClips = clips.Where(clip => IsBatchMove || dragMode != TimelineDragMode.MOVE ||
                 clip.Id != dragId || pendingTrackId == track.Id).ToList();
             if (!IsBatchMove && dragMode == TimelineDragMode.MOVE && originalTrackId.HasValue &&
                 pendingTrackId == track.Id && originalTrackId != pendingTrackId)
             {
-                displayedClips.Add(flattened.Single(layer => layer.Id == dragId));
+                displayedClips.Add(layersById[dragId]);
             }
             var animations = !collapsed
-                ? CreateAnimationRows(displayedClips, TimelineRowScope.SUBTITLE_TRACK, track.Id) : [];
+                ? CreateAnimationRows(displayedClips, track.Id) : [];
             var curve = animations.Sum(animation => animation.Height);
             var height = (track.StylePresetName is null ? 28 : 48) + curve;
-            result.Add(new(track.Id, track.Id, track.Name, clips, 0, false, collapsed, top, height, animations,
+            result.Add(new(track.Id, track.Name, clips, collapsed, top, height, animations,
                 track.StylePresetName, track.AutoApplyStyle));
             top += height;
         }
 
-        if (SoloTrackId is null)
-        {
-            AddSceneRows(document.Layers, 0, result, ref top);
-        }
         rows = result;
-        rowClipIndexes = result.ToDictionary(row => row.Id, row => new TimelineVisibleClipIndex(row.Clips));
+        rowClipIndexes = result.ToDictionary(row => row.TrackId, row => new TimelineVisibleClipIndex(row.Clips));
         VisibleClipIndexBuildCount++;
         InvalidateSceneDrawing();
         markersDirty = true;
@@ -1534,31 +1541,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         contentHeight = top;
     }
 
-    private void AddSceneRows(IEnumerable<ProjectLayer> layers, int depth, List<TimelineRow> result, ref double top)
-    {
-        foreach (var layer in layers)
-        {
-            if (layer.Kind == LayerKind.SUBTITLE)
-            {
-                continue;
-            }
-
-            var group = layer.Kind == LayerKind.GROUP;
-            var collapsed = collapsedTrackIds.Contains(layer.Id);
-            var animations = !collapsed
-                ? CreateAnimationRows([layer], TimelineRowScope.SCENE_LAYER, layer.Id) : [];
-            var curve = animations.Sum(animation => animation.Height);
-            var height = 28 + curve;
-            result.Add(new(layer.Id, null, layer.Name, [layer], depth, group, collapsed, top, height, animations));
-            top += height;
-            if (group && !collapsed)
-            {
-                AddSceneRows(layer.Children, depth + 1, result, ref top);
-            }
-        }
-    }
-
-    private TimelineAnimationRow[] CreateAnimationRows(IEnumerable<ProjectLayer> clips, TimelineRowScope scope, Guid ownerId)
+    private TimelineAnimationRow[] CreateAnimationRows(IEnumerable<ProjectLayer> clips, Guid trackId)
     {
         var bindings = new Dictionary<AnimationProperty, Dictionary<Guid, List<AnimationTrackTarget>>>();
         foreach (var layer in clips)
@@ -1595,7 +1578,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                          return index >= 0 ? index : AnimationPropertyMetadata.CurrentProperties.Length + (int)binding.Key;
                      }))
         {
-            var id = new TimelineAnimationRowId(scope, ownerId, binding.Key);
+            var id = new TimelineAnimationRowId(TimelineRowScope.TRACK, trackId, binding.Key);
             var collapsed = collapsedAnimationRows.Contains(id);
             var height = collapsed ? COLLAPSED_ANIMATION_ROW_HEIGHT :
                 binding.Key is AnimationProperty.FILL or AnimationProperty.STROKE ? 112 : 76;
@@ -1628,7 +1611,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             return;
         }
 
-        var clip = row.Clips.Reverse().FirstOrDefault(clip => clip.Kind != LayerKind.GROUP && ClipRectangle(clip, row).Contains(point));
+        var clip = row.Clips.Reverse().FirstOrDefault(clip => ClipRectangle(clip, row).Contains(point));
         var rectangle = clip is null ? default : ClipRectangle(clip, row);
         Cursor = clip is not null && (point.X - rectangle.Left < 8 || rectangle.Right - point.X < 8)
             ? resizeCursor : null;
@@ -1735,7 +1718,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
         var layer = layersById[dragId];
         validDrop = true;
-        if (layer.SubtitleId is not { } cueId || originalTrackId is not { } sourceTrack)
+        if (originalTrackId is not { } sourceTrack)
         {
             return;
         }
@@ -1747,7 +1730,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             return;
         }
 
-        var others = document.Subtitles.Where(cue => cue.Id != cueId && cue.TrackId == targetTrack).ToArray();
+        var others = clipIndex.GetTrackClips(targetTrack).Where(clip => clip.Id != layer.Id).ToArray();
         if (targetTrack == sourceTrack)
         {
             var before = others.Where(cue => cue.End <= originalStart).Select(cue => cue.End).DefaultIfEmpty(MediaTime.Zero).Max();
@@ -1816,18 +1799,6 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         if (!values.Remove(id))
         {
             values.Add(id);
-        }
-    }
-
-    private static IEnumerable<ProjectLayer> Flatten(IEnumerable<ProjectLayer> layers)
-    {
-        foreach (var layer in layers)
-        {
-            yield return layer;
-            foreach (var child in Flatten(layer.Children))
-            {
-                yield return child;
-            }
         }
     }
 

@@ -6,7 +6,7 @@ namespace AegiNext.Core.Projects;
 /// <summary>工程边界校验；无效快照在进入编辑历史、渲染或持久化前整体拒绝。</summary>
 public static class ProjectValidator
 {
-    /// <summary>验证版本、资源引用、合成树、关键帧与文本区间，不修改输入。</summary>
+    /// <summary>验证版本、资源引用、轨道片段、关键帧与文本区间，不修改输入。</summary>
     public static void Validate(ProjectDocument document, bool enforceAnimationRange = true)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -21,9 +21,9 @@ public static class ProjectValidator
             (double)document.FrameRate.Numerator / document.FrameRate.Denominator <= 1000, "项目帧率无效。");
         Number(document.ReferenceWhiteNits, 0.001, 10000, "参考白");
         Require(!document.Assets.IsDefault && document.Assets.Length <= 10000 &&
-            !document.SubtitleTracks.IsDefault && document.SubtitleTracks.Length <= 10000 &&
+            !document.Tracks.IsDefault && document.Tracks.Length <= 10000 &&
             !document.Subtitles.IsDefault && document.Subtitles.Length <= 100000 &&
-            !document.Layers.IsDefault && !document.Presets.IsDefault, "项目集合无效或过大。");
+            !document.Layers.IsDefault && document.Layers.Length <= 10000 && !document.Presets.IsDefault, "项目集合无效或过大。");
         var assets = new Dictionary<Guid, ProjectAsset>();
         foreach (var asset in document.Assets)
         {
@@ -49,11 +49,11 @@ public static class ProjectValidator
         }
 
         var trackIds = new HashSet<Guid>();
-        foreach (var track in document.SubtitleTracks)
+        foreach (var track in document.Tracks)
         {
-            NotNull(track, "字幕轨道不能为 null。");
+            NotNull(track, "轨道不能为 null。");
             Require(track.Id != Guid.Empty && trackIds.Add(track.Id) && !string.IsNullOrWhiteSpace(track.Name) &&
-                track.Name.Length <= 128 && !track.Name.Any(char.IsControl), "字幕轨道标识或名称无效。");
+                track.Name.Length <= 128 && !track.Name.Any(char.IsControl), "轨道标识或名称无效。");
             ValidateText(track.Name);
             Require(track.DefaultStyle is null
                 ? track.StylePresetId is null && track.StylePresetName is null
@@ -71,7 +71,6 @@ public static class ProjectValidator
         {
             NotNull(line, "数据项不能为 null。");
             Require(line.Id != Guid.Empty && subtitles.TryAdd(line.Id, line), "字幕标识为空或重复。");
-            Require(trackIds.Contains(line.TrackId), "字幕引用不存在的轨道。");
             Require(line.Start < line.End && line.Text is not null && !line.Karaoke.IsDefault &&
                 !line.InactiveKaraoke.IsDefault &&
                 !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
@@ -100,21 +99,22 @@ public static class ProjectValidator
             ValidateSubtitleKaraokeCore(line, boundaries);
         }
 
-        foreach (var track in document.Subtitles.GroupBy(line => line.TrackId))
-        {
-            SubtitleLine? previous = null;
-            foreach (var line in track.OrderBy(line => line.Start))
-            {
-                Require(previous is null || previous.End <= line.Start, "同一字幕轨道的片段不能重叠。");
-                previous = line;
-            }
-        }
-
         var ids = new HashSet<Guid>();
         var referenced = new HashSet<Guid>();
         foreach (var layer in document.Layers)
         {
-            Layer(layer, 0, assets, subtitles, ids, referenced, enforceAnimationRange);
+            Layer(layer, assets, subtitles, ids, referenced, enforceAnimationRange);
+            Require(trackIds.Contains(layer.TrackId), "片段引用不存在的轨道。");
+        }
+
+        foreach (var track in document.Layers.GroupBy(layer => layer.TrackId))
+        {
+            ProjectLayer? previous = null;
+            foreach (var layer in track.OrderBy(layer => layer.Start))
+            {
+                Require(previous is null || previous.End <= layer.Start, "同一轨道的片段不能重叠。");
+                previous = layer;
+            }
         }
 
         Require(referenced.Count == subtitles.Count, "每个字幕必须由唯一字幕层引用。");
@@ -258,13 +258,13 @@ public static class ProjectValidator
         }
     }
 
-    private static void Layer(ProjectLayer? layer, int depth, Dictionary<Guid, ProjectAsset> assets,
+    private static void Layer(ProjectLayer? layer, Dictionary<Guid, ProjectAsset> assets,
         Dictionary<Guid, SubtitleLine> subtitles, HashSet<Guid> ids, HashSet<Guid> referenced, bool enforceAnimationRange)
     {
-        Require(depth <= 32 && layer is not null && layer.Id != Guid.Empty && ids.Add(layer.Id) && ids.Count <= 10000,
-            "合成树过深、过大或存在重复节点。");
+        Require(layer is not null && layer.Id != Guid.Empty && ids.Add(layer.Id) && ids.Count <= 10000,
+            "片段过多或存在重复标识。");
         Require(layer.Start < layer.End && layer.Name is { Length: <= 1024 } &&
-            Enum.IsDefined(layer.Kind) && Enum.IsDefined(layer.Blend) && !layer.Children.IsDefault, "图层数据无效。");
+            Enum.IsDefined(layer.Kind) && Enum.IsDefined(layer.Blend), "片段数据无效。");
         ValidateText(layer.Name);
         Require(layer.Transform is not null, "缺少图层变换。");
         var transform = layer.Transform;
@@ -295,7 +295,6 @@ public static class ProjectValidator
                 "关键帧必须位于图层片段时间内。");
         }
         Motion(layer.MotionPath);
-        Require(layer.Kind == LayerKind.GROUP || layer.Children.IsEmpty, "只有组可以包含子图层。");
         Require((layer.Kind == LayerKind.SUBTITLE) == layer.SubtitleId.HasValue &&
             (layer.Kind == LayerKind.SHAPE) == (layer.Shape is not null) &&
             (layer.Kind == LayerKind.IMAGE) == (layer.Image is not null), "图层载荷与类型不匹配。");
@@ -325,10 +324,6 @@ public static class ProjectValidator
             Require(Enum.IsDefined(image.Fit), "未知图片适配方式。");
         }
 
-        foreach (var child in layer.Children)
-        {
-            Layer(child, depth + 1, assets, subtitles, ids, referenced, enforceAnimationRange);
-        }
     }
 
     /// <summary>验证字幕样式本身的排版、颜色及数值，不解析工程字体引用。</summary>

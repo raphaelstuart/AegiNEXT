@@ -30,7 +30,7 @@ public sealed class TimelinePointerPasteUiTests
         var target = PointAt(timeline, destination.Id, 6);
         var menu = OpenMenu(context, timeline, target);
         Assert.True(menu.IsOpen);
-        var changed = WindowPoint(context, timeline, PointAt(timeline, source.TrackId, 8));
+        var changed = WindowPoint(context, timeline, PointAt(timeline, original.Layers.Single(clip => clip.SubtitleId == source.Id).TrackId, 8));
         context.Window.MouseMove(changed);
         Flush(context.Window);
         Assert.True(menu.IsOpen);
@@ -61,7 +61,7 @@ public sealed class TimelinePointerPasteUiTests
         Hover(context, timeline, PointAt(timeline, destination.Id, 6));
 
         Assert.Equal(source.Id, context.Session.SelectedLayerId);
-        Assert.Equal(source.TrackId, context.Session.CurrentTrackId);
+        Assert.Equal(original.Layers.Single(clip => clip.SubtitleId == source.Id).TrackId, context.Session.CurrentTrackId);
         Assert.Equal(playhead, timeline.Position);
         Assert.True(timeline.Focus());
         UiTestActions.Press(context.Window, Key.V, CommandModifier());
@@ -77,13 +77,14 @@ public sealed class TimelinePointerPasteUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var (fixture, source, destination) = ResetFixture(context);
-        var extraTracks = Enumerable.Range(0, 10).Select(index => new SubtitleTrack { Name = $"Extra {index}" }).ToArray();
+        var extraTracks = Enumerable.Range(0, 10).Select(index => new ProjectTrack { Name = $"Extra {index}" }).ToArray();
         var original = fixture with
         {
-            SubtitleTracks = [.. fixture.SubtitleTracks, .. extraTracks],
+            Tracks = [.. fixture.Tracks, .. extraTracks],
             Layers = fixture.Layers.Add(new()
             {
-                Kind = LayerKind.SHAPE, Start = MediaTime.Zero, End = new(60), Shape = new(ShapeKind.RECTANGLE, 30, 40)
+                TrackId = extraTracks[^1].Id, Kind = LayerKind.SHAPE, Start = MediaTime.Zero, End = new(60),
+                Shape = new(ShapeKind.RECTANGLE, 30, 40)
             })
         };
         context.Session.Editor.Reset(original);
@@ -101,7 +102,7 @@ public sealed class TimelinePointerPasteUiTests
         Assert.Equal(36, timeline.Viewport.VerticalOffset, 6);
         Assert.True(timeline.ViewStart > 0);
         Assert.True(timeline.PixelsPerSecond > 60);
-        var currentTrack = original.SubtitleTracks[2];
+        var currentTrack = original.Tracks[2];
         Assert.True(timeline.GetTrackHeaderRectangle(currentTrack.Id)!.Value.Top <= local.Y);
         Assert.True(timeline.GetTrackHeaderRectangle(currentTrack.Id)!.Value.Bottom > local.Y);
         var currentTime = timeline.ViewStart + (local.X - timeline.HeaderWidth) / timeline.PixelsPerSecond;
@@ -151,8 +152,8 @@ public sealed class TimelinePointerPasteUiTests
     {
         await using var context = new MainWindowTestContext();
         var (fixture, source, destination) = ResetFixture(context);
-        var obstacle = new SubtitleLine { TrackId = destination.Id, Start = new(6), End = new(8), Text = "Occupied" };
-        var original = fixture with { Subtitles = [.. fixture.Subtitles, obstacle], Layers = [.. fixture.Layers, Layer(obstacle)] };
+        var obstacle = new SubtitleLine { Start = new(6), End = new(8), Text = "Occupied" };
+        var original = fixture with { Subtitles = [.. fixture.Subtitles, obstacle], Layers = [.. fixture.Layers, Layer(obstacle) with { TrackId = destination.Id }] };
         context.Session.Editor.Reset(original);
         var timeline = Prepare(context);
         CopyThroughInput(context, timeline, source.Id);
@@ -253,7 +254,7 @@ public sealed class TimelinePointerPasteUiTests
         {
             timeline.Dispose();
             Assert.Null(timeline.GetClipPasteTarget());
-            Hover(context, timeline, PointAt(timeline, source.TrackId, 8));
+            Hover(context, timeline, PointAt(timeline, original.Layers.Single(clip => clip.SubtitleId == source.Id).TrackId, 8));
             Assert.Null(timeline.GetClipPasteTarget());
         }
 
@@ -261,13 +262,13 @@ public sealed class TimelinePointerPasteUiTests
         Assert.False(context.Session.Editor.CanUndo);
     }
 
-    private static (ProjectDocument Document, SubtitleLine Source, SubtitleTrack Destination) ResetFixture(MainWindowTestContext context)
+    private static (ProjectDocument Document, SubtitleLine Source, ProjectTrack Destination) ResetFixture(MainWindowTestContext context)
     {
         var source = new SubtitleLine { Start = new(1), End = new(3), Text = "Source subtitle" };
-        var destination = new SubtitleTrack { Name = "Paste destination" };
+        var destination = new ProjectTrack { Name = "Paste destination" };
         var document = context.Session.DocumentSnapshot with
         {
-            SubtitleTracks = [SubtitleTrack.Default, destination], Subtitles = [source], Layers = [Layer(source)]
+            Tracks = [ProjectTrack.Default, destination], Subtitles = [source], Layers = [Layer(source)]
         };
         context.Session.Editor.Reset(document);
         return (document, source, destination);
@@ -304,7 +305,7 @@ public sealed class TimelinePointerPasteUiTests
         Guid targetTrack, MediaTime start)
     {
         var copy = Assert.Single(context.Session.DocumentSnapshot.Subtitles, cue => cue.Id != source.Id);
-        Assert.Equal(targetTrack, copy.TrackId);
+        Assert.Equal(targetTrack, context.Session.ClipIndex.GetSubtitleTrackId(copy.Id));
         Assert.Equal(start, copy.Start);
         Assert.Equal(start + source.End - source.Start, copy.End);
         Assert.Equal(source.Text, copy.Text);

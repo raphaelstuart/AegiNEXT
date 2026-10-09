@@ -20,15 +20,15 @@ public sealed class BatchEffectPresetUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.Session.EffectScripts.Completion;
-        var otherTrack = new SubtitleTrack { Name = "Other track" };
+        var otherTrack = new ProjectTrack { Name = "Other track" };
         var first = new SubtitleLine { Start = new(1), End = new(3), Text = "First" };
-        var second = new SubtitleLine { Start = new(4), End = new(8), Text = "Second", TrackId = otherTrack.Id };
+        var second = new SubtitleLine { Start = new(4), End = new(8), Text = "Second" };
         var untouched = new SubtitleLine { Start = new(9), End = new(10), Text = "Untouched" };
         var document = new ProjectDocument
         {
-            SubtitleTracks = [SubtitleTrack.Default, otherTrack],
+            Tracks = [ProjectTrack.Default, otherTrack],
             Subtitles = [first, second, untouched],
-            Layers = [Layer(first), Layer(second) with { Opacity = 0.5, AnimationOffset = new(1) }, Layer(untouched)]
+            Layers = [Layer(first), Layer(second) with { TrackId = otherTrack.Id, Opacity = 0.5, AnimationOffset = new(1) }, Layer(untouched)]
         };
         context.Session.Editor.Reset(document);
         var timeline = PrepareTimeline(context);

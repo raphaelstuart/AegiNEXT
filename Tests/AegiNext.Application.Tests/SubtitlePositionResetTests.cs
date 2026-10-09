@@ -5,11 +5,9 @@ namespace AegiNext.Application.Tests;
 public sealed class SubtitlePositionResetTests
 {
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public void ResetPositionEffectsPreservesPlacementAndOtherLayersWithOneUndo(bool explicitPosition, bool nested)
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ResetPositionEffectsPreservesPlacementAndOtherLayersWithOneUndo(bool explicitPosition)
     {
         var initial = new ProjectEditor();
         var id = initial.AddSubtitle(new(0), new(4), "自然尺寸");
@@ -39,17 +37,6 @@ public sealed class SubtitlePositionResetTests
         });
         var before = initial.Snapshot;
         var originalLayer = before.Layers[0];
-        if (nested)
-        {
-            before = before with
-            {
-                Layers =
-                [
-                    new() { Name = "Subtitle group", End = new(8), Transform = new(11, 12), Children = [originalLayer] },
-                    before.Layers[1]
-                ]
-            };
-        }
         var editor = new ProjectEditor(before);
         var changes = 0;
         editor.Changed += (_, _) => changes++;
@@ -57,7 +44,7 @@ public sealed class SubtitlePositionResetTests
         editor.ResetSubtitlePositionEffects(id);
 
         var after = editor.Snapshot;
-        var layer = nested ? Assert.Single(after.Layers[0].Children) : after.Layers[0];
+        var layer = after.Layers[0];
         Assert.Equal(before.Subtitles, after.Subtitles);
         Assert.Same(before.Subtitles[0].Style, after.Subtitles[0].Style);
         Assert.Same(before.Layers[1], after.Layers[1]);
@@ -69,10 +56,6 @@ public sealed class SubtitlePositionResetTests
         Assert.Equal(originalLayer.End, layer.End);
         Assert.Null(layer.MotionPath);
         Assert.Equal(originalLayer.Tracks.Where(track => track.Property is AnimationProperty.SCALE or AnimationProperty.OPACITY), layer.Tracks);
-        if (nested)
-        {
-            Assert.Equal(before.Layers[0].Transform, after.Layers[0].Transform);
-        }
         Assert.Equal(1, changes);
         editor.ResetSubtitlePositionEffects(id);
         Assert.Same(after, editor.Snapshot);

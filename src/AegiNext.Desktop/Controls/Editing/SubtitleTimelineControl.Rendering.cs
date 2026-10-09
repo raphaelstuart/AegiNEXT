@@ -31,6 +31,7 @@ public sealed partial class SubtitleTimelineControl
     internal long TextLayoutBuildCount { get; private set; }
     internal long CurveSampleCount { get; private set; }
     internal int VisibleClipProjectionCount { get; private set; }
+    internal long VisibleClipQueryWorkCount { get; private set; }
     internal long CachedDrawingBytes => audioDrawing.AllocatedBytes + clipDrawing.AllocatedBytes + chromeDrawing.AllocatedBytes +
         markerDrawing.AllocatedBytes + previewDrawing.AllocatedBytes;
 
@@ -99,6 +100,7 @@ public sealed partial class SubtitleTimelineControl
                 new(Bounds.Width - 5, thumbY, 4, thumbHeight), 2, 2);
         }
         DrawHoveredLabel(context, drawingPalette.Foreground, ActualThemeVariant == ThemeVariant.Dark);
+        DrawTrackInsertion(context);
     }
 
     private void RefreshDrawingState()
@@ -138,32 +140,41 @@ public sealed partial class SubtitleTimelineControl
 
     private IReadOnlyList<ProjectLayer> VisibleClipsForRow(TimelineRow row)
     {
-        if (visibleClipsByRow.TryGetValue(row.Id, out var result))
+        if (visibleClipsByRow.TryGetValue(row.TrackId, out var result))
         {
             return result;
         }
         var padding = 9 / PixelsPerSecond;
         var start = new MediaTime((long)Math.Floor((ViewStart - padding) * 1000000), 1000000);
         var end = new MediaTime((long)Math.Ceiling((ViewStart + VisibleDuration + padding) * 1000000), 1000000);
-        if (dragMode is not (TimelineDragMode.NONE or TimelineDragMode.SEEK))
+        if (dragMode is not (TimelineDragMode.NONE or TimelineDragMode.SEEK or TimelineDragMode.TRACK_REORDER))
         {
             result = ClipsForRow(row).Where(clip =>
             {
+                VisibleClipQueryWorkCount++;
                 var displayed = DisplayedLayer(clip);
                 return displayed.Start < end && displayed.End > start;
             }).ToArray();
         }
         else
         {
-            result = rowClipIndexes.TryGetValue(row.Id, out var index) ? index.Query(start, end) : [];
+            if (rowClipIndexes.TryGetValue(row.TrackId, out var index))
+            {
+                result = index.Query(start, end);
+                VisibleClipQueryWorkCount += index.LastVisitedNodeCount;
+            }
+            else
+            {
+                result = [];
+            }
         }
         VisibleClipProjectionCount += result.Count;
-        visibleClipsByRow.Add(row.Id, result);
+        visibleClipsByRow.Add(row.TrackId, result);
         return result;
     }
 
     private IReadOnlyList<ProjectLayer> RenderingClipsForRow(TimelineRow row, bool previewOnly) => previewOnly
-        ? PreviewLayerId is { } id && rowsByLayer.GetValueOrDefault(id)?.Id == row.Id ? [layersById[id]] : []
+        ? PreviewLayerId is { } id && rowsByLayer.GetValueOrDefault(id)?.TrackId == row.TrackId ? [layersById[id]] : []
         : VisibleClipsForRow(row);
 
     private void DrawAnimationRowBackgrounds(DrawingContext context, Rect body)
@@ -291,7 +302,7 @@ public sealed partial class SubtitleTimelineControl
                 context.DrawRectangle(row.TrackId == selectedTrack && selectedTrack.HasValue
                         ? drawingPalette.SelectedTrack : drawingPalette.Track, null,
                     new(0, y, HeaderWidth, row.Height));
-                DrawExpander(context, row.ExpanderRectangle(y), row.IsCollapsed);
+                DrawExpander(context, TimelineRow.ExpanderRectangle(y), row.IsCollapsed);
 
                 var nameRectangle = GetTrackHeaderNameRectangle(row, y);
                 using (context.PushClip(nameRectangle))

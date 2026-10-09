@@ -21,10 +21,10 @@ public sealed class TimelineTrackSoloUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var current = Assert.IsType<Guid>(context.Session.CurrentTrackId);
-        var other = context.Session.Editor.AddSubtitleTrack("Other 中文 ABC");
+        var other = context.Session.Editor.AddTrack("Other 中文 ABC");
         var first = context.Session.Editor.AddSubtitle(new(0), new(2), "First", current);
         var second = context.Session.Editor.AddSubtitle(new(3), new(5), "Second", other);
-        var scene = new ProjectLayer { Name = "Scene", Kind = LayerKind.GROUP };
+        var scene = new ProjectLayer { Name = "Shape", Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20), Start = new(6), End = new(8), TrackId = current };
         context.Session.Editor.AddLayer(scene);
         context.Session.SelectCue(first);
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
@@ -84,8 +84,8 @@ public sealed class TimelineTrackSoloUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var current = Assert.IsType<Guid>(context.Session.CurrentTrackId);
-        var solo = context.Session.Editor.AddSubtitleTrack("Solo");
-        var third = context.Session.Editor.AddSubtitleTrack("Third");
+        var solo = context.Session.Editor.AddTrack("Solo");
+        var third = context.Session.Editor.AddTrack("Third");
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         ClickSolo(context.Window, timeline, solo);
         Assert.Equal(current, context.Session.CurrentTrackId);
@@ -116,11 +116,11 @@ public sealed class TimelineTrackSoloUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var first = Assert.IsType<Guid>(context.Session.CurrentTrackId);
-        var solo = context.Session.Editor.AddSubtitleTrack("Solo");
+        var solo = context.Session.Editor.AddTrack("Solo");
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         ClickSolo(context.Window, timeline, solo);
 
-        context.Session.Editor.RemoveSubtitleTrack(solo);
+        context.Session.Editor.RemoveTrack(solo);
         Dispatcher.UIThread.RunJobs();
 
         Assert.Null(context.ViewModel.Timeline.SoloTrackId);
@@ -130,11 +130,11 @@ public sealed class TimelineTrackSoloUiTests
         Dispatcher.UIThread.RunJobs();
         Assert.Null(context.ViewModel.Timeline.SoloTrackId);
         Assert.NotNull(timeline.GetTrackHeaderRectangle(solo));
-        context.Session.Editor.RemoveSubtitleTrack(solo);
+        context.Session.Editor.RemoveTrack(solo);
         ClickSolo(context.Window, timeline, first);
-        context.Session.Editor.RemoveSubtitleTrack(first);
+        context.Session.Editor.RemoveTrack(first);
         Dispatcher.UIThread.RunJobs();
-        Assert.Empty(context.Session.DocumentSnapshot.SubtitleTracks);
+        Assert.Empty(context.Session.DocumentSnapshot.Tracks);
         Assert.Null(context.ViewModel.Timeline.SoloTrackId);
         Assert.Null(timeline.SoloTrackId);
         Assert.Null(timeline.GetTrackSoloToggleRectangle(first));
@@ -145,18 +145,18 @@ public sealed class TimelineTrackSoloUiTests
     {
         using var environment = new UiTestEnvironment();
         var editor = new ProjectEditor();
-        var first = editor.Snapshot.SubtitleTracks[0].Id;
-        var solo = editor.AddSubtitleTrack("Solo");
+        var first = editor.Snapshot.Tracks[0].Id;
+        var solo = editor.AddTrack("Solo");
         var cue = editor.AddSubtitle(new(0), new(4), "Animated", solo);
         editor.SetKeyframe(cue, AnimationProperty.OPACITY, new(new(1), 0.5));
         for (var index = 0; index < 15; index++)
         {
-            editor.AddSubtitleTrack($"Track {index}");
+            editor.AddTrack($"Track {index}");
         }
         using var timeline = new SubtitleTimelineControl();
         timeline.SetDocument(editor.Snapshot, null, null);
         timeline.ToggleTrackCollapse(first);
-        var animation = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, solo, AnimationProperty.OPACITY);
+        var animation = new TimelineAnimationRowId(TimelineRowScope.TRACK, solo, AnimationProperty.OPACITY);
         timeline.TimelineViewState = timeline.TimelineViewState with { CollapsedAnimationRows = [animation] };
         var window = new Window { Width = 850, Height = 260, Content = timeline };
         var events = new List<Guid>();

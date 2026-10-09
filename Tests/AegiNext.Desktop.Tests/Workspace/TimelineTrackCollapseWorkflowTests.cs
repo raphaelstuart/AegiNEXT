@@ -14,15 +14,15 @@ public sealed class TimelineTrackCollapseWorkflowTests
         var document = CreateDocument();
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
-        var track = document.SubtitleTracks[0].Id;
-        var child = document.Layers[0].Children[0];
-        var row = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, child.Id, AnimationProperty.OPACITY);
+        var track = document.Tracks[0].Id;
+        var child = document.Layers[0];
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, child.TrackId, AnimationProperty.OPACITY);
 
         context.Session.SetTimelineTrackCollapsed(track, true);
         context.Session.SetTimelineAnimationRowCollapsed(row, true);
-        context.Session.SetTimelineTrackCollapsed(child.Id, true);
+        context.Session.SetTimelineTrackCollapsed(child.TrackId, true);
 
-        Assert.Equal(new[] { track, child.Id }.Order(), context.Session.TimelineViewState.CollapsedTrackIds);
+        Assert.Equal(new[] { track, child.TrackId }.Order(), context.Session.TimelineViewState.CollapsedTrackIds);
         Assert.Equal(row, Assert.Single(context.Session.TimelineViewState.CollapsedAnimationRows));
         Assert.Same(document, context.Editor.Snapshot);
         Assert.True(context.Session.HasUnsavedChanges);
@@ -30,18 +30,18 @@ public sealed class TimelineTrackCollapseWorkflowTests
         Assert.False(context.Editor.CanUndo);
         Assert.False(context.Editor.CanRedo);
         context.Session.SetTimelineTrackCollapsed(track, false);
-        context.Session.SetTimelineTrackCollapsed(child.Id, false);
+        context.Session.SetTimelineTrackCollapsed(child.TrackId, false);
         context.Session.SetTimelineAnimationRowCollapsed(row, false);
         Assert.False(context.Session.HasUnsavedChanges);
         Assert.Same(document, context.Editor.Snapshot);
     }
 
     [Fact]
-    public async Task AllCommandsIncludeSoloHiddenTracksAndHiddenGroupChildrenInOneViewPublication()
+    public async Task AllCommandsIncludeSoloHiddenMixedTracksInOneViewPublication()
     {
         var document = CreateDocument();
-        var child = document.Layers[0].Children[0];
-        var row = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, child.Id, AnimationProperty.OPACITY);
+        var child = document.Layers[0];
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, child.TrackId, AnimationProperty.OPACITY);
         document = document with { TimelineViewState = new() { CollapsedAnimationRows = [row] } };
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
@@ -54,18 +54,18 @@ public sealed class TimelineTrackCollapseWorkflowTests
                 publications++;
             }
         };
-        model.ToggleTrackSolo(document.SubtitleTracks[0].Id);
+        model.ToggleTrackSolo(document.Tracks[0].Id);
 
         model.CollapseAllTracksCommand.Execute(null);
 
-        var expected = document.SubtitleTracks.Select(track => track.Id)
-            .Concat(new[] { document.Layers[0].Id, child.Id }).Order().ToArray();
+        var expected = document.Tracks.Select(track => track.Id)
+            .Order().ToArray();
         Assert.Equal(expected, context.Session.TimelineViewState.CollapsedTrackIds);
         Assert.Equal(1, publications);
         Assert.False(model.CollapseAllTracksCommand.CanExecute(null));
         Assert.True(model.ExpandAllTracksCommand.CanExecute(null));
         Assert.Equal(row, Assert.Single(context.Session.TimelineViewState.CollapsedAnimationRows));
-        Assert.Equal(document.SubtitleTracks[0].Id, model.SoloTrackId);
+        Assert.Equal(document.Tracks[0].Id, model.SoloTrackId);
         Assert.Same(document, context.Editor.Snapshot);
         Assert.False(context.Editor.CanUndo);
 
@@ -86,8 +86,8 @@ public sealed class TimelineTrackCollapseWorkflowTests
         await context.InitializeAsync();
         var path = await OpenFixtureAsync(context, CreateDocument());
         var snapshot = context.Editor.Snapshot;
-        var track = snapshot.SubtitleTracks[0].Id;
-        var child = snapshot.Layers[0].Children[0].Id;
+        var track = snapshot.Tracks[0].Id;
+        var child = snapshot.Tracks[1].Id;
         context.Session.SetTimelineTrackCollapsed(track, true);
 
         await context.Session.ExecuteCommandAsync(WorkbenchCommand.SAVE_PROJECT);
@@ -122,8 +122,8 @@ public sealed class TimelineTrackCollapseWorkflowTests
         await context.InitializeAsync();
         await OpenFixtureAsync(context, CreateDocument());
         var snapshot = context.Editor.Snapshot;
-        var track = snapshot.SubtitleTracks[0].Id;
-        var child = snapshot.Layers[0].Children[0].Id;
+        var track = snapshot.Tracks[0].Id;
+        var child = snapshot.Tracks[1].Id;
         context.Session.SetTimelineTrackCollapsed(track, true);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -162,15 +162,15 @@ public sealed class TimelineTrackCollapseWorkflowTests
     public async Task DormantOverallIdentitySurvivesContentUndoAndInitializationNormalizesStableOrdering()
     {
         var document = CreateDocument();
-        var ids = document.SubtitleTracks.Select(track => track.Id).Append(document.Layers[0].Id)
+        var ids = document.Tracks.Select(track => track.Id).Append(document.Layers[0].Id)
             .OrderDescending().ToArray();
         document = document with { TimelineViewState = new() { CollapsedTrackIds = [.. ids] } };
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
         Assert.Equal(ids.Order(), context.Session.TimelineViewState.CollapsedTrackIds);
         Assert.False(context.Session.HasUnsavedChanges);
-        var track = document.SubtitleTracks[1].Id;
-        context.Editor.RemoveSubtitleTrack(track);
+        var track = document.Tracks[1].Id;
+        context.Editor.RemoveTrack(track);
         await context.Session.WaitForProjectIdleAsync();
         Assert.Contains(track, context.Session.TimelineViewState.CollapsedTrackIds);
         Assert.True(context.Editor.Undo());
@@ -187,7 +187,7 @@ public sealed class TimelineTrackCollapseWorkflowTests
     [Fact]
     public async Task EmptyDocumentHasNoBulkTargetsAndUnknownTrackDoesNotCreateViewDirty()
     {
-        await using var context = new WorkspaceSessionTestContext(new() { SubtitleTracks = [] });
+        await using var context = new WorkspaceSessionTestContext(new() { Tracks = [] });
         await context.InitializeAsync();
         var model = context.Session.ViewModel.Timeline;
         Assert.False(model.CollapseAllTracksCommand.CanExecute(null));
@@ -203,15 +203,16 @@ public sealed class TimelineTrackCollapseWorkflowTests
 
     private static ProjectDocument CreateDocument()
     {
-        var child = new ProjectLayer
+        var track = new ProjectTrack { Name = "Other" };
+        var clip = new ProjectLayer
         {
-            Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20),
+            TrackId = track.Id, Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(1), 0.5)])]
         };
         return new()
         {
-            SubtitleTracks = [SubtitleTrack.Default, new() { Name = "Other" }],
-            Layers = [new() { Name = "Group", Children = [child] }]
+            Tracks = [ProjectTrack.Default, track],
+            Layers = [clip]
         };
     }
 

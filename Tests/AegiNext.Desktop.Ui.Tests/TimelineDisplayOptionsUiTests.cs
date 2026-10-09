@@ -109,13 +109,13 @@ public sealed class TimelineDisplayOptionsUiTests
     public void SnapFrameUsesTheCommittedBoundaryAndClearsOnAltAndRelease()
     {
         var moving = new SubtitleLine { Start = new(1), End = new(2), Text = "Moving" };
-        var otherTrack = new SubtitleTrack { Name = "Other" };
-        var neighbor = new SubtitleLine { Start = new(301, 100), End = new(4), TrackId = otherTrack.Id, Text = "Boundary" };
+        var otherTrack = new ProjectTrack { Name = "Other" };
+        var neighbor = new SubtitleLine { Start = new(301, 100), End = new(4), Text = "Boundary" };
         var layer = Layer(moving);
         using var timeline = new SubtitleTimelineControl { PixelsPerSecond = 100, IsSnapEnabled = true };
         timeline.SetDocument(new()
         {
-            SubtitleTracks = [SubtitleTrack.Default, otherTrack], Subtitles = [moving, neighbor], Layers = [layer, Layer(neighbor)]
+            Tracks = [ProjectTrack.Default, otherTrack], Subtitles = [moving, neighbor], Layers = [layer, Layer(neighbor) with { TrackId = otherTrack.Id }]
         }, moving.Id, layer);
         TimelineTimingEventArgs? committed = null;
         timeline.TimingChanged += (_, e) => committed = e;

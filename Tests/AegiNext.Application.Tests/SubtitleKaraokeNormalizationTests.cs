@@ -226,7 +226,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         var source = LegacyDocument("a😀").Subtitles[0];
         var document = new ProjectDocument();
         var independent = ProjectEditingOperations.ImportSubtitleLines(document, [source], "ASS");
-        var assigned = ProjectEditingOperations.CreateSubtitleClips(document, [source], document.SubtitleTracks[0].Id);
+        var assigned = ProjectEditingOperations.CreateSubtitleClips(document, [source], document.Tracks[0].Id);
         foreach (var imported in new[] { independent, assigned })
         {
             var line = Assert.Single(imported.Subtitles);

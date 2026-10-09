@@ -11,7 +11,7 @@ public sealed class LayerAnimationSignedTimeTests
     [InlineData(-5, 1)]
     public void FullVisibleContentRangeIncludesNegativeTimes(int offset, int duration)
     {
-        var layer = new ProjectLayer { Start = new(10), End = new(10 + duration), AnimationOffset = new(offset) };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(10), End = new(10 + duration), AnimationOffset = new(offset) };
 
         Assert.Equal((new MediaTime(offset), new MediaTime(offset + duration)), LayerAnimationTiming.GetRange(layer));
         Assert.Equal(new MediaTime(offset), LayerAnimationTiming.ClampTime(layer, new(offset - 1)));
@@ -29,7 +29,7 @@ public sealed class LayerAnimationSignedTimeTests
     {
         var track = new AnimationTrack(AnimationProperty.OPACITY,
             [new(new(0), 0.2, interpolation) { Exponent = 2.5 }, new(new(4), 0.8)]);
-        var original = new ProjectLayer { Start = new(5), End = new(9), Tracks = [track] };
+        var original = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(5), End = new(9), Tracks = [track] };
         var extended = LayerAnimationTiming.Retime(original, new(3), new(9), TimelineEditMode.CROP);
 
         Assert.Equal(new MediaTime(-2), extended.AnimationOffset);
@@ -48,7 +48,7 @@ public sealed class LayerAnimationSignedTimeTests
     public void SignedKeysAreValidOnlyWithinTheLayerRangeAndRemainInvalidInPresets()
     {
         var track = new AnimationTrack(AnimationProperty.OPACITY, [new(new(-2), 0.2), new(new(-1), 0.8)]);
-        var layer = new ProjectLayer { Start = new(3), End = new(4), AnimationOffset = new(-2), Tracks = [track] };
+        var layer = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(3), End = new(4), AnimationOffset = new(-2), Tracks = [track] };
         ProjectValidator.Validate(new() { Layers = [layer] });
         Assert.Equal(0.5, Assert.Single(SceneEvaluator.Evaluate(new ProjectDocument { Layers = [layer] }, new(7, 2))).Opacity, 12);
 
@@ -74,7 +74,7 @@ public sealed class LayerAnimationSignedTimeTests
     {
         var track = new AnimationTrack(AnimationProperty.OPACITY,
             [new(new(-4), 0.1, interpolation) { Exponent = 2.5 }, new(new(2), 0.9)]);
-        var original = new ProjectLayer { Start = new(5), End = new(11), AnimationOffset = new(-4), Tracks = [track] };
+        var original = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 1, 1), Start = new(5), End = new(11), AnimationOffset = new(-4), Tracks = [track] };
         var once = LayerAnimationTiming.Retime(original, new(6), new(10), TimelineEditMode.CROP);
         var twice = LayerAnimationTiming.Retime(once, new(7), new(9), TimelineEditMode.CROP);
         var stretched = LayerAnimationTiming.Retime(twice, new(7), new(11), TimelineEditMode.STRETCH);

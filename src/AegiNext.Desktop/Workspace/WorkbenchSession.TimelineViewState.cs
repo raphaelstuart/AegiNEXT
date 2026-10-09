@@ -64,24 +64,7 @@ internal sealed partial class WorkbenchSession
         });
     }
 
-    internal IEnumerable<Guid> GetTimelineTrackIds() => DocumentSnapshot.SubtitleTracks.Select(track => track.Id)
-        .Concat(EnumerateTimelineSceneTrackIds(DocumentSnapshot.Layers)).Distinct();
-
-    private static IEnumerable<Guid> EnumerateTimelineSceneTrackIds(IEnumerable<ProjectLayer> layers)
-    {
-        foreach (var layer in layers)
-        {
-            if (layer.Kind != LayerKind.SUBTITLE)
-            {
-                yield return layer.Id;
-            }
-
-            foreach (var id in EnumerateTimelineSceneTrackIds(layer.Children))
-            {
-                yield return id;
-            }
-        }
-    }
+    internal IEnumerable<Guid> GetTimelineTrackIds() => DocumentSnapshot.Tracks.Select(track => track.Id);
 
     private void ApplyTimelineViewState(TimelineViewState state)
     {

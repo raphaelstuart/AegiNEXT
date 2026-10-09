@@ -43,12 +43,12 @@ public sealed class StableSubtitleStyleIdentityTests
     {
         var editor = new ProjectEditor();
         var presetId = Guid.NewGuid();
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, presetId, "Dialogue", new());
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, presetId, "Dialogue", new());
         var id = editor.AddSubtitle(new(0), new(2), "test");
         editor.UpdateSubtitle(id, line => line with { StylePresetId = Guid.NewGuid() });
         var before = editor.Snapshot;
 
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, presetId, "Dialogue", new(), updateExisting: true);
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, presetId, "Dialogue", new(), updateExisting: true);
 
         Assert.Equal(presetId, Assert.Single(editor.Snapshot.Subtitles).StylePresetId);
         Assert.Equal(before.Subtitles[0].Style, editor.Snapshot.Subtitles[0].Style);
@@ -64,14 +64,14 @@ public sealed class StableSubtitleStyleIdentityTests
         var editor = new ProjectEditor();
         var defaultId = Guid.NewGuid();
         var fallbackId = Guid.NewGuid();
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, defaultId, "Default style", new());
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, defaultId, "Default style", new());
         var first = new SubtitleLine { Start = new(0), End = new(2), StyleName = "Fallback", StylePresetId = fallbackId };
-        editor.AddSubtitles([first], SubtitleTrack.DEFAULT_TRACK_ID);
+        editor.AddSubtitles([first], ProjectTrack.DEFAULT_TRACK_ID);
         Assert.Equal(defaultId, editor.Snapshot.Subtitles[0].StylePresetId);
 
-        editor.SetSubtitleTrackAutoApplyStyle(SubtitleTrack.DEFAULT_TRACK_ID, false);
+        editor.SetSubtitleTrackAutoApplyStyle(ProjectTrack.DEFAULT_TRACK_ID, false);
         var second = first with { Id = Guid.NewGuid(), Start = new(2), End = new(4) };
-        editor.AddSubtitles([second], SubtitleTrack.DEFAULT_TRACK_ID);
+        editor.AddSubtitles([second], ProjectTrack.DEFAULT_TRACK_ID);
 
         Assert.Equal(fallbackId, editor.Snapshot.Subtitles[1].StylePresetId);
         Assert.Equal("Fallback", editor.Snapshot.Subtitles[1].StyleName);
@@ -107,7 +107,7 @@ public sealed class StableSubtitleStyleIdentityTests
     public void LegacyProjectsGainNoGuessedIdentityAndKeepRationalTimes(int version)
     {
         var editor = new ProjectEditor();
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Dialogue", new());
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Dialogue", new());
         editor.AddSubtitle(new(1001, 30000), new(2002, 30000), "legacy");
         var original = editor.Snapshot;
         var json = JsonNode.Parse(ProjectStore.Serialize(original))!.AsObject();

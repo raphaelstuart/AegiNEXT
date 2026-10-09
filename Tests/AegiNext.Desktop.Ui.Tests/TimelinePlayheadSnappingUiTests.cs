@@ -152,11 +152,11 @@ public sealed class TimelinePlayheadSnappingUiTests
     public void PlayheadAndOtherClipBoundariesCompeteByTheirActualPixelDistance(bool rightEdge, bool playheadCloser)
     {
         var cue = new SubtitleLine { Start = new(1, 10), End = new(3, 10), Text = "Moving" };
-        var otherTrack = new SubtitleTrack { Name = "Other" };
+        var otherTrack = new ProjectTrack { Name = "Other" };
         var playhead = new MediaTime(playheadCloser ? 313 : 315, 1000);
         var neighbor = new SubtitleLine
         {
-            Start = new(playheadCloser ? 315 : 313, 1000), End = new(2, 5), TrackId = otherTrack.Id, Text = "Neighbor"
+            Start = new(playheadCloser ? 315 : 313, 1000), End = new(2, 5), Text = "Neighbor"
         };
         var layer = Layer(cue);
         var expected = playheadCloser ? playhead : neighbor.Start;
@@ -166,7 +166,7 @@ public sealed class TimelinePlayheadSnappingUiTests
         };
         timeline.SetDocument(new()
         {
-            SubtitleTracks = [SubtitleTrack.Default, otherTrack], Subtitles = [cue, neighbor], Layers = [layer, Layer(neighbor)]
+            Tracks = [ProjectTrack.Default, otherTrack], Subtitles = [cue, neighbor], Layers = [layer, Layer(neighbor) with { TrackId = otherTrack.Id }]
         }, cue.Id, layer);
         TimelineTimingEventArgs? committed = null;
         timeline.TimingChanged += (_, e) => committed = e;

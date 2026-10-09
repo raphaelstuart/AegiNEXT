@@ -7,10 +7,10 @@ namespace AegiNext.Rendering.Tests;
 public sealed class ProjectSceneRendererTests
 {
     [Fact]
-    public void GroupOpacityPreservesLinearHdrValuesAndHalfOpenTime()
+    public void ClipOpacityPreservesLinearHdrValuesAndHalfOpenTime()
     {
         var child = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 4, 4), Fill = new(4, 2, 0), End = new(2) };
-        var document = new ProjectDocument { Width = 8, Height = 8, Layers = [new ProjectLayer { Kind = LayerKind.GROUP, Opacity = 0.5, Children = [child], End = new(2) }] };
+        var document = new ProjectDocument { Width = 8, Height = 8, Layers = [child with { Opacity = 0.5 }] };
         using var renderer = new ProjectSceneRenderer(new DirectoryProjectAssetResolver(AppContext.BaseDirectory));
         using var surface = renderer.Render(document, new(1));
         var pixels = new Half[surface.Info.ChannelCount];
@@ -59,8 +59,9 @@ public sealed class ProjectSceneRendererTests
     public void AddBlendPreservesExtendedLinearHighlights()
     {
         var first = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 2, 2), Fill = new(2, 0, 0) };
-        var second = first with { Id = Guid.NewGuid(), Fill = new(3, 0, 0), Blend = BlendMode.ADD };
-        var document = new ProjectDocument { Width = 2, Height = 2, Layers = [first, second] };
+        var frontTrack = new ProjectTrack();
+        var second = first with { Id = Guid.NewGuid(), TrackId = frontTrack.Id, Fill = new(3, 0, 0), Blend = BlendMode.ADD };
+        var document = new ProjectDocument { Width = 2, Height = 2, Tracks = [frontTrack, ProjectTrack.Default], Layers = [first, second] };
         using var renderer = new ProjectSceneRenderer(new DirectoryProjectAssetResolver(AppContext.BaseDirectory));
         using var surface = renderer.Render(document, MediaTime.Zero);
         var pixels = new Half[surface.Info.ChannelCount];
@@ -76,7 +77,8 @@ public sealed class ProjectSceneRendererTests
     public void ArtisticBlendsKeepExtendedLinearInput(BlendMode mode, float expected)
     {
         var first = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 2, 2), Fill = new(2, 0, 0) };
-        var document = new ProjectDocument { Width = 2, Height = 2, Layers = [first, first with { Id = Guid.NewGuid(), Fill = new(3, 0, 0), Blend = mode }] };
+        var frontTrack = new ProjectTrack();
+        var document = new ProjectDocument { Width = 2, Height = 2, Tracks = [frontTrack, ProjectTrack.Default], Layers = [first, first with { Id = Guid.NewGuid(), TrackId = frontTrack.Id, Fill = new(3, 0, 0), Blend = mode }] };
         using var renderer = new ProjectSceneRenderer(new DirectoryProjectAssetResolver(AppContext.BaseDirectory));
         using var surface = renderer.Render(document, MediaTime.Zero);
         var pixels = new Half[surface.Info.ChannelCount];

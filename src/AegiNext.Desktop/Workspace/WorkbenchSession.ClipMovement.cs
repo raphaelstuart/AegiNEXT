@@ -22,7 +22,7 @@ internal sealed partial class WorkbenchSession
                 throw new KeyNotFoundException(Localization.Get("Workbench.NoSelection"));
             }
 
-            var layerIds = Flatten(source.Layers)
+            var layerIds = source.Layers
                 .Where(layer => layer.SubtitleId is { } id && targets.Contains(id))
                 .Select(layer => layer.Id).ToArray();
             return ShowClipMovementAsync(layerIds, source);

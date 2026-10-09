@@ -44,7 +44,7 @@ public sealed class ClipClipboardEditingTests
         Assert.Equal(document.Layers, editor.Snapshot.Layers.Take(3));
         Assert.Equal(result.LayerIds, editor.Snapshot.Layers.Skip(3).Select(layer => layer.Id));
         Assert.Equal(document.Assets, editor.Snapshot.Assets);
-        Assert.Equal(document.SubtitleTracks, editor.Snapshot.SubtitleTracks);
+        Assert.Equal(document.Tracks, editor.Snapshot.Tracks);
         for (var index = 0; index < 3; index++)
         {
             var source = document.Layers[index];
@@ -66,7 +66,7 @@ public sealed class ClipClipboardEditingTests
         Assert.Equal(pastedLine.Id, pastedLayer.Id);
         Assert.Equal(originalLine.Style, pastedLine.Style);
         Assert.Equal(originalLine.InlineSpans, pastedLine.InlineSpans);
-        Assert.Equal(originalLine.TrackId, pastedLine.TrackId);
+        Assert.Equal(originalLayer.TrackId, pastedLayer.TrackId);
         Assert.NotEqual(originalLine.Karaoke[0].Id, pastedLine.Karaoke[0].Id);
         Assert.NotEqual(originalLine.InactiveKaraoke[0].Id, pastedLine.InactiveKaraoke[0].Id);
         Assert.Equal(originalLine.Karaoke[0] with { Id = pastedLine.Karaoke[0].Id }, pastedLine.Karaoke[0]);
@@ -147,15 +147,15 @@ public sealed class ClipClipboardEditingTests
     }
 
     [Fact]
-    public void CaptureRejectsUnknownGroupsEmptySelectionAndUnselectedPrimary()
+    public void CaptureRejectsUnknownInvalidClipsEmptySelectionAndUnselectedPrimary()
     {
         var document = CreateDocument();
-        var group = new ProjectLayer();
+        var group = new ProjectLayer { Kind = (LayerKind)int.MaxValue };
         var withGroup = document with { Layers = document.Layers.Add(group) };
         var id = document.Layers[0].Id;
 
         Assert.Throws<KeyNotFoundException>(() => ProjectEditingOperations.CaptureClips(document, [id, Guid.NewGuid()], id));
-        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.CaptureClips(withGroup, [id, group.Id], id));
+        Assert.Throws<InvalidDataException>(() => ProjectEditingOperations.CaptureClips(withGroup, [id, group.Id], id));
         Assert.Throws<ArgumentException>(() => ProjectEditingOperations.CaptureClips(document, [], id));
         Assert.Throws<ArgumentException>(() => ProjectEditingOperations.CaptureClips(document, [id], document.Layers[1].Id));
     }
@@ -180,12 +180,12 @@ public sealed class ClipClipboardEditingTests
     public void PastePreservesMultipleTracksDistinctLayerIdentityAndExactFractionalOffsets()
     {
         var document = CreateDocument();
-        var track = new SubtitleTrack { Name = "Other" };
-        var line = new SubtitleLine { TrackId = track.Id, Start = new(1), End = new(3), Text = "parallel" };
-        var layer = new ProjectLayer { Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End };
+        var track = new ProjectTrack { Name = "Other" };
+        var line = new SubtitleLine { Start = new(1), End = new(3), Text = "parallel" };
+        var layer = new ProjectLayer { TrackId = track.Id, Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End };
         document = document with
         {
-            SubtitleTracks = document.SubtitleTracks.Add(track),
+            Tracks = document.Tracks.Add(track),
             Subtitles = document.Subtitles.Add(line), Layers = document.Layers.Add(layer)
         };
         var content = ProjectEditingOperations.CaptureClips(document, document.Layers.Select(value => value.Id).ToArray(), layer.Id);
@@ -193,16 +193,16 @@ public sealed class ClipClipboardEditingTests
 
         var result = ProjectEditingOperations.PasteClips(document, content, start);
 
-        Assert.Equal(start, result.Document.Layers[4].Start);
+        Assert.Equal(start, result.Document.Layers.Skip(4).Min(clip => clip.Start));
         var copy = result.Document.Layers.Single(value => value.Id == result.PrimaryId);
         var copiedLine = result.Document.Subtitles.Single(value => value.Id == copy.SubtitleId);
         Assert.NotEqual(copy.Id, copiedLine.Id);
         Assert.NotEqual(layer.Id, copy.Id);
         Assert.NotEqual(line.Id, copiedLine.Id);
-        Assert.Equal(track.Id, copiedLine.TrackId);
+        Assert.Equal(track.Id, copy.TrackId);
         Assert.Equal(line.Start + start, copiedLine.Start);
         Assert.Equal(line.End + start, copiedLine.End);
-        Assert.Equal(document.Subtitles[0].TrackId, result.Document.Subtitles[2].TrackId);
+        Assert.Equal(document.Layers[1].TrackId, new ProjectClipIndex(result.Document).GetSubtitleTrackId(result.Document.Subtitles[2].Id));
     }
 
     [Fact]
@@ -215,9 +215,9 @@ public sealed class ClipClipboardEditingTests
 
         Assert.Throws<InvalidDataException>(() => editor.PasteClips(content with { EarliestStart = new(1) }, new(10)));
         Assert.Throws<InvalidDataException>(() => editor.PasteClips(content with { PrimaryId = Guid.NewGuid() }, new(10)));
-        Assert.Throws<InvalidOperationException>(() => editor.PasteClips(content with
+        Assert.Throws<InvalidDataException>(() => editor.PasteClips(content with
         {
-            Layers = [shape with { Kind = LayerKind.GROUP, Shape = null }]
+            Layers = [shape with { Kind = (LayerKind)int.MaxValue, Shape = null }]
         }, new(10)));
         Assert.Same(document, editor.Snapshot);
         Assert.False(editor.CanUndo);
@@ -265,8 +265,9 @@ public sealed class ClipClipboardEditingTests
             ],
             MotionPath = new(new(new(0, 0), [new(new(1, 2), new(3, 4), new(5, 6))]), new(2))
         };
-        var shape = new ProjectLayer { Kind = LayerKind.SHAPE, Start = new(0), End = new(2), Shape = new(ShapeKind.ELLIPSE, 30, 40) };
+        var shapeTrack = new ProjectTrack { Name = "Shape" };
+        var shape = new ProjectLayer { TrackId = shapeTrack.Id, Kind = LayerKind.SHAPE, Start = new(0), End = new(2), Shape = new(ShapeKind.ELLIPSE, 30, 40) };
         var image = new ProjectLayer { Kind = LayerKind.IMAGE, Start = new(4), End = new(6), Image = new(imageAsset.Id, 50, 60) };
-        return new() { Assets = [font, inlineFont, imageAsset], Subtitles = [line], Layers = [shape, subtitle, image] };
+        return new() { Tracks = [ProjectTrack.Default, shapeTrack], Assets = [font, inlineFont, imageAsset], Subtitles = [line], Layers = [shape, subtitle, image] };
     }
 }

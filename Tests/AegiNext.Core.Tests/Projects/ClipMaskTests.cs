@@ -78,7 +78,6 @@ public sealed class ClipMaskTests
     }
 
     [Theory]
-    [InlineData(LayerKind.GROUP)]
     [InlineData(LayerKind.SHAPE)]
     [InlineData(LayerKind.IMAGE)]
     public void NonSubtitleLayersCannotHaveMasks(LayerKind kind)

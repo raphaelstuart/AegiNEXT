@@ -5,14 +5,101 @@ using AegiNext.Desktop.Editing;
 using AegiNext.Media.Analysis;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
+using Avalonia.Threading;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class TimelineRenderingWorkBudgetUiTests
 {
+    [AvaloniaFact]
+    public async Task HeaderReorderAcrossScreensQueriesOnlyVisibleClipsAndNeverRebuildsTheirIndexesWhileHeld()
+    {
+        using var environment = new UiTestEnvironment();
+        const int CLIPS_PER_TRACK = 384;
+        var tracks = Enumerable.Range(0, 24).Select(index => new ProjectTrack { Name = $"Track {index}" }).ToArray();
+        var cues = Enumerable.Range(0, tracks.Length * CLIPS_PER_TRACK).Select(index => new SubtitleLine
+        {
+            Start = new(index % CLIPS_PER_TRACK * 2), End = new(index % CLIPS_PER_TRACK * 2 + 1), Text = $"Clip {index}"
+        }).ToArray();
+        var document = new ProjectDocument
+        {
+            Tracks = [.. tracks], Subtitles = [.. cues],
+            Layers = [.. cues.Select((cue, index) => new ProjectLayer
+            {
+                TrackId = tracks[index / CLIPS_PER_TRACK].Id, SubtitleId = cue.Id, Start = cue.Start, End = cue.End
+            })]
+        };
+        ProjectValidator.Validate(document);
+        using var timeline = new SubtitleTimelineControl { IsWaveformVisible = false, IsSpectrumVisible = false };
+        timeline.SetDocument(document, null, null);
+        TimelineTrackReorderEventArgs? request = null;
+        var commits = 0;
+        timeline.TrackReorderCompleted += (_, e) =>
+        {
+            commits++;
+            request = e;
+        };
+        var window = new Window { Width = 800, Height = 180, Content = timeline };
+        window.Show();
+        try
+        {
+            window.UpdateLayout();
+            timeline.SetViewport(new(400, 100), CLIPS_PER_TRACK * 2);
+            using (var frame = window.CaptureRenderedFrame())
+            {
+                Assert.NotNull(frame);
+            }
+            Capture(timeline);
+            var indexes = timeline.VisibleClipIndexBuildCount;
+            var beforeWork = timeline.VisibleClipQueryWorkCount;
+            var header = timeline.GetTrackHeaderRectangle(tracks[0].Id)!.Value;
+            var origin = new Point(60, header.Top + 14);
+            Assert.Same(timeline, window.InputHitTest(origin));
+            var destination = new Point(60, timeline.Bounds.Height + 5);
+            window.MouseDown(origin, MouseButton.Left);
+            window.MouseMove(destination);
+            Capture(timeline);
+            var ranges = timeline.RangeProjectionBuildCount;
+            Assert.InRange(timeline.VisibleClipQueryWorkCount - beforeWork, 1, 512);
+            Assert.InRange(timeline.VisibleClipProjectionCount, 1, 32);
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            var frames = 0;
+            var maximum = timeline.ContentHeight - timeline.Viewport.Height;
+            while (timeline.Viewport.VerticalOffset < maximum)
+            {
+                Assert.True(DateTime.UtcNow < deadline, $"Edge scroll stopped at {timeline.Viewport.VerticalOffset} of {maximum}.");
+                beforeWork = timeline.VisibleClipQueryWorkCount;
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+                Dispatcher.UIThread.RunJobs();
+                Capture(timeline);
+                Assert.InRange(timeline.VisibleClipQueryWorkCount - beforeWork, 0, 1024);
+                Assert.InRange(timeline.VisibleClipProjectionCount, 1, 32);
+                Assert.Equal(indexes, timeline.VisibleClipIndexBuildCount);
+                Assert.Equal(ranges, timeline.RangeProjectionBuildCount);
+                Assert.Equal(0, commits);
+                frames++;
+            }
+
+            Assert.True(frames >= 8);
+            Assert.True(timeline.Viewport.VerticalOffset > timeline.Viewport.Height);
+            window.MouseUp(destination, MouseButton.Left);
+            Assert.Equal(1, commits);
+            Assert.NotNull(request);
+            Assert.Same(document, request.ExpectedDocument);
+            Assert.Equal(tracks[0].Id, request.TrackId);
+            Assert.Equal(tracks.Length - 1, request.Index);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     [AvaloniaFact]
     public void PlaybackPositionReusesVisibleStaticDrawingAndCurveSamples()
     {

@@ -19,7 +19,7 @@ internal sealed partial class TimelinePanelViewModel
     /// <summary>切换单轨时间线投影，保留工程和当前片段选择。</summary>
     public void ToggleTrackSolo(Guid trackId)
     {
-        if (session.IsClosing || session.IsProjectBusy || !Document.SubtitleTracks.Any(track => track.Id == trackId))
+        if (session.IsClosing || session.IsProjectBusy || !Document.Tracks.Any(track => track.Id == trackId))
         {
             return;
         }
@@ -54,7 +54,7 @@ internal sealed partial class TimelinePanelViewModel
 
     internal void ValidateTrackSoloDocument(ProjectDocument value)
     {
-        if (SoloTrackId is { } solo && (soloDocumentId != value.Id || !value.SubtitleTracks.Any(track => track.Id == solo)))
+        if (SoloTrackId is { } solo && (soloDocumentId != value.Id || !value.Tracks.Any(track => track.Id == solo)))
         {
             ClearTrackSolo();
         }
@@ -74,13 +74,11 @@ internal sealed partial class TimelinePanelViewModel
         {
             selected.Add(primary);
         }
-        var selectedCues = Flatten(Document.Layers).Where(layer => selected.Contains(layer.Id) && layer.SubtitleId.HasValue)
-            .Select(layer => layer.SubtitleId!.Value).ToHashSet();
         if (session.SelectedCueId is { } cue)
         {
-            selectedCues.Add(cue);
+            selected.Add(session.ClipIndex.GetSubtitleClip(cue).Id);
         }
-        if (Document.Subtitles.Any(line => selectedCues.Contains(line.Id) && line.TrackId != solo))
+        if (Document.Layers.Any(clip => selected.Contains(clip.Id) && clip.TrackId != solo))
         {
             ClearTrackSolo();
         }

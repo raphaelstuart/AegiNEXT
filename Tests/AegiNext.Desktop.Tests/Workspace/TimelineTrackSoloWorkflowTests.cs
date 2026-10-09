@@ -22,7 +22,7 @@ public sealed class TimelineTrackSoloWorkflowTests
         var dirty = context.Session.HasUnsavedChanges;
         var undo = context.Editor.UndoLabel;
         var redo = context.Editor.RedoLabel;
-        var solo = document.SubtitleTracks[1].Id;
+        var solo = document.Tracks[1].Id;
 
         context.Session.ViewModel.Timeline.ToggleTrackSolo(solo);
         context.Session.RefreshDocument();
@@ -48,8 +48,8 @@ public sealed class TimelineTrackSoloWorkflowTests
         var document = CreateDocument();
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
-        var current = document.SubtitleTracks[0].Id;
-        var solo = document.SubtitleTracks[1].Id;
+        var current = document.Tracks[0].Id;
+        var solo = document.Tracks[1].Id;
         Assert.True(context.Session.SelectTrack(current));
         var before = context.Editor.Snapshot;
         context.Session.ViewModel.Timeline.ToggleTrackSolo(solo);
@@ -70,10 +70,10 @@ public sealed class TimelineTrackSoloWorkflowTests
         await context.InitializeAsync();
         context.Session.SelectCue(document.Subtitles[0].Id);
         context.Session.ViewModel.Styles.FontSizeText = "7e-";
-        var solo = document.SubtitleTracks[1].Id;
+        var solo = document.Tracks[1].Id;
         context.Session.ViewModel.Timeline.ToggleTrackSolo(solo);
 
-        Assert.False(context.Session.SelectTrack(document.SubtitleTracks[0].Id));
+        Assert.False(context.Session.SelectTrack(document.Tracks[0].Id));
 
         Assert.Equal(solo, context.Session.ViewModel.Timeline.SoloTrackId);
         Assert.Equal("7e-", context.Session.ViewModel.Styles.FontSizeText);
@@ -87,7 +87,7 @@ public sealed class TimelineTrackSoloWorkflowTests
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
         context.Session.SelectCue(document.Subtitles[0].Id);
-        context.Session.ViewModel.Timeline.ToggleTrackSolo(document.SubtitleTracks[0].Id);
+        context.Session.ViewModel.Timeline.ToggleTrackSolo(document.Tracks[0].Id);
 
         context.Session.SelectCue(document.Subtitles[1].Id);
 
@@ -103,19 +103,19 @@ public sealed class TimelineTrackSoloWorkflowTests
         var document = CreateDocument();
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
-        var solo = document.SubtitleTracks[1].Id;
+        var solo = document.Tracks[1].Id;
         context.Session.ViewModel.Timeline.ToggleTrackSolo(solo);
 
-        context.Editor.RemoveSubtitleTrack(solo);
+        context.Editor.RemoveTrack(solo);
 
         Assert.Null(context.Session.ViewModel.Timeline.SoloTrackId);
         Assert.True(context.Editor.Undo());
         Assert.Same(document, context.Editor.Snapshot);
         Assert.Null(context.Session.ViewModel.Timeline.SoloTrackId);
-        context.Editor.RemoveSubtitleTrack(solo);
-        context.Session.ViewModel.Timeline.ToggleTrackSolo(document.SubtitleTracks[0].Id);
-        context.Editor.RemoveSubtitleTrack(document.SubtitleTracks[0].Id);
-        Assert.Empty(context.Editor.Snapshot.SubtitleTracks);
+        context.Editor.RemoveTrack(solo);
+        context.Session.ViewModel.Timeline.ToggleTrackSolo(document.Tracks[0].Id);
+        context.Editor.RemoveTrack(document.Tracks[0].Id);
+        Assert.Empty(context.Editor.Snapshot.Tracks);
         Assert.Null(context.Session.ViewModel.Timeline.SoloTrackId);
         context.Session.ViewModel.Timeline.ToggleTrackSolo(solo);
         Assert.Null(context.Session.ViewModel.Timeline.SoloTrackId);
@@ -128,12 +128,12 @@ public sealed class TimelineTrackSoloWorkflowTests
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
         var model = context.Session.ViewModel.Timeline;
-        model.ToggleTrackSolo(document.SubtitleTracks[0].Id);
+        model.ToggleTrackSolo(document.Tracks[0].Id);
 
         model.Document = document with { Id = Guid.NewGuid() };
 
         Assert.Null(model.SoloTrackId);
-        model.ToggleTrackSolo(document.SubtitleTracks[0].Id);
+        model.ToggleTrackSolo(document.Tracks[0].Id);
         context.Session.ResetSelection();
         Assert.Null(model.SoloTrackId);
         Assert.Same(document, context.Editor.Snapshot);
@@ -142,7 +142,7 @@ public sealed class TimelineTrackSoloWorkflowTests
     private static ProjectDocument CreateDocument()
     {
         var editor = new ProjectEditor();
-        var secondTrack = editor.AddSubtitleTrack("Second");
+        var secondTrack = editor.AddTrack("Second");
         editor.AddSubtitle(new(0), new(2), "First");
         editor.AddSubtitle(new(3), new(5), "Second", secondTrack);
         return editor.Snapshot;

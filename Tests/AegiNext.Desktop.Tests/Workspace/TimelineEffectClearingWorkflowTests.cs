@@ -30,19 +30,19 @@ public sealed class TimelineEffectClearingWorkflowTests
     [Fact]
     public async Task RowClearingIncludesUnselectedClipsAndKeepsOtherTracks()
     {
-        var other = new SubtitleTrack { Name = "Other" };
+        var other = new ProjectTrack { Name = "Other" };
         var first = Line(0);
         var second = Line(3);
-        var outside = Line(6) with { TrackId = other.Id };
+        var outside = Line(6);
         var document = new ProjectDocument
         {
-            SubtitleTracks = [SubtitleTrack.Default, other], Subtitles = [first, second, outside],
-            Layers = [Layer(first), Layer(second), Layer(outside)]
+            Tracks = [ProjectTrack.Default, other], Subtitles = [first, second, outside],
+            Layers = [Layer(first), Layer(second), Layer(outside) with { TrackId = other.Id }]
         };
         await using var context = new WorkspaceSessionTestContext(document);
         await context.InitializeAsync();
         context.Session.SelectLayer(first.Id, [first.Id]);
-        var row = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK, first.TrackId, AnimationProperty.OPACITY);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY);
 
         await context.Session.ClearTimelineAnimationRowAsync(row, document);
 
@@ -65,7 +65,7 @@ public sealed class TimelineEffectClearingWorkflowTests
         await context.InitializeAsync();
         var session = context.Session;
         session.SelectLayer(first.Id, [first.Id]);
-        session.ViewModel.Timeline.SetClipContext(new(first.TrackId, first.Id, first.Start));
+        session.ViewModel.Timeline.SetClipContext(new(ProjectTrack.DEFAULT_TRACK_ID, first.Id, first.Start));
         session.SelectLayer(second.Id, [second.Id]);
 
         await session.ViewModel.Timeline.ClearClipAnimationTracksCommand.ExecuteAsync(null);
@@ -104,7 +104,7 @@ public sealed class TimelineEffectClearingWorkflowTests
         await context.InitializeAsync();
         context.Session.SelectLayer(first.Id, [first.Id]);
         context.Session.ViewModel.Timeline.SetAnimationRowContext(new(
-            new(TimelineRowScope.SUBTITLE_TRACK, second.TrackId, AnimationProperty.MASK_NODE_POSITION), second.Id));
+            new(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.MASK_NODE_POSITION), second.Id));
         context.Session.SelectLayer(first.Id, [first.Id, second.Id]);
 
         await context.Session.ViewModel.Timeline.ClearAnimationPropertyTracksCommand.ExecuteAsync(null);
@@ -162,7 +162,7 @@ public sealed class TimelineEffectClearingWorkflowTests
         await context.Session.ClearTimelineClipAnimationTracksAsync([line.Id], document);
         await context.Session.ClearTimelineClipAnimationPropertyTracksAsync(line.Id, AnimationProperty.OPACITY, document);
         await context.Session.ClearTimelineAnimationRowAsync(
-            new(TimelineRowScope.SUBTITLE_TRACK, line.TrackId, AnimationProperty.OPACITY), document);
+            new(TimelineRowScope.TRACK, ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY), document);
 
         Assert.Same(changed, context.Editor.Snapshot);
         Assert.True(context.Editor.Undo());
@@ -178,7 +178,7 @@ public sealed class TimelineEffectClearingWorkflowTests
         await context.InitializeAsync();
 
         await context.Session.ClearTimelineAnimationRowAsync(
-            new(TimelineRowScope.SUBTITLE_TRACK, Guid.NewGuid(), AnimationProperty.OPACITY), document);
+            new(TimelineRowScope.TRACK, Guid.NewGuid(), AnimationProperty.OPACITY), document);
 
         Assert.Same(document, context.Editor.Snapshot);
         Assert.False(context.Editor.CanUndo);

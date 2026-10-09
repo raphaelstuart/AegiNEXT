@@ -12,8 +12,10 @@ public sealed class PreparedProjectScene
         ProjectValidator.Validate(document);
         Document = document;
         Subtitles = document.Subtitles.ToFrozenDictionary(line => line.Id);
+        Clips = new(document);
     }
 
     public ProjectDocument Document { get; }
+    public ProjectClipIndex Clips { get; }
     internal FrozenDictionary<Guid, SubtitleLine> Subtitles { get; }
 }

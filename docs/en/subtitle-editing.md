@@ -2,6 +2,12 @@
 
 [English](subtitle-editing.md) · [简体中文](../zh-cn/subtitle-editing.md) · [All guides](README.md)
 
+## Tracks and compositing
+
+A track can contain subtitles, images, and shapes. Clips on the same track cannot overlap; put overlapping clips on separate tracks. The top track appears in front in both preview and export.
+
+Drag a track header to change its order. Its clip and animation rows move together; the insertion line shows the destination. Release commits one undoable change, which is saved with the project. Escape cancels the drag. Solo and fold buttons keep their own actions.
+
 ## Timeline clip timing
 
 Move subtitle clips and trim either edge in 1 ms increments by default; trimming keeps at least 1 ms of duration. **Step** aligns edits to the visible ruler divisions. With snapping enabled, either clip edge can snap to another clip boundary or the current red playback line, using the target's exact time. Hold Alt to temporarily bypass Step and snapping.
@@ -10,7 +16,7 @@ Extending a clip to the left preserves existing effect keyframes at their origin
 
 With a clip selected, press **Shift+Q** to seek to its start or **Shift+W** to seek to its end. Multiple selection uses the primary clip. Seeking preserves playback state and zoom, and brings an offscreen target into the visible timeline. Text inputs retain uppercase Q/W entry. Rebind or disable these commands in **Settings → Shortcuts → Playback and audition**.
 
-Select multiple rows in the subtitle list or clips in the timeline, right-click **Move**, enter an integer number of milliseconds, and click **Confirm**. Positive values move later; negative values move earlier. The same offset shifts both boundaries of every target, preserving duration, spacing, and internal animation time. The subtitle list moves selected subtitles; the timeline moves the entire selected clip set. Cancel or 0 leaves timing unchanged. Moving any target before zero or creating overlapping subtitles on the same track rejects the whole batch. One Undo restores the batch.
+Select multiple rows in the subtitle list or clips in the timeline, right-click **Move**, enter an integer number of milliseconds, and click **Confirm**. Positive values move later; negative values move earlier. The same offset shifts both boundaries of every target, preserving duration, spacing, and internal animation time. The subtitle list moves selected subtitles; the timeline moves the entire selected clip set. Cancel or 0 leaves timing unchanged. Moving any target before zero or creating overlapping clips on the same track rejects the whole batch. One Undo restores the batch.
 
 ## Rich text and karaoke
 
@@ -52,13 +58,13 @@ ASS supports base/local styles, resets, colors/alpha, outline/shadow, alignment/
 
 ASS style `MarginL`, `MarginR`, and `MarginV` map independently to these three margins. Nonzero dialogue values override the corresponding style value; zero inherits it. Import scales Left/Right by the PlayRes width ratio and Vertical by the height ratio. Export writes the three values separately, keeping ordinary margin placement automatic and preserving explicit `\pos` placement. Export uses `WrapStyle: 1`; font metrics and wrapping can still differ from an ASS player.
 
-Exports include all subtitle tracks. SRT reports loss of rich styling, highlighting, masks, and animation. ASS uses scene order for layers; project times remain exact until millisecond SRT or centisecond ASS output. Unrepresentable positive karaoke durations reject export. Files use UTF-8 and atomic writes.
+Exports include all subtitle tracks. SRT reports loss of rich styling, highlighting, masks, and animation. ASS uses track order for layers; project times remain exact until millisecond SRT or centisecond ASS output. Unrepresentable positive karaoke durations reject export. Files use UTF-8 and atomic writes.
 
 ## Merge projects from multiple contributors
 
 When contributors time separate sections against the complete original video, choose **File → Merge other projects…** in the main project and select one or more `.aeginext` files.
 
-The merge preserves source times and adds independent “project name / track name” tracks, retaining their order and default styles. Subtitles, rich text, karaoke, shapes, images, layer groups, animations, masks, and project effect presets are imported together. Source layers are appended in selection order, with each source's internal drawing order preserved.
+The merge preserves source times and adds independent “project name / track name” tracks, retaining their order and default styles. Subtitles, rich text, karaoke, shapes, images, animations, masks, and project effect presets are imported together. Each source is placed above the main project, and later selected sources appear in front; each source retains its internal track order.
 
 The main project keeps its video, canvas, frame rate, reference white, and timeline view. Sources must have matching canvas dimensions and reference white; differing frame rates do not change exact subtitle times. This workflow expects projects already aligned to the full original video and does not infer or shift segment times.
 

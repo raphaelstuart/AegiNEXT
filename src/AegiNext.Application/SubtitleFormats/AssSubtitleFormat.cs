@@ -212,7 +212,7 @@ public static class AssSubtitleFormat
         var byId = document.Subtitles.ToDictionary(line => line.Id);
         var order = 0;
         var exportedCount = 0;
-        foreach (var layer in SubtitleFormatLossAnalysis.Flatten(document.Layers).Where(layer => layer.SubtitleId.HasValue))
+        foreach (var layer in new ProjectClipIndex(document).LayersInDrawingOrder.Where(layer => layer.SubtitleId.HasValue))
         {
             var line = byId[layer.SubtitleId!.Value];
             if (line.Start + timeOffset < MediaTime.Zero)

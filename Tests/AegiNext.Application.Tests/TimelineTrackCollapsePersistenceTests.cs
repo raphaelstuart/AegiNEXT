@@ -7,19 +7,20 @@ namespace AegiNext.Application.Tests;
 public sealed class TimelineTrackCollapsePersistenceTests
 {
     [Fact]
-    public async Task OverallCollapseRoundTripsSubtitleSceneGroupAndDormantIdentitiesWithIndependentProperties()
+    public async Task OverallCollapseRoundTripsEmptyAndShapeTracksAndDormantIdentitiesWithIndependentProperties()
     {
         using var directory = new TemporaryProjectDirectory();
-        var scene = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20) };
-        var group = new ProjectLayer { Children = [scene] };
+        var sceneTrack = new ProjectTrack { Name = "Shape" };
+        var scene = new ProjectLayer { TrackId = sceneTrack.Id, Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20) };
         var dormant = Guid.NewGuid();
-        var row = new TimelineAnimationRowId(TimelineRowScope.SCENE_LAYER, scene.Id, AnimationProperty.OPACITY);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, sceneTrack.Id, AnimationProperty.OPACITY);
         var document = new ProjectDocument
         {
-            Layers = [group],
+            Tracks = [ProjectTrack.Default, sceneTrack],
+            Layers = [scene],
             TimelineViewState = new()
             {
-                CollapsedTrackIds = [SubtitleTrack.DEFAULT_TRACK_ID, group.Id, scene.Id, dormant],
+                CollapsedTrackIds = [ProjectTrack.DEFAULT_TRACK_ID, sceneTrack.Id, dormant],
                 CollapsedAnimationRows = [row]
             }
         };
@@ -36,8 +37,8 @@ public sealed class TimelineTrackCollapsePersistenceTests
     [Fact]
     public void ExistingTimelineStateWithoutOverallCollapseFieldDefaultsToExpandedTracks()
     {
-        var row = new TimelineAnimationRowId(TimelineRowScope.SUBTITLE_TRACK,
-            SubtitleTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY);
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK,
+            ProjectTrack.DEFAULT_TRACK_ID, AnimationProperty.OPACITY);
         var root = JsonNode.Parse(ProjectStore.Serialize(new()
         {
             TimelineViewState = new() { CollapsedAnimationRows = [row] }

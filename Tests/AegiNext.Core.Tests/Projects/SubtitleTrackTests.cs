@@ -7,9 +7,9 @@ public sealed class SubtitleTrackTests
     [Fact]
     public void EmptyTrackCollectionIsValidWithoutSubtitlesButMissingCollectionIsRejected()
     {
-        var document = new ProjectDocument { SubtitleTracks = [] };
+        var document = new ProjectDocument { Tracks = [] };
         ProjectValidator.Validate(document);
-        Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with { SubtitleTracks = default }));
+        Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with { Tracks = default }));
     }
 
     [Fact]
@@ -22,10 +22,12 @@ public sealed class SubtitleTrackTests
 
         var overlapping = second with { Start = new(1999, 1000) };
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(Document(first, overlapping)));
-        var track = new SubtitleTrack { Name = "Second" };
-        ProjectValidator.Validate(Document(first, overlapping with { TrackId = track.Id }) with
+        var track = new ProjectTrack { Name = "Second" };
+        var differentTracks = Document(first, overlapping);
+        ProjectValidator.Validate(differentTracks with
         {
-            SubtitleTracks = [SubtitleTrack.Default, track]
+            Tracks = [ProjectTrack.Default, track],
+            Layers = differentTracks.Layers.SetItem(1, differentTracks.Layers[1] with { TrackId = track.Id })
         });
     }
 
@@ -36,23 +38,23 @@ public sealed class SubtitleTrackTests
         var document = Document(line);
         ProjectValidator.Validate(document);
 
-        Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with { SubtitleTracks = [] }));
-        Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with { SubtitleTracks = default }));
+        Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with { Tracks = [] }));
+        Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with { Tracks = default }));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with
         {
-            SubtitleTracks = [SubtitleTrack.Default, SubtitleTrack.Default]
+            Tracks = [ProjectTrack.Default, ProjectTrack.Default]
         }));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with
         {
-            SubtitleTracks = [SubtitleTrack.Default with { Id = Guid.Empty }]
+            Tracks = [ProjectTrack.Default with { Id = Guid.Empty }]
         }));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with
         {
-            SubtitleTracks = [SubtitleTrack.Default with { Name = " " }]
+            Tracks = [ProjectTrack.Default with { Name = " " }]
         }));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(document with
         {
-            Subtitles = [line with { TrackId = Guid.NewGuid() }]
+            Layers = [document.Layers[0] with { TrackId = Guid.NewGuid() }]
         }));
     }
 

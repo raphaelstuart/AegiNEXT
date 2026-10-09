@@ -3,12 +3,13 @@ using AegiNext.Core.Timing;
 
 namespace AegiNext.Core.Projects;
 
-/// <summary>合成树节点；时间为绝对工程时间，轨道相对节点 Start，子节点继承组变换与合成。</summary>
+/// <summary>归属唯一轨道的平面片段；时间为绝对工程时间，动画相对片段 Start。</summary>
 public sealed record ProjectLayer
 {
     public Guid Id { get; init; } = Guid.NewGuid();
-    public string Name { get; init; } = "Layer";
-    public LayerKind Kind { get; init; } = LayerKind.GROUP;
+    public Guid TrackId { get; init; } = ProjectTrack.DEFAULT_TRACK_ID;
+    public string Name { get; init; } = "Clip";
+    public LayerKind Kind { get; init; } = LayerKind.SUBTITLE;
     public MediaTime Start { get; init; }
     public MediaTime End { get; init; } = new(10);
     public MediaTime AnimationOffset { get; init; }
@@ -25,5 +26,4 @@ public sealed record ProjectLayer
     public ClipMask? Mask { get; init; }
     public MotionPath? MotionPath { get; init; }
     public ImmutableArray<AnimationTrack> Tracks { get; init; } = [];
-    public ImmutableArray<ProjectLayer> Children { get; init; } = [];
 }

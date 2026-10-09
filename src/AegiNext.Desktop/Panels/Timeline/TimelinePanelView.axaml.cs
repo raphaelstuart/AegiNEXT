@@ -115,7 +115,8 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             await viewModel.SeekAsync(e.Time);
         };
         timeline.ClipSelectionChanged += (_, e) => e.SelectionAccepted = viewModel.SelectLayers(e);
-        timeline.TrackSelected += (_, e) => viewModel.SelectTrack(e.Id);
+        timeline.TrackSelected += (_, e) => e.SelectionAccepted = viewModel.SelectTrack(e.Id);
+        timeline.TrackReorderCompleted += async (_, e) => await viewModel.CommitTrackReorderAsync(e);
         timeline.ViewportChanged += OnViewportChanged;
         overview.ViewportChanged += OnViewportChanged;
         timeline.TimingChanged += async (_, e) => await viewModel.CommitTimingAsync(e);
@@ -444,7 +445,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         trackStyleItem.Items.Clear();
         var presets = viewModel.StylePresets;
         trackStyleItem.IsEnabled = viewModel.SelectedTrackId.HasValue && presets.Length > 0;
-        var currentTrack = viewModel.Document.SubtitleTracks.FirstOrDefault(track => track.Id == viewModel.SelectedTrackId);
+        var currentTrack = viewModel.Document.Tracks.FirstOrDefault(track => track.Id == viewModel.SelectedTrackId);
         autoTrackStyleItem.IsEnabled = currentTrack is not null;
         autoTrackStyleItem.IsChecked = currentTrack?.AutoApplyStyle == true;
         autoTrackStyleItem.CommandParameter = currentTrack?.Id;

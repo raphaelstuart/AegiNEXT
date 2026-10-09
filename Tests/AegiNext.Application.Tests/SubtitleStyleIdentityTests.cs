@@ -57,7 +57,7 @@ public sealed class SubtitleStyleIdentityTests
     {
         var editor = new ProjectEditor();
         var first = editor.AddSubtitle(new(0), new(2), "first");
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Dialogue", new(), true);
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Dialogue", new(), true);
         Assert.Equal("Dialogue", editor.Snapshot.Subtitles.Single(line => line.Id == first).StyleName);
         var second = editor.AddSubtitle(new(2), new(3), "second");
         Assert.Equal("Dialogue", editor.Snapshot.Subtitles.Single(line => line.Id == second).StyleName);
@@ -70,9 +70,9 @@ public sealed class SubtitleStyleIdentityTests
         var id = editor.AddSubtitle(new(0), new(2), "first");
         editor.UpdateSubtitle(id, line => line with { StyleName = new('字', 1024) });
         Assert.Throws<InvalidDataException>(() => editor.UpdateSubtitle(id, line => line with { StyleName = new('字', 1025) }));
-        editor.SetSubtitleTrackStyle(SubtitleTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Dialogue", new());
-        editor.SetSubtitleTrackAutoApplyStyle(SubtitleTrack.DEFAULT_TRACK_ID, false);
-        editor.AddSubtitles([new SubtitleLine { Start = new(2), End = new(3), StyleName = "Imported" }], SubtitleTrack.DEFAULT_TRACK_ID);
+        editor.SetSubtitleTrackStyle(ProjectTrack.DEFAULT_TRACK_ID, Guid.NewGuid(), "Dialogue", new());
+        editor.SetSubtitleTrackAutoApplyStyle(ProjectTrack.DEFAULT_TRACK_ID, false);
+        editor.AddSubtitles([new SubtitleLine { Start = new(2), End = new(3), StyleName = "Imported" }], ProjectTrack.DEFAULT_TRACK_ID);
         Assert.Equal("Imported", editor.Snapshot.Subtitles[1].StyleName);
     }
 

@@ -23,7 +23,7 @@ public sealed class TimingPostProcessorWorkflowTests
         var session = context.Session;
         var trackId = Assert.IsType<Guid>(session.CurrentTrackId);
         context.Editor.SetSubtitleTrackAutoApplyStyle(trackId, false);
-        Assert.Null(context.Editor.Snapshot.SubtitleTracks.Single(track => track.Id == trackId).DefaultStyle);
+        Assert.Null(context.Editor.Snapshot.Tracks.Single(track => track.Id == trackId).DefaultStyle);
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "Dialogue 中文 ABC 123", new() { FontSize = 41 });
         await session.Styles.UpsertAsync(preset);
         session.ViewModel.Styles.SelectedPreset = session.ViewModel.Styles.Presets.Single(value => value.Id == preset.Id);
@@ -482,20 +482,21 @@ public sealed class TimingPostProcessorWorkflowTests
 
     private static ProjectDocument CreateDocument()
     {
-        var secondTrack = new SubtitleTrack { Name = "Other track" };
+        var secondTrack = new ProjectTrack { Name = "Other track" };
         ImmutableArray<SubtitleLine> lines =
         [
             new() { Start = new(2), End = new(3), Text = "First 中文 ABC 123", StyleName = "Default" },
             new() { Start = new(4), End = new(5), Text = "Other style", StyleName = "Dialogue" },
-            new() { Start = new(2), End = new(3), Text = "Other track", StyleName = "Default", TrackId = secondTrack.Id }
+            new() { Start = new(2), End = new(3), Text = "Other track", StyleName = "Default" }
         ];
         return new()
         {
-            SubtitleTracks = [SubtitleTrack.Default, secondTrack],
+            Tracks = [ProjectTrack.Default, secondTrack],
             Subtitles = lines,
             Layers = lines.Select(line => new ProjectLayer
             {
-                Id = line.Id, Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End
+                Id = line.Id, TrackId = line.Id == lines[2].Id ? secondTrack.Id : ProjectTrack.DEFAULT_TRACK_ID,
+                Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End
             }).ToImmutableArray()
         };
     }

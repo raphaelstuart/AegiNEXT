@@ -5,7 +5,7 @@ namespace AegiNext.Application.Tests;
 public sealed class AnimationTrackClearingTests
 {
     [Fact]
-    public void ClearingMixedNestedClipsPreservesStaticDataAndIsOneUndo()
+    public void ClearingMixedFlatClipsPreservesStaticDataAndIsOneUndo()
     {
         var setup = new ProjectEditor();
         var subtitleId = setup.AddSubtitle(new(0), new(4), "Highlight");
@@ -27,8 +27,9 @@ public sealed class AnimationTrackClearingTests
                 InitialValue = 1, Transforms = [new(Guid.NewGuid(), new(0), new(2), 0.5)]
             }]
         };
-        var group = new ProjectLayer { Children = [shape] };
-        var original = setup.Snapshot with { Layers = setup.Snapshot.Layers.Add(group) };
+        var shapeTrack = new ProjectTrack { Name = "Shape" };
+        shape = shape with { TrackId = shapeTrack.Id };
+        var original = setup.Snapshot with { Tracks = setup.Snapshot.Tracks.Add(shapeTrack), Layers = setup.Snapshot.Layers.Add(shape) };
         var editor = new ProjectEditor(original);
         var changes = 0;
         editor.Changed += (_, _) => changes++;
@@ -38,7 +39,7 @@ public sealed class AnimationTrackClearingTests
         var cleared = editor.Snapshot;
         var subtitle = cleared.Layers[0];
         Assert.Empty(subtitle.Tracks);
-        Assert.Empty(cleared.Layers[2].Children[0].Tracks);
+        Assert.Empty(cleared.Layers[2].Tracks);
         Assert.Same(original.Subtitles[0], cleared.Subtitles[0]);
         Assert.NotEmpty(cleared.Subtitles[0].Karaoke);
         Assert.Same(original.Layers[0].Transform, subtitle.Transform);
@@ -46,8 +47,8 @@ public sealed class AnimationTrackClearingTests
         Assert.Same(original.Layers[0].Mask, subtitle.Mask);
         Assert.Equal(original.Layers[0].AnimationOffset, subtitle.AnimationOffset);
         Assert.Same(original.Layers[1], cleared.Layers[1]);
-        Assert.Equal(group.Id, cleared.Layers[2].Id);
-        Assert.Same(group.Transform, cleared.Layers[2].Transform);
+        Assert.Equal(shape.Id, cleared.Layers[2].Id);
+        Assert.Same(shape.Transform, cleared.Layers[2].Transform);
         Assert.Equal(1, changes);
         ProjectValidator.Validate(cleared);
         Assert.True(editor.Undo());
@@ -83,18 +84,21 @@ public sealed class AnimationTrackClearingTests
     }
 
     [Fact]
-    public void SceneGroupPropertyClearingKeepsItsChildAnimation()
+    public void SceneClipPropertyClearingKeepsOtherClipAnimation()
     {
         var child = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 40, 20),
             Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.5)])] };
-        var group = new ProjectLayer { Children = [child], Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.75)])] };
-        var original = new ProjectDocument { Layers = [group] };
+        var otherTrack = new ProjectTrack { Name = "Other" };
+        child = child with { TrackId = otherTrack.Id };
+        var selected = child with { Id = Guid.NewGuid(), TrackId = ProjectTrack.DEFAULT_TRACK_ID,
+            Tracks = [new(AnimationProperty.OPACITY, [new(new(0), 0.75)])] };
+        var original = new ProjectDocument { Tracks = [ProjectTrack.Default, otherTrack], Layers = [selected, child] };
         var editor = new ProjectEditor(original);
 
-        editor.ClearAnimationTracks([group.Id], AnimationProperty.OPACITY);
+        editor.ClearAnimationTracks([selected.Id], AnimationProperty.OPACITY);
 
         Assert.Empty(editor.Snapshot.Layers[0].Tracks);
-        Assert.Same(child, editor.Snapshot.Layers[0].Children[0]);
+        Assert.Same(child, editor.Snapshot.Layers[1]);
         Assert.True(editor.Undo());
         Assert.Same(original, editor.Snapshot);
     }
@@ -150,14 +154,13 @@ public sealed class AnimationTrackClearingTests
     }
 
     [Fact]
-    public void UnsupportedGroupAndInvalidPropertyAreRejectedBeforeAnyChange()
+    public void InvalidPropertyIsRejectedBeforeAnyChange()
     {
-        var group = new ProjectLayer();
-        var original = new ProjectDocument { Layers = [group] };
+        var clip = new ProjectLayer { Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, 10, 10) };
+        var original = new ProjectDocument { Layers = [clip] };
         var editor = new ProjectEditor(original);
 
-        Assert.Throws<InvalidOperationException>(() => editor.ClearAnimationTracks([group.Id]));
-        Assert.Throws<ArgumentOutOfRangeException>(() => editor.ClearAnimationTracks([group.Id], (AnimationProperty)int.MaxValue));
+        Assert.Throws<ArgumentOutOfRangeException>(() => editor.ClearAnimationTracks([clip.Id], (AnimationProperty)int.MaxValue));
 
         Assert.Same(original, editor.Snapshot);
         Assert.False(editor.CanUndo);

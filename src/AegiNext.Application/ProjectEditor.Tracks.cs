@@ -6,18 +6,18 @@ namespace AegiNext.Application;
 
 public sealed partial class ProjectEditor
 {
-    /// <summary>新增具有稳定身份的字幕轨道，作为一个可撤销事务。</summary>
-    public Guid AddSubtitleTrack(string name)
+    /// <summary>新增具有稳定身份的轨道，作为一个可撤销事务。</summary>
+    public Guid AddTrack(string name)
     {
-        var track = new SubtitleTrack { Name = name };
-        Apply("Add subtitle track", document => ProjectEditingOperations.AddSubtitleTrack(document, track));
+        var track = new ProjectTrack { Name = name };
+        Apply("Add track", document => ProjectEditingOperations.AddTrack(document, track));
         return track.Id;
     }
 
-    /// <summary>重命名字幕轨道，保留片段与效果身份。</summary>
-    public void RenameSubtitleTrack(Guid trackId, string name)
+    /// <summary>重命名轨道，保留片段与效果身份。</summary>
+    public void RenameTrack(Guid trackId, string name)
     {
-        Apply("Rename subtitle track", document => ProjectEditingOperations.RenameSubtitleTrack(document, trackId, name));
+        Apply("Rename track", document => ProjectEditingOperations.RenameTrack(document, trackId, name));
     }
 
     /// <summary>设置轨道后续创建默认样式；明确启用时才同步轨道现有字幕。</summary>
@@ -34,16 +34,16 @@ public sealed partial class ProjectEditor
             ProjectEditingOperations.SetSubtitleTrackAutoApplyStyle(document, trackId, enabled));
     }
 
-    /// <summary>在一个可撤销事务中删除字幕轨道及其全部内容；允许工程暂时没有字幕轨道。</summary>
-    public void RemoveSubtitleTrack(Guid trackId)
+    /// <summary>在一个可撤销事务中删除轨道及其全部片段；允许工程暂时没有轨道。</summary>
+    public void RemoveTrack(Guid trackId)
     {
-        Apply("Remove subtitle track", document => ProjectEditingOperations.RemoveSubtitleTrack(document, trackId));
+        Apply("Remove track", document => ProjectEditingOperations.RemoveTrack(document, trackId));
     }
 
-    /// <summary>调整轨道显示顺序，不修改合成树顺序。</summary>
-    public void MoveSubtitleTrack(Guid trackId, int newIndex)
+    /// <summary>调整轨道显示及叠覆顺序，片段稳定身份保持原样。</summary>
+    public void MoveTrack(Guid trackId, int newIndex)
     {
-        Apply("Reorder subtitle tracks", document => ProjectEditingOperations.MoveSubtitleTrack(document, trackId, newIndex));
+        Apply("Reorder tracks", document => ProjectEditingOperations.MoveTrack(document, trackId, newIndex));
     }
 
     /// <summary>将字幕移入目标轨道，保留时间、图层与动画；碰撞拒绝整个事务。</summary>
@@ -56,5 +56,10 @@ public sealed partial class ProjectEditor
     public void MoveSubtitleClip(Guid subtitleId, Guid trackId, MediaTime start, MediaTime end, TimelineEditMode mode, bool move)
     {
         Apply("Edit subtitle clip", document => ProjectEditingOperations.MoveSubtitleClip(document, subtitleId, trackId, start, end, mode, move));
+    }
+    /// <summary>在一个可撤销事务中调整任意类型片段的轨道和时间。</summary>
+    public void MoveClip(Guid clipId, Guid trackId, MediaTime start, MediaTime end, TimelineEditMode mode, bool move)
+    {
+        Apply("Edit clip", document => ProjectEditingOperations.MoveClip(document, clipId, trackId, start, end, mode, move));
     }
 }

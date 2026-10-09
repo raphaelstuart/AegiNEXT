@@ -14,7 +14,8 @@ internal static class SubtitleTimingAssociationResolver
         var byName = presets.ToDictionary(preset => preset.Name, StringComparer.Ordinal);
         var hasDefaultPreset = presets.Any(preset =>
             string.Equals(preset.Name, LEGACY_DEFAULT_STYLE_NAME, StringComparison.OrdinalIgnoreCase));
-        var tracks = document.SubtitleTracks.ToDictionary(track => track.Id);
+        var tracks = document.Tracks.ToDictionary(track => track.Id);
+        var clips = new ProjectClipIndex(document);
         var result = new Dictionary<Guid, SubtitleStylePreset>();
         foreach (var line in document.Subtitles.Where(line => subtitleIds.Contains(line.Id)))
         {
@@ -23,7 +24,7 @@ internal static class SubtitleTimingAssociationResolver
             {
                 byId.TryGetValue(id, out preset);
             }
-            else if (tracks.TryGetValue(line.TrackId, out var track) && track.StylePresetId is { } trackPresetId &&
+            else if (tracks.TryGetValue(clips.GetSubtitleTrackId(line.Id), out var track) && track.StylePresetId is { } trackPresetId &&
                 (string.Equals(line.StyleName, track.StylePresetName, StringComparison.Ordinal) ||
                     MatchesLegacyTrackStyle(line, track, hasDefaultPreset)))
             {
@@ -43,7 +44,7 @@ internal static class SubtitleTimingAssociationResolver
         return result;
     }
 
-    private static bool MatchesLegacyTrackStyle(SubtitleLine line, SubtitleTrack track, bool hasDefaultPreset)
+    private static bool MatchesLegacyTrackStyle(SubtitleLine line, ProjectTrack track, bool hasDefaultPreset)
     {
         return !hasDefaultPreset && line.StyleName == LEGACY_DEFAULT_STYLE_NAME && track.AutoApplyStyle &&
             line.Style == track.DefaultStyle;

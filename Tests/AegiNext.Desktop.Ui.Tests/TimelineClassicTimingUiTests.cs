@@ -124,7 +124,7 @@ public sealed class TimelineClassicTimingUiTests
         var cue = edited.Subtitles.Single(line => line.Id == scene.Primary.Id);
         Assert.Equal(new MediaTime(startMs, 1000), cue.Start);
         Assert.Equal(new MediaTime(endMs, 1000), cue.End);
-        Assert.Equal(scene.Primary.TrackId, cue.TrackId);
+        Assert.Equal(new ProjectClipIndex(scene.Document).GetSubtitleTrackId(scene.Primary.Id), new ProjectClipIndex(edited).GetSubtitleTrackId(cue.Id));
         Assert.Equal(scene.Other, edited.Subtitles.Single(line => line.Id == scene.Other.Id));
         Assert.Equal(scene.Document.Layers.Single(layer => layer.Id == scene.Other.Id),
             edited.Layers.Single(layer => layer.Id == scene.Other.Id));
@@ -132,7 +132,7 @@ public sealed class TimelineClassicTimingUiTests
         Assert.Equal(cue.End, edited.Layers.Single(layer => layer.Id == cue.Id).End);
         Assert.Equal(scene.Primary.Id, context.Session.SelectedCueId);
         Assert.Equal(scene.Primary.Id, context.Session.SelectedLayerId);
-        Assert.Equal(scene.Primary.TrackId, context.Session.CurrentTrackId);
+        Assert.Equal(new ProjectClipIndex(scene.Document).GetSubtitleTrackId(scene.Primary.Id), context.Session.CurrentTrackId);
         Assert.Equal(selection.Order(), context.ViewModel.Timeline.SelectedLayerIds.Order());
         Assert.False(Panel(timeline).ClipMenu.IsOpen);
         Assert.False(timeline.HasActiveDrag);
@@ -222,7 +222,7 @@ public sealed class TimelineClassicTimingUiTests
         var scene = CreateScene(context);
         context.Session.Editor.Reset(scene.Document);
         var timeline = Prepare(context);
-        context.Session.SelectTrack(scene.Primary.TrackId);
+        context.Session.SelectTrack(new ProjectClipIndex(scene.Document).GetSubtitleTrackId(scene.Primary.Id));
         Assert.Null(context.Session.SelectedCueId);
         UiTestActions.Click(context.Window, "TimelineClassicTimingButton");
 
@@ -309,20 +309,20 @@ public sealed class TimelineClassicTimingUiTests
         Assert.Equal(scene.Primary.Id, context.Session.SelectedCueId);
         Assert.Same(scene.Document, context.Session.DocumentSnapshot);
         Assert.False(context.Session.Editor.CanUndo);
-        var header = timeline.GetTrackHeaderRectangle(scene.Other.TrackId)!.Value;
+        var header = timeline.GetTrackHeaderRectangle(new ProjectClipIndex(scene.Document).GetSubtitleTrackId(scene.Other.Id))!.Value;
         timeline.SetViewport(timeline.Viewport with
         {
             VerticalOffset = Math.Max(0, timeline.Viewport.VerticalOffset + header.Top - timeline.RulerHeight)
         }, context.ViewModel.Timeline.FullDuration);
         Flush(context.Window);
-        header = timeline.GetTrackHeaderRectangle(scene.Other.TrackId)!.Value;
+        header = timeline.GetTrackHeaderRectangle(new ProjectClipIndex(scene.Document).GetSubtitleTrackId(scene.Other.Id))!.Value;
         Click(context.Window, timeline, new(header.Center.X, header.Top + 12), MouseButton.Left);
-        Assert.Equal(scene.Other.TrackId, context.Session.CurrentTrackId);
+        Assert.Equal(new ProjectClipIndex(scene.Document).GetSubtitleTrackId(scene.Other.Id), context.Session.CurrentTrackId);
         Assert.Null(context.Session.SelectedCueId);
         var menu = Panel(timeline).TrackMenu;
         try
         {
-            header = timeline.GetTrackHeaderRectangle(scene.Other.TrackId)!.Value;
+            header = timeline.GetTrackHeaderRectangle(new ProjectClipIndex(scene.Document).GetSubtitleTrackId(scene.Other.Id))!.Value;
             Click(context.Window, timeline, new(header.Center.X, header.Top + 12), MouseButton.Right);
             Assert.True(menu.IsOpen);
             Assert.False(Panel(timeline).ClipMenu.IsOpen);
@@ -339,17 +339,16 @@ public sealed class TimelineClassicTimingUiTests
     private static (ProjectDocument Document, SubtitleLine Primary, SubtitleLine Other) CreateScene(
         MainWindowTestContext context, bool sameTrack = false)
     {
-        var otherTrack = new SubtitleTrack { Name = "Other track 中文 ABC 123" };
+        var otherTrack = new ProjectTrack { Name = "Other track 中文 ABC 123" };
         var primary = new SubtitleLine { Start = new(2), End = new(4), Text = "Primary 中文 ABC 123" };
         var other = new SubtitleLine
         {
-            Start = new(sameTrack ? 5 : 1), End = new(6), Text = "Other clip",
-            TrackId = sameTrack ? primary.TrackId : otherTrack.Id
+            Start = new(sameTrack ? 5 : 1), End = new(6), Text = "Other clip"
         };
         var document = context.Session.DocumentSnapshot with
         {
-            SubtitleTracks = sameTrack ? [SubtitleTrack.Default] : [SubtitleTrack.Default, otherTrack],
-            Subtitles = [primary, other], Layers = [Layer(primary), Layer(other)]
+            Tracks = sameTrack ? [ProjectTrack.Default] : [ProjectTrack.Default, otherTrack],
+            Subtitles = [primary, other], Layers = [Layer(primary), Layer(other) with { TrackId = sameTrack ? ProjectTrack.DEFAULT_TRACK_ID : otherTrack.Id }]
         };
         return (document, primary, other);
     }

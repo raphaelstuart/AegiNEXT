@@ -11,24 +11,26 @@ public sealed class ClipMaskRenderingTests
     public void MaskClipsOnlyItsSubtitleAndPreservesSiblingSubtitleAndBackgroundPixels()
     {
         var document = Document();
-        var siblingTrack = new SubtitleTrack { Name = "Sibling" };
+        var siblingTrack = new ProjectTrack { Name = "Sibling" };
         var sibling = document.Subtitles[0] with
         {
-            Id = Guid.NewGuid(), TrackId = siblingTrack.Id, Text = "OTHER",
+            Id = Guid.NewGuid(), Text = "OTHER",
             Style = document.Subtitles[0].Style with { FontSize = 24, Fill = new(0.1, 2, 0.8) }
         };
         var siblingLayer = document.Layers[0] with
         {
-            Id = sibling.Id, SubtitleId = sibling.Id, Transform = new(X: 12, Y: 45)
+            Id = sibling.Id, TrackId = siblingTrack.Id, SubtitleId = sibling.Id, Transform = new(X: 12, Y: 45)
         };
+        var backgroundTrack = new ProjectTrack { Name = "Background" };
         var background = new ProjectLayer
         {
+            TrackId = backgroundTrack.Id,
             Kind = LayerKind.SHAPE, Shape = new(ShapeKind.RECTANGLE, document.Width, document.Height),
             Fill = new(0.1, 0.2, 0.3)
         };
         document = document with
         {
-            SubtitleTracks = document.SubtitleTracks.Add(siblingTrack),
+            Tracks = document.Tracks.Add(siblingTrack).Add(backgroundTrack),
             Subtitles = document.Subtitles.Add(sibling),
             Layers = [background, siblingLayer, document.Layers[0] with { Opacity = 0.7 }]
         };
@@ -296,14 +298,7 @@ public sealed class ClipMaskRenderingTests
         var document = Document();
         document = document with
         {
-            Layers =
-            [
-                new ProjectLayer
-                {
-                    Transform = new(X: 16, Y: 4, Rotation: 5),
-                    Children = document.Layers
-                }
-            ]
+            Layers = [document.Layers[0] with { Transform = new(X: 16, Y: 4, Rotation: 5) }]
         };
         using var renderer = Renderer();
         var original = Pixels(renderer, document);
@@ -312,10 +307,10 @@ public sealed class ClipMaskRenderingTests
             TopLeft = new(24, 0), BottomRight = new(72, 96),
             Transform = new() { Position = new(16, 0) }
         };
-        var group = document.Layers[0];
+        var clip = document.Layers[0];
         var masked = document with
         {
-            Layers = [group with { Children = [group.Children[0] with { Mask = mask }] }]
+            Layers = [clip with { Mask = mask }]
         };
 
         AssertCrop(original, Pixels(renderer, masked), document.Width, document.Height,
