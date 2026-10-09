@@ -1,5 +1,7 @@
 using AegiNext.Application.SubtitleFormats;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
 
 namespace AegiNext.Application.Tests;
 
@@ -135,10 +137,10 @@ public sealed class AssTypographyImportTests
     }
 
     [Theory]
-    [InlineData("\\t(500,500,\\blur8)")]
-    [InlineData("\\t(0,1000,\\blur8)")]
-    [InlineData("\\t(500,500,\\fsp8)")]
-    public void UnsupportedAnimationContextsKeepTextAndDoNotInventANativeAnimation(string tags)
+    [InlineData("\\t(500,500,\\blur8)", AnimationProperty.STROKE_BLUR, true)]
+    [InlineData("\\t(0,1000,\\blur8)", AnimationProperty.STROKE_BLUR, false)]
+    [InlineData("\\t(500,500,\\fsp8)", AnimationProperty.LETTER_SPACING, true)]
+    public void WholeLineTypographyTransformsKeepTextAndCreateEditableNativeAnimation(string tags, AnimationProperty property, bool ordered)
     {
         var parsed = AssSubtitleFormat.Parse(File("{" + tags + "}a"), 640, 360);
         var line = Assert.Single(parsed.Lines);
@@ -148,8 +150,21 @@ public sealed class AssTypographyImportTests
         Assert.Equal(0, style.FillBlur);
         Assert.Equal(0, style.StrokeBlur);
         Assert.Equal(0, style.ShadowBlur);
-        Assert.Empty(Assert.Single(parsed.Clips).Tracks);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.UnsupportedTag");
+        var clip = Assert.Single(parsed.Clips);
+        var track = Assert.Single(clip.Tracks, value => value.Property == property);
+        Assert.Equal(ordered, track.IsOrdered);
+        Assert.Equal(property == AnimationProperty.STROKE_BLUR ? 8 * AssBlurConversion.SigmaPerUnit : 8,
+            SceneEvaluator.EvaluateScalarTrack(track, clip.ContentOffset + new MediaTime(1)), 10);
+        Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.UnsupportedTag");
+        if (property == AnimationProperty.STROKE_BLUR)
+        {
+            Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.BlurAppearance");
+            Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformAppearanceAnimation");
+        }
+        else
+        {
+            Assert.Empty(parsed.Diagnostics);
+        }
     }
 
     [Fact]

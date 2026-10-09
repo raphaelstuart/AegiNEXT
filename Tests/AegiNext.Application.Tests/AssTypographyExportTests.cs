@@ -193,14 +193,14 @@ public sealed class AssTypographyExportTests
     }
 
     [Fact]
-    public void DynamicTypographyTrackReportsUnsupportedCompositionAndPreservesTheNativeTrack()
+    public void DynamicTypographyTrackExportsItsLinearTransformAndPreservesTheNativeTrack()
     {
         var line = Line();
         var layer = Layer(line) with { Tracks = [new(AnimationProperty.LETTER_SPACING, [new(new(0), 0), new(new(2), 10)])] };
         var document = Document(line, layer);
         var written = AssSubtitleFormat.Write(document);
-        Assert.Contains(written.Diagnostics, diagnostic => diagnostic.Code == "Subtitle.Composition");
-        Assert.Contains("\\fsp0", Body(written.Text), StringComparison.Ordinal);
+        Assert.DoesNotContain(written.Diagnostics, diagnostic => diagnostic.Code == "Subtitle.Composition");
+        Assert.Contains("\\fsp0\\t(0,2000,1,\\fsp10)", Body(written.Text), StringComparison.Ordinal);
         Assert.Same(layer, document.Layers[0]);
     }
 

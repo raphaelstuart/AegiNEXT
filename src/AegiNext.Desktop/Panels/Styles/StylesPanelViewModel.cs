@@ -118,18 +118,24 @@ internal sealed class StylesPanelViewModel : ObservableObject
     public bool CanEditLetterSpacing => CanEditAppearanceProperty(AnimationProperty.LETTER_SPACING);
     public bool CanEditFillBlur => CanEditAppearanceProperty(AnimationProperty.FILL_BLUR);
     public bool CanEditStrokeBlur => CanEditAppearanceProperty(AnimationProperty.STROKE_BLUR);
+    public bool CanEditStrokeWidth => CanEditAppearanceProperty(AnimationProperty.STROKE_WIDTH);
     public string? LetterSpacingEditingHint => CanEditLetterSpacing ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
     public string? FillBlurEditingHint => CanEditFillBlur ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
     public string? StrokeBlurEditingHint => CanEditStrokeBlur ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
+    public string? StrokeWidthEditingHint => CanEditStrokeWidth ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
+    public static decimal StrokeWidthMinimum => (decimal)AnimationPropertyMetadata.GetMinimum(AnimationProperty.STROKE_WIDTH);
+    public static decimal StrokeWidthMaximum => (decimal)AnimationPropertyMetadata.GetMaximum(AnimationProperty.STROKE_WIDTH);
 
     internal void RefreshAppearanceEditing()
     {
         OnPropertyChanged(nameof(CanEditLetterSpacing));
         OnPropertyChanged(nameof(CanEditFillBlur));
         OnPropertyChanged(nameof(CanEditStrokeBlur));
+        OnPropertyChanged(nameof(CanEditStrokeWidth));
         OnPropertyChanged(nameof(LetterSpacingEditingHint));
         OnPropertyChanged(nameof(FillBlurEditingHint));
         OnPropertyChanged(nameof(StrokeBlurEditingHint));
+        OnPropertyChanged(nameof(StrokeWidthEditingHint));
     }
 
     private bool CanEditAppearanceProperty(AnimationProperty property) => session.SelectedLayer?.Tracks.Any(track =>

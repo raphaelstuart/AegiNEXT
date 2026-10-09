@@ -33,16 +33,19 @@
               IsEnabled="{Binding CanResetPosition}">
         <controlsCommon:IconText IconKey="ResetPosition" Text="{Loc Key=Workbench.ResetPosition}" />
       </Button>
-      <TextBlock Classes="field" Text="{Loc Key=Workbench.ScaleVector}" />
-      <controls:VectorDraftInput Name="ScaleInput" XFieldKey="ScaleXInput" YFieldKey="ScaleYInput"
+      <StackPanel Spacing="4" ToolTip.Tip="{Binding ScaleEditingHint}">
+        <TextBlock Classes="field" Text="{Loc Key=Workbench.ScaleVector}" />
+        <controls:VectorDraftInput Name="ScaleInput" XFieldKey="ScaleXInput" YFieldKey="ScaleYInput"
                                  XText="{Binding ScaleXText, Mode=TwoWay}" YText="{Binding ScaleYText, Mode=TwoWay}"
-                                 X="{Binding ScaleX, Mode=TwoWay}" Y="{Binding ScaleY, Mode=TwoWay}" Minimum="0.001"
-                                 Maximum="100" />
+                                 X="{Binding ScaleX, Mode=TwoWay}" Y="{Binding ScaleY, Mode=TwoWay}" Minimum="{x:Static vm:EffectsPanelViewModel.ScaleMinimum}"
+                                 Maximum="{x:Static vm:EffectsPanelViewModel.ScaleMaximum}" IsEnabled="{Binding CanEditScale}" />
+      </StackPanel>
       <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-        <StackPanel>
+        <StackPanel ToolTip.Tip="{Binding RotationEditingHint}">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.Rotation}" />
           <controls:NumericDraftInput Name="RotationInput" RawText="{Binding RotationText, Mode=TwoWay}"
-                                      Minimum="-36000" Maximum="36000" Value="{Binding Rotation, Mode=TwoWay}" />
+                                      Minimum="{x:Static vm:EffectsPanelViewModel.RotationMinimum}" Maximum="{x:Static vm:EffectsPanelViewModel.RotationMaximum}" Value="{Binding Rotation, Mode=TwoWay}"
+                                      IsEnabled="{Binding CanEditRotation}" />
         </StackPanel>
         <StackPanel Grid.Column="1" ToolTip.Tip="{Binding OpacityEditingHint}">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.Opacity}" />

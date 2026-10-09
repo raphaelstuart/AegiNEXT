@@ -9,7 +9,7 @@ namespace AegiNext.Application.SubtitleFormats;
 internal static class AssTextWriter
 {
     internal static AssBodyWriteResult Write(SubtitleLine line, MediaTime origin, bool projection = false, bool preserveContentClock = false,
-        AssEventConversionContext? conversion = null)
+        AssEventConversionContext? conversion = null, MediaTime? eventOrigin = null)
     {
         AssTextParser.ValidateLine(line);
         var result = new StringBuilder();
@@ -138,6 +138,11 @@ internal static class AssTextWriter
                 else
                 {
                     result.Append("{\\2c").Append(AssFormatValues.Color(style.Fill, false)).Append("\\2a").Append(AssFormatValues.Alpha(style.Fill)).Append('}');
+                }
+                var animationTags = conversion?.AnimationTags(style, eventOrigin ?? origin);
+                if (!string.IsNullOrEmpty(animationTags))
+                {
+                    result.Append('{').Append(animationTags).Append('}');
                 }
             }
             if (clip != previousClip)

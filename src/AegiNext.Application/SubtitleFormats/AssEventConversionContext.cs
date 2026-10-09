@@ -24,6 +24,8 @@ internal sealed class AssEventConversionContext
     private readonly double? letterSpacing;
     private readonly double? fillBlur;
     private readonly double? strokeBlur;
+    private readonly double? strokeWidth;
+    private readonly Dictionary<(AnimationProperty Property, int Component), AssNumericAnimation> numeric = [];
 
     internal AssEventConversionContext(ProjectDocument document, ProjectLayer layer, SubtitleLine line,
         ISubtitlePlacementMeasurer? measurer, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
@@ -34,6 +36,38 @@ internal sealed class AssEventConversionContext
         letterSpacing = Constant(AnimationProperty.LETTER_SPACING)?.Scalar;
         fillBlur = Constant(AnimationProperty.FILL_BLUR)?.Scalar;
         strokeBlur = Constant(AnimationProperty.STROKE_BLUR)?.Scalar;
+        strokeWidth = Constant(AnimationProperty.STROKE_WIDTH)?.Scalar;
+        var alignmentPivot = AssTextParser.Pivot(line.Style.Alignment);
+        var stylePosition = line.Style.Position ?? SubtitlePosition.FromAlignment(line.Style.Alignment, line.Style.Margins);
+        var automaticPlacement = line.Style.Position is null && layer.Transform == new LayerTransform() &&
+            layer.MotionPath is null && !layer.Tracks.Any(track => track.Property is AnimationProperty.POSITION or AnimationProperty.SCALE or AnimationProperty.ROTATION);
+        var spacingAnimation = Dynamic(AnimationProperty.LETTER_SPACING);
+        if (spacingAnimation is not null)
+        {
+            if (stylePosition.Pivot == alignmentPivot && (automaticPlacement || line.Style.Position is not null || line.Style.WrapMode == SubtitleWrapMode.NO_WRAP))
+            {
+                AddNumeric(spacingAnimation);
+                letterSpacing = spacingAnimation.Initial;
+            }
+            else
+            {
+                Report("Ass.TransformPivotAnimation", "动态字距会改变自动定位或自定义轴心的补偿位置，ASS 无法保持该位移，已仅省略字距动画。");
+            }
+        }
+        foreach (var property in new[] { AnimationProperty.STROKE_WIDTH, AnimationProperty.FILL_BLUR, AnimationProperty.STROKE_BLUR })
+        {
+            if (Dynamic(property) is { } animation)
+            {
+                if (KaraokeOverrides(property))
+                {
+                    Report("Ass.KaraokeAnimation", "卡拉 OK 的独立视觉覆盖与整行描边或模糊动画同时存在，ASS 不能保留其覆盖顺序，已仅省略冲突的整行视觉动画。");
+                }
+                else
+                {
+                    AddNumeric(animation);
+                }
+            }
+        }
         var opacityTrack = layer.Tracks.FirstOrDefault(track => track.Property == AnimationProperty.OPACITY);
         opacity = opacityTrack is null ? new(layer.Opacity, []) : AssOpacityConversion.FromTrack(opacityTrack);
         if (opacityTrack is not null)
@@ -54,11 +88,13 @@ internal sealed class AssEventConversionContext
         var transform = layer.Transform;
         scale = Constant(AnimationProperty.SCALE)?.Vector ?? transform.Scale;
         rotation = Constant(AnimationProperty.ROTATION)?.Scalar ?? transform.Rotation;
-        rotationParts = AssTransformMath.SinCos(rotation);
-        if (scale.X <= 0 || scale.Y <= 0)
+        var scaleXAnimation = Dynamic(AnimationProperty.SCALE, 0);
+        var scaleYAnimation = Dynamic(AnimationProperty.SCALE, 1);
+        var rotationAnimation = Dynamic(AnimationProperty.ROTATION);
+        if (scale.X < 0 || scale.Y < 0)
         {
-            Report("Ass.TransformScale", "ASS 导出已省略非正缩放分量；项目中的镜像或折叠变换保持不变。");
-            scale = new(scale.X > 0 ? scale.X : 1, scale.Y > 0 ? scale.Y : 1);
+            Report("Ass.TransformScale", "ASS 导出已省略负缩放分量；项目中的镜像变换保持不变。");
+            scale = new(scale.X >= 0 ? scale.X : 1, scale.Y >= 0 ? scale.Y : 1);
         }
         position = transform.Position;
         var positionTrack = layer.Tracks.FirstOrDefault(track => track.Property == AnimationProperty.POSITION);
@@ -80,18 +116,9 @@ internal sealed class AssEventConversionContext
         {
             Report("Ass.MoveApproximation", "ASS move 仅支持匀速直线，已保留移动路径和起止时间，将速度变化近似为匀速。");
         }
-        if (scale != new ScenePoint(1, 1))
-        {
-            Report("Ass.TransformLayout", "ASS 的缩放在自动换行前生效，项目在排版后缩放；长句的换行和文字边界可能不同。");
-        }
-        if (!ExactScale(scale.X) || !ExactScale(scale.Y))
-        {
-            Report("Ass.NumberPrecision", "导出的 ASS 缩放百分比保留最多 9 位小数，部分缩放数值已取近似值。");
-        }
-        var alignmentPivot = AssTextParser.Pivot(line.Style.Alignment);
-        var stylePosition = line.Style.Position ?? SubtitlePosition.FromAlignment(line.Style.Alignment, line.Style.Margins);
         hasPlacement = line.Style.Position is not null || position != default || transform.Pivot != default ||
-            scale != new ScenePoint(1, 1) || !rotation.Equals(0d) || move is not null && move.First != move.Last;
+            scale != new ScenePoint(1, 1) || !rotation.Equals(0d) || move is not null && move.First != move.Last ||
+            scaleXAnimation is not null || rotationAnimation is not null;
         var basis = new ScenePoint(stylePosition.Anchor.X * document.Width + stylePosition.Offset.X,
             stylePosition.Anchor.Y * document.Height + stylePosition.Offset.Y);
         var delta = new ScenePoint(-transform.Pivot.X, -transform.Pivot.Y);
@@ -115,6 +142,40 @@ internal sealed class AssEventConversionContext
         {
             Report("Ass.PlacementMeasurement", "未提供字体排版测量，定位使用九宫格边距近似；无法补偿真实字形边界和自定义文字轴心。");
         }
+        if (AcceptScale(scaleXAnimation, delta.X, needsMeasurement && measurer is null && stylePosition.Pivot != alignmentPivot))
+        {
+            scale = scale with { X = scaleXAnimation!.Initial };
+        }
+        if (AcceptScale(scaleYAnimation, delta.Y, needsMeasurement && measurer is null && stylePosition.Pivot != alignmentPivot))
+        {
+            scale = scale with { Y = scaleYAnimation!.Initial };
+        }
+        if (scaleXAnimation is not null && (!numeric.ContainsKey((AnimationProperty.SCALE, 0)) || !numeric.ContainsKey((AnimationProperty.SCALE, 1))))
+        {
+            consumed.Remove(AnimationProperty.SCALE);
+        }
+        if (rotationAnimation is not null)
+        {
+            if (rotationAnimation.Operations.IsEmpty || Math.Abs(delta.X * scale.X) < 1e-9 && Math.Abs(delta.Y * scale.Y) < 1e-9 &&
+                !(needsMeasurement && measurer is null && stylePosition.Pivot != alignmentPivot))
+            {
+                AddNumeric(rotationAnimation);
+                rotation = rotationAnimation.Initial;
+            }
+            else
+            {
+                Report("Ass.TransformPivotAnimation", "旋转动画需要随时间改变自定义轴心的补偿位置，ASS 无法保持该位移，已仅省略旋转动画。");
+            }
+        }
+        rotationParts = AssTransformMath.SinCos(rotation);
+        if (scale != new ScenePoint(1, 1) || numeric.ContainsKey((AnimationProperty.SCALE, 0)) || numeric.ContainsKey((AnimationProperty.SCALE, 1)))
+        {
+            Report("Ass.TransformLayout", "ASS 的缩放在自动换行前生效，项目在排版后缩放；长句的换行和文字边界可能不同。");
+        }
+        if (!ExactScale(scale.X) || !ExactScale(scale.Y))
+        {
+            Report("Ass.NumberPrecision", "导出的 ASS 缩放百分比保留最多 9 位小数，部分缩放数值已取近似值。");
+        }
         var compensation = TransformVector(delta);
         placementOffset = new(basis.X + compensation.X, basis.Y + compensation.Y);
         if (layer.Tracks.Any(track => !AnimationPropertyMetadata.IsMaskProperty(track.Property) && !consumed.Contains(track.Property)) ||
@@ -126,16 +187,162 @@ internal sealed class AssEventConversionContext
 
     internal string GeometryTags => scale == new ScenePoint(1, 1) && rotation.Equals(0d) ? string.Empty :
         "\\fscx" + AssFormatValues.Number(scale.X * 100) + "\\fscy" + AssFormatValues.Number(scale.Y * 100) +
-        "\\frz" + AssFormatValues.Number(-rotation);
+        "\\frz" + AssFormatValues.Number(rotation == 0 ? 0 : -rotation);
 
     internal SubtitleStyle ApplyTypographyAnimations(SubtitleStyle style)
     {
         return style with
         {
-            LetterSpacing = letterSpacing ?? style.LetterSpacing,
-            FillBlur = fillBlur ?? style.FillBlur,
-            StrokeBlur = strokeBlur ?? style.StrokeBlur
+            LetterSpacing = Initial(AnimationProperty.LETTER_SPACING, letterSpacing ?? style.LetterSpacing),
+            FillBlur = Initial(AnimationProperty.FILL_BLUR, fillBlur ?? style.FillBlur),
+            StrokeBlur = Initial(AnimationProperty.STROKE_BLUR, strokeBlur ?? style.StrokeBlur),
+            StrokeWidth = Initial(AnimationProperty.STROKE_WIDTH, strokeWidth ?? style.StrokeWidth)
         };
+    }
+
+    internal MediaTime EventOrigin(AssMaskSample sample, MediaTime timeOffset)
+    {
+        return new MediaTime((sample.Start + timeOffset).ToTimestamp(new(1, 100), MediaTimeRounding.FLOOR).Value, 100) -
+            timeOffset - line.Start + layer.AnimationOffset;
+    }
+
+    internal string AnimationTags(SubtitleStyle style, MediaTime origin)
+    {
+        var result = new System.Text.StringBuilder();
+        var appearanceScale = Math.Sqrt(scale.X * scale.Y);
+        var hasScale = numeric.ContainsKey((AnimationProperty.SCALE, 0)) || numeric.ContainsKey((AnimationProperty.SCALE, 1));
+        var hasRotation = numeric.ContainsKey((AnimationProperty.ROTATION, 0));
+        foreach (var animation in numeric.Values)
+        {
+            var tag = animation.Property switch
+            {
+                AnimationProperty.LETTER_SPACING => "\\fsp",
+                AnimationProperty.STROKE_WIDTH => "\\bord",
+                AnimationProperty.FILL_BLUR when style.StrokeWidth <= 0 => "\\blur",
+                AnimationProperty.STROKE_BLUR when style.StrokeWidth > 0 => "\\blur",
+                AnimationProperty.SCALE => animation.Component == 0 ? "\\fscx" : "\\fscy",
+                AnimationProperty.ROTATION => "\\frz",
+                _ => null
+            };
+            if (tag is null)
+            {
+                Report(animation.Property == AnimationProperty.FILL_BLUR ? "Ass.FillBlurAnimation" : "Ass.StrokeBlurAnimation",
+                    "ASS 单一模糊通道无法同时保留这段文字的独立填充与描边模糊动画，已仅省略当前未选中的模糊动画。");
+                continue;
+            }
+            var factor = animation.Property switch
+            {
+                AnimationProperty.SCALE => 100,
+                AnimationProperty.ROTATION => -1,
+                AnimationProperty.STROKE_WIDTH => appearanceScale,
+                AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR => appearanceScale / AssBlurConversion.SigmaPerUnit,
+                _ => 1
+            };
+            result.Append(animation.Write(tag, factor, origin, line.Id, diagnostics));
+        }
+        var uniform = UniformScaleAnimation();
+        if (uniform is not null && style.StrokeWidth > 0 && !KaraokeOverrides(AnimationProperty.STROKE_WIDTH) && !numeric.ContainsKey((AnimationProperty.STROKE_WIDTH, 0)))
+        {
+            result.Append(uniform.Write("\\bord", style.StrokeWidth, origin, line.Id, diagnostics));
+        }
+        var blurProperty = style.StrokeWidth > 0 ? AnimationProperty.STROKE_BLUR : AnimationProperty.FILL_BLUR;
+        if (uniform is not null && AssBlurConversion.Sigma(style) > 0 && !KaraokeOverrides(blurProperty) && !numeric.ContainsKey((blurProperty, 0)))
+        {
+            result.Append(uniform.Write("\\blur", AssBlurConversion.Sigma(style) / AssBlurConversion.SigmaPerUnit, origin, line.Id, diagnostics));
+        }
+        if ((hasScale || hasRotation) && (style.ShadowColor.Alpha > 0 && style.ShadowOffset != default ||
+            hasScale && (uniform is null || numeric.ContainsKey((AnimationProperty.STROKE_WIDTH, 0)) ||
+                numeric.ContainsKey((blurProperty, 0)) || KaraokeOverrides(AnimationProperty.STROKE_WIDTH) || KaraokeOverrides(blurProperty)) &&
+            (style.StrokeWidth > 0 || style.FillBlur > 0 || style.StrokeBlur > 0 || style.ShadowBlur > 0)))
+        {
+            Report("Ass.TransformAppearanceAnimation", "缩放或旋转动画已保留，但 ASS 无法同步保留独立描边、模糊或阴影的全部变换补偿，部分外观按初始变换近似。");
+        }
+        if (style.ShadowColor.Alpha > 0 && (numeric.ContainsKey((blurProperty, 0)) ||
+            uniform is not null && !style.ShadowBlur.Equals(AssBlurConversion.Sigma(style))))
+        {
+            Report("Ass.ShadowBlur", "ASS 的模糊动画同时改变阴影模糊，无法独立保留项目的阴影模糊外观。");
+        }
+        if (numeric.TryGetValue((AnimationProperty.STROKE_WIDTH, 0), out var border) &&
+            (border.Initial == 0 || border.Operations.Any(operation => operation.Value == 0)) &&
+            (border.Initial > 0 || border.Operations.Any(operation => operation.Value > 0)) &&
+            (style.FillBlur > 0 || style.StrokeBlur > 0))
+        {
+            Report("Ass.BlurAnimation", "描边动画可能切换 ASS 模糊所作用的通道，独立填充与描边模糊已按初始描边状态选择。");
+        }
+        return result.ToString();
+    }
+
+    private AssNumericAnimation? UniformScaleAnimation()
+    {
+        if (numeric.TryGetValue((AnimationProperty.SCALE, 0), out var x) &&
+            numeric.TryGetValue((AnimationProperty.SCALE, 1), out var y) && x.Initial.Equals(y.Initial) &&
+            x.Operations.SequenceEqual(y.Operations))
+        {
+            return x;
+        }
+        return null;
+    }
+
+    private double Initial(AnimationProperty property, double fallback)
+    {
+        return numeric.TryGetValue((property, 0), out var animation) ? animation.Initial : fallback;
+    }
+
+    private AssNumericAnimation? Dynamic(AnimationProperty property, int component = 0)
+    {
+        var track = layer.Tracks.FirstOrDefault(candidate => candidate.Property == property);
+        return track is null || consumed.Contains(property) ? null : AssNumericAnimation.FromTrack(track, component);
+    }
+
+    private void AddNumeric(AssNumericAnimation animation)
+    {
+        numeric.Add((animation.Property, animation.Component), animation);
+        consumed.Add(animation.Property);
+        if (animation.Approximate)
+        {
+            Report("Ass.TransformCurveApproximation", "ASS 数值变换不能直接保留部分缓动或已裁剪的曲线相位，已保留端点和时间并近似为线性。");
+        }
+    }
+
+    private bool AcceptScale(AssNumericAnimation? animation, double delta, bool unknownPivot)
+    {
+        if (animation is null)
+        {
+            return false;
+        }
+        if (animation.HasNegative)
+        {
+            Report("Ass.TransformScale", "ASS 不支持这条缩放分量中的负值，已仅省略该分量动画，零缩放仍可转换。");
+            return false;
+        }
+        if (!animation.Operations.IsEmpty && (Math.Abs(delta) >= 1e-9 || unknownPivot))
+        {
+            Report("Ass.TransformPivotAnimation", "缩放动画需要随时间改变自定义轴心的补偿位置，ASS 无法保持该位移，已仅省略冲突的缩放分量动画。");
+            return false;
+        }
+        AddNumeric(animation);
+        return true;
+    }
+
+    private bool KaraokeOverrides(AnimationProperty property)
+    {
+        if (line.KaraokeStyle is not null && !line.Karaoke.IsEmpty)
+        {
+            return true;
+        }
+        return line.Karaoke.Any(segment => segment.HighlightKind == KaraokeHighlightKind.OUTLINE_STEP ||
+            Overrides(segment.ActiveStyle) || Overrides(segment.InactiveStyle));
+
+        bool Overrides(KaraokeVisualStyleOverride? visual)
+        {
+            return property switch
+            {
+                AnimationProperty.STROKE_WIDTH => visual?.StrokeWidth.HasValue == true,
+                AnimationProperty.FILL_BLUR => visual?.FillBlur.HasValue == true || visual?.StrokeWidth.HasValue == true,
+                AnimationProperty.STROKE_BLUR => visual?.StrokeBlur.HasValue == true || visual?.StrokeWidth.HasValue == true,
+                _ => false
+            };
+        }
     }
 
     internal SubtitleStyle ConvertStyle(SubtitleStyle style)

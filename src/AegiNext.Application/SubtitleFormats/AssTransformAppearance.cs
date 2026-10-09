@@ -8,12 +8,16 @@ internal sealed class AssTransformAppearance(LayerTransform transform, Guid subt
     private readonly List<SubtitleFormatDiagnostic> diagnostics = [];
     private readonly HashSet<string> messages = [];
     private readonly (double Sine, double Cosine) rotation = AssTransformMath.SinCos(transform.Rotation);
-    private readonly double strokeScale = Math.Sqrt(transform.Scale.X * transform.Scale.Y);
+    private readonly double strokeScale = transform.Scale.X == 0 || transform.Scale.Y == 0 ? 1 : Math.Sqrt(transform.Scale.X * transform.Scale.Y);
 
     internal IEnumerable<SubtitleFormatDiagnostic> Diagnostics => diagnostics;
 
     internal SubtitleLine Import(SubtitleLine line)
     {
+        if (transform.Scale.X == 0 || transform.Scale.Y == 0)
+        {
+            Report("ASS 零缩放已保留；折叠轴没有可逆的描边、模糊或阴影补偿，相关外观数值按单位比例保留。");
+        }
         return line with
         {
             Style = line.Style with
@@ -93,8 +97,8 @@ internal sealed class AssTransformAppearance(LayerTransform transform, Guid subt
 
     private ScenePoint Shadow(ScenePoint offset)
     {
-        var result = new ScenePoint((rotation.Cosine * offset.X + rotation.Sine * offset.Y) / transform.Scale.X,
-            (-rotation.Sine * offset.X + rotation.Cosine * offset.Y) / transform.Scale.Y);
+        var result = new ScenePoint((rotation.Cosine * offset.X + rotation.Sine * offset.Y) / (transform.Scale.X == 0 ? 1 : transform.Scale.X),
+            (-rotation.Sine * offset.X + rotation.Cosine * offset.Y) / (transform.Scale.Y == 0 ? 1 : transform.Scale.Y));
         if (!double.IsFinite(result.X) || !double.IsFinite(result.Y) || Math.Abs(result.X) > 1e9 || Math.Abs(result.Y) > 1e9)
         {
             Report("ASS 阴影位移的变换补偿超出原生范围，保留原位移数值，变换后的阴影位置可能改变。");

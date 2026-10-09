@@ -87,11 +87,11 @@
           <TextBlock Classes="field" Text="{Loc Key=Workbench.Stroke}" />
           <controls:ColorDraftInput Name="StrokePicker" Draft="{Binding StrokeDraft}" />
         </StackPanel>
-        <StackPanel Spacing="4">
+        <StackPanel Spacing="4" ToolTip.Tip="{Binding StrokeWidthEditingHint}">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.StrokeWidth}" />
           <controls:NumericDraftInput Name="StrokeWidthInput" ShowButtonSpinner="False"
                                      RawText="{Binding StrokeWidthText, Mode=TwoWay}" Value="{Binding StrokeWidth, Mode=TwoWay}"
-                                     Minimum="0" Maximum="4096" Increment="0.5" />
+                                     Minimum="{x:Static vm:StylesPanelViewModel.StrokeWidthMinimum}" Maximum="{x:Static vm:StylesPanelViewModel.StrokeWidthMaximum}" Increment="0.5" IsEnabled="{Binding CanEditStrokeWidth}" />
         </StackPanel>
       </StackPanel>
       <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding HasCue}">

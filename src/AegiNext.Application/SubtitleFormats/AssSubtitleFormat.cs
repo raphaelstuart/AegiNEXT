@@ -175,7 +175,7 @@ public static class AssSubtitleFormat
                 blurUsesPlayRes: blurUsesPlayRes).Parse(Required(fields, "Text"));
             var normalized = SubtitleKaraokeNormalization.Normalize(parsed.Line);
             lines.Add(normalized);
-            clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks).AddRange(parsed.OpacityTracks), parsed.ContentOffset)
+            clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks).AddRange(parsed.OpacityTracks).AddRange(parsed.NumericTracks), parsed.ContentOffset)
             {
                 Transform = parsed.Transform
             });
@@ -249,7 +249,8 @@ public static class AssSubtitleFormat
                     throw new InvalidDataException("ASS 蒙版展开后的总对白数量超过 100,000 条预算。");
                 }
                 var sampleLine = line with { Start = sample.Start, End = sample.End };
-                var body = AssTextWriter.Write(sampleLine, sample.ContentTime, preserveContentClock: sample.Expanded, conversion: conversion);
+                var body = AssTextWriter.Write(sampleLine, sample.ContentTime, preserveContentClock: sample.Expanded, conversion: conversion,
+                    eventOrigin: conversion.EventOrigin(sample, timeOffset));
                 foreach (var diagnostic in body.Diagnostics)
                 {
                     if (reportedDiagnostics.Add((diagnostic.SubtitleId, diagnostic.Code)))

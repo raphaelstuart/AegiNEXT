@@ -84,9 +84,8 @@ public sealed class AssTransformExportTests
     }
 
     [Theory]
-    [InlineData(0)]
     [InlineData(-2)]
-    public void NonpositiveScaleIsSkippedWhileSupportedPositionAndNativeStateArePreserved(double scale)
+    public void NegativeScaleIsSkippedWhileSupportedPositionAndNativeStateArePreserved(double scale)
     {
         var line = Line();
         var layer = Layer(line) with { Transform = new() { Position = new(10, 20), Scale = new(scale, 1) } };
@@ -101,7 +100,18 @@ public sealed class AssTransformExportTests
     }
 
     [Fact]
-    public void UnsupportedAnimatedRotationDoesNotSuppressTheSupportedStaticPosition()
+    public void ZeroScaleIsExportedAsACollapsedAxisWithoutChangingTheProject()
+    {
+        var line = Line();
+        var layer = Layer(line) with { Transform = new() { Scale = new(0, 1) } };
+        var written = AssSubtitleFormat.Write(Document(line, layer));
+        Assert.Contains("\\fscx0\\fscy100", written.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain(written.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformScale");
+        Assert.Equal(0, layer.Transform.Scale.X);
+    }
+
+    [Fact]
+    public void AnimatedRotationKeepsStaticPositionAndReportsOnlyItsAppearanceCoupling()
     {
         var line = Line();
         var layer = Layer(line) with
@@ -112,7 +122,9 @@ public sealed class AssTransformExportTests
         var written = AssSubtitleFormat.Write(Document(line, layer));
 
         Assert.Contains("\\pos(110,220)", written.Text, StringComparison.Ordinal);
-        Assert.Contains(written.Diagnostics, diagnostic => diagnostic.Code == "Subtitle.Composition");
+        Assert.Contains("\\frz0\\t(0,2000,1,\\frz-90)", written.Text, StringComparison.Ordinal);
+        Assert.Contains(written.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformAppearanceAnimation");
+        Assert.DoesNotContain(written.Diagnostics, diagnostic => diagnostic.Code == "Subtitle.Composition");
     }
 
     [Fact]

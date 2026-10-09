@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 
@@ -13,6 +14,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private readonly AssMaskParser maskParser = new(original.End - original.Start, scaleX, scaleY, canvasWidth, canvasHeight);
     private readonly AssGeometryParser geometryParser = new(original, styles, scaleX, scaleY);
     private readonly AssOpacityParser opacityParser = new(original.End - original.Start, original.Id);
+    private AssNumericTransformParser numericParser = null!;
     private readonly StringBuilder text = new();
     private readonly ImmutableArray<SubtitleInlineSpan>.Builder spans = ImmutableArray.CreateBuilder<SubtitleInlineSpan>();
     private readonly ImmutableArray<KaraokeSegment>.Builder karaoke = ImmutableArray.CreateBuilder<KaraokeSegment>();
@@ -38,6 +40,9 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private KaraokeVisualStyleOverride? segmentActiveVisual;
     private KaraokeVisualStyleOverride? instantVisual;
     private MediaTime? instantVisualTime;
+    private bool instantNumericOnly;
+    private int instantCandidate;
+    private int nextCandidate;
     private int instantSourceStart;
     private int instantSourceLength;
     private MediaTime karaokeTime;
@@ -48,11 +53,12 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private int segmentSourceLength;
     private bool drawing;
     private bool explicitAlignment;
-    private static readonly string[] knownTags = ["iclip", "alpha", "xbord", "ybord", "xshad", "yshad", "fscx", "fscy", "bord", "shad", "blur", "move", "clip", "fade", "pos", "fad", "frz", "frx", "fry", "fsp", "fax", "fay", "org", "pbo", "fn", "fs", "fe", "fr", "be", "an", "kf", "ko", "kt", "1c", "2c", "3c", "4c", "1a", "2a", "3a", "4a", "b", "i", "u", "s", "c", "r", "k", "K", "p", "q", "t", "a"];
+    private static readonly string[] knownTags = AssOverrideTags.KnownNames;
 
     internal AssTextEditResult Parse(string source)
     {
         AssFormatValues.CheckText(source);
+        numericParser = new(original, geometryParser.CurrentScale, geometryParser.CurrentRotation);
         for (var index = 0; index < source.Length;)
         {
             if (source[index] == '{')
@@ -89,6 +95,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 if (!projectSource && content.Any(character => character is not ('\r' or '\n')))
                 {
                     geometryParser.Observe();
+                    numericParser.Observe(current, segmentDuration > MediaTime.Zero && instantVisualTime == karaokeTime &&
+                        kind != KaraokeHighlightKind.SWEEP ? instantCandidate : 0);
                 }
                 if (segmentDuration > MediaTime.Zero)
                 {
@@ -117,7 +125,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 }
                 else if (instantVisualTime is not null)
                 {
-                    Report("Ass.UnsupportedTag", "ASS 瞬时边缘和阴影变换需要逐字片段时间，普通文字无法保存此动画。", instantSourceStart, instantSourceLength);
+                    if (projectSource || !instantNumericOnly)
+                    {
+                        Report("Ass.UnsupportedTag", "ASS 瞬时边缘和阴影变换需要逐字片段时间，普通文字无法保存此动画。", instantSourceStart, instantSourceLength);
+                    }
                     instantVisualTime = null;
                     instantVisual = null;
                     instantEdgeBlur = null;
@@ -148,13 +159,16 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             line = line with { Karaoke = line.Karaoke.Select(clip => clip with { Start = clip.Start + contentOffset, End = clip.End + contentOffset }).ToImmutableArray() };
         }
         var transform = new LayerTransform();
+        ImmutableArray<AnimationTrack> numericTracks = [];
         if (!projectSource)
         {
             transform = geometryParser.Transform();
             var appearance = new AssTransformAppearance(transform, original.Id);
             line = appearance.Import(line);
+            numericTracks = numericParser.Tracks(transform, contentOffset);
             diagnostics.AddRange(geometryParser.Diagnostics);
             diagnostics.AddRange(appearance.Diagnostics);
+            diagnostics.AddRange(numericParser.Diagnostics);
         }
         ValidateLine(line);
         diagnostics.AddRange(maskParser.Diagnostics);
@@ -164,12 +178,16 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         {
             KaraokeSourceMap = karaokeMap.ToImmutable(), Mask = maskParser.Mask, ContentOffset = contentOffset,
             Transform = transform, PlacementTracks = projectSource ? [] : geometryParser.Tracks(contentOffset),
-            OpacityTracks = opacityTracks,
-            MaskTracks = maskParser.Tracks().Select(track => contentOffset == MediaTime.Zero ? track : track with
+            OpacityTracks = opacityTracks, NumericTracks = numericTracks,
+            MaskTracks = projectSource ? maskParser.Tracks() : LayerAnimationTiming.Clip(new ProjectLayer
             {
-                Keyframes = track.Keyframes.Select(key => key with { Time = key.Time + contentOffset }).ToImmutableArray(),
-                Transforms = track.Transforms.Select(operation => operation with { Start = operation.Start + contentOffset, End = operation.End + contentOffset }).ToImmutableArray()
-            }).ToImmutableArray()
+                Start = original.Start, End = original.End, AnimationOffset = contentOffset,
+                Tracks = maskParser.Tracks().Select(track => contentOffset == MediaTime.Zero ? track : track with
+                {
+                    Keyframes = track.Keyframes.Select(key => key with { Time = key.Time + contentOffset }).ToImmutableArray(),
+                    Transforms = track.Transforms.Select(operation => operation with { Start = operation.Start + contentOffset, End = operation.End + contentOffset }).ToImmutableArray()
+                }).ToImmutableArray()
+            }).Tracks
         };
     }
 
@@ -242,6 +260,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 else
                 {
                     current = current with { LetterSpacing = spacing };
+                    if (!projectSource)
+                    {
+                        numericParser.Set(name, spacing);
+                    }
                 }
                 break;
             case "b":
@@ -280,6 +302,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             case "4a": current = current with { ShadowColor = current.ShadowColor with { Alpha = value.Length == 0 ? baseline.ShadowColor.Alpha : AssFormatValues.Alpha(value) } }; break;
             case "bord":
                 current = current with { StrokeWidth = value.Length == 0 ? (projectSource ? baseline : resetStyle).StrokeWidth : AssFormatValues.Number(value) * scaleY };
+                if (!projectSource)
+                {
+                    numericParser.Set(name, current.StrokeWidth);
+                }
                 if (!projectSource && instantVisual is not null)
                 {
                     instantVisual = instantVisual with { StrokeWidth = null };
@@ -297,6 +323,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                     if (TryExternalBlur(value, sourceStart, sourceLength, out var blur))
                     {
                         edgeBlur = blur;
+                        numericParser.Set(name, blur);
                         instantEdgeBlur = null;
                         DiscardEmptyInstantVisual();
                     }
@@ -320,6 +347,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 if (!projectSource)
                 {
                     geometryParser.Reset(value);
+                    numericParser.Reset(current, geometryParser.CurrentScale, geometryParser.CurrentRotation);
+                    instantCandidate = 0;
                 }
                 if (value.Length > 0 && !styles.ContainsKey(value))
                 {
@@ -369,6 +398,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 else
                 {
                     geometryParser.Apply(name, value);
+                    numericParser.Set(name, name == "fscx" ? geometryParser.CurrentScale.X :
+                        name == "fscy" ? geometryParser.CurrentScale.Y : geometryParser.CurrentRotation);
                 }
                 break;
             case "pos":
@@ -424,7 +455,11 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 }
                 break;
             case "t":
-                if (!maskParser.TryTransform(value, original.Id, sourceStart, sourceLength))
+                if (!projectSource)
+                {
+                    ParseNumericTransform(value, sourceStart, sourceLength);
+                }
+                else if (!maskParser.TryTransform(value, original.Id, sourceStart, sourceLength))
                 {
                     ParseInstantTransform(value, sourceStart, sourceLength);
                 }
@@ -476,7 +511,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         if (instantVisualTime != karaokeTime || kind == KaraokeHighlightKind.SWEEP)
         {
-            Report("Ass.UnsupportedTag", "ASS 瞬时边缘和阴影变换必须与逐字或轮廓逐字片段起点对齐。", instantSourceStart, instantSourceLength);
+            if (projectSource || !instantNumericOnly)
+            {
+                Report("Ass.UnsupportedTag", "ASS 瞬时边缘和阴影变换必须与逐字或轮廓逐字片段起点对齐。", instantSourceStart, instantSourceLength);
+            }
             return null;
         }
         if (projectSource)
@@ -485,6 +523,93 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         var resolved = ResolveExternalBlur(instantVisual!.ApplyTo(current), instantEdgeBlur ?? edgeBlur);
         return instantVisual with { FillBlur = resolved.FillBlur, StrokeBlur = resolved.StrokeBlur, ShadowBlur = resolved.ShadowBlur };
+    }
+
+    private void ParseNumericTransform(string value, int sourceStart, int sourceLength)
+    {
+        var arguments = AssOverrideTags.Arguments(value);
+        var tags = AssOverrideTags.Parse(arguments[^1]).ToArray();
+        if (tags.Length > 0 && tags.All(tag => tag.Name is "clip" or "iclip"))
+        {
+            maskParser.TryTransform(value, original.Id, sourceStart, sourceLength);
+            return;
+        }
+        AssTransformTiming timing;
+        try
+        {
+            timing = AssTransformTiming.Parse(arguments, original.End - original.Start);
+        }
+        catch (InvalidDataException)
+        {
+            Report("Ass.TransformTiming", "ASS 数值变换的时间或参数无效，已舍弃该变换并保留其他内容。", sourceStart, sourceLength);
+            return;
+        }
+        if (timing.End < timing.Start || !double.IsFinite(timing.Acceleration) || timing.Acceleration < 0)
+        {
+            Report("Ass.TransformTiming", "ASS 逆序时间或负加速度不能准确转换为有限原生动画，已舍弃该变换。", sourceStart, sourceLength);
+            return;
+        }
+        var clips = tags.Where(tag => tag.Name is "clip" or "iclip").ToArray();
+        if (clips.Length > 0)
+        {
+            var maskArguments = arguments[..^1].Append(string.Concat(clips.Select(tag => "\\" + tag.Name + tag.Value)));
+            maskParser.TryTransform("(" + string.Join(',', maskArguments) + ")", original.Id, sourceStart, sourceLength);
+        }
+        var visualTags = tags.Where(tag => tag.Name is "bord" or "blur" or "3c" or "3a" or "4c" or "4a" or "shad" or "xshad" or "yshad").ToArray();
+        var candidate = 0;
+        if (timing.Start > MediaTime.Zero && timing.Start == timing.End && instantVisual is null &&
+            visualTags.Length > 0 && visualTags.All(tag => tag.Value.Length > 0))
+        {
+            var milliseconds = checked(timing.Start.Numerator * 1000 / timing.Start.Denominator);
+            ParseInstantTransform("(" + milliseconds.ToString(CultureInfo.InvariantCulture) + "," +
+                milliseconds.ToString(CultureInfo.InvariantCulture) + "," +
+                string.Concat(visualTags.Select(tag => "\\" + tag.Name + tag.Value)) + ")", sourceStart, sourceLength);
+            if (instantVisual is not null)
+            {
+                instantCandidate = candidate = ++nextCandidate;
+                instantNumericOnly = visualTags.All(tag => tag.Name is "bord" or "blur");
+            }
+        }
+        foreach (var tag in tags)
+        {
+            if (tag.Name is "clip" or "iclip")
+            {
+                continue;
+            }
+            if (tag.Name is not ("fsp" or "bord" or "blur" or "fscx" or "fscy" or "frz" or "fr"))
+            {
+                if (candidate == 0 || !visualTags.Contains(tag))
+                {
+                    Report("Ass.UnsupportedTag", $"ASS 变换中的 {tag.Name} 尚不能转换为原生动画，已保留可转换的其他属性。", sourceStart, sourceLength);
+                }
+                continue;
+            }
+            if (tag.Value.Length == 0)
+            {
+                ApplyTag(tag.Name, string.Empty, sourceStart, sourceLength);
+                continue;
+            }
+            double target;
+            if (tag.Name == "blur")
+            {
+                if (!TryExternalBlur(tag.Value, sourceStart, sourceLength, out target))
+                {
+                    continue;
+                }
+                ResolveExternalBlur(current, target);
+            }
+            else
+            {
+                target = AssFormatValues.Number(tag.Value) * (tag.Name switch
+                {
+                    "fsp" => scaleX,
+                    "bord" => scaleY,
+                    "fscx" or "fscy" => 0.01,
+                    _ => 1
+                });
+            }
+            numericParser.Add(tag.Name, timing, target, tag.Name is "bord" or "blur" ? candidate : 0);
+        }
     }
 
     private void ParseInstantTransform(string value, int sourceStart, int sourceLength)

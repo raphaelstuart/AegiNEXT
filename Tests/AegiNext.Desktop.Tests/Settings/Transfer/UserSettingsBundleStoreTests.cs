@@ -33,7 +33,7 @@ public sealed class UserSettingsBundleStoreTests
         Assert.Single(Directory.GetFiles(directory.Path));
     }
 
-    /// <summary>没有个人模板时仍导出完整空集合，不将内置内容加入包。</summary>
+    /// <summary>独立边距完整往返，真实旧版标量边距样式迁移为当前默认外观。</summary>
     [Fact]
     public void StyleMarginsRoundTripInTheBundleAndLegacyScalarStylesMigrate()
     {
@@ -53,6 +53,10 @@ public sealed class UserSettingsBundleStoreTests
         var library = JsonNode.Parse(entries["subtitle-styles.aegistyles"])!.AsObject();
         library["version"] = 4;
         var style = library["presets"]![0]!["style"]!.AsObject();
+        style.Remove("letterSpacing");
+        style.Remove("fillBlur");
+        style.Remove("strokeBlur");
+        style.Remove("wrapMode");
         style.Remove("margins");
         style["margin"] = 40;
         entries["subtitle-styles.aegistyles"] = Encoding.UTF8.GetBytes(library.ToJsonString());

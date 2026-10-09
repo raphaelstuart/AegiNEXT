@@ -115,6 +115,10 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
                 OnPropertyChanged(nameof(CanResetPosition));
                 OnPropertyChanged(nameof(CanEditOpacity));
                 OnPropertyChanged(nameof(OpacityEditingHint));
+                OnPropertyChanged(nameof(CanEditScale));
+                OnPropertyChanged(nameof(ScaleEditingHint));
+                OnPropertyChanged(nameof(CanEditRotation));
+                OnPropertyChanged(nameof(RotationEditingHint));
             }
         }
     }
@@ -123,6 +127,16 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
     public bool CanEditOpacity => SelectedLayer?.Tracks.Any(track =>
         track.Property == AnimationProperty.OPACITY && !track.Transforms.IsEmpty) != true;
     public string? OpacityEditingHint => CanEditOpacity ? null : Localization.Get("Workbench.OpacityOrderedTransformHint");
+    public bool CanEditScale => SelectedLayer?.Tracks.Any(track =>
+        track.Property == AnimationProperty.SCALE && !track.Transforms.IsEmpty) != true;
+    public bool CanEditRotation => SelectedLayer?.Tracks.Any(track =>
+        track.Property == AnimationProperty.ROTATION && !track.Transforms.IsEmpty) != true;
+    public string? ScaleEditingHint => CanEditScale ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
+    public string? RotationEditingHint => CanEditRotation ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
+    public static decimal ScaleMinimum => (decimal)AnimationPropertyMetadata.GetMinimum(AnimationProperty.SCALE);
+    public static decimal ScaleMaximum => (decimal)AnimationPropertyMetadata.GetMaximum(AnimationProperty.SCALE);
+    public static decimal RotationMinimum => (decimal)AnimationPropertyMetadata.GetMinimum(AnimationProperty.ROTATION);
+    public static decimal RotationMaximum => (decimal)AnimationPropertyMetadata.GetMaximum(AnimationProperty.ROTATION);
 
     public MediaTime Position
     {
@@ -532,6 +546,8 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
     internal void RefreshChoices(string[] blendOptions, AnimationPropertyChoice[] propertyOptions, string[] interpolationOptions)
     {
         OnPropertyChanged(nameof(OpacityEditingHint));
+        OnPropertyChanged(nameof(ScaleEditingHint));
+        OnPropertyChanged(nameof(RotationEditingHint));
         if (Blends.SequenceEqual(blendOptions) && Properties.SequenceEqual(propertyOptions) && Interpolations.SequenceEqual(interpolationOptions))
         {
             return;

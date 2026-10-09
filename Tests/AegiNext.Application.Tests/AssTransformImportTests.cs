@@ -66,7 +66,6 @@ public sealed class AssTransformImportTests
     }
 
     [Theory]
-    [InlineData("0")]
     [InlineData("-10")]
     [InlineData("1000001")]
     public void UnsupportedScaleDropsOnlyItsOwnAxis(string scale)

@@ -1,4 +1,5 @@
 using AegiNext.Application.SubtitleFormats;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 
@@ -110,7 +111,7 @@ public sealed class AssConversionFidelityTests
     }
 
     [Fact]
-    public void InstantBlurTransformWithoutKaraokeReportsItsUnsupportedScopeAndKeepsFollowingFontSize()
+    public void InstantBlurTransformWithoutKaraokeCreatesAnEditableTrackAndKeepsFollowingFontSize()
     {
         var imported = AssSubtitleFormat.Parse(Source("{\\t(500,500,\\blur8)\\fs48}text"));
         var line = Assert.Single(imported.Lines);
@@ -122,7 +123,14 @@ public sealed class AssConversionFidelityTests
         Assert.Equal(0, style.FillBlur);
         Assert.Equal(0, style.StrokeBlur);
         Assert.Empty(line.Karaoke);
-        Assert.Equal("Ass.UnsupportedTag", Assert.Single(imported.Diagnostics).Code);
+        var clip = Assert.Single(imported.Clips);
+        var track = Assert.Single(clip.Tracks, value => value.Property == AnimationProperty.STROKE_BLUR);
+        Assert.True(track.IsOrdered);
+        Assert.Equal(8 * 2 / Math.Sqrt(Math.Log(256)),
+            SceneEvaluator.EvaluateScalarTrack(track, clip.ContentOffset + new MediaTime(1, 2)), 10);
+        Assert.Equal(2, imported.Diagnostics.Length);
+        Assert.Contains(imported.Diagnostics, value => value.Code == "Ass.BlurAppearance");
+        Assert.Contains(imported.Diagnostics, value => value.Code == "Ass.TransformAppearanceAnimation");
     }
 
     [Fact]

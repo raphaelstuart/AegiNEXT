@@ -37,6 +37,8 @@ internal sealed class AssGeometryParser
     }
 
     internal IEnumerable<SubtitleFormatDiagnostic> Diagnostics => diagnostics;
+    internal ScenePoint CurrentScale => currentScale;
+    internal double CurrentRotation => currentRotation;
 
     internal void Reset(string name)
     {
@@ -192,7 +194,7 @@ internal sealed class AssGeometryParser
             Report("Ass.InlineTransform", $"ASS 行内{name}不一致，无法保存为整行片段变换，已跳过该分量。", 0, 0);
             return fallback;
         }
-        if (!double.IsFinite(value) || Math.Abs(value) > maximum || positive && value <= 0)
+        if (!double.IsFinite(value) || Math.Abs(value) > maximum || positive && value < 0)
         {
             Report("Ass.UnsupportedTransform", $"ASS {name}不符合可转换的原生范围，已跳过该分量。", 0, 0);
             return fallback;

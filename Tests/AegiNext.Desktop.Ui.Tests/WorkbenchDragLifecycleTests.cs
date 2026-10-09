@@ -1,11 +1,12 @@
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
+using Avalonia.Headless.XUnit;
 
-namespace AegiNext.Desktop.Tests;
+namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class WorkbenchDragLifecycleTests
 {
-    [Fact]
+    [AvaloniaFact]
     public void UndoingMotionPathDuringDragCancelsDraftBeforeTheNextPointerMove()
     {
         var document = CreateDocument();
@@ -25,7 +26,7 @@ public sealed class WorkbenchDragLifecycleTests
         Assert.False(canvas.BeginDrag(new(10, 20), 0));
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void CanvasClockUpdatesPreserveDragButSwitchingLayerOrModeCancelsIt()
     {
         var document = CreateDocument();
@@ -42,7 +43,7 @@ public sealed class WorkbenchDragLifecycleTests
         Assert.False(canvas.HasActiveDrag);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void CancellingPathGestureDiscardsTheDraftWithoutCommittingAndAllowsAnotherDrag()
     {
         var document = CreateDocument();
@@ -62,7 +63,7 @@ public sealed class WorkbenchDragLifecycleTests
         Assert.True(canvas.BeginDrag(new(10, 20), 0));
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void DisposingCanvasDuringPathDragDiscardsTheDraftWithoutCommitting()
     {
         var document = CreateDocument();
@@ -82,7 +83,7 @@ public sealed class WorkbenchDragLifecycleTests
         Assert.False(canvas.BeginDrag(new(10, 20), 0));
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void ReplacingProjectDuringCanvasDragCannotCarryTheOldDraftIntoTheNewProject()
     {
         var document = CreateDocument();

@@ -2,6 +2,8 @@ namespace AegiNext.Application.SubtitleFormats;
 
 internal static class AssOverrideTags
 {
+    internal static readonly string[] KnownNames = ["iclip", "alpha", "xbord", "ybord", "xshad", "yshad", "fscx", "fscy", "bord", "shad", "blur", "move", "clip", "fade", "pos", "fad", "frz", "frx", "fry", "fsp", "fax", "fay", "org", "pbo", "fn", "fs", "fe", "fr", "be", "an", "kf", "ko", "kt", "1c", "2c", "3c", "4c", "1a", "2a", "3a", "4a", "b", "i", "u", "s", "c", "r", "k", "K", "p", "q", "t", "a"];
+
     internal static IEnumerable<AssOverrideTag> Parse(string block)
     {
         for (var cursor = 0; cursor < block.Length;)
@@ -13,11 +15,19 @@ internal static class AssOverrideTags
             }
             var start = cursor++;
             var nameStart = cursor;
-            while (cursor < block.Length && char.IsAsciiLetterOrDigit(block[cursor]))
+            var name = KnownNames.FirstOrDefault(candidate => block.AsSpan(nameStart).StartsWith(candidate, StringComparison.Ordinal));
+            if (name is not null)
             {
-                cursor++;
+                cursor += name.Length;
             }
-            var name = block[nameStart..cursor];
+            else
+            {
+                while (cursor < block.Length && char.IsAsciiLetterOrDigit(block[cursor]))
+                {
+                    cursor++;
+                }
+                name = block[nameStart..cursor];
+            }
             var valueStart = cursor;
             var depth = 0;
             while (cursor < block.Length && (block[cursor] != '\\' || depth > 0))

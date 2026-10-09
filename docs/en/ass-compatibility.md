@@ -16,7 +16,7 @@ AegiNext retains its native expressive range. Import and export convert meaningf
 |---|---|---|
 | Text, event times, stacking | Superset | Implemented lossless for ordinary text, centisecond boundaries, and subtitle drawing order. Finer times are quantized with a report; native track identity has no ASS equivalent. |
 | Style names, font, size, emphasis | Corresponding | Implemented lossless for representable attributes. Conflicting or unsafe names are renamed with a report. Font assets and named variants cannot be fully embedded in the exported ASS. |
-| Explicit numeric font weight | Missing | Lossless conversion feasible but unimplemented. Currently reduced to normal/bold with a report. |
+| Explicit numeric font weight | Partial correspondence and gaps | Native named font variants already store Weight, but arbitrary ASS weights have no direct editor/conversion. Lossless parameter mapping to a matching variant is feasible but unimplemented; import currently reduces to normal/bold with a report. |
 | Inline styles and `\r` | Corresponding | Implemented lossless for supported fields. Different transforms within one line do not map to a single native layer transform. |
 | Fill/stroke/shadow colors and alpha | Superset | Implemented lossless for the ASS 8-bit sRGB subset. Extended linear color, HDR, and additional precision cannot be exported losslessly. |
 | Stroke width, shadow X/Y | Corresponding | Implemented lossless for representable static values. Nonuniform layer scaling changes the relationship between glyphs, strokes, and shadows. |
@@ -27,7 +27,7 @@ AegiNext retains its native expressive range. Import and export convert meaningf
 | `Spacing` / `\fsp` | Corresponding | Implemented lossless for representable static spacing, including inline overrides, resets, and constant animation. Shaping may still differ across engines. |
 | Fill/stroke blur and `\blur` | Superset | Edge selection and blur-unit conversion implemented. Generally not lossless: ASS selects an edge based on stroke presence and couples shadow blur; independent blurs and different rasterizers cannot all be preserved. |
 | `WrapStyle` / `\q` | Partial correspondence and gaps | Implemented lossless for no-wrap and explicit line-break semantics. Natural wrapping corresponds to q1, with font/algorithm differences. q0/q3 import as natural with a report; balanced wrapping is feasible but unimplemented. Grapheme export uses q1 with a report. |
-| Common whole-line numeric `\t` | Superset | Native keyframes, ordered transforms, easing, and UI exist; corresponding spacing/blur/stroke/scale/Z-rotation conversion is not yet connected. |
+| Common whole-line numeric `\t` | Superset | Implemented lossless for representable spacing, stroke width, edge blur, scale, and Z-rotation parameters with linear/power/ordered timing. Mixed inline animation, complex independent axes, moving pivots, and appearance coupling have specific limits; other easing or cropped curves may use a reported linear approximation. |
 | Color animation | Superset | Generally not lossless: native interpolation uses linear RGBA, while ASS uses a different color space. Not currently imported as equivalent animation. |
 | `\k`, `\kf`/`\K`, `\ko` | Superset | Implemented lossless for ordinary syllable timing and modes. Independent before/after appearance, sweeps, and centisecond rounding have reported limits. |
 | Rectangle/vector clips | Superset | Implemented lossless for supported static geometry, inversion, and expressible rectangle animation. Other animation uses frame samples with rounding/sampling reports. |
@@ -41,10 +41,17 @@ AegiNext retains its native expressive range. Import and export convert meaningf
 1. **P0: reliable conversion and actionable loss reports** — implemented naming, timing/number precision, shadow semantics, detailed review, and safe cancellation.
 2. **P1: common geometry and opacity** — implemented static transforms, straight motion, and fades using native editors.
 3. **P1: spacing, edge blur, wrapping** — native model, rendering, migration, animation/DSL, three UI entry points, and static ASS conversion implemented.
-4. **P1: common whole-line numeric transforms** — use native tracks and UI for corresponding animations and report remaining losses.
+4. **P1: common whole-line numeric transforms** — implemented corresponding animations in both directions using native tracks/UI, with specific loss reports.
 5. **P2: explicit weights, balanced wrapping, vector drawing, and color-animation policy** — require separate design and validation while retaining the native model.
 
 Attachments, dialogue Effect fields, legacy encodings, and Aegisub project metadata are not priorities.
+
+## Animation boundaries
+
+- Single continuous transforms import as power keyframes; overlapping, instantaneous, or zero-acceleration transforms use ordered operations. Mask transforms can coexist. Content offsets preserve phase; inconsistent inline values discard only the affected whole-line animation.
+- Export preserves linear curves, power curves starting at phase zero, and expressible ordered operations. Other easing retains endpoints/timing with an approximation report. Each sampled mask event rebases animation to its actual ASS start, and inline `\r` resets are followed by the animation again.
+- Zero-scale entrances are supported. Native mirrored scale stays editable; negative scale is not forced into ordinary ASS scaling. Nonuniform scale, rotating shadows, and independent blurs have different operation order. Pivots requiring changing position cannot generally map to fixed `\pos`.
+- Ordered tracks remain editable in the transform-operation editor; ordinary fields show evaluated values with a hint. Canvas position dragging remains available. Scale, rotation, and stroke-width inputs cover their native model ranges.
 
 ## Evidence
 
