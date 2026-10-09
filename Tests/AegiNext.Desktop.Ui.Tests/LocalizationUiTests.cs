@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
+using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Editing;
@@ -421,7 +423,13 @@ public sealed class LocalizationUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         await context.Session.Styles.Completion;
-        var cueID = UiTestActions.CreateSubtitle(context);
+        await context.Window.ViewModel.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
+        var cue = Assert.Single(context.Session.DocumentSnapshot.Subtitles);
+        context.Session.Editor.SetSubtitleTiming(cue.Id, cue.Start, cue.Start + new MediaTime(5), TimelineEditMode.CROP);
+        context.Session.Editor.UpdateSubtitle(cue.Id, line => line with { Text = "Subtitle ABC 中文 123" });
+        context.Session.SelectCue(cue.Id);
+        await context.Window.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_EFFECTS);
+        var cueID = cue.Id;
         var styleView = context.Window.Panels[WorkbenchPanelIds.STYLES];
         var effectsView = context.Window.Panels[WorkbenchPanelIds.EFFECTS];
         var alignment = styleView.FindControl<SubtitleAlignmentPicker>("AlignmentPicker")!;

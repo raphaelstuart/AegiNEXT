@@ -118,10 +118,12 @@ public sealed class SubtitleStyleTimingBindingTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void LegacyLibrariesUpgradeWithoutInventingAnAssociation(int version)
     {
         var json = JsonNode.Parse(SubtitleStylePresetStore.Serialize(new() { Presets = [Preset("Legacy")] }))!.AsObject();
         json["version"] = version;
+        LegacySubtitleMarginsJsonFixture.DowngradeLibrary(json);
         var preset = json["presets"]![0]!.AsObject();
         preset.Remove("timingPostProcessor");
         var style = preset["style"]!.AsObject();
@@ -137,7 +139,7 @@ public sealed class SubtitleStyleTimingBindingTests
 
         var restored = SubtitleStylePresetStore.Deserialize(System.Text.Encoding.UTF8.GetBytes(json.ToJsonString()));
 
-        Assert.Equal(4, restored.Version);
+        Assert.Equal(SubtitleStylePresetCollection.CURRENT_VERSION, restored.Version);
         Assert.Null(Assert.Single(restored.Presets).TimingPostProcessor);
     }
 
@@ -201,7 +203,7 @@ public sealed class SubtitleStyleTimingBindingTests
         await library.RemoveAsync(preset.Id);
         Assert.Equal(duplicate.Id, Assert.Single(library.Snapshot.Presets).Id);
         Assert.Equal(options, Assert.Single((await SubtitleStylePresetStore.LoadAsync(path)).Presets).TimingPostProcessor);
-        Assert.Equal(4, (await SubtitleStylePresetStore.LoadAsync(exportPath)).Version);
+        Assert.Equal(SubtitleStylePresetCollection.CURRENT_VERSION, (await SubtitleStylePresetStore.LoadAsync(exportPath)).Version);
     }
 
     [Fact]

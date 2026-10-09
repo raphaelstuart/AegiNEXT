@@ -16,6 +16,7 @@ public sealed class SubtitleContentPersistenceTests
         editor.UpdateSubtitle(id, line => line with { Karaoke = [new(0, 1, new(0), new(4, 3), SceneColor.White)] });
         var node = JsonNode.Parse(ProjectStore.Serialize(editor.Snapshot))!.AsObject();
         node["version"] = 3;
+        LegacySubtitleMarginsJsonFixture.DowngradeProject(node);
         var line = node["subtitles"]![0]!.AsObject();
         line.Remove("inlineSpans");
         line["style"]!.AsObject().Remove("underline");
@@ -128,6 +129,7 @@ public sealed class SubtitleContentPersistenceTests
         });
         var node = JsonNode.Parse(ProjectStore.Serialize(editor.Snapshot))!;
         node["version"] = version;
+        LegacySubtitleMarginsJsonFixture.DowngradeProject(node.AsObject());
         node["subtitles"]![0]!.AsObject().Remove("inactiveKaraoke");
         var result = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(node.ToJsonString()));
         Assert.Empty(result.Subtitles[0].InactiveKaraoke);
@@ -192,6 +194,7 @@ public sealed class SubtitleContentPersistenceTests
         var preset = new AegiNext.Core.Presets.SubtitleStylePreset(Guid.NewGuid(), "old", new());
         var node = JsonNode.Parse(SubtitleStylePresetStore.Serialize(new() { Presets = [preset] }))!;
         node["version"] = version;
+        LegacySubtitleMarginsJsonFixture.DowngradeLibrary(node.AsObject());
         var style = node["presets"]![0]!["style"]!.AsObject();
         style.Remove("underline");
         style.Remove("strikethrough");

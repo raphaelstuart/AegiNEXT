@@ -363,7 +363,7 @@ public sealed class ClipMaskRenderingTests
             Style = new()
             {
                 FontAssetId = font.Id, FontSize = 32, Alignment = TextAlignment.TOP_LEFT,
-                Margin = 8, Fill = new(4, 0.5, 0.25), Stroke = new(2, 0, 0),
+                Margins = new(8, 8, 8), Fill = new(4, 0.5, 0.25), Stroke = new(2, 0, 0),
                 StrokeWidth = 2, ShadowColor = new(1, 0.25, 0), ShadowOffset = new(4, 4), ShadowBlur = 2
             }
         };

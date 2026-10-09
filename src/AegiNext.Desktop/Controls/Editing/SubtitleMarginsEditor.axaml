@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
+             x:Class="AegiNext.Desktop.Controls.SubtitleMarginsEditor" x:DataType="controls:SubtitleMarginsEditor">
+  <StackPanel Name="DraftRoot" Spacing="6" DataContext="{x:Null}" x:DataType="editing:SubtitleMarginsDraft">
+    <TextBlock Name="MarginsLabel" Classes="field" Text="{Loc Key=Workbench.Margins}"
+               ToolTip.Tip="{Loc Key=Workbench.SubtitleMarginsHint}" />
+    <Grid ColumnDefinitions="*,6,*,6,*">
+      <StackPanel Spacing="3">
+        <TextBlock Name="MarginLeftLabel" Classes="field" Text="{Loc Key=Workbench.MarginLeft}" />
+        <controls:NumericDraftInput Name="MarginLeftInput" RawText="{Binding Left.RawText, Mode=TwoWay}"
+                                   Value="{Binding Left.Value, Mode=TwoWay}" Minimum="0" Maximum="32768" Increment="1"
+                                   PreserveDoublePrecision="True" MinWidth="64"
+                                   AutomationProperties.Name="{Loc Key=Workbench.MarginLeft}" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" Spacing="3">
+        <TextBlock Name="MarginRightLabel" Classes="field" Text="{Loc Key=Workbench.MarginRight}" />
+        <controls:NumericDraftInput Name="MarginRightInput" RawText="{Binding Right.RawText, Mode=TwoWay}"
+                                   Value="{Binding Right.Value, Mode=TwoWay}" Minimum="0" Maximum="32768" Increment="1"
+                                   PreserveDoublePrecision="True" MinWidth="64"
+                                   AutomationProperties.Name="{Loc Key=Workbench.MarginRight}" />
+      </StackPanel>
+      <StackPanel Grid.Column="4" Spacing="3">
+        <TextBlock Name="MarginVerticalLabel" Classes="field" Text="{Loc Key=Workbench.MarginVertical}" />
+        <controls:NumericDraftInput Name="MarginVerticalInput" RawText="{Binding Vertical.RawText, Mode=TwoWay}"
+                                   Value="{Binding Vertical.Value, Mode=TwoWay}" Minimum="0" Maximum="32768" Increment="1"
+                                   PreserveDoublePrecision="True" MinWidth="64"
+                                   ToolTip.ShowOnDisabled="True"
+                                   AutomationProperties.Name="{Loc Key=Workbench.MarginVertical}" />
+      </StackPanel>
+    </Grid>
+    <controls:SubtitleMarginsDiagram Name="MarginsDiagram" Margins="{Binding DiagramMargins}" Height="96"
+                                    IsVisible="{Binding ShowDiagram, RelativeSource={RelativeSource AncestorType=controls:SubtitleMarginsEditor}}"
+                                    Alignment="{Binding Alignment, RelativeSource={RelativeSource AncestorType=controls:SubtitleMarginsEditor}}"
+                                    IsExplicit="{Binding IsExplicit, RelativeSource={RelativeSource AncestorType=controls:SubtitleMarginsEditor}}"
+                                    CanvasWidth="{Binding CanvasWidth, RelativeSource={RelativeSource AncestorType=controls:SubtitleMarginsEditor}}"
+                                    CanvasHeight="{Binding CanvasHeight, RelativeSource={RelativeSource AncestorType=controls:SubtitleMarginsEditor}}"
+                                    Foreground="{DynamicResource PreviewMuted}" CanvasBrush="{DynamicResource PreviewSurface}"
+                                    MarginBrush="{DynamicResource PreviewMuted}" MarkerBrush="{DynamicResource WorkbenchDockActiveForeground}" />
+  </StackPanel>
+</UserControl>

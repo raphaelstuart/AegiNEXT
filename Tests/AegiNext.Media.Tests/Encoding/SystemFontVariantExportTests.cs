@@ -111,7 +111,7 @@ public sealed class SystemFontVariantExportTests
             {
                 FontFamily = face.FamilyName, FontVariant = face.Variant,
                 Bold = face.Variant.Weight >= 700, Italic = face.Variant.Italic,
-                FontSize = 24, Alignment = TextAlignment.TOP_LEFT, Margin = 8,
+                FontSize = 24, Alignment = TextAlignment.TOP_LEFT, Margins = new(8, 8, 8),
                 StrokeWidth = 0, ShadowColor = SceneColor.Transparent, ShadowBlur = 0
             }
         };

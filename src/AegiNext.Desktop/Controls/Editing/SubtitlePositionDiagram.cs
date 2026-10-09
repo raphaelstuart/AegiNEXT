@@ -1,15 +1,16 @@
-using AegiNext.Desktop.Styling;
 using System.Globalization;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
+using AegiNext.Desktop.Styling;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
+using ProjectTextAlignment = AegiNext.Core.Projects.TextAlignment;
 
 namespace AegiNext.Desktop.Controls;
 
-/// <summary>纯测量数据的只读位置示意：父画布、自然字形边界、anchor、pivot 和像素偏移。</summary>
+/// <summary>共用父画布投影的只读布局示意：边距、真实字形边界、anchor、pivot 和像素偏移。</summary>
 public sealed class SubtitlePositionDiagram : Control
 {
     private const double PADDING = 12;
@@ -18,12 +19,25 @@ public sealed class SubtitlePositionDiagram : Control
         AvaloniaProperty.Register<SubtitlePositionDiagram, SubtitlePositionGeometry?>(nameof(Geometry));
     public static readonly StyledProperty<SubtitlePosition?> PositionProperty =
         AvaloniaProperty.Register<SubtitlePositionDiagram, SubtitlePosition?>(nameof(Position));
+    public static readonly StyledProperty<bool> ShowMarginsProperty =
+        AvaloniaProperty.Register<SubtitlePositionDiagram, bool>(nameof(ShowMargins));
+    public static readonly StyledProperty<SubtitleMargins?> MarginsProperty =
+        AvaloniaProperty.Register<SubtitlePositionDiagram, SubtitleMargins?>(nameof(Margins));
+    public static readonly StyledProperty<int> AlignmentProperty =
+        AvaloniaProperty.Register<SubtitlePositionDiagram, int>(nameof(Alignment), 7);
+    public static readonly StyledProperty<bool> IsExplicitProperty =
+        AvaloniaProperty.Register<SubtitlePositionDiagram, bool>(nameof(IsExplicit));
+    public static readonly StyledProperty<int> CanvasWidthProperty =
+        AvaloniaProperty.Register<SubtitlePositionDiagram, int>(nameof(CanvasWidth), 1920);
+    public static readonly StyledProperty<int> CanvasHeightProperty =
+        AvaloniaProperty.Register<SubtitlePositionDiagram, int>(nameof(CanvasHeight), 1080);
     public static readonly StyledProperty<IBrush?> ForegroundProperty =
         TextElement.ForegroundProperty.AddOwner<SubtitlePositionDiagram>();
 
     static SubtitlePositionDiagram()
     {
-        AffectsRender<SubtitlePositionDiagram>(GeometryProperty, PositionProperty, ForegroundProperty);
+        AffectsRender<SubtitlePositionDiagram>(GeometryProperty, PositionProperty, ShowMarginsProperty, MarginsProperty,
+            AlignmentProperty, IsExplicitProperty, CanvasWidthProperty, CanvasHeightProperty, ForegroundProperty);
     }
 
     /// <summary>禁用输入命中；示意不创建任何编辑事务。</summary>
@@ -43,50 +57,117 @@ public sealed class SubtitlePositionDiagram : Control
         get => GetValue(PositionProperty);
         set => SetValue(PositionProperty, value);
     }
+    public bool ShowMargins
+    {
+        get => GetValue(ShowMarginsProperty);
+        set => SetValue(ShowMarginsProperty, value);
+    }
+    public SubtitleMargins? Margins
+    {
+        get => GetValue(MarginsProperty);
+        set => SetValue(MarginsProperty, value);
+    }
+    public int Alignment
+    {
+        get => GetValue(AlignmentProperty);
+        set => SetValue(AlignmentProperty, value);
+    }
+    public bool IsExplicit
+    {
+        get => GetValue(IsExplicitProperty);
+        set => SetValue(IsExplicitProperty, value);
+    }
+    public int CanvasWidth
+    {
+        get => GetValue(CanvasWidthProperty);
+        set => SetValue(CanvasWidthProperty, value);
+    }
+    public int CanvasHeight
+    {
+        get => GetValue(CanvasHeightProperty);
+        set => SetValue(CanvasHeightProperty, value);
+    }
     public IBrush? Foreground
     {
         get => GetValue(ForegroundProperty);
         set => SetValue(ForegroundProperty, value);
     }
 
-    /// <summary>按父局部坐标等比例绘制测量示意；超出画布的字形和偏移仍完整可见。</summary>
+    /// <summary>将边距与测量结果绘制到同一父局部投影；超出画布的字形和偏移仍完整可见。</summary>
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        if (Geometry is not { } geometry || Position is not { } position ||
-            geometry.ParentSize.X <= 0 || geometry.ParentSize.Y <= 0 ||
-            Bounds.Width <= PADDING * 2 || Bounds.Height <= PADDING * 2 + LEGEND_HEIGHT)
+        if (Bounds.Width <= PADDING * 2 || Bounds.Height <= PADDING * 2 + LEGEND_HEIGHT)
         {
             return;
         }
-
-        var anchor = new Point(position.Anchor.X * geometry.ParentSize.X, position.Anchor.Y * geometry.ParentSize.Y);
-        var offset = anchor + new Vector(position.Offset.X, position.Offset.Y);
-        var pivot = offset + new Vector(geometry.Transform.X, geometry.Transform.Y);
-        var localPivot = new Point(geometry.GlyphOrigin.X + position.Pivot.X * geometry.GlyphSize.X + geometry.Transform.AnchorX,
-            geometry.GlyphOrigin.Y + position.Pivot.Y * geometry.GlyphSize.Y + geometry.Transform.AnchorY);
-        var radians = geometry.Transform.Rotation * Math.PI / 180;
-        var cosine = Math.Cos(radians);
-        var sine = Math.Sin(radians);
-        var glyph = new[]
+        var geometry = Geometry;
+        var position = Position;
+        var hasGeometry = geometry is not null && double.IsFinite(geometry.ParentSize.X) && double.IsFinite(geometry.ParentSize.Y) &&
+                          geometry.ParentSize.X > 0 && geometry.ParentSize.Y > 0;
+        var parentSize = hasGeometry ? geometry!.ParentSize : new ScenePoint(CanvasWidth, CanvasHeight);
+        if (parentSize.X <= 0 || parentSize.Y <= 0 || (!ShowMargins && (!hasGeometry || position is null)))
         {
-            MapGlyph(geometry.GlyphOrigin.X, geometry.GlyphOrigin.Y),
-            MapGlyph(geometry.GlyphOrigin.X + geometry.GlyphSize.X, geometry.GlyphOrigin.Y),
-            MapGlyph(geometry.GlyphOrigin.X + geometry.GlyphSize.X, geometry.GlyphOrigin.Y + geometry.GlyphSize.Y),
-            MapGlyph(geometry.GlyphOrigin.X, geometry.GlyphOrigin.Y + geometry.GlyphSize.Y)
-        };
-        var points = glyph.Append(offset).Append(pivot).ToArray();
-        var minimumX = Math.Min(0, points.Min(point => point.X));
-        var minimumY = Math.Min(0, points.Min(point => point.Y));
-        var maximumX = Math.Max(geometry.ParentSize.X, points.Max(point => point.X));
-        var maximumY = Math.Max(geometry.ParentSize.Y, points.Max(point => point.Y));
+            return;
+        }
+        var validMargins = Margins is { } margins && IsValidMargin(margins.Left) && IsValidMargin(margins.Right) &&
+                           IsValidMargin(margins.Vertical) && Enum.IsDefined((ProjectTextAlignment)Alignment);
+        var drawGeometry = hasGeometry && position is not null && (!ShowMargins || validMargins);
+        var anchor = default(Point);
+        var offset = default(Point);
+        var pivot = default(Point);
+        var glyph = Array.Empty<Point>();
+        if (drawGeometry)
+        {
+            var measured = geometry!;
+            var placement = position!;
+            anchor = new(placement.Anchor.X * parentSize.X, placement.Anchor.Y * parentSize.Y);
+            offset = anchor + new Vector(placement.Offset.X, placement.Offset.Y);
+            pivot = offset + new Vector(measured.Transform.X, measured.Transform.Y);
+            var localPivot = new Point(measured.GlyphOrigin.X + placement.Pivot.X * measured.GlyphSize.X + measured.Transform.AnchorX,
+                measured.GlyphOrigin.Y + placement.Pivot.Y * measured.GlyphSize.Y + measured.Transform.AnchorY);
+            var radians = measured.Transform.Rotation * Math.PI / 180;
+            var cosine = Math.Cos(radians);
+            var sine = Math.Sin(radians);
+            glyph =
+            [
+                MapGlyph(measured.GlyphOrigin.X, measured.GlyphOrigin.Y),
+                MapGlyph(measured.GlyphOrigin.X + measured.GlyphSize.X, measured.GlyphOrigin.Y),
+                MapGlyph(measured.GlyphOrigin.X + measured.GlyphSize.X, measured.GlyphOrigin.Y + measured.GlyphSize.Y),
+                MapGlyph(measured.GlyphOrigin.X, measured.GlyphOrigin.Y + measured.GlyphSize.Y)
+            ];
+
+            Point MapGlyph(double x, double y)
+            {
+                var relativeX = (x - localPivot.X) * measured.Transform.ScaleX;
+                var relativeY = (y - localPivot.Y) * measured.Transform.ScaleY;
+                return pivot + new Vector(cosine * relativeX - sine * relativeY, sine * relativeX + cosine * relativeY);
+            }
+        }
+        var points = drawGeometry ? glyph.Append(offset).Append(pivot).ToArray() : [];
+        var minimumX = points.Length == 0 ? 0 : Math.Min(0, points.Min(point => point.X));
+        var minimumY = points.Length == 0 ? 0 : Math.Min(0, points.Min(point => point.Y));
+        var maximumX = points.Length == 0 ? parentSize.X : Math.Max(parentSize.X, points.Max(point => point.X));
+        var maximumY = points.Length == 0 ? parentSize.Y : Math.Max(parentSize.Y, points.Max(point => point.Y));
         var visible = new Rect(minimumX, minimumY, maximumX - minimumX, maximumY - minimumY);
         var viewport = new Rect(PADDING, PADDING, Bounds.Width - PADDING * 2,
             Bounds.Height - PADDING * 2 - LEGEND_HEIGHT);
         var scale = Math.Min(viewport.Width / visible.Width, viewport.Height / visible.Height);
         var origin = viewport.Center - new Vector(visible.Width * scale / 2, visible.Height * scale / 2);
-        var canvas = new Rect(Map(new(0, 0)), Map(new(geometry.ParentSize.X, geometry.ParentSize.Y)));
+        var canvas = new Rect(Map(new(0, 0)), Map(new(parentSize.X, parentSize.Y)));
         context.DrawRectangle(null, new Pen(Foreground, 1), canvas);
+        if (ShowMargins)
+        {
+            if (!validMargins)
+            {
+                return;
+            }
+            DrawMargins(context, Margins!.Value, parentSize, canvas, Map);
+        }
+        if (!drawGeometry)
+        {
+            return;
+        }
 
         var outline = new StreamGeometry();
         using (var path = outline.Open())
@@ -99,7 +180,7 @@ public sealed class SubtitlePositionDiagram : Control
             path.EndFigure(true);
         }
         var glyphPen = new Pen(Brushes.SeaGreen, 1.5,
-            geometry.HasInk ? null : new DashStyle([3, 3], 0));
+            geometry!.HasInk ? null : new DashStyle([3, 3], 0));
         context.DrawGeometry(new SolidColorBrush(Color.Parse("#1832CD32")), glyphPen, outline);
         var mappedAnchor = Map(anchor);
         var mappedOffset = Map(offset);
@@ -124,20 +205,58 @@ public sealed class SubtitlePositionDiagram : Control
         DrawText(context, "A", new(16, legendY), Brushes.RoyalBlue);
         DrawPivot(context, new(40, legendY + 6));
         DrawText(context, "P", new(48, legendY), Brushes.DarkOrange);
-        var delta = string.Create(CultureInfo.CurrentCulture, $"Δ {position.Offset.X:0.##}, {position.Offset.Y:0.##} px");
+        var delta = string.Create(CultureInfo.CurrentCulture, $"Δ {position!.Offset.X:0.##}, {position.Offset.Y:0.##} px");
         DrawText(context, delta, new(67, legendY), Foreground);
-
-        Point MapGlyph(double x, double y)
-        {
-            var relativeX = (x - localPivot.X) * geometry.Transform.ScaleX;
-            var relativeY = (y - localPivot.Y) * geometry.Transform.ScaleY;
-            return pivot + new Vector(cosine * relativeX - sine * relativeY, sine * relativeX + cosine * relativeY);
-        }
 
         Point Map(Point point)
         {
             return origin + new Vector((point.X - visible.Left) * scale, (point.Y - visible.Top) * scale);
         }
+    }
+
+    private static bool IsValidMargin(double value)
+    {
+        return double.IsFinite(value) && value is >= 0 and <= 32768;
+    }
+
+    private void DrawMargins(DrawingContext context, SubtitleMargins margins, ScenePoint parentSize, Rect canvas, Func<Point, Point> map)
+    {
+        var left = Math.Min(margins.Left, parentSize.X);
+        var right = Math.Max(left, parentSize.X - Math.Min(margins.Right, parentSize.X));
+        using (context.PushOpacity(0.18))
+        {
+            context.DrawRectangle(Foreground, null, new Rect(map(new(0, 0)), map(new(left, parentSize.Y))));
+            context.DrawRectangle(Foreground, null, new Rect(map(new(right, 0)), map(new(parentSize.X, parentSize.Y))));
+        }
+        var pen = new Pen(Foreground, 1, new DashStyle([2, 2], 0));
+        context.DrawLine(pen, map(new(left, 0)), map(new(left, parentSize.Y)));
+        context.DrawLine(pen, map(new(right, 0)), map(new(right, parentSize.Y)));
+        DrawMarginLabel(context, "L", new(canvas.Left - 6, canvas.Center.Y));
+        DrawMarginLabel(context, "R", new(canvas.Right + 6, canvas.Center.Y));
+        var row = Alignment / 3;
+        if (IsExplicit || row == 1 || right <= left)
+        {
+            return;
+        }
+        var vertical = Math.Min(margins.Vertical, parentSize.Y);
+        var edge = row == 0 ? vertical : parentSize.Y - vertical;
+        var band = row == 0
+            ? new Rect(map(new(left, 0)), map(new(right, edge)))
+            : new Rect(map(new(left, edge)), map(new(right, parentSize.Y)));
+        using (context.PushOpacity(0.18))
+        {
+            context.DrawRectangle(Foreground, null, band);
+        }
+        context.DrawLine(pen, map(new(left, edge)), map(new(right, edge)));
+        DrawMarginLabel(context, "V", new(canvas.Center.X, row == 0 ? canvas.Top - 6 : canvas.Bottom + 6));
+    }
+
+    private void DrawMarginLabel(DrawingContext context, string text, Point center)
+    {
+        using var layout = WorkbenchTextFormatting.CreateLayout(this, text, 9, Foreground, 10);
+        var x = Math.Clamp(center.X - layout.Width / 2, 0, Math.Max(0, Bounds.Width - layout.Width));
+        var y = Math.Clamp(center.Y - layout.Height / 2, 0, Math.Max(0, Bounds.Height - layout.Height));
+        layout.Draw(context, new(x, y));
     }
 
     private static void DrawAnchor(DrawingContext context, Point point)

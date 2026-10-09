@@ -1,5 +1,6 @@
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.Views;
 using Avalonia;
@@ -104,7 +105,7 @@ public sealed class MainWindowSeekSchedulingUiTests
         AssertDisplayedTarget(window, new(5));
         Assert.Equal(MediaTime.Zero, context.Controller.Snapshot.Position);
 
-        UiTestActions.Find<CheckBox>(window, "BoldCheck").IsChecked = true;
+        UiTestActions.Find<ToolbarToggleButton>(window, "BoldCheck").IsChecked = true;
         Assert.True(Assert.Single(window.DocumentSnapshot.Subtitles).Style.Bold);
         AssertDisplayedTarget(window, new(5));
         Assert.False(pending.IsCompleted);

@@ -18,7 +18,7 @@ public sealed class ScaledProjectPreviewTests
             Style = new()
             {
                 FontAssetId = font.Id, FontSize = 44, Alignment = TextAlignment.BOTTOM_RIGHT,
-                Margin = 20, StrokeWidth = 0, ShadowColor = SceneColor.Transparent
+                Margins = new(20, 20, 20), StrokeWidth = 0, ShadowColor = SceneColor.Transparent
             }
         };
         var layer = new ProjectLayer
@@ -123,7 +123,7 @@ public sealed class ScaledProjectPreviewTests
             Style = new()
             {
                 FontAssetId = font.Id, FontSize = 22, Alignment = TextAlignment.TOP_LEFT,
-                Margin = 2, Fill = new(0, 1, 0), StrokeWidth = 0, ShadowColor = SceneColor.Transparent
+                Margins = new(2, 2, 2), Fill = new(0, 1, 0), StrokeWidth = 0, ShadowColor = SceneColor.Transparent
             }
         };
         var document = new ProjectDocument

@@ -113,12 +113,12 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(subtitle);
         Prepare(document);
         var layout = Layout(document, subtitle);
-        var resolved = subtitle.Style.Position ?? SubtitlePosition.FromAlignment(subtitle.Style.Alignment, subtitle.Style.Margin);
+        var resolved = subtitle.Style.Position ?? SubtitlePosition.FromAlignment(subtitle.Style.Alignment, subtitle.Style.Margins);
         if (subtitle.Style.Position is null)
         {
             resolved = resolved with
             {
-                Offset = new(resolved.Offset.X,
+                Offset = new(layout.BasePosition.X - resolved.Anchor.X * document.Width,
                     layout.BasePosition.Y - resolved.Anchor.Y * document.Height)
             };
         }

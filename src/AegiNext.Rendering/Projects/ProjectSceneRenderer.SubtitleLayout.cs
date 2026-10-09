@@ -73,7 +73,7 @@ public sealed partial class ProjectSceneRenderer
         string text, int offset, int begin, int[] boundaries, TextDirection direction, out int end)
     {
         var startBoundary = Array.BinarySearch(boundaries, begin);
-        var available = Math.Max(1, document.Width - subtitle.Style.Margin * 2);
+        var available = Math.Max(1, document.Width - subtitle.Style.Margins.Left - subtitle.Style.Margins.Right);
         var low = startBoundary + 1;
         var high = Math.Min(boundaries.Length, startBoundary + WRAP_PROBE_GRAPHEMES);
         while (true)
@@ -191,9 +191,9 @@ public sealed partial class ProjectSceneRenderer
         var blockWidth = style.TextAlign.HasValue ? MeasureTextBlockWidth(lines) : 0;
         var blockLeft = horizontal switch
         {
-            0 => (float)style.Margin,
-            1 => (document.Width - blockWidth) / 2,
-            _ => document.Width - (float)style.Margin - blockWidth
+            0 => (float)style.Margins.Left,
+            1 => (float)((style.Margins.Left + document.Width - style.Margins.Right - blockWidth) / 2),
+            _ => document.Width - (float)style.Margins.Right - blockWidth
         };
         var blockHeight = lines[^1].FontSize;
         for (var index = 0; index < lines.Count - 1; index++)
@@ -202,9 +202,9 @@ public sealed partial class ProjectSceneRenderer
         }
         var top = vertical switch
         {
-            0 => (float)style.Margin,
+            0 => (float)style.Margins.Vertical,
             1 => (document.Height - blockHeight) / 2,
-            _ => document.Height - (float)style.Margin - blockHeight
+            _ => document.Height - (float)style.Margins.Vertical - blockHeight
         };
         var ink = SKRect.Empty;
         var rowTop = top;
@@ -233,9 +233,9 @@ public sealed partial class ProjectSceneRenderer
             var width = localInk.IsEmpty ? line.AdvanceWidth : localInk.Width;
             var x = horizontal switch
             {
-                0 => (float)style.Margin - left,
-                1 => (document.Width - width) / 2 - left,
-                _ => document.Width - (float)style.Margin - width - left
+                0 => (float)style.Margins.Left - left,
+                1 => (float)((style.Margins.Left + document.Width - style.Margins.Right - width) / 2) - left,
+                _ => document.Width - (float)style.Margins.Right - width - left
             };
             if (style.TextAlign is { } textAlign && (int)textAlign != horizontal)
             {
@@ -283,13 +283,13 @@ public sealed partial class ProjectSceneRenderer
             var width = Math.Max(1, lines.Max(line => line.AdvanceWidth));
             var x = horizontal switch
             {
-                0 => (float)style.Margin,
-                1 => (document.Width - width) / 2,
-                _ => document.Width - (float)style.Margin - width
+                0 => (float)style.Margins.Left,
+                1 => (float)((style.Margins.Left + document.Width - style.Margins.Right - width) / 2),
+                _ => document.Width - (float)style.Margins.Right - width
             };
             ink = new(x, top, x + width, top + blockHeight);
         }
-        var normalized = style.Position ?? SubtitlePosition.FromAlignment(style.Alignment, style.Margin);
+        var normalized = style.Position ?? SubtitlePosition.FromAlignment(style.Alignment, style.Margins);
         var pivot = new SKPoint(ink.Left + (float)normalized.Pivot.X * ink.Width,
             ink.Top + (float)normalized.Pivot.Y * ink.Height);
         var basePosition = style.Position is not null

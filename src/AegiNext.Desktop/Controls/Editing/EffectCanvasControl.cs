@@ -730,7 +730,7 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
             return;
         }
 
-        var placement = cue.Style.Position ?? SubtitlePosition.FromAlignment(cue.Style.Alignment, cue.Style.Margin);
+        var placement = cue.Style.Position ?? SubtitlePosition.FromAlignment(cue.Style.Alignment, cue.Style.Margins);
         var anchor = new Point(placement.Anchor.X * sceneDocument.Width, placement.Anchor.Y * sceneDocument.Height) * parentMatrix * fit;
         var markerPen = new Pen(Brushes.Gold, 1.5);
         context.DrawLine(new Pen(new SolidColorBrush(Color.Parse("#80FFD700"))), anchor, origin);

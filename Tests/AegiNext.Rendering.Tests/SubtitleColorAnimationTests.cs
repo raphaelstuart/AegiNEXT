@@ -16,7 +16,7 @@ public sealed class SubtitleColorAnimationTests
         {
             Text = "MMMM", End = new(3), Style = new()
             {
-                FontAssetId = font.Id, FontSize = 40, Alignment = TextAlignment.TOP_LEFT, Margin = 8,
+                FontAssetId = font.Id, FontSize = 40, Alignment = TextAlignment.TOP_LEFT, Margins = new(8, 8, 8),
                 Fill = property == AnimationProperty.FILL ? new(0, 1, 0) : SceneColor.Transparent,
                 Stroke = property == AnimationProperty.STROKE ? new(0, 1, 0) : SceneColor.Transparent,
                 StrokeWidth = 4, ShadowColor = SceneColor.Transparent

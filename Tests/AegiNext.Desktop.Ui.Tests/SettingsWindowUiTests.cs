@@ -25,7 +25,7 @@ public sealed class SettingsWindowUiTests
 {
     private static readonly string[] numericStyleFieldNames =
     [
-        "FontSizeInput", "StrokeWidthInput", "MarginInput", "LineHeightInput", "ShadowBlurInput", "ShadowXInput",
+        "FontSizeInput", "StrokeWidthInput", "MarginLeftInput", "MarginRightInput", "MarginVerticalInput", "LineHeightInput", "ShadowBlurInput", "ShadowXInput",
         "ShadowYInput"
     ];
 
@@ -160,7 +160,7 @@ public sealed class SettingsWindowUiTests
             };
             var alignment = UiTestActions.Find<SubtitleAlignmentPicker>(window, "AlignmentPicker");
             Assert.Equal((int)ProjectTextAlignment.BOTTOM_CENTER, alignment.AlignmentIndex);
-            ClickVisibleControl(window, UiTestActions.Find<CheckBox>(window, "ExplicitPositionCheck"));
+            ClickVisibleControl(window, UiTestActions.Find<RadioButton>(window, "CustomPositionMode"));
             Assert.True(window.ViewModel.Styles.Position.IsExplicit);
             var anchor = UiTestActions.Find<NumericDraftInput>(window, "AnchorXInput");
             var offset = UiTestActions.Find<NumericDraftInput>(window, "OffsetXInput");
@@ -171,7 +171,7 @@ public sealed class SettingsWindowUiTests
             SetVisibleNumericText(window, offset, "7e-");
             Assert.Equal("7e-", window.ViewModel.Styles.Position.OffsetX.RawText);
             Assert.Equal("OffsetXInput", window.ViewModel.Styles.Position.Validate());
-            UiTestActions.Find<CheckBox>(window, "BoldCheck").IsChecked = true;
+            UiTestActions.Find<ToolbarToggleButton>(window, "BoldCheck").IsChecked = true;
             window.SelectPage(SettingsPage.APPEARANCE);
             UiTestActions.Find<ComboBox>(window, "ThemeCombo").SelectedIndex = 2;
             UiTestActions.SelectLanguage(window, "zh-CN");
@@ -451,6 +451,9 @@ public sealed class SettingsWindowUiTests
     [AvaloniaTheory]
     [InlineData("FontSizeInput", "72.5", 72.5)]
     [InlineData("LineHeightInput", "1.5", 1.5)]
+    [InlineData("MarginLeftInput", "13.5", 13.5)]
+    [InlineData("MarginRightInput", "41.5", 41.5)]
+    [InlineData("MarginVerticalInput", "27.5", 27.5)]
     public void UnparsedStyleInputSurvivesFocusNavigationAndLanguageAndBlocksSaveAndApply(string fieldKey,
         string validText, double expected)
     {
@@ -499,7 +502,15 @@ public sealed class SettingsWindowUiTests
 
             var preset = Assert.Single(saved);
             Assert.Equal(preset, Assert.Single(applied));
-            Assert.Equal(expected, fieldKey == "FontSizeInput" ? preset.Style.FontSize : preset.Style.LineHeight);
+            Assert.Equal(expected, fieldKey switch
+            {
+                "FontSizeInput" => preset.Style.FontSize,
+                "LineHeightInput" => preset.Style.LineHeight,
+                "MarginLeftInput" => preset.Style.Margins.Left,
+                "MarginRightInput" => preset.Style.Margins.Right,
+                "MarginVerticalInput" => preset.Style.Margins.Vertical,
+                _ => throw new ArgumentOutOfRangeException(nameof(fieldKey))
+            });
             Assert.Null(window.ViewModel.Styles.Error);
             Assert.Null(window.ViewModel.Styles.InvalidFieldKey);
         }

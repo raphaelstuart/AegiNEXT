@@ -103,6 +103,7 @@ public sealed class StableSubtitleStyleIdentityTests
     [InlineData(4)]
     [InlineData(5)]
     [InlineData(6)]
+    [InlineData(7)]
     public void LegacyProjectsGainNoGuessedIdentityAndKeepRationalTimes(int version)
     {
         var editor = new ProjectEditor();
@@ -111,11 +112,12 @@ public sealed class StableSubtitleStyleIdentityTests
         var original = editor.Snapshot;
         var json = JsonNode.Parse(ProjectStore.Serialize(original))!.AsObject();
         json["version"] = version;
+        LegacySubtitleMarginsJsonFixture.DowngradeProject(json);
         json["subtitles"]![0]!.AsObject().Remove("stylePresetId");
 
         var restored = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString()));
 
-        Assert.Equal(7, restored.Version);
+        Assert.Equal(ProjectDocument.CURRENT_VERSION, restored.Version);
         Assert.Null(Assert.Single(restored.Subtitles).StylePresetId);
         Assert.Equal(original.Subtitles[0].Start, restored.Subtitles[0].Start);
         Assert.Equal(original.Subtitles[0].End, restored.Subtitles[0].End);
@@ -137,7 +139,7 @@ public sealed class StableSubtitleStyleIdentityTests
         editor.UpdateSubtitle(id, line => line with { StylePresetId = presetId });
         var bytes = ProjectStore.Serialize(editor.Snapshot);
         var restored = ProjectStore.Deserialize(bytes);
-        Assert.Equal(7, restored.Version);
+        Assert.Equal(ProjectDocument.CURRENT_VERSION, restored.Version);
         Assert.Equal(presetId, Assert.Single(restored.Subtitles).StylePresetId);
         Assert.Equal(bytes, ProjectStore.Serialize(restored));
 

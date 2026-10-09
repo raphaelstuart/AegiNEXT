@@ -55,7 +55,7 @@ public sealed class SubtitleTimelineExportIntegrationTests
                 Start = new(3, 10), End = new(1, 2), Text = "T",
                 Style = new()
                 {
-                    FontFamily = "Noto Sans", FontAssetId = font.Id, FontSize = 18, Margin = 6,
+                    FontFamily = "Noto Sans", FontAssetId = font.Id, FontSize = 18, Margins = new(6, 6, 6),
                     StrokeWidth = 0, ShadowBlur = 0, ShadowColor = SceneColor.Transparent
                 }
             };

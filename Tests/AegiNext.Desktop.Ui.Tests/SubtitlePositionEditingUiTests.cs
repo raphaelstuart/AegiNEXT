@@ -19,11 +19,12 @@ namespace AegiNext.Desktop.Ui.Tests;
 public sealed class SubtitlePositionEditingUiTests
 {
     [AvaloniaFact]
-    public async Task RestoreAutomaticPositionReturnsCenteredHorizontalOffsetToExactZero()
+    public async Task AutomaticModePreservesPositionEffectsButResetClearsThemWithOneUndo()
     {
         await using var context = new MainWindowTestContext();
+        await context.Session.ApplicationContext.Initialization;
         await context.OpenMediaAsync();
-        PrepareActualSubtitle(context);
+        await PrepareActualSubtitleAsync(context);
         var window = context.Window;
         var subtitle = Assert.Single(window.DocumentSnapshot.Subtitles);
         context.Session.Editor.UpdateSubtitle(subtitle.Id, line => line with
@@ -34,24 +35,72 @@ public sealed class SubtitlePositionEditingUiTests
                 Position = new() { Offset = new(70, -25) }
             }
         });
+        var sourceLayer = Assert.Single(window.DocumentSnapshot.Layers);
+        var duration = sourceLayer.End - sourceLayer.Start;
         context.Session.Editor.UpdateLayer(subtitle.Id, layer => layer with
         {
-            Transform = layer.Transform with { Position = new(20, 10) }
+            Transform = layer.Transform with { Position = new(20, 10), Scale = new(2, 3), Rotation = 25 },
+            Opacity = 0.75,
+            MotionPath = new(new(new(0, 0), [new(new(10, 0), new(20, 0), new(30, 0))]), duration),
+            Tracks =
+            [
+                new(AnimationProperty.POSITION, [new(new(0), new ScenePoint(20, 10))]),
+                new(AnimationProperty.PATH_PROGRESS, [new(new(0), 0), new(duration, 1)]),
+                new(AnimationProperty.OPACITY, [new(new(0), 0.75)])
+            ]
         });
         var changed = window.DocumentSnapshot;
+        context.Session.Editor.Reset(changed);
         window.Layouts.Activate(WorkbenchPanelIds.STYLES);
         Dispatcher.UIThread.RunJobs();
+        var automatic = UiTestActions.Find<RadioButton>(window, "AutomaticPositionMode");
+        var custom = UiTestActions.Find<RadioButton>(window, "CustomPositionMode");
+        var fields = UiTestActions.Find<StackPanel>(window, "PositionFields");
+        Assert.True(custom.IsChecked);
+        Assert.True(fields.IsEffectivelyVisible);
 
-        await window.ViewModel.Styles.RestoreAutomaticPositionAsync();
+        ClickVisibleControl(window, automatic);
+
+        var automaticSnapshot = window.DocumentSnapshot;
+        Assert.Null(Assert.Single(automaticSnapshot.Subtitles).Style.Position);
+        Assert.Same(Assert.Single(changed.Layers), Assert.Single(automaticSnapshot.Layers));
+        Assert.True(automatic.IsChecked);
+        Assert.False(custom.IsChecked);
+        Assert.False(fields.IsEffectivelyVisible);
+        Assert.True(context.Session.Editor.Undo());
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(changed, window.DocumentSnapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+        Assert.True(custom.IsChecked);
+        Assert.True(fields.IsEffectivelyVisible);
+
+        ClickVisibleControl(window, UiTestActions.Find<Button>(window, "AutomaticPositionButton"));
         Dispatcher.UIThread.RunJobs();
 
         Assert.Null(Assert.Single(window.DocumentSnapshot.Subtitles).Style.Position);
-        Assert.Equal(default, Assert.Single(window.DocumentSnapshot.Layers).Transform.Position);
+        var resetLayer = Assert.Single(window.DocumentSnapshot.Layers);
+        Assert.Equal(default, resetLayer.Transform.Position);
+        Assert.Null(resetLayer.MotionPath);
+        Assert.Equal(AnimationProperty.OPACITY, Assert.Single(resetLayer.Tracks).Property);
+        Assert.Equal(new ScenePoint(2, 3), resetLayer.Transform.Scale);
+        Assert.Equal(25, resetLayer.Transform.Rotation);
+        Assert.Equal(0.75, resetLayer.Opacity);
         Assert.Equal(0, window.ViewModel.Styles.Position.OffsetX.Parse());
         Assert.False(window.ViewModel.Styles.Position.IsExplicit);
+        Assert.True(automatic.IsChecked);
+        Assert.False(custom.IsChecked);
+        Assert.False(fields.IsEffectivelyVisible);
         Assert.Equal(window.DocumentSnapshot.Width / 2m, window.ViewModel.Effects.PositionX);
+        var resetSnapshot = window.DocumentSnapshot;
         Assert.True(context.Session.Editor.Undo());
+        Dispatcher.UIThread.RunJobs();
         Assert.Same(changed, window.DocumentSnapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+        Assert.True(custom.IsChecked);
+        Assert.True(context.Session.Editor.Redo());
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(resetSnapshot, window.DocumentSnapshot);
+        Assert.True(automatic.IsChecked);
     }
 
     [AvaloniaFact]
@@ -60,7 +109,7 @@ public sealed class SubtitlePositionEditingUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var window = context.Window;
-        PrepareActualSubtitle(context);
+        await PrepareActualSubtitleAsync(context);
         var document = window.DocumentSnapshot;
         var font = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.FONT, "Fonts/missing.ttf");
         var line = document.Subtitles[0] with
@@ -113,7 +162,7 @@ public sealed class SubtitlePositionEditingUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var window = context.Window;
-        PrepareActualSubtitle(context);
+        await PrepareActualSubtitleAsync(context);
         var original = window.DocumentSnapshot;
         var model = window.ViewModel.Styles.Position;
         var originalX = window.ViewModel.Effects.PositionX!.Value;
@@ -123,8 +172,8 @@ public sealed class SubtitlePositionEditingUiTests
         window.Layouts.Activate(WorkbenchPanelIds.STYLES);
         window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
-        var explicitCheck = UiTestActions.Find<CheckBox>(window, "ExplicitPositionCheck");
-        ClickVisibleControl(window, explicitCheck);
+        var custom = UiTestActions.Find<RadioButton>(window, "CustomPositionMode");
+        ClickVisibleControl(window, custom);
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(model.IsExplicit);
@@ -146,7 +195,7 @@ public sealed class SubtitlePositionEditingUiTests
         Assert.True(window.ViewModel.TryCommitDrafts());
         Assert.Equal(30, Assert.Single(window.DocumentSnapshot.Layers).Transform.X);
         Assert.Equal(targetX, window.ViewModel.Effects.PositionX);
-        window.GetCommand(WorkbenchCommand.UNDO).Execute(null);
+        await window.ViewModel.ExecuteCommandAsync(WorkbenchCommand.UNDO);
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(Assert.Single(styleSnapshot.Subtitles).Style, Assert.Single(window.DocumentSnapshot.Subtitles).Style);
         Assert.Equal(0, Assert.Single(window.DocumentSnapshot.Layers).Transform.X);
@@ -161,7 +210,7 @@ public sealed class SubtitlePositionEditingUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var window = context.Window;
-        PrepareActualSubtitle(context);
+        await PrepareActualSubtitleAsync(context);
         window.ViewModel.Styles.Position.IsExplicit = true;
         Assert.True(window.ViewModel.TryCommitDrafts());
         var text = FocusVisibleNumericInput(window, WorkbenchPanelIds.STYLES, "AnchorXInput");
@@ -189,10 +238,10 @@ public sealed class SubtitlePositionEditingUiTests
         }
     }
 
-    private static void PrepareActualSubtitle(MainWindowTestContext context)
+    private static async Task PrepareActualSubtitleAsync(MainWindowTestContext context)
     {
         var window = context.Window;
-        window.GetCommand(WorkbenchCommand.ADD_SUBTITLE).Execute(null);
+        await window.ViewModel.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
         context.Session.Editor.Apply("Actual subtitle geometry fixture", document => document with
         {
             Width = 256, Height = 160,

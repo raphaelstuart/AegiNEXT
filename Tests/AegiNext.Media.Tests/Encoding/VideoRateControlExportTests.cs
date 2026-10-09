@@ -86,7 +86,7 @@ public sealed class VideoRateControlExportTests
         {
             Text = "AegiNext",
             End = new(4),
-            Style = new() { FontFamily = "Arial", FontSize = 20, Margin = 8, StrokeWidth = 0, ShadowBlur = 0 }
+            Style = new() { FontFamily = "Arial", FontSize = 20, Margins = new(8, 8, 8), StrokeWidth = 0, ShadowBlur = 0 }
         };
         var project = new ProjectDocument
         {

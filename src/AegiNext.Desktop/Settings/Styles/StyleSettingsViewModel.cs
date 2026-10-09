@@ -33,14 +33,12 @@ public sealed class StyleSettingsViewModel : ObservableObject
     private int draftVersion;
     private decimal? fontSize;
     private decimal? strokeWidth;
-    private decimal? margin;
     private decimal? lineHeight;
     private decimal? shadowBlur;
     private decimal? shadowX;
     private decimal? shadowY;
     private string fontSizeText = string.Empty;
     private string strokeWidthText = string.Empty;
-    private string marginText = string.Empty;
     private string lineHeightText = string.Empty;
     private string shadowBlurText = string.Empty;
     private string shadowXText = string.Empty;
@@ -70,6 +68,15 @@ public sealed class StyleSettingsViewModel : ObservableObject
         FillDraft.Changed += (_, _) => InvalidatePreview();
         StrokeDraft.Changed += (_, _) => InvalidatePreview();
         ShadowDraft.Changed += (_, _) => InvalidatePreview();
+        Margins.Changed += (_, _) =>
+        {
+            if (Margins.Validate() is null)
+            {
+                ChangeStyle(style => style with { Margins = Margins.CreateMargins() });
+            }
+            OnPropertyChanged(nameof(IsDirty));
+            InvalidatePreview();
+        };
         Position.Changed += (_, _) =>
         {
             if (Position.Validate() is null)
@@ -118,18 +125,21 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public RelayCommand ExportCommand { get; }
     public ImmutableArray<SubtitleStylePreset> Styles => styles;
     public SubtitlePositionDraft Position { get; } = new();
+    public SubtitleMarginsDraft Margins { get; } = new();
     public ColorDraft FillDraft { get; } = new();
     public ColorDraft StrokeDraft { get; } = new(SceneColor.Black);
     public ColorDraft ShadowDraft { get; } = new(SceneColor.Black);
     public string? PositionMeasurementError => positionMeasurementError;
     public bool HasPositionMeasurementError => positionMeasurementError is not null;
+    public int CanvasWidth => Position.Geometry is { } geometry ? (int)geometry.ParentSize.X : new ProjectDocument().Width;
+    public int CanvasHeight => Position.Geometry is { } geometry ? (int)geometry.ParentSize.Y : new ProjectDocument().Height;
     public SubtitleStylePreset? Draft => draft?.Preset;
     public bool HasDraft => draft is not null;
     public bool IsEmpty => styles.IsEmpty;
     public ImmutableArray<Guid> SelectedIds => selectedIds;
     public bool IsDirty => HasDraft && (draft!.Preset != styles.FirstOrDefault(value => value.Id == draft.Preset.Id) ||
-        FillDraft.IsDirty || StrokeDraft.IsDirty || ShadowDraft.IsDirty || Position.Validate() is not null ||
-        new[] { FontSizeText, StrokeWidthText, MarginText, LineHeightText, ShadowBlurText, ShadowXText, ShadowYText }
+        FillDraft.IsDirty || StrokeDraft.IsDirty || ShadowDraft.IsDirty || Position.Validate() is not null || Margins.Validate() is not null ||
+        new[] { FontSizeText, StrokeWidthText, LineHeightText, ShadowBlurText, ShadowXText, ShadowYText }
             .Any(value => ParseNumber(value) is null) || HasPendingInputs?.Invoke() == true);
     public bool CanDelete => !IsBusy && !switching && (!selectedIds.IsEmpty ||
         draft is not null && !styles.Any(value => value.Id == draft.Preset.Id));
@@ -167,7 +177,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
     internal bool TryCreatePreviewPreset(out SubtitleStylePreset? preset)
     {
         preset = null;
-        if (!HasPreview || Position.Validate() is not null || FillDraft.HasError || StrokeDraft.HasError || ShadowDraft.HasError ||
+        if (!HasPreview || Position.Validate() is not null || Margins.Validate() is not null || FillDraft.HasError || StrokeDraft.HasError || ShadowDraft.HasError ||
             NumericFields().Any(field => field.Value is null || field.Value < field.Minimum || field.Value > field.Maximum))
         {
             return false;
@@ -177,7 +187,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             FontSize = ReadPreviewNumber(FontSizeText, source.FontSize),
             StrokeWidth = ReadPreviewNumber(StrokeWidthText, source.StrokeWidth),
-            Margin = ReadPreviewNumber(MarginText, source.Margin),
+            Margins = Margins.CreateMargins(),
             LineHeight = ReadPreviewNumber(LineHeightText, source.LineHeight),
             ShadowBlur = ReadPreviewNumber(ShadowBlurText, source.ShadowBlur),
             ShadowOffset = new(ReadPreviewNumber(ShadowXText, source.ShadowOffset.X), ReadPreviewNumber(ShadowYText, source.ShadowOffset.Y)),
@@ -296,19 +306,6 @@ public sealed class StyleSettingsViewModel : ObservableObject
     {
         get => strokeWidthText;
         set => SetNumericText(ref strokeWidthText, value, nameof(StrokeWidthText), number => StrokeWidth = number);
-    }
-
-    public decimal? Margin
-    {
-        get => margin;
-        set => SetNumericValue(ref margin, value, nameof(Margin),
-            (style, number) => style with { Margin = (double)number });
-    }
-
-    public string MarginText
-    {
-        get => marginText;
-        set => SetNumericText(ref marginText, value, nameof(MarginText), number => Margin = number);
     }
 
     public decimal? LineHeight
@@ -833,14 +830,13 @@ public sealed class StyleSettingsViewModel : ObservableObject
             Name = draft?.Preset.Name ?? string.Empty;
             FontSize = (decimal)style.FontSize;
             StrokeWidth = (decimal)style.StrokeWidth;
-            Margin = (decimal)style.Margin;
+            Margins.Load(style.Margins, CultureInfo.CurrentCulture);
             LineHeight = (decimal)style.LineHeight;
             ShadowBlur = (decimal)style.ShadowBlur;
             ShadowX = (decimal)style.ShadowOffset.X;
             ShadowY = (decimal)style.ShadowOffset.Y;
             FontSizeText = FormatNumber(FontSize);
             StrokeWidthText = FormatNumber(StrokeWidth);
-            MarginText = FormatNumber(Margin);
             LineHeightText = FormatNumber(LineHeight);
             ShadowBlurText = FormatNumber(ShadowBlur);
             ShadowXText = FormatNumber(ShadowX);
@@ -886,6 +882,8 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             Position.UpdateGeometry(measurement?.Geometry);
         }
+        OnPropertyChanged(nameof(CanvasWidth));
+        OnPropertyChanged(nameof(CanvasHeight));
     }
 
     private void RefreshActions()
@@ -917,6 +915,13 @@ public sealed class StyleSettingsViewModel : ObservableObject
         }
 
         var preset = draft.Preset;
+        if (Margins.Validate() is { } marginKey)
+        {
+            InvalidFieldKey = marginKey;
+            SetError("StyleValidation");
+            return null;
+        }
+        preset = preset with { Style = preset.Style with { Margins = Margins.CreateMargins() } };
         foreach (var color in new (ColorDraft Draft, string Key)[]
                  { (FillDraft, "FillPicker"), (StrokeDraft, "StrokePicker"), (ShadowDraft, "ShadowPicker") })
         {
@@ -1016,7 +1021,6 @@ public sealed class StyleSettingsViewModel : ObservableObject
         [
             (FontSize is null ? null : ParseNumber(FontSizeText), 0.01m, 4096, "FontSizeInput"),
             (StrokeWidth is null ? null : ParseNumber(StrokeWidthText), 0, 4096, "StrokeWidthInput"),
-            (Margin is null ? null : ParseNumber(MarginText), 0, 32768, "MarginInput"),
             (LineHeight is null ? null : ParseNumber(LineHeightText), 0.1m, 10, "LineHeightInput"),
             (ShadowBlur is null ? null : ParseNumber(ShadowBlurText), 0, 512, "ShadowBlurInput"),
             (ShadowX is null ? null : ParseNumber(ShadowXText), -1000000000, 1000000000, "ShadowXInput"),

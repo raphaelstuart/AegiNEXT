@@ -1,40 +1,60 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
+             xmlns:materialIcons="using:Material.Icons.Avalonia"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
-             x:Class="AegiNext.Desktop.Controls.SubtitlePositionEditor" x:DataType="editing:SubtitlePositionDraft">
-  <StackPanel Spacing="8">
-    <CheckBox Name="ExplicitPositionCheck" IsChecked="{Binding IsExplicit, Mode=OneWay}" IsEnabled="{Binding CanCustomize}" Content="{Loc Key=Workbench.ExplicitPosition}" />
-    <Button Name="AutomaticPositionButton" IsVisible="{Binding ShowAutomaticPositionAction, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}">
-      <controlsCommon:IconText IconKey="ResetPosition" Text="{Loc Key=Workbench.ResetPosition}" />
-    </Button>
-    <TextBlock TextWrapping="Wrap" Classes="field" Text="{Loc Key=Workbench.SubtitlePositionHint}" />
+             x:Class="AegiNext.Desktop.Controls.SubtitlePositionEditor" x:DataType="controls:SubtitlePositionEditor">
+  <StackPanel Name="DraftRoot" Spacing="8" DataContext="{x:Null}" x:DataType="editing:SubtitlePositionDraft">
+    <Grid Name="PositionModeRow" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+      <TextBlock Name="PositionModeLabel" Classes="field" VerticalAlignment="Center" Text="{Loc Key=Workbench.PositionMode}" />
+      <Grid Grid.Column="1" ColumnDefinitions="*,*" XYFocus.NavigationModes="Enabled">
+        <controlsCommon:SegmentedRadioButton Name="AutomaticPositionMode" CornerRadius="6,0,0,6"
+                                             Content="{Loc Key=Workbench.AutomaticPositionMode}"
+                                             ToolTip.Tip="{Loc Key=Workbench.AutomaticPositionMode}"
+                                             AutomationProperties.Name="{Loc Key=Workbench.AutomaticPositionMode}" />
+        <controlsCommon:SegmentedRadioButton Name="CustomPositionMode" Grid.Column="1" CornerRadius="0,6,6,0"
+                                             Content="{Loc Key=Workbench.CustomPositionMode}"
+                                             ToolTip.Tip="{Loc Key=Workbench.SubtitlePositionHint}"
+                                             AutomationProperties.Name="{Loc Key=Workbench.CustomPositionMode}" />
+      </Grid>
+      <Button Name="AutomaticPositionButton" Classes="icon-button" Grid.Column="2"
+              IsVisible="{Binding ShowAutomaticPositionAction, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}"
+              ToolTip.Tip="{Loc Key=Workbench.ResetAutomaticPositionHint}"
+              AutomationProperties.Name="{Loc Key=Workbench.ResetAutomaticPositionHint}">
+        <materialIcons:MaterialIcon Kind="Restore" Width="16" Height="16" />
+      </Button>
+    </Grid>
     <TextBlock Classes="field" Text="{Loc Key=Workbench.AnchorPreset}" />
     <WrapPanel>
       <controls:AnchorPresetPicker Name="AnchorPresets" IsEnabled="{Binding CanSelectPreset}" Margin="0,0,12,8" />
       <controls:SubtitlePositionDiagram Name="PositionDiagram" Width="180" Height="138" Margin="0,0,0,8"
-                                       Geometry="{Binding Geometry, Mode=OneWay}" Position="{Binding DiagramPosition, Mode=OneWay}" />
+                                       Geometry="{Binding Geometry, Mode=OneWay}" Position="{Binding DiagramPosition, Mode=OneWay}"
+                                       IsExplicit="{Binding IsExplicit, Mode=OneWay}"
+                                       ShowMargins="{Binding ShowMargins, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}"
+                                       Margins="{Binding Margins, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}"
+                                       Alignment="{Binding Alignment, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}"
+                                       CanvasWidth="{Binding CanvasWidth, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}"
+                                       CanvasHeight="{Binding CanvasHeight, RelativeSource={RelativeSource AncestorType=controls:SubtitlePositionEditor}}" />
     </WrapPanel>
-    <TextBlock TextWrapping="Wrap" Classes="field" Text="{Loc Key=Workbench.AnchorPresetHint}" />
-    <StackPanel Name="PositionFields" IsEnabled="{Binding IsExplicit}" Spacing="8">
+    <StackPanel Name="PositionFields" IsVisible="{Binding IsExplicit}" Spacing="8">
       <StackPanel Spacing="4">
         <TextBlock Classes="field" Text="{Loc Key=Workbench.Anchor}" />
         <controls:VectorDraftInput Name="AnchorInput" XFieldKey="AnchorXInput" YFieldKey="AnchorYInput"
                                   XText="{Binding AnchorX.RawText, Mode=TwoWay}" YText="{Binding AnchorY.RawText, Mode=TwoWay}"
-                                  X="{Binding AnchorX.Value, Mode=TwoWay}" Y="{Binding AnchorY.Value, Mode=TwoWay}"
+                                  X="{Binding AnchorX.Value, Mode=OneWay}" Y="{Binding AnchorY.Value, Mode=OneWay}"
                                   Minimum="0" Maximum="1" Increment="0.1" />
       </StackPanel>
       <StackPanel Spacing="4">
         <TextBlock Classes="field" Text="{Loc Key=Workbench.Pivot}" />
         <controls:VectorDraftInput Name="PivotInput" XFieldKey="PivotXInput" YFieldKey="PivotYInput"
                                   XText="{Binding PivotX.RawText, Mode=TwoWay}" YText="{Binding PivotY.RawText, Mode=TwoWay}"
-                                  X="{Binding PivotX.Value, Mode=TwoWay}" Y="{Binding PivotY.Value, Mode=TwoWay}"
+                                  X="{Binding PivotX.Value, Mode=OneWay}" Y="{Binding PivotY.Value, Mode=OneWay}"
                                   Minimum="0" Maximum="1" Increment="0.1" />
       </StackPanel>
       <StackPanel Spacing="4">
         <TextBlock Classes="field" Text="{Loc Key=Workbench.Offset}" />
         <controls:VectorDraftInput Name="OffsetInput" XFieldKey="OffsetXInput" YFieldKey="OffsetYInput"
                                   XText="{Binding OffsetX.RawText, Mode=TwoWay}" YText="{Binding OffsetY.RawText, Mode=TwoWay}"
-                                  X="{Binding OffsetX.Value, Mode=TwoWay}" Y="{Binding OffsetY.Value, Mode=TwoWay}" />
+                                  X="{Binding OffsetX.Value, Mode=OneWay}" Y="{Binding OffsetY.Value, Mode=OneWay}" />
       </StackPanel>
     </StackPanel>
   </StackPanel>

@@ -84,4 +84,21 @@ public sealed class SubtitlePositionDraftTests
         Assert.Equal("AnchorXInput", draft.Validate());
         Assert.Throws<InvalidDataException>(() => draft.CreatePosition());
     }
+
+    [Fact]
+    public void UnavailableCustomPositionTargetsTheModeSelectorAndAutomaticModeIgnoresHiddenDrafts()
+    {
+        var draft = new SubtitlePositionDraft();
+        draft.Load(new() { Position = new() }, canCustomize: false);
+        draft.OffsetX.RawText = "7e-";
+
+        Assert.Equal("CustomPositionMode", draft.Validate());
+        Assert.Throws<InvalidDataException>(() => draft.CreatePosition());
+
+        draft.IsExplicit = false;
+
+        Assert.Null(draft.Validate());
+        Assert.Null(draft.CreatePosition());
+        Assert.Equal("7e-", draft.OffsetX.RawText);
+    }
 }

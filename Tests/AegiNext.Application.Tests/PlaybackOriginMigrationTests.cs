@@ -15,6 +15,7 @@ public sealed class PlaybackOriginMigrationTests
         var original = Document();
         var json = JsonNode.Parse(ProjectStore.Serialize(original))!.AsObject();
         json["version"] = version;
+        LegacySubtitleMarginsJsonFixture.DowngradeProject(json);
         json["media"]!.AsObject().Remove("playbackOrigin");
 
         var restored = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString()));
@@ -46,11 +47,12 @@ public sealed class PlaybackOriginMigrationTests
         original = original with { Media = original.Media! with { PlaybackOrigin = new(-1001, 30000) } };
         var json = JsonNode.Parse(ProjectStore.Serialize(original))!.AsObject();
         json["version"] = 6;
+        LegacySubtitleMarginsJsonFixture.DowngradeProject(json);
         json["subtitles"]![0]!.AsObject().Remove("stylePresetId");
 
         var restored = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString()));
 
-        Assert.Equal(7, restored.Version);
+        Assert.Equal(ProjectDocument.CURRENT_VERSION, restored.Version);
         Assert.Equal(original.Media, restored.Media);
         Assert.Equal(original.Subtitles[0].Start, restored.Subtitles[0].Start);
         Assert.Equal(original.Subtitles[0].End, restored.Subtitles[0].End);
@@ -62,6 +64,7 @@ public sealed class PlaybackOriginMigrationTests
     {
         var json = JsonNode.Parse(ProjectStore.Serialize(Document()))!.AsObject();
         json["version"] = 6;
+        LegacySubtitleMarginsJsonFixture.DowngradeProject(json);
         json["media"]!.AsObject().Remove("playbackOrigin");
 
         Assert.Throws<InvalidDataException>(() => ProjectStore.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString())));

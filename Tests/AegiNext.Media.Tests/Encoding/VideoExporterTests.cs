@@ -22,7 +22,7 @@ public sealed class VideoExporterTests
             Text = "A你👩‍💻Z",
             Style = new()
             {
-                FontFamily = "Arial", FontSize = 18, Margin = 6, Underline = true,
+                FontFamily = "Arial", FontSize = 18, Margins = new(6, 6, 6), Underline = true,
                 StrokeWidth = 0, ShadowColor = SceneColor.Transparent, ShadowBlur = 0
             },
             InlineSpans = [new(1, 6, new() { Fill = new(1, 0, 0), Strikethrough = true })]
@@ -59,7 +59,7 @@ public sealed class VideoExporterTests
         {
             Text = "TEST", Style = new()
             {
-                FontFamily = "Arial", FontSize = 16, Margin = 6, StrokeWidth = 0,
+                FontFamily = "Arial", FontSize = 16, Margins = new(6, 6, 6), StrokeWidth = 0,
                 ShadowColor = SceneColor.Transparent, ShadowBlur = 0
             },
             InlineSpans =
@@ -112,7 +112,7 @@ public sealed class VideoExporterTests
         var presetId = Guid.NewGuid();
         var style = new SubtitleStyle
         {
-            FontFamily = "Arial", FontSize = 16, Margin = 6, Fill = SceneColor.White,
+            FontFamily = "Arial", FontSize = 16, Margins = new(6, 6, 6), Fill = SceneColor.White,
             StrokeWidth = 0, ShadowColor = SceneColor.Transparent, ShadowBlur = 0
         };
         var subtitle = new SubtitleLine { Text = "TEST", Style = style };
@@ -329,7 +329,7 @@ public sealed class VideoExporterTests
         var directory = Path.GetDirectoryName(fixture.MediaPath)!;
         var output = Path.Combine(directory, "成片" + extension);
         var project = CreateProject(fixture.MediaPath, 1, 96, 64);
-        var subtitle = new SubtitleLine { Text = "AegiNext", Style = new SubtitleStyle { FontFamily = "Arial", FontSize = 10, Margin = 2, ShadowBlur = 0, StrokeWidth = 0 } };
+        var subtitle = new SubtitleLine { Text = "AegiNext", Style = new SubtitleStyle { FontFamily = "Arial", FontSize = 10, Margins = new(2, 2, 2), ShadowBlur = 0, StrokeWidth = 0 } };
         project = project with { Subtitles = [subtitle], Layers = project.Layers.Add(new ProjectLayer
         {
             Id = subtitle.Id, Kind = LayerKind.SUBTITLE, SubtitleId = subtitle.Id, Start = subtitle.Start, End = subtitle.End

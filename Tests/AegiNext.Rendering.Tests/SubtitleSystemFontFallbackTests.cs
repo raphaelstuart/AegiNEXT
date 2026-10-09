@@ -142,7 +142,7 @@ public sealed class SubtitleSystemFontFallbackTests
         {
             Text = text, End = new(4), Style = new()
             {
-                FontFamily = "Arial", FontSize = 24, Alignment = TextAlignment.TOP_LEFT, Margin = 8,
+                FontFamily = "Arial", FontSize = 24, Alignment = TextAlignment.TOP_LEFT, Margins = new(8, 8, 8),
                 Fill = new(0, 0, 1), StrokeWidth = 0, ShadowColor = SceneColor.Transparent
             }
         };

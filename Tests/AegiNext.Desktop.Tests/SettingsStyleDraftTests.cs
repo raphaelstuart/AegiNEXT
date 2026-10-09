@@ -11,14 +11,14 @@ public sealed class SettingsStyleDraftTests
         var original = CreatePreset();
         var draft = new SettingsStyleDraft(original);
 
-        draft.UpdateStyle(draft.Preset.Style with { FontSize = 72, Bold = true, Margin = 88 });
+        draft.UpdateStyle(draft.Preset.Style with { FontSize = 72, Bold = true, Margins = new(88, 88, 88) });
 
         Assert.Same(original.Font, draft.Preset.Font);
         Assert.Equal(original.Style.Fill, draft.Preset.Style.Fill);
         Assert.Equal(original.Style.ShadowColor, draft.Preset.Style.ShadowColor);
         Assert.Equal(72, draft.Preset.Style.FontSize);
         Assert.True(draft.Preset.Style.Bold);
-        Assert.Equal(88, draft.Preset.Style.Margin);
+        Assert.Equal(88, draft.Preset.Style.Margins.Vertical);
         Assert.Equal(64, original.Style.FontSize);
         Assert.False(original.Style.Bold);
     }

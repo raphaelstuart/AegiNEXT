@@ -8,7 +8,7 @@ public sealed record SubtitlePosition
     public ScenePoint Offset { get; init; } = new(0, -40);
 
     /// <summary>将九宫格对齐与边距转为可编辑的锚点；旧版字形基线补偿由实际排版测量提供。</summary>
-    public static SubtitlePosition FromAlignment(TextAlignment alignment, double margin)
+    public static SubtitlePosition FromAlignment(TextAlignment alignment, SubtitleMargins margins)
     {
         var horizontal = (int)alignment % 3;
         var vertical = (int)alignment / 3;
@@ -17,8 +17,8 @@ public sealed record SubtitlePosition
         {
             Anchor = anchor,
             Pivot = anchor,
-            Offset = new(horizontal == 0 ? margin : horizontal == 2 ? -margin : 0,
-                vertical == 0 ? margin : vertical == 2 ? -margin : 0)
+            Offset = new(horizontal == 0 ? margins.Left : horizontal == 2 ? -margins.Right : (margins.Left - margins.Right) / 2,
+                vertical == 0 ? margins.Vertical : vertical == 2 ? -margins.Vertical : 0)
         };
     }
 }

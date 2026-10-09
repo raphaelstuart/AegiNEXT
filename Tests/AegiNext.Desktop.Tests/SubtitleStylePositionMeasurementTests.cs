@@ -37,7 +37,7 @@ public sealed class SubtitleStylePositionMeasurementTests
         var font = new EmbeddedSubtitleFont("Sample.ttf", Convert.ToHexStringLower(SHA256.HashData(bytes)), [.. bytes]);
         var preset = new SubtitleStylePreset(Guid.NewGuid(), "Example", new()
         {
-            FontFamily = "Embedded test font", FontSize = 22, Margin = 8,
+            FontFamily = "Embedded test font", FontSize = 22, Margins = new(8, 8, 8),
             StrokeWidth = 0, ShadowColor = SceneColor.Transparent
         }, font);
 

@@ -13,11 +13,16 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(5)]
     [InlineData(6)]
     [InlineData(7)]
+    [InlineData(8)]
     public async Task EscapedDuplicateKeysInsideNestedObjectsAreRejectedByAllEntriesBeforeMigration(int version)
     {
         using var directory = new TemporaryProjectDirectory();
         var node = JsonNode.Parse(ProjectStore.Serialize(CreateAnimatedDocument()))!.AsObject();
         node["version"] = version;
+        if (version < ProjectDocument.CURRENT_VERSION)
+        {
+            LegacySubtitleMarginsJsonFixture.DowngradeProject(node);
+        }
         var json = node.ToJsonString();
         var modified = json.Replace("\"fontSize\":64", "\"fontSize\":64,\"font\\u0053ize\":64", StringComparison.Ordinal);
         Assert.NotEqual(json, modified);
@@ -42,10 +47,14 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData("vectorCurve")]
     public void CurrentVersionsRejectIgnoredLegacyAliasesInNestedLayers(string field)
     {
-        foreach (var version in new[] { 5, 6, 7 })
+        foreach (var version in new[] { 5, 6, 7, 8 })
         {
             var root = JsonNode.Parse(ProjectStore.Serialize(CreateAnimatedDocument()))!.AsObject();
             root["version"] = version;
+            if (version < ProjectDocument.CURRENT_VERSION)
+            {
+                LegacySubtitleMarginsJsonFixture.DowngradeProject(root);
+            }
             var layer = root["layers"]![0]!["children"]![0]!.AsObject();
             if (field == "property")
             {
@@ -88,6 +97,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(5)]
     [InlineData(6)]
     [InlineData(7)]
+    [InlineData(8)]
     public void CurrentVersionsRejectIgnoredLegacyAliasesInPresets(int version)
     {
         var document = CreateAnimatedDocument() with
@@ -96,6 +106,10 @@ public sealed class ProjectStoreStrictParsingTests
         };
         var root = JsonNode.Parse(ProjectStore.Serialize(document))!.AsObject();
         root["version"] = version;
+        if (version < ProjectDocument.CURRENT_VERSION)
+        {
+            LegacySubtitleMarginsJsonFixture.DowngradeProject(root);
+        }
         root["presets"]![0]!["tracks"]![0]!["property"] = "OPACITY";
 
         Assert.Throws<InvalidDataException>(() => ProjectStore.Deserialize(Encoding.UTF8.GetBytes(root.ToJsonString())));
@@ -105,6 +119,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(5)]
     [InlineData(6)]
     [InlineData(7)]
+    [InlineData(8)]
     public async Task PlaybackOriginMigrationAndRequiredFieldsRemainStrictForFileAndElementEntries(int version)
     {
         using var directory = new TemporaryProjectDirectory();
@@ -119,6 +134,10 @@ public sealed class ProjectStoreStrictParsingTests
         };
         var root = JsonNode.Parse(ProjectStore.Serialize(document))!.AsObject();
         root["version"] = version;
+        if (version < ProjectDocument.CURRENT_VERSION)
+        {
+            LegacySubtitleMarginsJsonFixture.DowngradeProject(root);
+        }
         if (version == 5)
         {
             root["media"]!.AsObject().Remove("playbackOrigin");

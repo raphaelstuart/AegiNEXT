@@ -64,6 +64,7 @@ internal sealed partial class WorkbenchSession
                 inspectorPreview = candidate;
                 inspectorPreviewSource = source;
                 inspectorPreviewLayerId = layerId;
+                RefreshPositionPreview(candidate);
                 RefreshEditingPreview();
             }
             catch (Exception error) when (error is InvalidDataException or ArgumentException or InvalidOperationException or OverflowException or FormatException)
@@ -85,6 +86,29 @@ internal sealed partial class WorkbenchSession
         inspectorPreview = null;
         inspectorPreviewSource = null;
         inspectorPreviewLayerId = null;
+    }
+
+    private void RefreshPositionPreview(ProjectDocument document)
+    {
+        if (!stylesDirty)
+        {
+            return;
+        }
+        var layer = Flatten(document.Layers).FirstOrDefault(value => value.Id == SelectedLayerId);
+        if (layer?.SubtitleId is not { } id)
+        {
+            return;
+        }
+        var subtitle = document.Subtitles.Single(line => line.Id == id);
+        var placement = ResolvePlacement(document, layer);
+        using var updateLease = BeginWorkbenchUpdate();
+        if (ViewModel.Styles.Position.IsExplicit)
+        {
+            ViewModel.Styles.Position.UpdateGeometry(PreparePositionGeometry(placement.Geometry, layer));
+            return;
+        }
+        ViewModel.Styles.Position.Load(subtitle.Style, placement.Position, placement.BasePosition is not null,
+            PreparePositionGeometry(placement.Geometry, layer));
     }
 
     private string SynchronizeNumericText(string text, decimal? value)

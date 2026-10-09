@@ -27,6 +27,12 @@ Valid drafts commit on Enter or blur; invalid text stays editable, and Esc resto
 
 Set alignment in the **Styles** panel using two groups of icon buttons: left/center/right and top/middle/bottom. Changing one direction preserves the other, and the same control is available in the style library. The combined value matches ASS `\an1`–`\an9`; editing that tag in the code page updates the style panel. Explicit position stays controlled by the position editor. Older projects retain their independent text alignment until you actively choose an alignment, which clears that legacy override.
 
+The Styles panel and Settings → Styles use the same four groups in the same order: **Typography**, **Fill and outline**, **Shadow**, and **Layout and position**. All groups stay expanded. Font selection shares a row with Bold and Italic icon toggles on its right, followed by Size and Line height together; fill and outline each have their own row. Layout uses one diagram for margins and position. Settings also retains the preset name, sample preview, and library toolbar.
+
+Choose **Automatic** or **Custom anchor** in the positioning row. Automatic layout hides the anchor, pivot, and offset inputs while keeping the preset grid and diagram visible; choosing a preset enters custom mode. Switching modes preserves layer position effects. The Styles panel's reset icon restores automatic layout and clears position offsets, motion paths, and position animation in one undoable edit. Settings uses the mode selection without a duplicate reset action.
+
+**Margins** has separate **Left**, **Right**, and **Vertical** values in canvas pixels, in both the Styles panel and Settings → Styles. Left and Right define the wrapping region; horizontal centering uses the center of that region, so unequal values shift centered text. Vertical controls top/bottom placement and is ignored for middle alignment. Explicit position controls placement and disables the Vertical field, while Left and Right still limit wrapping. Margins describe text layout; stroke and shadow may extend beyond it, and existing vertical baseline placement is preserved. The shared position diagram shows the layout region and automatic/explicit position. Invalid input stays editable and blocks a new preview, save, or apply; Esc restores only the focused field.
+
 ## Audition a segment
 
 Use the header play/pause button to audition the selected clip, or the whole cue if none is selected. **Loop** repeats the range and defaults off. Changing Loop while paused does not start playback.
@@ -43,6 +49,8 @@ Leaving the whole panel or deactivating its floating window pauses playback. Cha
 Imports create independent tracks; overlapping cues keep their times on additional tracks. One Undo removes the batch. ASS PlayRes maps to the existing project canvas. Invalid structure, times, dimensions, UTF-8, or resource limits reject the import.
 
 ASS supports base/local styles, resets, colors/alpha, outline/shadow, alignment/static position, `\k`, `\kf`/`\K`, `\ko`, rectangle/vector clips, and supported rectangle transforms. Unsupported tags/animation require confirmation before conversion; `\move` is not imported as a project motion effect.
+
+ASS style `MarginL`, `MarginR`, and `MarginV` map independently to these three margins. Nonzero dialogue values override the corresponding style value; zero inherits it. Import scales Left/Right by the PlayRes width ratio and Vertical by the height ratio. Export writes the three values separately, keeping ordinary margin placement automatic and preserving explicit `\pos` placement. Export uses `WrapStyle: 1`; font metrics and wrapping can still differ from an ASS player.
 
 Exports include all subtitle tracks. SRT reports loss of rich styling, highlighting, masks, and animation. ASS uses scene order for layers; project times remain exact until millisecond SRT or centisecond ASS output. Unrepresentable positive karaoke durations reject export. Files use UTF-8 and atomic writes.
 

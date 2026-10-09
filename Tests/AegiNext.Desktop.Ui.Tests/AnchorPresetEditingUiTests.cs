@@ -69,7 +69,7 @@ public sealed class AnchorPresetEditingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var layer = PrepareSubtitle(context);
+        var layer = await PrepareSubtitleAsync(context);
         var window = context.Window;
         var original = window.DocumentSnapshot;
         using var renderer = new ProjectSceneRenderer(new DirectoryProjectAssetResolver(context.Session.ProjectDirectory));
@@ -84,7 +84,7 @@ public sealed class AnchorPresetEditingUiTests
         {
             var button = UiTestActions.Find<Button>(window, $"AnchorPreset{names[index]}");
             var label = $"{Localization.Get("Workbench.AnchorPreset")} · {Localization.Get("Workbench." + names[index])}";
-            Assert.Equal(label, ToolTip.GetTip(button));
+            Assert.Equal(label + Environment.NewLine + Localization.Get("Workbench.AnchorPresetHint"), ToolTip.GetTip(button));
             Assert.Equal(label, AutomationProperties.GetName(button));
             ClickPreset(window, names[index]);
             var position = Assert.Single(window.DocumentSnapshot.Subtitles).Style.Position!;
@@ -104,7 +104,7 @@ public sealed class AnchorPresetEditingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var layer = PrepareSubtitle(context);
+        var layer = await PrepareSubtitleAsync(context);
         var window = context.Window;
         var original = window.DocumentSnapshot;
         using var renderer = new ProjectSceneRenderer(new DirectoryProjectAssetResolver(context.Session.ProjectDirectory));
@@ -129,10 +129,10 @@ public sealed class AnchorPresetEditingUiTests
         Assert.Same(original, window.DocumentSnapshot);
     }
 
-    private static ProjectLayer PrepareSubtitle(MainWindowTestContext context)
+    private static async Task<ProjectLayer> PrepareSubtitleAsync(MainWindowTestContext context)
     {
         var window = context.Window;
-        window.GetCommand(WorkbenchCommand.ADD_SUBTITLE).Execute(null);
+        await window.ViewModel.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
         var layer = Assert.Single(window.DocumentSnapshot.Layers) with
         {
             Transform = new(X: 7, Y: -3, ScaleX: 1.5, ScaleY: 0.75, Rotation: 43, AnchorX: 2, AnchorY: -4)
@@ -144,7 +144,7 @@ public sealed class AnchorPresetEditingUiTests
             {
                 Text = "  ABC\nDEF  ", Style = new()
                 {
-                    FontFamily = "sans-serif", FontSize = 22, Margin = 8,
+                    FontFamily = "sans-serif", FontSize = 22, Margins = new(8, 8, 8),
                     StrokeWidth = 0, ShadowColor = SceneColor.Transparent
                 }
             }],
@@ -195,7 +195,7 @@ public sealed class AnchorPresetEditingUiTests
         {
             var button = UiTestActions.Find<Button>(window, $"AnchorPreset{name}");
             var label = $"{Localization.Get("Workbench.AnchorPreset")} · {Localization.Get("Workbench." + name)}";
-            Assert.Equal(label, ToolTip.GetTip(button));
+            Assert.Equal(label + Environment.NewLine + Localization.Get("Workbench.AnchorPresetHint"), ToolTip.GetTip(button));
             Assert.Equal(label, AutomationProperties.GetName(button));
         }
     }

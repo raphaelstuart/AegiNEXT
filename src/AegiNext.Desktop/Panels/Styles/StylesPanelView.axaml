@@ -1,10 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
+             xmlns:materialIcons="using:Material.Icons.Avalonia"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
              xmlns:vm="using:AegiNext.Desktop.Panels.Styles" x:DataType="vm:StylesPanelViewModel"
              x:Class="AegiNext.Desktop.Panels.Styles.StylesPanelView" Classes="business-surface">
   <ScrollViewer>
-    <StackPanel Name="StylePanel" Margin="4" Spacing="8">
+    <StackPanel Name="StylePanel" Margin="4" Spacing="12">
       <TextBlock Classes="field" Text="{Loc Key=Workbench.StylePreset}" />
       <Grid Name="StylePresetActions" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
         <ComboBox Name="SubtitleStylePresetCombo" HorizontalAlignment="Stretch" VerticalAlignment="Center"
@@ -23,38 +24,65 @@
           <controlsCommon:IconText IconKey="ManageStyles" Text="{Loc Key=Workbench.ManageStyles}" />
         </Button>
       </Grid>
-      <TextBlock Classes="field" Text="{Loc Key=Workbench.Font}" />
-      <controls:FontFamilyPicker Name="FontCombo" HorizontalAlignment="Stretch" Text="{Binding FontDraft, Mode=TwoWay}"
-                                 IsEnabled="{Binding HasCue}" />
-      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+      <StackPanel Name="StyleTypographyGroup" IsEnabled="{Binding HasCue}" Spacing="8">
+        <Border BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,0,1" Padding="0,6,0,8">
+          <TextBlock Name="StyleTypographyHeader" Classes="field" FontWeight="SemiBold"
+                     Foreground="{DynamicResource PreviewMuted}" Text="{Loc Key=Workbench.StyleTypographyGroup}" />
+        </Border>
+        <Grid Name="StyleFontRow" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+          <controls:FontFamilyPicker Name="FontCombo" HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Center" MinWidth="0" Text="{Binding FontDraft, Mode=TwoWay}" />
+          <controlsCommon:ToolbarToggleButton Name="BoldCheck" Grid.Column="1" VerticalAlignment="Center"
+                                              IsChecked="{Binding Bold, Mode=TwoWay}" ToolTip.Tip="{Loc Key=Workbench.Bold}"
+                                              AutomationProperties.Name="{Loc Key=Workbench.Bold}">
+            <materialIcons:MaterialIcon Kind="FormatBold" Width="16" Height="16" />
+          </controlsCommon:ToolbarToggleButton>
+          <controlsCommon:ToolbarToggleButton Name="ItalicCheck" Grid.Column="2" VerticalAlignment="Center"
+                                              IsChecked="{Binding Italic, Mode=TwoWay}" ToolTip.Tip="{Loc Key=Workbench.Italic}"
+                                              AutomationProperties.Name="{Loc Key=Workbench.Italic}">
+            <materialIcons:MaterialIcon Kind="FormatItalic" Width="16" Height="16" />
+          </controlsCommon:ToolbarToggleButton>
+        </Grid>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="field" Text="{Loc Key=Workbench.Size}" />
+            <controls:NumericDraftInput Name="FontSizeInput" ShowButtonSpinner="False"
+                                       RawText="{Binding FontSizeText, Mode=TwoWay}" Value="{Binding FontSize, Mode=TwoWay}"
+                                       Minimum="0.01" Maximum="4096" Increment="1" />
+          </StackPanel>
+          <StackPanel Name="StyleLineHeightField" Grid.Column="1" Spacing="4">
+            <TextBlock Classes="field" Text="{Loc Key=Workbench.LineHeight}" />
+            <controls:NumericDraftInput Name="LineHeightInput" ShowButtonSpinner="False"
+                                       RawText="{Binding LineHeightText, Mode=TwoWay}" Value="{Binding LineHeight, Mode=TwoWay}"
+                                       Minimum="0.1" Maximum="10" Increment="0.1" />
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+      <StackPanel Name="StylePaintGroup" Spacing="8">
+        <Border BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,0,1" Padding="0,6,0,8">
+          <TextBlock Name="StylePaintHeader" Classes="field" FontWeight="SemiBold"
+                     Foreground="{DynamicResource PreviewMuted}" Text="{Loc Key=Workbench.StylePaintGroup}" />
+        </Border>
         <StackPanel Spacing="4">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.Size}" />
-          <controls:NumericDraftInput Name="FontSizeInput" ShowButtonSpinner="False" RawText="{Binding FontSizeText, Mode=TwoWay}" Minimum="0.01"
-                                      Maximum="4096" Value="{Binding FontSize, Mode=TwoWay}"
-                                      IsEnabled="{Binding HasCue}" />
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.Fill}" />
+          <controls:ColorDraftInput Name="FillPicker" Draft="{Binding FillDraft}" />
         </StackPanel>
-        <StackPanel Grid.Column="1" Spacing="4">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.Stroke}" />
+          <controls:ColorDraftInput Name="StrokePicker" Draft="{Binding StrokeDraft}" />
+        </StackPanel>
+        <StackPanel Spacing="4">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.StrokeWidth}" />
-          <controls:NumericDraftInput Name="StrokeWidthInput" ShowButtonSpinner="False" RawText="{Binding StrokeWidthText, Mode=TwoWay}"
-                                      Minimum="0" Maximum="4096" Value="{Binding StrokeWidth, Mode=TwoWay}"
-                                      Increment="0.5" />
+          <controls:NumericDraftInput Name="StrokeWidthInput" ShowButtonSpinner="False"
+                                     RawText="{Binding StrokeWidthText, Mode=TwoWay}" Value="{Binding StrokeWidth, Mode=TwoWay}"
+                                     Minimum="0" Maximum="4096" Increment="0.5" />
         </StackPanel>
-      </Grid>
-      <StackPanel Name="StyleLineHeightField" Spacing="4">
-        <TextBlock Classes="field" Text="{Loc Key=Workbench.LineHeight}" />
-        <controls:NumericDraftInput Name="LineHeightInput" ShowButtonSpinner="False"
-                                    RawText="{Binding LineHeightText, Mode=TwoWay}" Value="{Binding LineHeight, Mode=TwoWay}"
-                                    Minimum="0.1" Maximum="10" Increment="0.1" IsEnabled="{Binding HasCue}" />
-      </StackPanel>
-      <StackPanel Spacing="4">
-        <TextBlock Classes="field" Text="{Loc Key=Workbench.Fill}" />
-        <controls:ColorDraftInput Name="FillPicker" Draft="{Binding FillDraft}" />
-      </StackPanel>
-      <StackPanel Spacing="4">
-        <TextBlock Classes="field" Text="{Loc Key=Workbench.Stroke}" />
-        <controls:ColorDraftInput Name="StrokePicker" Draft="{Binding StrokeDraft}" />
       </StackPanel>
       <StackPanel Name="StyleShadowFields" IsEnabled="{Binding HasCue}" Spacing="8">
+        <Border BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,0,1" Padding="0,6,0,8">
+          <TextBlock Name="StyleShadowHeader" Classes="field" FontWeight="SemiBold"
+                     Foreground="{DynamicResource PreviewMuted}" Text="{Loc Key=Workbench.StyleShadowGroup}" />
+        </Border>
         <StackPanel Spacing="4">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.Shadow}" />
           <controls:ColorDraftInput Name="ShadowPicker" Draft="{Binding ShadowDraft}" />
@@ -73,23 +101,21 @@
                                       Minimum="0" Maximum="512" Increment="0.5" />
         </StackPanel>
       </StackPanel>
-      <StackPanel Orientation="Horizontal" Spacing="16">
-        <CheckBox Name="BoldCheck" IsChecked="{Binding Bold, Mode=TwoWay}" IsEnabled="{Binding HasCue}" Content="{Loc Key=Workbench.Bold}" />
-        <CheckBox Name="ItalicCheck" IsChecked="{Binding Italic, Mode=TwoWay}"
-                  IsEnabled="{Binding HasCue}" Content="{Loc Key=Workbench.Italic}" />
-      </StackPanel>
-      <TextBlock Classes="field" Text="{Loc Key=Workbench.Alignment}" />
-      <StackPanel Spacing="8">
-        <controls:SubtitleAlignmentPicker Name="AlignmentPicker" AlignmentIndex="{Binding Alignment, Mode=TwoWay}"
-                                          IsEnabled="{Binding HasCue}" />
-        <Button Name="AutomaticPositionButton" HorizontalAlignment="Left"
-                Command="{Binding RestoreAutomaticPositionCommand}" IsEnabled="{Binding HasCue}">
-          <controlsCommon:IconText IconKey="ResetAutomaticPosition" Text="{Loc Key=Workbench.ResetAutomaticPosition}" />
-        </Button>
-      </StackPanel>
-      <StackPanel IsEnabled="{Binding HasCue}">
-        <controls:SubtitlePositionEditor Name="PositionEditor" ShowAutomaticPositionAction="False"
-                                         DataContext="{Binding Position}" />
+      <StackPanel Name="StyleLayoutGroup" IsEnabled="{Binding HasCue}" Spacing="8">
+        <Border BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,0,1" Padding="0,6,0,8">
+          <TextBlock Name="StyleLayoutHeader" Classes="field" FontWeight="SemiBold"
+                     Foreground="{DynamicResource PreviewMuted}" Text="{Loc Key=Workbench.StyleLayoutGroup}" />
+        </Border>
+        <StackPanel Spacing="4">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.Alignment}" />
+          <controls:SubtitleAlignmentPicker Name="AlignmentPicker" AlignmentIndex="{Binding Alignment, Mode=TwoWay}" />
+        </StackPanel>
+        <controls:SubtitleMarginsEditor Name="MarginsEditor" Draft="{Binding Margins}" ShowDiagram="False"
+                                       Alignment="{Binding Alignment}" IsExplicit="{Binding Position.IsExplicit}"
+                                       CanvasWidth="{Binding CanvasWidth}" CanvasHeight="{Binding CanvasHeight}" />
+        <controls:SubtitlePositionEditor Name="PositionEditor" Draft="{Binding Position}" ShowMargins="True"
+                                        Margins="{Binding Margins.DiagramMargins}" Alignment="{Binding Alignment}"
+                                        CanvasWidth="{Binding CanvasWidth}" CanvasHeight="{Binding CanvasHeight}" />
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

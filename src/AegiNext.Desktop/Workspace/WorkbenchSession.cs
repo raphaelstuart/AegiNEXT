@@ -392,7 +392,14 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         {
             if (!closing)
             {
-                ClearInspectorPreview();
+                if (stylesDirty || effectsDirty)
+                {
+                    QueueInspectorPreview(true);
+                }
+                else
+                {
+                    ClearInspectorPreview();
+                }
                 ViewModel.RefreshCommands();
             }
         }, CancellationToken.None);

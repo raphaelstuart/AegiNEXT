@@ -157,6 +157,128 @@ public sealed class SubtitlePositionDiagramUiTests
         }
     }
 
+    [AvaloniaFact]
+    public void UnifiedDiagramKeepsMeasuredGlyphAnchorPivotAndOffsetOnTheExistingProjection()
+    {
+        using var environment = new UiTestEnvironment();
+        var diagram = CreateDiagram();
+        diagram.ShowMargins = true;
+        diagram.Margins = new(20, 60, 10);
+        diagram.IsExplicit = true;
+        using var pixels = Render(diagram);
+
+        AssertGreen(pixels.GetPixel(110, 45));
+        var anchor = pixels.GetPixel(110, 60);
+        Assert.True(anchor.Blue > 150 && anchor.Red < 100);
+        var pivot = pixels.GetPixel(129, 50);
+        Assert.True(pivot.Red > 150 && pivot.Green > 50 && pivot.Blue < 60);
+        Assert.True(pixels.GetPixel(20, 40).Red > 30);
+        Assert.True(pixels.GetPixel(180, 40).Red > 30);
+        Assert.Equal(SKColors.Black, pixels.GetPixel(100, 45));
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InvalidMarginDraftSuppressesMeasuredGeometryAndLeavesOnlyTheCanvas(bool missing)
+    {
+        using var environment = new UiTestEnvironment();
+        var diagram = CreateDiagram();
+        diagram.ShowMargins = true;
+        diagram.Margins = missing ? null : new SubtitleMargins(double.NaN, 60, 10);
+        using var pixels = Render(diagram);
+
+        Assert.Equal(SKColors.Black, pixels.GetPixel(110, 45));
+        Assert.Equal(SKColors.Black, pixels.GetPixel(110, 60));
+        Assert.Equal(SKColors.Black, pixels.GetPixel(129, 50));
+        Assert.Equal(SKColors.Black, pixels.GetPixel(20, 40));
+        Assert.Equal(SKColors.Black, pixels.GetPixel(9, 129));
+        Assert.True(pixels.GetPixel(14, 60).Red > 60);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(1, 100, 16)]
+    [InlineData(7, 100, 104)]
+    public void MissingMeasurementUsesCanvasAndActiveMarginsWithoutInventingGlyphs(int alignment, int x, int y)
+    {
+        using var environment = new UiTestEnvironment();
+        var diagram = CreateDiagram();
+        diagram.Geometry = null;
+        diagram.CanvasWidth = 200;
+        diagram.CanvasHeight = 100;
+        diagram.ShowMargins = true;
+        diagram.Alignment = alignment;
+        diagram.Margins = new(20, 60, 10);
+        using var pixels = Render(diagram);
+
+        Assert.True(pixels.GetPixel(20, 40).Red > 30);
+        Assert.True(pixels.GetPixel(180, 40).Red > 30);
+        Assert.True(pixels.GetPixel(x, y).Red > 30);
+        Assert.Equal(SKColors.Black, pixels.GetPixel(110, 60));
+        Assert.Equal(SKColors.Black, pixels.GetPixel(9, 129));
+        diagram.IsExplicit = true;
+        using var explicitPixels = Render(diagram);
+        Assert.Equal(SKColors.Black, explicitPixels.GetPixel(x, y));
+        Assert.True(explicitPixels.GetPixel(20, 40).Red > 30);
+        Assert.True(explicitPixels.GetPixel(180, 40).Red > 30);
+    }
+
+    [AvaloniaFact]
+    public void MissingMeasurementWithMiddleAlignmentIgnoresVerticalMarginsAndKeepsTheCanvasAspect()
+    {
+        using var environment = new UiTestEnvironment();
+        var diagram = CreateDiagram();
+        diagram.Geometry = null;
+        diagram.CanvasWidth = 200;
+        diagram.CanvasHeight = 100;
+        diagram.ShowMargins = true;
+        diagram.Alignment = 4;
+        diagram.Margins = new(20, 60, 10);
+        using var first = Render(diagram);
+        diagram.Margins = new(20, 60, 90);
+        using var second = Render(diagram);
+        Assert.Equal(first.Bytes, second.Bytes);
+        diagram.CanvasWidth = 100;
+        using var square = Render(diagram);
+        Assert.NotEqual(second.GetPixel(14, 60), square.GetPixel(14, 60));
+        Assert.True(square.GetPixel(62, 60).Red > 60);
+    }
+
+    [AvaloniaFact]
+    public void MarginOverlayDoesNotChangeOffCanvasRotatedMeasurementProjection()
+    {
+        using var environment = new UiTestEnvironment();
+        var diagram = CreateDiagram();
+        diagram.Geometry = CreateGeometry() with { Transform = new(X: 40, Y: 15, ScaleX: 2, ScaleY: 0.75, Rotation: 43) };
+        diagram.Position = CreatePosition() with { Offset = new(200, -90) };
+        using var original = Render(diagram);
+        diagram.ShowMargins = true;
+        diagram.Margins = new(20, 60, 10);
+        diagram.IsExplicit = true;
+        using var unified = Render(diagram);
+
+        foreach (var color in new[] { SKColors.RoyalBlue, SKColors.DarkOrange, SKColors.SeaGreen })
+        {
+            Assert.Equal(FindPixels(original, color), FindPixels(unified, color));
+        }
+    }
+
+    private static List<(int X, int Y)> FindPixels(SKBitmap pixels, SKColor color)
+    {
+        var matches = new List<(int X, int Y)>();
+        for (var y = 0; y < pixels.Height; y++)
+        {
+            for (var x = 0; x < pixels.Width; x++)
+            {
+                if (pixels.GetPixel(x, y) == color)
+                {
+                    matches.Add((x, y));
+                }
+            }
+        }
+        return matches;
+    }
+
     private static SubtitlePositionDiagram CreateDiagram()
     {
         var diagram = new SubtitlePositionDiagram

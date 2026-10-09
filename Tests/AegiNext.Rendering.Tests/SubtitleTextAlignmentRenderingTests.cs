@@ -163,7 +163,7 @@ public sealed class SubtitleTextAlignmentRenderingTests
 
         Assert.False(layout.HasInk);
         Assert.True(layout.Bounds.Width > 1);
-        AssertNear(document.Width - line.Style.Margin, layout.BasePosition.X);
+        AssertNear(document.Width - line.Style.Margins.Right, layout.BasePosition.X);
         AssertNear(layout.Bounds.Right, layout.Pivot.X);
         for (var offset = 0; offset <= line.Text.Length; offset++)
         {
@@ -287,7 +287,7 @@ public sealed class SubtitleTextAlignmentRenderingTests
                 FontAssetId = font.Id,
                 FontSize = 24,
                 Alignment = alignment,
-                Margin = 8,
+                Margins = new(8, 8, 8),
                 Fill = new(0, 0, 1),
                 StrokeWidth = 0,
                 ShadowColor = SceneColor.Transparent

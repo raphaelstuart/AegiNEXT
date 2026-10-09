@@ -256,7 +256,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 {
                     Alignment = alignment,
                     Position = projectSource ? original.Style.Position : lineStyle.Position is { } position
-                        ? explicitPosition ? position with { Pivot = Pivot(alignment) } : AssSubtitleFormat.MarginPosition(alignment, lineStyle.Margin, lineStyle.Margin, lineStyle.Margin)
+                        ? position with { Pivot = Pivot(alignment) }
                         : null
                 };
                 break;

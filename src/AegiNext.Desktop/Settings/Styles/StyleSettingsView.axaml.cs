@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Rendering;
@@ -294,11 +293,8 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         {
             return;
         }
-        var canvas = model.Position.Geometry?.ParentSize;
-        var defaults = new ProjectDocument();
         preview.Submit(new(revision, preset!, model.PreviewText,
-            canvas is { } size ? (int)size.X : defaults.Width,
-            canvas is { } dimensions ? (int)dimensions.Y : defaults.Height, model.Fonts.Catalog ?? SystemFontCatalog.Empty));
+            model.CanvasWidth, model.CanvasHeight, model.Fonts.Catalog ?? SystemFontCatalog.Empty));
     }
 
     private void PresentPreview(SubtitleStylePreviewResult result)
@@ -403,9 +399,10 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
                 return;
             }
             if (!this.FindControl<VectorDraftInput>("ShadowOffsetInput")!.FocusField(fieldKey) &&
+                !this.FindControl<SubtitleMarginsEditor>("MarginsEditor")!.FocusInvalidField(fieldKey) &&
                 !this.FindControl<SubtitlePositionEditor>("PositionEditor")!.FocusInvalidField(fieldKey))
             {
-                var input = this.FindControl<Control>(fieldKey)!;
+                var input = this.FindControl<Control>(fieldKey) ?? this.FindControl<FontFamilyPicker>("FontInput")!;
                 if (input is NumericDraftInput numeric)
                 {
                     numeric.FocusInput();

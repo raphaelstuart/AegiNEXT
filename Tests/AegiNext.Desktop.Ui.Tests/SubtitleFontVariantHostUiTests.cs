@@ -2,6 +2,7 @@ using System.Globalization;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia;
 using Avalonia.Controls;
@@ -34,6 +35,7 @@ public sealed class SubtitleFontVariantHostUiTests
     public async Task StylesPanelKeepsBlackDuringBackfillAndUsesOneUndoForEachSelection()
     {
         await using var context = new MainWindowTestContext();
+        await WaitForFontsAsync(context);
         await context.OpenMediaAsync();
         var cueId = context.Session.Editor.AddSubtitle(new(0), new(4), "字体 ABC 123");
         context.Session.SelectCue(cueId);
@@ -41,7 +43,7 @@ public sealed class SubtitleFontVariantHostUiTests
         context.Session.Editor.Reset(original);
         context.Session.SelectCue(cueId);
         var picker = UiTestActions.Find<FontFamilyPicker>(context.Window, "FontCombo");
-        var bold = UiTestActions.Find<CheckBox>(context.Window, "BoldCheck");
+        var bold = UiTestActions.Find<ToolbarToggleButton>(context.Window, "BoldCheck");
         var semiBold = Variant(picker.FontCandidates, 600);
         var black = Variant(picker.FontCandidates, 900);
         picker.Text = semiBold.DisplayName;
@@ -110,6 +112,7 @@ public sealed class SubtitleFontVariantHostUiTests
     public async Task DetailsVariantCommitChangesOnlyTheSelectedCharacterAndCreatesOneTransaction()
     {
         await using var context = new MainWindowTestContext();
+        await WaitForFontsAsync(context);
         var semiBold = Variant(context.Session.Fonts.Candidates, 600);
         var black = Variant(context.Session.Fonts.Candidates, 900);
         var cueId = context.Session.Editor.AddSubtitle(new(0), new(4), "ab");
@@ -191,6 +194,7 @@ public sealed class SubtitleFontVariantHostUiTests
     public async Task NamedTrackPresetAndTimingCreationRetainTheSameSystemVariant()
     {
         await using var context = new MainWindowTestContext();
+        await WaitForFontsAsync(context);
         await context.OpenMediaAsync();
         await context.Session.Styles.Completion;
         var black = Variant(context.Session.Fonts.Candidates, 900);
@@ -218,6 +222,7 @@ public sealed class SubtitleFontVariantHostUiTests
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         Assert.True(timeline.Focus());
         UiTestActions.Press(context.Window, Key.F8);
+        await context.Session.WaitForProjectIdleAsync();
         Flush(context.Window);
         var cue = Assert.Single(context.Session.DocumentSnapshot.Subtitles);
         Assert.Equal(trackId, cue.TrackId);
@@ -232,6 +237,7 @@ public sealed class SubtitleFontVariantHostUiTests
     public async Task RawBlackDraftCommitsOnHostLostFocusWithItsActualBoldStateAndOneUndo()
     {
         await using var context = new MainWindowTestContext();
+        await WaitForFontsAsync(context);
         var regular = Variant(context.Session.Fonts.Candidates, 400);
         var black = Variant(context.Session.Fonts.Candidates, 900);
         var cueId = context.Session.Editor.AddSubtitle(new(0), new(4), "Raw font draft 字体");
@@ -261,7 +267,7 @@ public sealed class SubtitleFontVariantHostUiTests
         var edited = Assert.Single(context.Session.DocumentSnapshot.Subtitles).Style;
         Assert.Equal(black.Variant, edited.FontVariant);
         Assert.True(edited.Bold);
-        Assert.True(UiTestActions.Find<CheckBox>(context.Window, "BoldCheck").IsChecked);
+        Assert.True(UiTestActions.Find<ToolbarToggleButton>(context.Window, "BoldCheck").IsChecked);
         Assert.Equal(black.DisplayName, picker.Text);
         Assert.Empty(commits);
         Assert.True(context.Session.Editor.Undo());
@@ -282,6 +288,7 @@ public sealed class SubtitleFontVariantHostUiTests
     public async Task FormattingClickCommitsThePendingFontIdentityInTheSameTransaction(bool italic)
     {
         await using var context = new MainWindowTestContext();
+        await WaitForFontsAsync(context);
         var semiBold = Variant(context.Session.Fonts.Candidates, 600);
         var cueId = context.Session.Editor.AddSubtitle(new(0), new(4), "Pending face 字体");
         context.Session.Editor.UpdateSubtitle(cueId, line => line with
@@ -303,7 +310,7 @@ public sealed class SubtitleFontVariantHostUiTests
         Assert.Equal(semiBold.DisplayName, picker.Text);
         Assert.Same(original, context.Session.DocumentSnapshot);
         var toggleName = italic ? "ItalicCheck" : "BoldCheck";
-        var toggle = UiTestActions.Find<CheckBox>(context.Window, toggleName);
+        var toggle = UiTestActions.Find<ToolbarToggleButton>(context.Window, toggleName);
         toggle.BringIntoView();
         Flush(context.Window);
         var target = toggle.TranslatePoint(new Point(toggle.Bounds.Width / 2, toggle.Bounds.Height / 2), context.Window);
@@ -355,6 +362,7 @@ public sealed class SubtitleFontVariantHostUiTests
     public async Task DetailsFormattingClickCombinesThePendingFontAndSelectedCharacterInOneUndo(bool italic)
     {
         await using var context = new MainWindowTestContext();
+        await WaitForFontsAsync(context);
         var semiBold = Variant(context.Session.Fonts.Candidates, 600);
         var cueId = context.Session.Editor.AddSubtitle(new(0), new(4), "ab");
         context.Session.Editor.UpdateSubtitle(cueId, line => line with
@@ -430,6 +438,7 @@ public sealed class SubtitleFontVariantHostUiTests
     public async Task CancellingAFormattingPointerStillCommitsTheFontBlurOnce(bool details)
     {
         await using var context = new MainWindowTestContext();
+        await WaitForFontsAsync(context);
         var semiBold = Variant(context.Session.Fonts.Candidates, 600);
         var cueId = context.Session.Editor.AddSubtitle(new(0), new(4), "ab");
         context.Session.Editor.UpdateSubtitle(cueId, line => line with
@@ -513,6 +522,13 @@ public sealed class SubtitleFontVariantHostUiTests
             $"variant={effective.FontVariant?.Name ?? "<none>"}, weight={effective.FontVariant?.Weight.ToString(CultureInfo.InvariantCulture) ?? "<none>"}, " +
             $"bold={effective.Bold}, italic={effective.Italic}, baseFamily={line.Style.FontFamily}, " +
             $"baseWeight={line.Style.FontVariant?.Weight.ToString(CultureInfo.InvariantCulture) ?? "<none>"}");
+    }
+
+    private static async Task WaitForFontsAsync(MainWindowTestContext context)
+    {
+        await context.Session.ApplicationContext.Initialization;
+        await context.Session.Fonts.EnsureLoadedAsync();
+        Flush(context.Window);
     }
 
     private static FontSelection Variant(IEnumerable<FontPickerCandidate> candidates, int weight) =>

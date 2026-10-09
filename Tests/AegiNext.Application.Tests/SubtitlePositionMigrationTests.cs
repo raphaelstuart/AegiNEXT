@@ -109,6 +109,14 @@ public sealed class SubtitlePositionMigrationTests
     private static void MakeLegacy(JsonObject root)
     {
         root["version"] = 1;
+        if (root["presets"] is JsonArray)
+        {
+            LegacySubtitleMarginsJsonFixture.DowngradeLibrary(root);
+        }
+        else
+        {
+            LegacySubtitleMarginsJsonFixture.DowngradeProject(root);
+        }
         RemoveNewFields(root);
     }
 

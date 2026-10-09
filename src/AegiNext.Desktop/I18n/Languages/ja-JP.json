@@ -571,7 +571,7 @@
     "Workbench.SelectTextForStyle": "個別スタイルを適用する前にテキストを選択してください。",
     "Workbench.Underline": "下線",
     "Workbench.Strikethrough": "取り消し線",
-    "Workbench.Shadow": "影",
+    "Workbench.Shadow": "影カラー",
     "Workbench.ShadowX": "影 X",
     "Workbench.ShadowY": "影 Y",
     "Workbench.ShadowBlur": "影のぼかし",

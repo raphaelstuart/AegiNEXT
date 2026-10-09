@@ -22,6 +22,7 @@ internal static class LegacyProjectJsonFixture
     internal static void Downgrade(JsonObject root, int version)
     {
         root["version"] = version;
+        LegacySubtitleMarginsJsonFixture.DowngradeProject(root);
         DowngradeTracks(root);
         foreach (var preset in root["presets"]!.AsArray().OfType<JsonObject>())
         {

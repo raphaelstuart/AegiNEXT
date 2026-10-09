@@ -61,7 +61,7 @@ public sealed class SubtitlePositionDraft : ObservableObject
         loading = true;
         try
         {
-            source = style.Position ?? resolved ?? SubtitlePosition.FromAlignment(style.Alignment, style.Margin);
+            source = style.Position ?? resolved ?? SubtitlePosition.FromAlignment(style.Alignment, style.Margins);
             CanCustomize = canCustomize;
             UpdateGeometry(geometry);
             IsExplicit = style.Position is not null;
@@ -149,7 +149,7 @@ public sealed class SubtitlePositionDraft : ObservableObject
         }
         if (!CanCustomize)
         {
-            return "ExplicitPositionCheck";
+            return "CustomPositionMode";
         }
 
         foreach (var field in new (NumericValueDraft Draft, decimal Minimum, decimal Maximum, string Key)[]

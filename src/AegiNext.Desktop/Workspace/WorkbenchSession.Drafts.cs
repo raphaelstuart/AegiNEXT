@@ -14,7 +14,7 @@ internal sealed partial class WorkbenchSession
     private static readonly HashSet<string> styleDraftProperties =
     [
         "FontFamily", "FontVariant", "FontSelectionCommitted", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "AlignmentSelectionCommitted", "Position",
-        "ShadowX", "ShadowXText", "ShadowY", "ShadowYText", "ShadowBlur", "ShadowBlurText", "ShadowDraft", "LineHeight", "LineHeightText"
+        "ShadowX", "ShadowXText", "ShadowY", "ShadowYText", "ShadowBlur", "ShadowBlurText", "ShadowDraft", "LineHeight", "LineHeightText", "Margins"
     ];
     private static readonly HashSet<string> effectDraftProperties =
     [
@@ -470,6 +470,7 @@ internal sealed partial class WorkbenchSession
         var style = cue?.Style ?? new();
         var placement = ResolvePlacement(editor.Snapshot, layer);
         var vm = ViewModel.Styles;
+        vm.LoadCanvasSize(editor.Snapshot.Width, editor.Snapshot.Height);
         vm.HasCue = cue is not null;
         if (!stylesDirty)
         {
@@ -483,19 +484,8 @@ internal sealed partial class WorkbenchSession
             vm.Bold = style.Bold;
             vm.Italic = style.Italic;
             vm.LoadAlignment(style.Alignment);
-            var positionGeometry = placement.Geometry;
-            if (positionGeometry is not null && layer is not null)
-            {
-                positionGeometry = positionGeometry with
-                {
-                    Transform = layer.Transform with
-                    {
-                        Scale = InspectorVector(layer, AnimationProperty.SCALE, layer.Transform.Scale),
-                        Rotation = InspectorValue(layer, AnimationProperty.ROTATION, layer.Transform.Rotation)
-                    }
-                };
-            }
-            vm.Position.Load(style, placement.Position, placement.BasePosition is not null, positionGeometry);
+            vm.Position.Load(style, placement.Position, placement.BasePosition is not null,
+                PreparePositionGeometry(placement.Geometry, layer));
         }
 
         var effects = ViewModel.Effects;
@@ -531,6 +521,22 @@ internal sealed partial class WorkbenchSession
 
         RefreshEditingTargetLabel();
         effectScripts?.RefreshChoices();
+    }
+
+    private SubtitlePositionGeometry? PreparePositionGeometry(SubtitlePositionGeometry? geometry, ProjectLayer? layer)
+    {
+        if (geometry is null || layer is null)
+        {
+            return geometry;
+        }
+        return geometry with
+        {
+            Transform = layer.Transform with
+            {
+                Scale = InspectorVector(layer, AnimationProperty.SCALE, layer.Transform.Scale),
+                Rotation = InspectorValue(layer, AnimationProperty.ROTATION, layer.Transform.Rotation)
+            }
+        };
     }
 
     private Rendering.LayerPlacementResolution ResolvePlacement(ProjectDocument document, ProjectLayer? layer)

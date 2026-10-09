@@ -1,4 +1,5 @@
 using System.Globalization;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
@@ -208,11 +209,16 @@ public sealed class InspectorLivePreviewUiTests
     private static async Task PrepareAsync(MainWindowTestContext context, bool explicitPosition = false)
     {
         await context.OpenMediaAsync();
-        var id = UiTestActions.CreateSubtitle(context);
-        context.Session.Editor.UpdateSubtitle(id, line => line with
+        await context.Window.ViewModel.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
+        var cue = Assert.Single(context.Session.DocumentSnapshot.Subtitles);
+        context.Session.Editor.SetSubtitleTiming(cue.Id, cue.Start, cue.Start + new MediaTime(5), TimelineEditMode.CROP);
+        context.Session.Editor.UpdateSubtitle(cue.Id, line => line with
         {
+            Text = "Subtitle ABC 中文 123",
             Style = line.Style with { FontFamily = "sans-serif", Position = explicitPosition ? new() : null }
         });
+        context.Session.SelectCue(cue.Id);
+        await context.Window.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_EFFECTS);
         context.Session.Editor.Reset(context.Session.DocumentSnapshot);
         await context.Session.SeekFromUserAsync(MediaTime.Zero);
         Dispatcher.UIThread.RunJobs();

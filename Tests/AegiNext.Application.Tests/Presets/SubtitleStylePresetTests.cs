@@ -149,9 +149,9 @@ public sealed class SubtitleStylePresetTests
     }
 
     [Theory]
-    [InlineData("\"version\": 4", "\"version\": 99")]
-    [InlineData("\"version\": 4,", "\"version\": 4, \"version\": 4,")]
-    [InlineData("\"version\": 4,", "\"version\": 4, \"unknown\": true,")]
+    [InlineData("\"version\": 5", "\"version\": 99")]
+    [InlineData("\"version\": 5,", "\"version\": 5, \"version\": 5,")]
+    [InlineData("\"version\": 5,", "\"version\": 5, \"unknown\": true,")]
     [InlineData("\"fontSize\": 64,", "\"fontSize\": 0,")]
     [InlineData("\"fontSize\": 64,", "")]
     [InlineData("\"font\": null", "\"font\": null, \"unrecognized\": 1")]

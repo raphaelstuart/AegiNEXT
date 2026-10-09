@@ -12,6 +12,8 @@ namespace AegiNext.Desktop.Controls;
 public sealed class AnchorPresetPicker : UserControl
 {
     private readonly AnchorPresetGlyph[] glyphs = new AnchorPresetGlyph[9];
+    private readonly AnchorPresetButton[] buttons = new AnchorPresetButton[9];
+    private readonly List<IDisposable> localizationBindings = [];
     private static readonly string[] names =
     [
         "TopLeft", "TopCenter", "TopRight", "MiddleLeft", "MiddleCenter", "MiddleRight",
@@ -34,9 +36,6 @@ public sealed class AnchorPresetPicker : UserControl
             {
                 Name = $"AnchorPreset{names[index]}", Content = glyph, Padding = new(6), MinHeight = 0
             };
-            var label = ObservePresetLabel("Workbench." + names[index]);
-            button.Bind(ToolTip.TipProperty, label.ToBinding());
-            button.Bind(AutomationProperties.NameProperty, label.ToBinding());
             glyph.Bind(AnchorPresetGlyph.ForegroundProperty, button.GetObservable(Button.ForegroundProperty));
             button.Click += (_, _) => PresetSelected?.Invoke(this, new(anchor,
                 button.SelectionModifiers.HasFlag(KeyModifiers.Shift), button.SelectionModifiers.HasFlag(KeyModifiers.Alt)));
@@ -44,6 +43,7 @@ public sealed class AnchorPresetPicker : UserControl
             Grid.SetRow(button, index / 3);
             grid.Children.Add(button);
             glyphs[index] = glyph;
+            buttons[index] = button;
         }
         Content = grid;
     }
@@ -60,8 +60,33 @@ public sealed class AnchorPresetPicker : UserControl
         }
     }
 
-    private static IObservable<string> ObservePresetLabel(string textKey)
+    /// <inheritdoc />
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        return Localization.Observe(() => $"{Localization.Get("Workbench.AnchorPreset")} · {Localization.Get(textKey)}");
+        base.OnAttachedToVisualTree(e);
+        for (var index = 0; index < buttons.Length; index++)
+        {
+            var textKey = "Workbench." + names[index];
+            var label = Localization.Observe(() => PresetLabel(textKey));
+            var tooltip = Localization.Observe(() => PresetLabel(textKey) + Environment.NewLine + Localization.Get("Workbench.AnchorPresetHint"));
+            localizationBindings.Add(buttons[index].Bind(ToolTip.TipProperty, tooltip.ToBinding()));
+            localizationBindings.Add(buttons[index].Bind(AutomationProperties.NameProperty, label.ToBinding()));
+        }
+    }
+
+    /// <inheritdoc />
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        foreach (var binding in localizationBindings)
+        {
+            binding.Dispose();
+        }
+        localizationBindings.Clear();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private static string PresetLabel(string textKey)
+    {
+        return Localization.Get("Workbench.AnchorPreset") + " · " + Localization.Get(textKey);
     }
 }

@@ -149,7 +149,7 @@ public sealed class KaraokeHighlightStyleRenderingTests
         var font = new ProjectAsset(Guid.NewGuid(), ProjectAssetKind.FONT, "Fixtures/NotoSans.ttf");
         var line = new SubtitleLine { Text = text, Style = new()
         {
-            FontAssetId = font.Id, FontSize = 22, Alignment = TextAlignment.MIDDLE_CENTER, Margin = 4,
+            FontAssetId = font.Id, FontSize = 22, Alignment = TextAlignment.MIDDLE_CENTER, Margins = new(4, 4, 4),
             Fill = new(0, 0, 1), Stroke = new(0, 0, 1), StrokeWidth = 4,
             ShadowColor = new(0, 0, 1), ShadowOffset = new(14, 10), ShadowBlur = 2
         } };

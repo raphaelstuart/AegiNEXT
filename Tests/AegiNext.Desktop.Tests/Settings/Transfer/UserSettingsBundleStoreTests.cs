@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using System.Text.Json.Nodes;
 using AegiNext.Desktop.Settings.Transfer;
 
 namespace AegiNext.Desktop.Tests.Settings.Transfer;
@@ -33,6 +34,33 @@ public sealed class UserSettingsBundleStoreTests
     }
 
     /// <summary>没有个人模板时仍导出完整空集合，不将内置内容加入包。</summary>
+    [Fact]
+    public void StyleMarginsRoundTripInTheBundleAndLegacyScalarStylesMigrate()
+    {
+        var original = UserSettingsTransferTestData.CreateBundle();
+        var preset = original.Styles.Presets[0];
+        var independent = original with
+        {
+            Styles = original.Styles with
+            {
+                Presets = [preset with { Style = preset.Style with { Margins = new(13.125, 41.25, 27.5) } }]
+            }
+        };
+        UserSettingsTransferTestData.AssertBundleEqual(independent,
+            UserSettingsBundleStore.Deserialize(UserSettingsBundleStore.Serialize(independent)));
+
+        var entries = UserSettingsTransferTestData.ReadArchive(UserSettingsBundleStore.Serialize(original));
+        var library = JsonNode.Parse(entries["subtitle-styles.aegistyles"])!.AsObject();
+        library["version"] = 4;
+        var style = library["presets"]![0]!["style"]!.AsObject();
+        style.Remove("margins");
+        style["margin"] = 40;
+        entries["subtitle-styles.aegistyles"] = Encoding.UTF8.GetBytes(library.ToJsonString());
+
+        UserSettingsTransferTestData.AssertBundleEqual(original,
+            UserSettingsBundleStore.Deserialize(UserSettingsTransferTestData.WriteArchive(entries)));
+    }
+
     [Fact]
     public void DefaultBundleContainsEmptyPersonalLibraries()
     {

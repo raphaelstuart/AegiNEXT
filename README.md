@@ -56,7 +56,7 @@ For mouse timing, select a subtitle and enable **Classic Aegisub timing** using 
 
 | Format | Preserved content | Access |
 |---|---|---|
-| ASS (`.ass`) | Base/local styles, karaoke, static positioning, and supported masks | Format → Aegisub → Import / Export |
+| ASS (`.ass`) | Base/local styles, left/right/vertical margins, karaoke, static positioning, and supported masks | Format → Aegisub → Import / Export |
 | SRT (`.srt`) | Subtitle text and start/end times | Format → SRT → Import / Export |
 | AegiNext project (`.aeginext`) | Project data, tracks, styles, effects, and media references | File → Open Project / Save / Save As |
 

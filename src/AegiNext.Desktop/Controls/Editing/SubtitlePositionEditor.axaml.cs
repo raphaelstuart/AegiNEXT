@@ -1,3 +1,5 @@
+using AegiNext.Core.Projects;
+using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Editing;
 using System.ComponentModel;
 using Avalonia;
@@ -12,8 +14,51 @@ namespace AegiNext.Desktop.Controls;
 /// <summary>共享位置草稿的可复用视图；位置语义和持久化由所属面板承担。</summary>
 public sealed partial class SubtitlePositionEditor : UserControl
 {
+    public static readonly StyledProperty<SubtitlePositionDraft?> DraftProperty =
+        AvaloniaProperty.Register<SubtitlePositionEditor, SubtitlePositionDraft?>(nameof(Draft));
+    public static readonly StyledProperty<bool> ShowMarginsProperty =
+        AvaloniaProperty.Register<SubtitlePositionEditor, bool>(nameof(ShowMargins));
+    public static readonly StyledProperty<SubtitleMargins?> MarginsProperty =
+        AvaloniaProperty.Register<SubtitlePositionEditor, SubtitleMargins?>(nameof(Margins));
+    public static readonly StyledProperty<int> AlignmentProperty =
+        AvaloniaProperty.Register<SubtitlePositionEditor, int>(nameof(Alignment), 7);
+    public static readonly StyledProperty<int> CanvasWidthProperty =
+        AvaloniaProperty.Register<SubtitlePositionEditor, int>(nameof(CanvasWidth), 1920);
+    public static readonly StyledProperty<int> CanvasHeightProperty =
+        AvaloniaProperty.Register<SubtitlePositionEditor, int>(nameof(CanvasHeight), 1080);
     public static readonly StyledProperty<bool> ShowAutomaticPositionActionProperty =
         AvaloniaProperty.Register<SubtitlePositionEditor, bool>(nameof(ShowAutomaticPositionAction), true);
+
+    public SubtitlePositionDraft? Draft
+    {
+        get => GetValue(DraftProperty);
+        set => SetValue(DraftProperty, value);
+    }
+    public bool ShowMargins
+    {
+        get => GetValue(ShowMarginsProperty);
+        set => SetValue(ShowMarginsProperty, value);
+    }
+    public SubtitleMargins? Margins
+    {
+        get => GetValue(MarginsProperty);
+        set => SetValue(MarginsProperty, value);
+    }
+    public int Alignment
+    {
+        get => GetValue(AlignmentProperty);
+        set => SetValue(AlignmentProperty, value);
+    }
+    public int CanvasWidth
+    {
+        get => GetValue(CanvasWidthProperty);
+        set => SetValue(CanvasWidthProperty, value);
+    }
+    public int CanvasHeight
+    {
+        get => GetValue(CanvasHeightProperty);
+        set => SetValue(CanvasHeightProperty, value);
+    }
 
     /// <summary>决定宿主是否在位置编辑器内显示自动位置操作。</summary>
     public bool ShowAutomaticPositionAction
@@ -24,12 +69,25 @@ public sealed partial class SubtitlePositionEditor : UserControl
 
     private SubtitlePositionDraft? model;
     private readonly AnchorPresetPicker presets;
-    /// <summary>创建数值编辑器，绑定外部纯位置草稿。</summary>
+    private readonly StackPanel draftRoot;
+    private readonly SegmentedRadioButton automaticMode;
+    private readonly SegmentedRadioButton customMode;
+    private bool attached;
+    private bool synchronizingModes;
+
+    /// <summary>创建数值编辑器，隔离内部草稿上下文并兼容旧 DataContext 输入。</summary>
     public SubtitlePositionEditor()
     {
-        DataContext = null;
         AvaloniaXamlLoader.Load(this);
         presets = this.FindControl<AnchorPresetPicker>("AnchorPresets")!;
+        draftRoot = this.FindControl<StackPanel>("DraftRoot")!;
+        automaticMode = this.FindControl<SegmentedRadioButton>("AutomaticPositionMode")!;
+        customMode = this.FindControl<SegmentedRadioButton>("CustomPositionMode")!;
+        var groupName = Guid.NewGuid().ToString("N");
+        automaticMode.GroupName = groupName;
+        customMode.GroupName = groupName;
+        automaticMode.IsCheckedChanged += ModeChanged;
+        customMode.IsCheckedChanged += ModeChanged;
         DataContextChanged += (_, _) => ChangeModel();
         presets.PresetSelected += (_, selection) =>
         {
@@ -57,16 +115,8 @@ public sealed partial class SubtitlePositionEditor : UserControl
                 }
             }
         };
-        var explicitPosition = this.FindControl<CheckBox>("ExplicitPositionCheck")!;
-        explicitPosition.IsCheckedChanged += (_, _) =>
-        {
-            if (DataContext is SubtitlePositionDraft draft && draft.IsExplicit != (explicitPosition.IsChecked == true))
-            {
-                draft.IsExplicit = explicitPosition.IsChecked == true;
-                ExplicitPositionChanged?.Invoke(this, EventArgs.Empty);
-            }
-        };
         AddHandler(KeyDownEvent, RestoreField, RoutingStrategies.Tunnel);
+        ChangeModel();
     }
 
     /// <summary>用户切换显式位置且纯草稿已经同步后，通知父面板提交；模型加载不触发此事件。</summary>
@@ -81,6 +131,16 @@ public sealed partial class SubtitlePositionEditor : UserControl
     /// <summary>将验证焦点定位到该编辑器内部的数值字段。</summary>
     public bool FocusInvalidField(string fieldKey)
     {
+        if (fieldKey is "AutomaticPositionMode" or "CustomPositionMode")
+        {
+            var mode = fieldKey == "AutomaticPositionMode" || !customMode.IsEffectivelyEnabled ? automaticMode : customMode;
+            mode.BringIntoView();
+            return mode.Focus();
+        }
+        if (model?.IsExplicit != true)
+        {
+            return false;
+        }
         foreach (var vector in new[] { "AnchorInput", "PivotInput", "OffsetInput" })
         {
             if (this.FindControl<VectorDraftInput>(vector)!.FocusField(fieldKey))
@@ -99,9 +159,38 @@ public sealed partial class SubtitlePositionEditor : UserControl
         return control.Focus();
     }
 
+    /// <inheritdoc />
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == DraftProperty)
+        {
+            ChangeModel();
+        }
+    }
+
+    /// <inheritdoc />
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        attached = true;
+        ChangeModel();
+    }
+
+    /// <inheritdoc />
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        attached = false;
+        if (model is not null)
+        {
+            model.PropertyChanged -= ModelChanged;
+        }
+        base.OnDetachedFromVisualTree(e);
+    }
+
     private void RestoreField(object? sender, KeyEventArgs args)
     {
-        if (args.Key != Key.Escape || args.Source is not Control source || model is null)
+        if (args.Handled || args.Key != Key.Escape || args.Source is not Control source || model is null)
         {
             return;
         }
@@ -115,21 +204,36 @@ public sealed partial class SubtitlePositionEditor : UserControl
 
     private void ChangeModel()
     {
-        if (model is not null)
+        if (draftRoot is null || presets is null)
         {
-            model.PropertyChanged -= ModelChanged;
+            return;
         }
-        model = DataContext as SubtitlePositionDraft;
-        if (model is not null)
+        var previousSynchronization = synchronizingModes;
+        synchronizingModes = true;
+        try
         {
-            model.PropertyChanged += ModelChanged;
+            if (model is not null)
+            {
+                model.PropertyChanged -= ModelChanged;
+            }
+            model = Draft ?? DataContext as SubtitlePositionDraft;
+            draftRoot.DataContext = model;
+            if (attached && model is not null)
+            {
+                model.PropertyChanged += ModelChanged;
+            }
+            RefreshSelection();
         }
-        RefreshSelection();
+        finally
+        {
+            synchronizingModes = previousSynchronization;
+        }
     }
 
     private void ModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(SubtitlePositionDraft.AnchorSelection) or nameof(SubtitlePositionDraft.PivotSelection))
+        if (e.PropertyName is nameof(SubtitlePositionDraft.AnchorSelection) or nameof(SubtitlePositionDraft.PivotSelection) or
+            nameof(SubtitlePositionDraft.IsExplicit) or nameof(SubtitlePositionDraft.CanCustomize))
         {
             RefreshSelection();
         }
@@ -138,5 +242,38 @@ public sealed partial class SubtitlePositionEditor : UserControl
     private void RefreshSelection()
     {
         presets.SetSelection(model?.AnchorSelection, model?.PivotSelection);
+        RefreshModes();
+    }
+
+    private void RefreshModes()
+    {
+        var previousSynchronization = synchronizingModes;
+        synchronizingModes = true;
+        try
+        {
+            automaticMode.IsChecked = model is { IsExplicit: false };
+            customMode.IsChecked = model is { IsExplicit: true };
+            automaticMode.IsEnabled = model is not null;
+            customMode.IsEnabled = model?.CanCustomize == true;
+        }
+        finally
+        {
+            synchronizingModes = previousSynchronization;
+        }
+    }
+
+    private void ModeChanged(object? sender, RoutedEventArgs args)
+    {
+        if (!attached || synchronizingModes || sender is not SegmentedRadioButton { IsChecked: true } mode ||
+            model is not { } draft || !mode.IsEffectivelyEnabled)
+        {
+            return;
+        }
+        var isExplicit = ReferenceEquals(mode, customMode);
+        if (draft.IsExplicit != isExplicit)
+        {
+            draft.IsExplicit = isExplicit;
+            ExplicitPositionChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 }

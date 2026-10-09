@@ -80,7 +80,7 @@ public sealed class SubtitleFontVariantRenderingTests
             Text = "WWWW", End = new(3), Style = new()
             {
                 FontFamily = face.FamilyName, FontVariant = face.Variant, Bold = false, FontSize = 64,
-                Alignment = TextAlignment.TOP_LEFT, Margin = 8, StrokeWidth = 0, ShadowColor = SceneColor.Transparent
+                Alignment = TextAlignment.TOP_LEFT, Margins = new(8, 8, 8), StrokeWidth = 0, ShadowColor = SceneColor.Transparent
             }
         };
     }

@@ -60,6 +60,20 @@ public sealed class SettingsStylePreviewTests
     }
 
     [Fact]
+    public void VerticalMarginEditingKeepsAsymmetricHorizontalMarginsInTheDraftAndPreview()
+    {
+        var original = CreatePreset() with { Style = new() { Margins = new(13.125, 41.25, 27) } };
+        var model = CreateModel(original);
+
+        model.Margins.Vertical.RawText = "38.5";
+
+        Assert.Equal(new SubtitleMargins(13.125, 41.25, 38.5), model.Draft!.Style.Margins);
+        Assert.True(model.TryCreatePreviewPreset(out var candidate));
+        Assert.Equal(model.Draft.Style.Margins, candidate!.Style.Margins);
+        Assert.Equal(new SubtitleMargins(13.125, 41.25, 27), original.Style.Margins);
+    }
+
+    [Fact]
     public void AnUneditedCandidatePreservesDoublePrecisionAndHdrColors()
     {
         var original = CreatePreset() with
@@ -68,6 +82,7 @@ public sealed class SettingsStylePreviewTests
             {
                 FontSize = 64.00000000000003,
                 StrokeWidth = 2.0000000000000004,
+                Margins = new(13.000000000000004, 41.00000000000001, 27.000000000000004),
                 Fill = new(2.5, 1.25, 0.5, 0.9),
                 Stroke = new(1.75, 0.25, 0.125, 0.8),
                 ShadowColor = new(1.5, 0.1, 0.2, 0.5)
@@ -91,8 +106,15 @@ public sealed class SettingsStylePreviewTests
     [InlineData("FontSize", "4097")]
     [InlineData("StrokeWidth", "-1")]
     [InlineData("StrokeWidth", "4097")]
-    [InlineData("Margin", "-1")]
-    [InlineData("Margin", "32769")]
+    [InlineData("MarginLeft", "7e-")]
+    [InlineData("MarginLeft", "-1")]
+    [InlineData("MarginLeft", "32769")]
+    [InlineData("MarginRight", "7e-")]
+    [InlineData("MarginRight", "-1")]
+    [InlineData("MarginRight", "32769")]
+    [InlineData("MarginVertical", "7e-")]
+    [InlineData("MarginVertical", "-1")]
+    [InlineData("MarginVertical", "32769")]
     [InlineData("LineHeight", "0")]
     [InlineData("LineHeight", "11")]
     [InlineData("ShadowBlur", "-1")]
@@ -208,6 +230,8 @@ public sealed class SettingsStylePreviewTests
         AssertRevisionAdvances(model, () => model.UpdateStyles([first, second], first.Id));
         AssertRevisionAdvances(model, () => model.FontSizeText = "72");
         AssertRevisionAdvances(model, () => model.Italic = true);
+        AssertRevisionAdvances(model, () => model.Margins.Left.RawText = "27");
+        AssertRevisionAdvances(model, () => model.Margins.Right.RawText = "7e-");
         AssertRevisionAdvances(model, () => model.FillDraft.HexText = "#00FF00FF");
         AssertRevisionAdvances(model, () => model.FillDraft.HexText = "#12");
         AssertRevisionAdvances(model, () => model.PreviewText = "New sample 中文");
@@ -224,6 +248,7 @@ public sealed class SettingsStylePreviewTests
         model.FontSizeText = "7e-";
         model.FillDraft.HexText = "#12";
         model.Position.OffsetX.RawText = "-";
+        model.Margins.Right.RawText = "7e-";
         var currentDraft = model.Draft;
 
         model.RefreshLanguage();
@@ -232,6 +257,7 @@ public sealed class SettingsStylePreviewTests
         Assert.Equal("7e-", model.FontSizeText);
         Assert.Equal("#12", model.FillDraft.HexText);
         Assert.Equal("-", model.Position.OffsetX.RawText);
+        Assert.Equal("7e-", model.Margins.Right.RawText);
         Assert.True(model.FillDraft.IsDirty);
         Assert.False(model.TryCreatePreviewPreset(out var candidate));
         Assert.Null(candidate);
@@ -263,6 +289,53 @@ public sealed class SettingsStylePreviewTests
 
         Assert.Equal("7e-", model.Position.OffsetX.RawText);
         Assert.Equal(50, model.Position.Geometry!.GlyphSize.Y);
+    }
+
+    [Fact]
+    public void ValidMarginsRefreshBothPlacementAxesWhileInvalidMarginsKeepTheLastMeasurement()
+    {
+        var model = CreateModel(CreatePreset());
+        var measurements = 0;
+        model.SetPositionMeasurement(preset =>
+        {
+            measurements++;
+            var margins = preset.Style.Margins;
+            return new(new() { Offset = new((margins.Left - margins.Right) / 2, -margins.Vertical) },
+                new(new(1280, 720), new(), new(1280 - margins.Left - margins.Right, 100), new()));
+        });
+        var initialMeasurements = measurements;
+
+        model.Margins.Left.RawText = "13";
+        model.Margins.Right.RawText = "41";
+        model.Margins.Vertical.RawText = "27";
+
+        Assert.Equal(initialMeasurements + 3, measurements);
+        Assert.Equal(new ScenePoint(-14, -27), model.Position.DiagramPosition!.Offset);
+        Assert.Equal(1226, model.Position.Geometry!.GlyphSize.X);
+        Assert.Equal(1280, model.CanvasWidth);
+        Assert.Equal(720, model.CanvasHeight);
+        var geometry = model.Position.Geometry;
+        model.Margins.Left.RawText = "7e-";
+        model.Margins.Vertical.RawText = "-1";
+
+        Assert.Equal(initialMeasurements + 3, measurements);
+        Assert.Same(geometry, model.Position.Geometry);
+        Assert.False(model.TryCreatePreviewPreset(out _));
+    }
+
+    [Fact]
+    public void MarginEditsPreserveExplicitPositionAndItsIncompleteCoordinateDraft()
+    {
+        var original = CreatePreset() with { Style = new() { Position = new() { Offset = new(37, 29) } } };
+        var model = CreateModel(original);
+        model.Position.OffsetX.RawText = "7e-";
+
+        model.Margins.Right.RawText = "81";
+
+        Assert.Equal(original.Style.Position, model.Draft!.Style.Position);
+        Assert.Equal("7e-", model.Position.OffsetX.RawText);
+        Assert.Equal(81, model.Draft.Style.Margins.Right);
+        Assert.False(model.TryCreatePreviewPreset(out _));
     }
 
     private static StyleSettingsViewModel CreateModel(SubtitleStylePreset preset)
@@ -304,8 +377,14 @@ public sealed class SettingsStylePreviewTests
             case "StrokeWidth":
                 model.StrokeWidthText = rawText;
                 break;
-            case "Margin":
-                model.MarginText = rawText;
+            case "MarginLeft":
+                model.Margins.Left.RawText = rawText;
+                break;
+            case "MarginRight":
+                model.Margins.Right.RawText = rawText;
+                break;
+            case "MarginVertical":
+                model.Margins.Vertical.RawText = rawText;
                 break;
             case "LineHeight":
                 model.LineHeightText = rawText;
@@ -330,7 +409,9 @@ public sealed class SettingsStylePreviewTests
         {
             "FontSize" => model.FontSizeText,
             "StrokeWidth" => model.StrokeWidthText,
-            "Margin" => model.MarginText,
+            "MarginLeft" => model.Margins.Left.RawText,
+            "MarginRight" => model.Margins.Right.RawText,
+            "MarginVertical" => model.Margins.Vertical.RawText,
             "LineHeight" => model.LineHeightText,
             "ShadowBlur" => model.ShadowBlurText,
             "ShadowX" => model.ShadowXText,

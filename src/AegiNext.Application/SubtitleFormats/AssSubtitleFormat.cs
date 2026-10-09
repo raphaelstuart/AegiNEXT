@@ -145,10 +145,16 @@ public static class AssSubtitleFormat
             var marginV = AssFormatValues.Number(Get(fields, "MarginV", "0"));
             if (marginL != 0 || marginR != 0 || marginV != 0)
             {
-                line = line with { Style = line.Style with { Position = MarginPosition(line.Style.Alignment,
-                    marginL == 0 ? Math.Abs(line.Style.Position?.Offset.X ?? line.Style.Margin) : marginL * scaleX,
-                    marginR == 0 ? Math.Abs(line.Style.Position?.Offset.X ?? line.Style.Margin) : marginR * scaleX,
-                    marginV == 0 ? line.Style.Margin : marginV * scaleY) } };
+                line = line with
+                {
+                    Style = line.Style with
+                    {
+                        Margins = new(
+                            marginL == 0 ? line.Style.Margins.Left : marginL * scaleX,
+                            marginR == 0 ? line.Style.Margins.Right : marginR * scaleX,
+                            marginV == 0 ? line.Style.Margins.Vertical : marginV * scaleY)
+                    }
+                };
             }
             var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth, canvasHeight: targetHeight).Parse(Required(fields, "Text"));
             var normalized = SubtitleKaraokeNormalization.Normalize(parsed.Line);
@@ -181,7 +187,7 @@ public static class AssSubtitleFormat
             .AppendLine("PlayResY: " + document.Height.ToString(CultureInfo.InvariantCulture))
             .AppendLine("LayoutResX: " + document.Width.ToString(CultureInfo.InvariantCulture))
             .AppendLine("LayoutResY: " + document.Height.ToString(CultureInfo.InvariantCulture))
-            .AppendLine("YCbCr Matrix: None").AppendLine("WrapStyle: 2").AppendLine("ScaledBorderAndShadow: yes").AppendLine();
+            .AppendLine("YCbCr Matrix: None").AppendLine("WrapStyle: 1").AppendLine("ScaledBorderAndShadow: yes").AppendLine();
         result.AppendLine("[V4+ Styles]").AppendLine("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding");
         var styles = new Dictionary<SubtitleStyle, string>();
         var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
@@ -200,7 +206,7 @@ public static class AssSubtitleFormat
             var name = "Style" + (styles.Count + 1).ToString(CultureInfo.InvariantCulture);
             styles.Add(style, name);
             result.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                $"Style: {name},{style.FontFamily},{AssFormatValues.Number(style.FontSize)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Stroke)},{AssFormatValues.Color(style.ShadowColor)},{(style.Bold ? -1 : 0)},{(style.Italic ? -1 : 0)},{(style.Underline ? -1 : 0)},{(style.Strikethrough ? -1 : 0)},100,100,0,0,1,{AssFormatValues.Number(style.StrokeWidth)},{AssFormatValues.Number(style.ShadowOffset.Y)},{AssFormatValues.Alignment(style.Alignment)},{AssFormatValues.Number(style.Margin)},{AssFormatValues.Number(style.Margin)},{AssFormatValues.Number(style.Margin)},1"));
+                $"Style: {name},{style.FontFamily},{AssFormatValues.Number(style.FontSize)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Stroke)},{AssFormatValues.Color(style.ShadowColor)},{(style.Bold ? -1 : 0)},{(style.Italic ? -1 : 0)},{(style.Underline ? -1 : 0)},{(style.Strikethrough ? -1 : 0)},100,100,0,0,1,{AssFormatValues.Number(style.StrokeWidth)},{AssFormatValues.Number(style.ShadowOffset.Y)},{AssFormatValues.Alignment(style.Alignment)},{AssFormatValues.Number(style.Margins.Left)},{AssFormatValues.Number(style.Margins.Right)},{AssFormatValues.Number(style.Margins.Vertical)},1"));
         }
         result.AppendLine().AppendLine("[Events]").AppendLine("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text");
         var byId = document.Subtitles.ToDictionary(line => line.Id);
@@ -285,24 +291,13 @@ public static class AssSubtitleFormat
             StrokeWidth = AssFormatValues.Number(Get(row, "Outline", "0")) * sy,
             ShadowOffset = new(AssFormatValues.Number(Get(row, "Shadow", "0")) * sx, AssFormatValues.Number(Get(row, "Shadow", "0")) * sy),
             ShadowBlur = 0, Alignment = AssFormatValues.Alignment(AssFormatValues.Integer(Get(row, "Alignment", "2"))),
-            Margin = AssFormatValues.Number(Get(row, "MarginV", "0")) * sy
+            Margins = new(
+                AssFormatValues.Number(Get(row, "MarginL", Get(row, "MarginV", "0"))) * sx,
+                AssFormatValues.Number(Get(row, "MarginR", Get(row, "MarginV", "0"))) * sx,
+                AssFormatValues.Number(Get(row, "MarginV", "0")) * sy)
         };
         ProjectValidator.ValidateSubtitleStyle(style);
-        style = style with { Position = MarginPosition(style.Alignment,
-            AssFormatValues.Number(Get(row, "MarginL", Get(row, "MarginV", "0"))) * sx,
-            AssFormatValues.Number(Get(row, "MarginR", Get(row, "MarginV", "0"))) * sx, style.Margin) };
         return new(Required(row, "Name"), style, AssFormatValues.Color(Get(row, "SecondaryColour", "&H000000FF")));
-    }
-
-    internal static SubtitlePosition MarginPosition(TextAlignment alignment, double left, double right, double vertical)
-    {
-        var anchor = AssTextParser.Pivot(alignment);
-        return new()
-        {
-            Anchor = anchor, Pivot = anchor,
-            Offset = new(anchor.X.Equals(0d) ? left : anchor.X.Equals(1d) ? -right : 0,
-                anchor.Y.Equals(0d) ? vertical : anchor.Y.Equals(1d) ? -vertical : 0)
-        };
     }
 
     private static string[] ParseFormat(string value)

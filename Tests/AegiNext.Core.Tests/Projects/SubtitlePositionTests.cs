@@ -7,7 +7,7 @@ public sealed class SubtitlePositionTests
     [Fact]
     public void NineGridAlignmentProducesNormalizedAnchorPivotAndSignedPixelMargins()
     {
-        var position = SubtitlePosition.FromAlignment(TextAlignment.BOTTOM_RIGHT, 40);
+        var position = SubtitlePosition.FromAlignment(TextAlignment.BOTTOM_RIGHT, new(40, 40, 40));
 
         Assert.Equal(new ScenePoint(1, 1), position.Anchor);
         Assert.Equal(position.Anchor, position.Pivot);

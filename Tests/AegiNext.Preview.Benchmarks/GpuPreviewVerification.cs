@@ -86,7 +86,7 @@ internal static class GpuPreviewVerification
 
         var subtitle = new SubtitleLine { Text = "MMMMMMMM", End = new(2), Style = new()
         {
-            FontFamily = "Arial", FontSize = 32, Alignment = TextAlignment.TOP_LEFT, Margin = 8,
+            FontFamily = "Arial", FontSize = 32, Alignment = TextAlignment.TOP_LEFT, Margins = new(8, 8, 8),
             Fill = new(4, 0.5, 0.25), StrokeWidth = 2, ShadowOffset = new(4, 4), ShadowBlur = 2
         } };
         var masked = new ProjectDocument { Width = 128, Height = 96, Subtitles = [subtitle], Layers = [new ProjectLayer

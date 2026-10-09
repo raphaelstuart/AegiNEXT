@@ -11,6 +11,9 @@ internal sealed partial class WorkbenchSession
         var value = fieldKey switch
         {
             "LineHeightInput" => cue.Style.LineHeight,
+            "MarginLeftInput" => cue.Style.Margins.Left,
+            "MarginRightInput" => cue.Style.Margins.Right,
+            "MarginVerticalInput" => cue.Style.Margins.Vertical,
             "ShadowXInput" => cue.Style.ShadowOffset.X,
             "ShadowYInput" => cue.Style.ShadowOffset.Y,
             "ShadowBlurInput" => cue.Style.ShadowBlur,

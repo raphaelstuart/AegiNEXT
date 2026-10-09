@@ -407,7 +407,8 @@ public sealed class AssSubtitleFormatTests
         Assert.False(line.InlineSpans.FirstOrDefault(span => span.Utf16Start == 0)?.Style.Bold ?? false);
         Assert.Contains(line.InlineSpans, span => span.Style.Bold == true);
         Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.StyleGeometry");
-        Assert.Equal(new ScenePoint(0, -20), line.Style.Position!.Offset);
+        Assert.Equal(new SubtitleMargins(20, 20, 20), line.Style.Margins);
+        Assert.Null(line.Style.Position);
     }
 
     [Fact]

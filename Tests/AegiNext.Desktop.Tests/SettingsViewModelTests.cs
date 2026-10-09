@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using AegiNext.Core.Presets;
+using AegiNext.Core.Projects;
+using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Appearance;
 using AegiNext.Desktop.Settings.Colors;
@@ -108,7 +110,6 @@ public sealed class SettingsViewModelTests
     [Theory]
     [InlineData("FontSizeText", "FontSizeInput", "72.5")]
     [InlineData("StrokeWidthText", "StrokeWidthInput", "2.5")]
-    [InlineData("MarginText", "MarginInput", "48")]
     [InlineData("LineHeightText", "LineHeightInput", "1.5")]
     [InlineData("ShadowBlurText", "ShadowBlurInput", "2.5")]
     [InlineData("ShadowXText", "ShadowXInput", "-4")]
@@ -145,7 +146,6 @@ public sealed class SettingsViewModelTests
     [Theory]
     [InlineData("FontSizeText", "0")]
     [InlineData("StrokeWidthText", "-1")]
-    [InlineData("MarginText", "32769")]
     [InlineData("LineHeightText", "10.1")]
     [InlineData("ShadowBlurText", "513")]
     [InlineData("ShadowXText", "-1000000001")]
@@ -167,6 +167,82 @@ public sealed class SettingsViewModelTests
         Assert.NotNull(model.Error);
     }
 
+    [Theory]
+    [InlineData("MarginLeftInput", "7e-")]
+    [InlineData("MarginLeftInput", "-1")]
+    [InlineData("MarginLeftInput", "32769")]
+    [InlineData("MarginRightInput", "7e-")]
+    [InlineData("MarginRightInput", "-1")]
+    [InlineData("MarginRightInput", "32769")]
+    [InlineData("MarginVerticalInput", "7e-")]
+    [InlineData("MarginVerticalInput", "-1")]
+    [InlineData("MarginVerticalInput", "32769")]
+    public void InvalidMarginDraftsPreventPreviewSaveAndApplyAndRemainRawAcrossLanguageRefresh(string fieldKey, string rawText)
+    {
+        var original = new SubtitleStylePreset(Guid.NewGuid(), "Original", new() { Margins = new(13, 41, 27) });
+        var model = new StyleSettingsViewModel { HasSelectedSubtitle = true };
+        model.UpdateStyles([original]);
+        var saved = new List<SubtitleStylePreset>();
+        var applied = new List<SubtitleStylePreset>();
+        model.UpsertRequested += (_, value) => saved.Add(value.Preset);
+        model.ApplyRequested += (_, value) => applied.Add(value.Preset);
+        var input = GetMargin(model, fieldKey);
+        input.RawText = rawText;
+
+        model.SaveCommand.Execute(null);
+        model.ApplyCommand.Execute(null);
+        model.RefreshLanguage();
+
+        Assert.Empty(saved);
+        Assert.Empty(applied);
+        Assert.False(model.TryCreatePreviewPreset(out _));
+        Assert.Equal(rawText, input.RawText);
+        Assert.Equal(fieldKey, model.InvalidFieldKey);
+        Assert.Equal(original.Style.Margins, model.Draft!.Style.Margins);
+        Assert.True(model.IsDirty);
+        input.RawText = "22.5";
+        model.SaveCommand.Execute(null);
+        model.ApplyCommand.Execute(null);
+
+        Assert.Equal(Assert.Single(saved), Assert.Single(applied));
+        Assert.Equal(model.Margins.CreateMargins(), saved[0].Style.Margins);
+        Assert.Null(model.Error);
+        Assert.Null(model.InvalidFieldKey);
+    }
+
+    [Fact]
+    public void RestoringOneMarginKeepsOtherIncompleteRawFieldsAndDoesNotSubmit()
+    {
+        var original = new SubtitleStylePreset(Guid.NewGuid(), "Original", new() { Margins = new(13, 41, 27) });
+        var model = new StyleSettingsViewModel();
+        model.UpdateStyles([original]);
+        var saved = 0;
+        model.UpsertRequested += (_, _) => saved++;
+        model.Margins.Left.RawText = "7e-";
+        model.Margins.Right.RawText = "-";
+
+        Assert.True(model.Margins.RestoreField("MarginLeftInput"));
+        model.SaveCommand.Execute(null);
+
+        Assert.Equal("13", model.Margins.Left.RawText);
+        Assert.Equal("-", model.Margins.Right.RawText);
+        Assert.Equal("MarginRightInput", model.InvalidFieldKey);
+        Assert.Equal(original.Style.Margins, model.Draft!.Style.Margins);
+        Assert.Equal(0, saved);
+        Assert.True(model.IsDirty);
+    }
+
+    private static NumericValueDraft GetMargin(StyleSettingsViewModel model, string fieldKey)
+    {
+        return fieldKey switch
+        {
+            "MarginLeftInput" => model.Margins.Left,
+            "MarginRightInput" => model.Margins.Right,
+            "MarginVerticalInput" => model.Margins.Vertical,
+            _ => throw new ArgumentOutOfRangeException(nameof(fieldKey))
+        };
+    }
+
     [Fact]
     public void TypographyChangesPreserveHdrAndPortableFontAndExplicitFontConfirmationReplacesFont()
     {
@@ -177,7 +253,7 @@ public sealed class SettingsViewModelTests
         var model = new StyleSettingsViewModel();
         model.UpdateStyles([original]);
         model.Bold = true;
-        model.Margin = 88;
+        model.Margins.Vertical.RawText = "88";
         model.RefreshLanguage();
 
         Assert.Same(font, model.Draft!.Font);

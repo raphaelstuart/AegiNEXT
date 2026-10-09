@@ -38,13 +38,9 @@ public sealed class AssAlignmentCompatibilityTests
         Assert.Contains("\\an" + value, written.Text, StringComparison.Ordinal);
         var roundTripped = Assert.Single(AssSubtitleFormat.Parse(written.Text, document.Width, document.Height).Lines);
         Assert.Equal(imported.Style.Alignment, roundTripped.Style.Alignment);
-        var importedPosition = imported.Style.Position!;
-        var roundTrippedPosition = roundTripped.Style.Position!;
-        Assert.Equal(importedPosition.Pivot, roundTrippedPosition.Pivot);
-        Assert.Equal(new ScenePoint(importedPosition.Anchor.X * document.Width + importedPosition.Offset.X,
-                importedPosition.Anchor.Y * document.Height + importedPosition.Offset.Y),
-            new ScenePoint(roundTrippedPosition.Anchor.X * document.Width + roundTrippedPosition.Offset.X,
-                roundTrippedPosition.Anchor.Y * document.Height + roundTrippedPosition.Offset.Y));
+        Assert.Null(imported.Style.Position);
+        Assert.Null(roundTripped.Style.Position);
+        Assert.Equal(imported.Style.Margins, roundTripped.Style.Margins);
         Assert.Equal(imported.Text, roundTripped.Text);
         Assert.Null(roundTripped.Style.TextAlign);
     }

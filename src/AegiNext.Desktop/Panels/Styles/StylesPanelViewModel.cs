@@ -35,6 +35,8 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private int alignment = (int)TextAlignment.BOTTOM_CENTER;
     private bool alignmentSelectionCommitted;
     private bool hasCue;
+    private int canvasWidth = 1920;
+    private int canvasHeight = 1080;
     private StylePresetListItem[] presets = [];
     private StylePresetListItem? selectedPreset;
     private bool canApplyPreset;
@@ -50,6 +52,13 @@ internal sealed class StylesPanelViewModel : ObservableObject
         shadowBlur.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(ShadowBlurText), nameof(ShadowBlur));
         lineHeight.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(LineHeightText), nameof(LineHeight));
         Position.Changed += (_, _) => OnPropertyChanged(nameof(Position));
+        Margins.Changed += (_, _) =>
+        {
+            if (!loadingStyleNumbers)
+            {
+                OnPropertyChanged(nameof(Margins));
+            }
+        };
         ApplyStyleCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.ApplySelectedStyleAsync()));
         ManageStylesCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.RequestSettingsAsync(SettingsPage.STYLES)));
         RestoreAutomaticPositionCommand = new AsyncRelayCommand(RestoreAutomaticPositionAsync);
@@ -155,6 +164,7 @@ internal sealed class StylesPanelViewModel : ObservableObject
             LoadStyleNumberDraft(shadowX, style.ShadowOffset.X, culture);
             LoadStyleNumberDraft(shadowY, style.ShadowOffset.Y, culture);
             LoadStyleNumberDraft(shadowBlur, style.ShadowBlur, culture);
+            Margins.Load(style.Margins, culture);
         }
         finally
         {
@@ -168,6 +178,20 @@ internal sealed class StylesPanelViewModel : ObservableObject
 
     internal void LoadStyleNumber(string fieldKey, double number, CultureInfo culture)
     {
+        if (fieldKey is "MarginLeftInput" or "MarginRightInput" or "MarginVerticalInput")
+        {
+            loadingStyleNumbers = true;
+            try
+            {
+                Margins.LoadField(fieldKey, number, culture);
+            }
+            finally
+            {
+                loadingStyleNumbers = false;
+            }
+            OnPropertyChanged(nameof(Margins));
+            return;
+        }
         var (draft, textProperty, valueProperty) = fieldKey switch
         {
             "LineHeightInput" => (lineHeight, nameof(LineHeightText), nameof(LineHeight)),
@@ -306,6 +330,23 @@ internal sealed class StylesPanelViewModel : ObservableObject
 
     public ICommand ApplyStyleCommand { get; }
     public SubtitlePositionDraft Position { get; } = new();
+    public SubtitleMarginsDraft Margins { get; } = new();
+    public int CanvasWidth
+    {
+        get => canvasWidth;
+        private set => SetProperty(ref canvasWidth, value);
+    }
+    public int CanvasHeight
+    {
+        get => canvasHeight;
+        private set => SetProperty(ref canvasHeight, value);
+    }
+
+    internal void LoadCanvasSize(int width, int height)
+    {
+        CanvasWidth = width;
+        CanvasHeight = height;
+    }
 
     public ICommand ManageStylesCommand { get; }
 

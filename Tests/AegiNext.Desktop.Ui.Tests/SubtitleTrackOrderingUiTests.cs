@@ -121,7 +121,7 @@ public sealed class SubtitleTrackOrderingUiTests
             Subtitles = document.Subtitles.Select(line => line with
             {
                 Text = line.Id == first.Id ? "First clip" : line.Text,
-                Style = new() { FontFamily = "sans-serif", FontSize = 22, Margin = 8 }
+                Style = new() { FontFamily = "sans-serif", FontSize = 22, Margins = new(8, 8, 8) }
             }).ToImmutableArray()
         });
         context.Session.Editor.SetKeyframe(first.Id, AnimationProperty.OPACITY, new(MediaTime.Zero, 0.25));

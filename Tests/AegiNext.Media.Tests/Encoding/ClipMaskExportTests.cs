@@ -172,7 +172,7 @@ public sealed class ClipMaskExportTests
             Text = "MMMMMMMM", Style = new()
             {
                 FontAssetId = font.Id, FontFamily = "Noto Sans", FontSize = 18, Alignment = TextAlignment.TOP_LEFT,
-                Margin = 4, Fill = SceneColor.White, Stroke = new(0.4, 0.4, 0.4), StrokeWidth = 1,
+                Margins = new(4, 4, 4), Fill = SceneColor.White, Stroke = new(0.4, 0.4, 0.4), StrokeWidth = 1,
                 ShadowColor = SceneColor.Black, ShadowOffset = new(3, 3), ShadowBlur = 1
             }
         };

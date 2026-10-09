@@ -352,7 +352,9 @@ public static class ProjectValidator
         }
         Number(style.FontSize, 0.01, 4096, "字号");
         Number(style.StrokeWidth, 0, 4096, "描边");
-        Number(style.Margin, 0, 32768, "字幕边距");
+        Number(style.Margins.Left, 0, 32768, "字幕左边距");
+        Number(style.Margins.Right, 0, 32768, "字幕右边距");
+        Number(style.Margins.Vertical, 0, 32768, "字幕垂直边距");
         Number(style.LineHeight, 0.1, 10, "行高");
         Number(style.ShadowBlur, 0, 512, "阴影模糊");
         if (style.Position is { } position)

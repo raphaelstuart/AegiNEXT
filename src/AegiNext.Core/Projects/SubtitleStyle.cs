@@ -21,7 +21,7 @@ public sealed record SubtitleStyle
     /// <summary>保留旧工程的独立文字对齐；新编辑通过 Alignment 统一设置对齐。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SubtitleTextAlignment? TextAlign { get; init; }
-    public double Margin { get; init; } = 40;
+    public SubtitleMargins Margins { get; init; } = new();
     public SubtitlePosition? Position { get; init; }
     public double LineHeight { get; init; } = 1.2;
     public ScenePoint ShadowOffset { get; init; } = new(2, 2);

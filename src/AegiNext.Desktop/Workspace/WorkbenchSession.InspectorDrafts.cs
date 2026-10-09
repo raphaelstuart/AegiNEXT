@@ -37,6 +37,11 @@ internal sealed partial class WorkbenchSession
                 }
 
                 var fontChanged = family != line.Style.FontFamily || selection.Variant != line.Style.FontVariant || vm.FontSelectionCommitted;
+                if (vm.Margins.Validate() is { } marginKey)
+                {
+                    ViewModel.InvalidFieldKey = marginKey;
+                    throw new InvalidDataException(Localization.Get("Workbench.Margins"));
+                }
                 if (vm.Position.Validate() is { } positionKey)
                 {
                     ViewModel.InvalidFieldKey = positionKey;
@@ -49,6 +54,7 @@ internal sealed partial class WorkbenchSession
                     FontAssetId = fontChanged ? null : line.Style.FontAssetId,
                     FontSize = fontSize,
                     LineHeight = lineHeight,
+                    Margins = vm.Margins.CreateMargins(),
                     StrokeWidth = strokeWidth,
                     Fill = fill,
                     Stroke = stroke,

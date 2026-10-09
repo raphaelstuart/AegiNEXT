@@ -1,4 +1,5 @@
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Workspace;
 using Avalonia;
@@ -37,7 +38,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         {
             viewModel.CommitFont(e.Selection);
         };
-        var bold = this.FindControl<CheckBox>("BoldCheck")!;
+        var bold = this.FindControl<ToolbarToggleButton>("BoldCheck")!;
         bold.IsCheckedChanged += (_, _) =>
         {
             if (!session.IsUpdating)
@@ -45,7 +46,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
                 viewModel.CommitBold(bold.IsChecked == true);
             }
         };
-        var italic = this.FindControl<CheckBox>("ItalicCheck")!;
+        var italic = this.FindControl<ToolbarToggleButton>("ItalicCheck")!;
         italic.IsCheckedChanged += (_, _) =>
         {
             if (!session.IsUpdating)
@@ -168,6 +169,10 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     }
     public void FocusInvalidField(string? fieldKey)
     {
+        if (fieldKey is not null && this.FindControl<SubtitleMarginsEditor>("MarginsEditor")!.FocusInvalidField(fieldKey))
+        {
+            return;
+        }
         if (fieldKey is not null && this.FindControl<VectorDraftInput>("ShadowOffsetInput")!.FocusField(fieldKey))
         {
             return;
