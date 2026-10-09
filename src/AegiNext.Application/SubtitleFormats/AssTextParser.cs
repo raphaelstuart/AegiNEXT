@@ -7,7 +7,8 @@ using AegiNext.Core.Timing;
 namespace AegiNext.Application.SubtitleFormats;
 
 internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<string, AssStyleDefinition> styles,
-    SceneColor secondary, double scaleX = 1, double scaleY = 1, bool projectSource = false, int canvasWidth = 1920, int canvasHeight = 1080)
+    SceneColor secondary, double scaleX = 1, double scaleY = 1, bool projectSource = false, int canvasWidth = 1920, int canvasHeight = 1080,
+    int wrapStyle = 0, double? blurScaleX = null, double? blurScaleY = null, bool blurUsesPlayRes = true)
 {
     private readonly AssMaskParser maskParser = new(original.End - original.Start, scaleX, scaleY, canvasWidth, canvasHeight);
     private readonly AssGeometryParser geometryParser = new(original, styles, scaleX, scaleY);
@@ -20,12 +21,20 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private readonly ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
     private SubtitleStyle current = original.Style;
     private SubtitleStyle lineStyle = original.Style;
+    private SubtitleStyle resetStyle = original.Style;
+    private readonly HashSet<string> typographyDiagnostics = [];
+    private readonly int defaultWrapStyle = wrapStyle;
+    private int currentWrapStyle = wrapStyle;
+    private double edgeBlur;
+    private double? instantEdgeBlur;
     private readonly SceneColor secondaryColor = secondary;
+    private SceneColor resetSecondaryColor = secondary;
     private SceneColor? inactive;
     private SceneColor? segmentInactive;
     private SceneColor? segmentActive;
     private bool segmentInactiveVaries;
     private bool segmentActiveVaries;
+    private bool segmentVisualVaries;
     private KaraokeVisualStyleOverride? segmentActiveVisual;
     private KaraokeVisualStyleOverride? instantVisual;
     private MediaTime? instantVisualTime;
@@ -65,7 +74,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 count = 2;
                 content = source[index + 1] switch
                 {
-                    'N' => "\n", 'n' => " ", 'h' => "\u00a0", '{' => "{", '}' => "}",
+                    'N' => "\n", 'n' => !projectSource && currentWrapStyle == 2 ? "\n" : " ",
+                    'h' => "\u00a0", '{' => "{", '}' => "}",
                     _ => source.Substring(index, 2)
                 };
                 if (source[index + 1] is '{' or '}')
@@ -97,13 +107,20 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                             Report("Ass.KaraokeActiveRuns", "同一演唱片段包含多个高亮颜色，采用该片段首个高亮颜色。", index, count);
                             segmentActiveVaries = true;
                         }
+                        if (!segmentVisualVaries && instantVisualTime == karaokeTime && kind != KaraokeHighlightKind.SWEEP &&
+                            segmentActiveVisual != ResolveInstantVisual())
+                        {
+                            Report("Ass.KaraokeActiveRuns", "同一演唱片段包含多个激活外观，采用该片段首个激活外观。", index, count);
+                            segmentVisualVaries = true;
+                        }
                     }
                 }
                 else if (instantVisualTime is not null)
                 {
-                    Report("Ass.UnsupportedTag", "ASS 瞬时描边和阴影变换需要逐字片段时间，普通文字无法保存此动画。", instantSourceStart, instantSourceLength);
+                    Report("Ass.UnsupportedTag", "ASS 瞬时边缘和阴影变换需要逐字片段时间，普通文字无法保存此动画。", instantSourceStart, instantSourceLength);
                     instantVisualTime = null;
                     instantVisual = null;
+                    instantEdgeBlur = null;
                 }
                 text.Append(content);
                 AppendStyle(offset, content.Length);
@@ -112,6 +129,14 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             index += count;
         }
         FlushKaraoke();
+        if (!projectSource)
+        {
+            lineStyle = lineStyle with { WrapMode = currentWrapStyle == 2 ? SubtitleWrapMode.NO_WRAP : SubtitleWrapMode.NATURAL };
+            if (currentWrapStyle is 0 or 3)
+            {
+                Report("Ass.WrapModeApproximation", "ASS 智能均衡换行已转换为原生自然换行，行宽分配可能不同。", 0, 0);
+            }
+        }
         var line = original with
         {
             Text = text.ToString(), Style = lineStyle, InlineSpans = spans.ToImmutable(),
@@ -192,7 +217,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
 
     private void ApplyTag(string name, string value, int sourceStart, int sourceLength)
     {
-        var baseline = original.Style;
+        var baseline = projectSource ? original.Style : resetStyle;
         switch (name)
         {
             case "fn":
@@ -207,6 +232,17 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 var fontSize = value.Length == 0 ? baseline.FontSize : value[0] is '+' or '-'
                     ? current.FontSize * (1 + AssFormatValues.Number(value) / 10) : AssFormatValues.Number(value) * scaleY;
                 current = current with { FontSize = fontSize <= 0 ? baseline.FontSize : fontSize };
+                break;
+            case "fsp":
+                var spacing = value.Length == 0 ? resetStyle.LetterSpacing : AssFormatValues.Number(value) * scaleX;
+                if (!double.IsFinite(spacing) || spacing is < -4096 or > 4096)
+                {
+                    Report("Ass.LetterSpacingRange", "ASS 字距重采样后超出原生范围，已忽略该字距标签并保留其他样式。", sourceStart, sourceLength);
+                }
+                else
+                {
+                    current = current with { LetterSpacing = spacing };
+                }
                 break;
             case "b":
                 var weight = value.Length == 0 ? (baseline.Bold ? 1 : 0) : AssFormatValues.Integer(value);
@@ -225,19 +261,31 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             case "s": current = current with { Strikethrough = value.Length == 0 ? baseline.Strikethrough : AssFormatValues.Integer(value) != 0 }; break;
             case "c":
             case "1c": current = current with { Fill = value.Length == 0 ? baseline.Fill : AssFormatValues.Color(value, current.Fill) }; break;
-            case "2c": inactive = value.Length == 0 ? secondaryColor : AssFormatValues.Color(value, inactive ?? secondaryColor); break;
+            case "2c": inactive = value.Length == 0 ? (projectSource ? secondaryColor : resetSecondaryColor) : AssFormatValues.Color(value, inactive ?? secondaryColor); break;
             case "3c": current = current with { Stroke = value.Length == 0 ? baseline.Stroke : AssFormatValues.Color(value, current.Stroke) }; break;
             case "4c": current = current with { ShadowColor = value.Length == 0 ? baseline.ShadowColor : AssFormatValues.Color(value, current.ShadowColor) }; break;
             case "alpha":
                 var alpha = value.Length == 0 ? baseline.Fill.Alpha : AssFormatValues.Alpha(value);
-                current = current with { Fill = current.Fill with { Alpha = alpha }, Stroke = current.Stroke with { Alpha = alpha }, ShadowColor = current.ShadowColor with { Alpha = alpha } };
-                inactive = (inactive ?? secondaryColor) with { Alpha = alpha };
+                current = current with
+                {
+                    Fill = current.Fill with { Alpha = alpha },
+                    Stroke = current.Stroke with { Alpha = value.Length == 0 && !projectSource ? baseline.Stroke.Alpha : alpha },
+                    ShadowColor = current.ShadowColor with { Alpha = value.Length == 0 && !projectSource ? baseline.ShadowColor.Alpha : alpha }
+                };
+                inactive = (inactive ?? secondaryColor) with { Alpha = value.Length == 0 && !projectSource ? resetSecondaryColor.Alpha : alpha };
                 break;
             case "1a": current = current with { Fill = current.Fill with { Alpha = value.Length == 0 ? baseline.Fill.Alpha : AssFormatValues.Alpha(value) } }; break;
-            case "2a": inactive = (inactive ?? secondaryColor) with { Alpha = value.Length == 0 ? secondaryColor.Alpha : AssFormatValues.Alpha(value) }; break;
+            case "2a": inactive = (inactive ?? secondaryColor) with { Alpha = value.Length == 0 ? (projectSource ? secondaryColor : resetSecondaryColor).Alpha : AssFormatValues.Alpha(value) }; break;
             case "3a": current = current with { Stroke = current.Stroke with { Alpha = value.Length == 0 ? baseline.Stroke.Alpha : AssFormatValues.Alpha(value) } }; break;
             case "4a": current = current with { ShadowColor = current.ShadowColor with { Alpha = value.Length == 0 ? baseline.ShadowColor.Alpha : AssFormatValues.Alpha(value) } }; break;
-            case "bord": current = current with { StrokeWidth = value.Length == 0 ? baseline.StrokeWidth : AssFormatValues.Number(value) * scaleY }; break;
+            case "bord":
+                current = current with { StrokeWidth = value.Length == 0 ? (projectSource ? baseline : resetStyle).StrokeWidth : AssFormatValues.Number(value) * scaleY };
+                if (!projectSource && instantVisual is not null)
+                {
+                    instantVisual = instantVisual with { StrokeWidth = null };
+                    DiscardEmptyInstantVisual();
+                }
+                break;
             case "shad":
                 var shadow = value.Length == 0 ? baseline.ShadowOffset.Y : AssFormatValues.Number(value) * scaleY;
                 current = current with { ShadowOffset = new(shadow * scaleX / scaleY, shadow) }; break;
@@ -246,7 +294,12 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             case "blur":
                 if (!projectSource)
                 {
-                    ReportExternalBlur(value, sourceStart, sourceLength);
+                    if (TryExternalBlur(value, sourceStart, sourceLength, out var blur))
+                    {
+                        edgeBlur = blur;
+                        instantEdgeBlur = null;
+                        DiscardEmptyInstantVisual();
+                    }
                     break;
                 }
                 current = current with { ShadowBlur = value.Length == 0 ? baseline.ShadowBlur : AssFormatValues.Number(value) * scaleY };
@@ -256,10 +309,14 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 }
                 break;
             case "r":
-                current = value.Length == 0 ? baseline : styles.TryGetValue(value, out var style) ? style.Style : baseline;
+                current = value.Length == 0 ? original.Style : styles.TryGetValue(value, out var style) ? style.Style : original.Style;
+                resetStyle = current;
                 inactive = value.Length == 0 ? secondaryColor : styles.TryGetValue(value, out var reset) ? reset.Secondary : secondaryColor;
+                resetSecondaryColor = inactive.Value;
                 instantVisual = null;
                 instantVisualTime = null;
+                instantEdgeBlur = null;
+                edgeBlur = 0;
                 if (!projectSource)
                 {
                     geometryParser.Reset(value);
@@ -268,6 +325,20 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 {
                     Report("Ass.UnknownStyle", $"未找到重置样式 {value}，使用当前行样式。", sourceStart, sourceLength);
                 }
+                break;
+            case "q":
+                if (projectSource)
+                {
+                    Report("Ass.UnsupportedTag", "项目 ASS 代码不支持 q，请通过原生换行模式调整整行排版。", sourceStart, sourceLength);
+                    break;
+                }
+                var wrapping = value.Length == 0 ? defaultWrapStyle : AssFormatValues.Integer(value);
+                if (wrapping is < 0 or > 3)
+                {
+                    Report("Ass.WrapStyle", "ASS 换行模式须为 0 至 3，已恢复文件的 WrapStyle。", sourceStart, sourceLength);
+                    wrapping = defaultWrapStyle;
+                }
+                currentWrapStyle = wrapping;
                 break;
             case "an":
             case "a":
@@ -393,6 +464,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         segmentActive = null;
         segmentInactiveVaries = false;
         segmentActiveVaries = false;
+        segmentVisualVaries = false;
         segmentActiveVisual = null;
     }
 
@@ -404,10 +476,15 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         if (instantVisualTime != karaokeTime || kind == KaraokeHighlightKind.SWEEP)
         {
-            Report("Ass.UnsupportedTag", "ASS 瞬时描边和阴影变换必须与逐字或轮廓逐字片段起点对齐。", instantSourceStart, instantSourceLength);
+            Report("Ass.UnsupportedTag", "ASS 瞬时边缘和阴影变换必须与逐字或轮廓逐字片段起点对齐。", instantSourceStart, instantSourceLength);
             return null;
         }
-        return instantVisual;
+        if (projectSource)
+        {
+            return instantVisual;
+        }
+        var resolved = ResolveExternalBlur(instantVisual!.ApplyTo(current), instantEdgeBlur ?? edgeBlur);
+        return instantVisual with { FillBlur = resolved.FillBlur, StrokeBlur = resolved.StrokeBlur, ShadowBlur = resolved.ShadowBlur };
     }
 
     private void ParseInstantTransform(string value, int sourceStart, int sourceLength)
@@ -421,17 +498,21 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             !long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var end) || start <= 0 || start != end ||
             !parts[2].TrimStart().StartsWith('\\') || instantVisual is not null)
         {
-            Report("Ass.UnsupportedTag", "ASS 仅支持与逐字起点对齐的单个正时间瞬时描边和阴影变换。", sourceStart, sourceLength);
+            Report("Ass.UnsupportedTag", "ASS 仅支持与逐字起点对齐的单个正时间瞬时边缘和阴影变换。", sourceStart, sourceLength);
             return;
         }
         var visual = new KaraokeVisualStyleOverride();
+        double? targetBlur = null;
         foreach (var token in parts[2].Split('\\', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var name = knownTags.FirstOrDefault(tag => token.StartsWith(tag, StringComparison.Ordinal));
             var argument = name is null ? string.Empty : token[name.Length..].Trim();
             if (name == "blur" && !projectSource)
             {
-                ReportExternalBlur(argument, sourceStart, sourceLength);
+                if (TryExternalBlur(argument, sourceStart, sourceLength, out var blur))
+                {
+                    targetBlur = blur;
+                }
                 continue;
             }
             var target = visual.ApplyTo(current);
@@ -450,31 +531,81 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             };
             if (name is not ("3c" or "3a" or "4c" or "4a" or "bord" or "shad" or "xshad" or "yshad" or "blur") || argument.Length == 0)
             {
-                Report("Ass.UnsupportedTag", "ASS 瞬时变换只能包含可保存的描边和阴影标签。", sourceStart, sourceLength);
+                Report("Ass.UnsupportedTag", "ASS 瞬时变换只能包含可保存的边缘和阴影标签。", sourceStart, sourceLength);
                 return;
             }
         }
-        if (!visual.HasOverrides)
+        if (!visual.HasOverrides && !targetBlur.HasValue)
         {
             return;
         }
         instantVisual = visual;
+        instantEdgeBlur = targetBlur;
         instantVisualTime = new(start, 1000);
         instantSourceStart = sourceStart;
         instantSourceLength = sourceLength;
     }
 
-    private void ReportExternalBlur(string value, int sourceStart, int sourceLength)
+    private bool TryExternalBlur(string value, int sourceStart, int sourceLength, out double blur)
     {
-        if (value.Length > 0 && AssFormatValues.Number(value) != 0)
+        var amount = value.Length == 0 ? 0 : AssFormatValues.Number(value);
+        var horizontalScale = blurScaleX ?? scaleX;
+        var verticalScale = blurScaleY ?? scaleY;
+        blur = amount * AssBlurConversion.SigmaPerUnit * Math.Sqrt(horizontalScale * verticalScale);
+        if (!double.IsFinite(blur) || amount < 0)
         {
-            Report("Ass.ShadowBlur", "ASS 的文字或描边边缘模糊与项目阴影模糊含义不同，边缘模糊未导入。", sourceStart, sourceLength);
+            Report("Ass.BlurRange", "ASS 边缘模糊换算后超出原生范围，已忽略该模糊标签并保留其他样式。", sourceStart, sourceLength);
+            return false;
+        }
+        return true;
+    }
+
+    private SubtitleStyle ResolveExternalBlur(SubtitleStyle style, double blur)
+    {
+        if (blur > 0)
+        {
+            if (blurUsesPlayRes)
+            {
+                ReportTypographyOnce("Ass.BlurLayoutResolution", "ASS 未提供完整有效的 LayoutRes，边缘模糊按 PlayRes 重采样；原视频分辨率不同时外观可能不同。");
+            }
+            if (!(blurScaleX ?? scaleX).Equals(blurScaleY ?? scaleY))
+            {
+                ReportTypographyOnce("Ass.BlurResampling", "ASS 模糊的横纵重采样比例不同，已按几何平均比例近似转换为原生圆形模糊。");
+            }
+            ReportTypographyOnce("Ass.BlurAppearance", "ASS 边缘模糊已转换为原生分通道高斯模糊；栅格化、边缘合成及带描边阴影的轮廓可能不同。");
+        }
+        return style with
+        {
+            FillBlur = style.StrokeWidth > 0 ? 0 : blur,
+            StrokeBlur = style.StrokeWidth > 0 ? blur : 0,
+            ShadowBlur = blur
+        };
+    }
+
+    private void DiscardEmptyInstantVisual()
+    {
+        if (instantVisual is { HasOverrides: false } && !instantEdgeBlur.HasValue)
+        {
+            instantVisual = null;
+            instantVisualTime = null;
+        }
+    }
+
+    private void ReportTypographyOnce(string code, string message)
+    {
+        if (typographyDiagnostics.Add(code))
+        {
+            Report(code, message, 0, 0);
         }
     }
 
     private void AppendStyle(int start, int length)
     {
         var visibleStyle = segmentDuration > MediaTime.Zero ? current with { Fill = inactive ?? secondaryColor } : current;
+        if (!projectSource)
+        {
+            visibleStyle = ResolveExternalBlur(visibleStyle, edgeBlur);
+        }
         if (visibleStyle == original.Style)
         {
             return;

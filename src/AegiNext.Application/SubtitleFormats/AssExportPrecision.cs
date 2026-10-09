@@ -8,13 +8,19 @@ internal static class AssExportPrecision
 {
     private const double COLOR_TOLERANCE = 1e-12;
 
-    internal static void AddStyle(SubtitleStyle style, Guid id, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
+    internal static void AddStyle(SubtitleStyle style, Guid id, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics,
+        bool includeBlur = true)
     {
         AddColor(style.Fill, id, diagnostics);
         AddColor(style.Stroke, id, diagnostics);
         AddColor(style.ShadowColor, id, diagnostics);
-        AddNumbers(id, diagnostics, style.FontSize, style.StrokeWidth, style.ShadowOffset.X, style.ShadowOffset.Y,
+        AddNumbers(id, diagnostics, style.FontSize, style.StrokeWidth, style.LetterSpacing,
+            style.ShadowOffset.X, style.ShadowOffset.Y,
             style.Margins.Left, style.Margins.Right, style.Margins.Vertical);
+        if (includeBlur)
+        {
+            AddNumbers(id, diagnostics, AssBlurConversion.Value(style, false));
+        }
     }
 
     internal static void AddNumbers(Guid id, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, params double[] values)

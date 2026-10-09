@@ -113,6 +113,33 @@ public sealed class SubtitleTypographyEditingTests
     }
 
     [Fact]
+    public void AdvancedAssLetterSpacingEditsPreserveIndependentBlurAndWrapping()
+    {
+        var line = new SubtitleLine
+        {
+            Text = "ab", End = new(4),
+            Style = new()
+            {
+                LetterSpacing = 0.125, FillBlur = 2.123456789123, StrokeBlur = 3.123456789123,
+                ShadowBlur = 4.123456789123, WrapMode = SubtitleWrapMode.NO_WRAP
+            }
+        };
+        var projection = AssTextProjection.Create(line);
+        Assert.Contains("\\fsp0.125", projection.Source, StringComparison.Ordinal);
+
+        var changed = AssTextProjection.Apply(line,
+            projection.Source.Replace("\\fsp0.125", "\\fsp-3.25", StringComparison.Ordinal)).Line;
+
+        Assert.Equal(line.Style, changed.Style);
+        var style = Assert.Single(changed.InlineSpans).Style.ApplyTo(changed.Style);
+        Assert.Equal(-3.25, style.LetterSpacing);
+        Assert.Equal(line.Style.FillBlur, style.FillBlur);
+        Assert.Equal(line.Style.StrokeBlur, style.StrokeBlur);
+        Assert.Equal(line.Style.ShadowBlur, style.ShadowBlur);
+        Assert.Equal(line.Style.WrapMode, style.WrapMode);
+    }
+
+    [Fact]
     public void ExportingIndependentBlurReportsLossWithoutChangingNativeAppearance()
     {
         var line = new SubtitleLine
@@ -127,7 +154,7 @@ public sealed class SubtitleTypographyEditingTests
 
         var written = AssSubtitleFormat.Write(document);
 
-        Assert.NotEmpty(written.Diagnostics.Where(diagnostic => diagnostic.SubtitleId == line.Id));
+        Assert.Contains(written.Diagnostics, diagnostic => diagnostic.SubtitleId == line.Id && diagnostic.Code == "Ass.FillBlur");
         Assert.Contains(SubtitleFormatLossAnalysis.ForSrt(document), diagnostic => diagnostic.Code == "Srt.Appearance");
         Assert.Same(line, Assert.Single(document.Subtitles));
         Assert.Equal(4, line.Style.FillBlur);

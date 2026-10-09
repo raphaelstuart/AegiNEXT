@@ -8,7 +8,7 @@ public sealed class AssProjectionCompatibilityTests
     [Fact]
     public void TextOnlyEditKeepsNativeDefaultBlurWithoutReportingAnExchangeLoss()
     {
-        var line = new SubtitleLine { Text = "Original" };
+        var line = new SubtitleLine { Text = "Original", Style = new() { FillBlur = 1.25, StrokeBlur = 2.5 } };
         Assert.Equal(2, line.Style.ShadowBlur);
         var projection = AssTextProjection.Create(line);
         var edited = AssTextProjection.Apply(line, projection.Source.Replace("Original", "Changed", StringComparison.Ordinal));
@@ -21,12 +21,15 @@ public sealed class AssProjectionCompatibilityTests
     [Fact]
     public void ChangedBlurTagStillReportsTheActualCompatibilityLossAtItsSourceSpan()
     {
-        var line = new SubtitleLine { Text = "Original" };
+        var line = new SubtitleLine { Text = "Original", Style = new() { FillBlur = 1.25, StrokeBlur = 2.5 } };
         var source = AssTextProjection.Create(line).Source.Replace("\\blur2", "\\blur3", StringComparison.Ordinal);
         var edited = AssTextProjection.Apply(line, source);
         var loss = Assert.Single(edited.Diagnostics.Where(diagnostic => diagnostic.Code == "Ass.ShadowBlur"));
         Assert.Equal("\\blur3", source.Substring(loss.SourceStart, loss.SourceLength));
         Assert.Equal(3, Assert.Single(edited.Line.InlineSpans).Style.ShadowBlur);
+        var style = Assert.Single(edited.Line.InlineSpans).Style.ApplyTo(edited.Line.Style);
+        Assert.Equal(1.25, style.FillBlur);
+        Assert.Equal(2.5, style.StrokeBlur);
         Assert.Equal(2, line.Style.ShadowBlur);
     }
 

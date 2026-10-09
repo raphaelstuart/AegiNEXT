@@ -70,6 +70,6 @@ internal static class AssStyleTable
             throw new InvalidDataException("ASS 样式字体名不能包含逗号。");
         }
         return string.Create(CultureInfo.InvariantCulture,
-            $"{style.FontFamily},{AssFormatValues.Number(style.FontSize)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Stroke)},{AssFormatValues.Color(style.ShadowColor)},{(style.Bold ? -1 : 0)},{(style.Italic ? -1 : 0)},{(style.Underline ? -1 : 0)},{(style.Strikethrough ? -1 : 0)},100,100,0,0,1,{AssFormatValues.Number(style.StrokeWidth)},{AssFormatValues.Number(style.ShadowOffset.Y)},{AssFormatValues.Alignment(style.Alignment)},{AssFormatValues.Number(style.Margins.Left)},{AssFormatValues.Number(style.Margins.Right)},{AssFormatValues.Number(style.Margins.Vertical)},1");
+            $"{style.FontFamily},{AssFormatValues.Number(style.FontSize)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Stroke)},{AssFormatValues.Color(style.ShadowColor)},{(style.Bold ? -1 : 0)},{(style.Italic ? -1 : 0)},{(style.Underline ? -1 : 0)},{(style.Strikethrough ? -1 : 0)},100,100,{AssFormatValues.Number(style.LetterSpacing)},0,1,{AssFormatValues.Number(style.StrokeWidth)},{AssFormatValues.Number(style.ShadowOffset.Y)},{AssFormatValues.Alignment(style.Alignment)},{AssFormatValues.Number(style.Margins.Left)},{AssFormatValues.Number(style.Margins.Right)},{AssFormatValues.Number(style.Margins.Vertical)},1");
     }
 }

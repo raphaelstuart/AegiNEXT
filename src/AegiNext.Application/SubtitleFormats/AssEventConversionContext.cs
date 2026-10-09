@@ -21,6 +21,9 @@ internal sealed class AssEventConversionContext
     private readonly AssOpacityEnvelope? opacity;
     private readonly bool hasPlacement;
     private readonly bool convertedPath;
+    private readonly double? letterSpacing;
+    private readonly double? fillBlur;
+    private readonly double? strokeBlur;
 
     internal AssEventConversionContext(ProjectDocument document, ProjectLayer layer, SubtitleLine line,
         ISubtitlePlacementMeasurer? measurer, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
@@ -28,6 +31,9 @@ internal sealed class AssEventConversionContext
         this.layer = layer;
         this.line = line;
         this.diagnostics = diagnostics;
+        letterSpacing = Constant(AnimationProperty.LETTER_SPACING)?.Scalar;
+        fillBlur = Constant(AnimationProperty.FILL_BLUR)?.Scalar;
+        strokeBlur = Constant(AnimationProperty.STROKE_BLUR)?.Scalar;
         var opacityTrack = layer.Tracks.FirstOrDefault(track => track.Property == AnimationProperty.OPACITY);
         opacity = opacityTrack is null ? new(layer.Opacity, []) : AssOpacityConversion.FromTrack(opacityTrack);
         if (opacityTrack is not null)
@@ -92,7 +98,15 @@ internal sealed class AssEventConversionContext
         var needsMeasurement = line.Style.Position is null || stylePosition.Pivot != alignmentPivot;
         if (hasPlacement && needsMeasurement && measurer is not null)
         {
-            var metrics = measurer.Measure(document, line);
+            var measuredLine = letterSpacing is { } spacing ? line with
+            {
+                Style = line.Style with { LetterSpacing = spacing },
+                InlineSpans = line.InlineSpans.Select(span => span with
+                {
+                    Style = span.Style with { LetterSpacing = spacing }
+                }).ToImmutableArray()
+            } : line;
+            var metrics = measurer.Measure(document, measuredLine);
             basis = metrics.BasePosition;
             delta = new(metrics.BoundsOrigin.X + alignmentPivot.X * metrics.BoundsSize.X - metrics.Pivot.X - transform.Pivot.X,
                 metrics.BoundsOrigin.Y + alignmentPivot.Y * metrics.BoundsSize.Y - metrics.Pivot.Y - transform.Pivot.Y);
@@ -114,6 +128,16 @@ internal sealed class AssEventConversionContext
         "\\fscx" + AssFormatValues.Number(scale.X * 100) + "\\fscy" + AssFormatValues.Number(scale.Y * 100) +
         "\\frz" + AssFormatValues.Number(-rotation);
 
+    internal SubtitleStyle ApplyTypographyAnimations(SubtitleStyle style)
+    {
+        return style with
+        {
+            LetterSpacing = letterSpacing ?? style.LetterSpacing,
+            FillBlur = fillBlur ?? style.FillBlur,
+            StrokeBlur = strokeBlur ?? style.StrokeBlur
+        };
+    }
+
     internal SubtitleStyle ConvertStyle(SubtitleStyle style)
     {
         if (scale == new ScenePoint(1, 1) && rotation.Equals(0d))
@@ -124,10 +148,17 @@ internal sealed class AssEventConversionContext
         {
             Report("Ass.TransformAppearance", "非等比缩放的描边已按两轴缩放的几何平均值近似，文字缩放和阴影方向仍保留。");
         }
+        if (!scale.X.Equals(scale.Y) && (style.FillBlur > 0 || style.StrokeBlur > 0 || style.ShadowBlur > 0))
+        {
+            Report("Ass.TransformAppearance", "非等比缩放的模糊已按两轴缩放的几何平均值近似，水平与垂直扩散范围不能同时保持。");
+        }
         AssExportPrecision.AddNumbers(line.Id, diagnostics, -rotation);
         return style with
         {
             StrokeWidth = style.StrokeWidth * Math.Sqrt(scale.X * scale.Y),
+            FillBlur = style.FillBlur * Math.Sqrt(scale.X * scale.Y),
+            StrokeBlur = style.StrokeBlur * Math.Sqrt(scale.X * scale.Y),
+            ShadowBlur = style.ShadowBlur * Math.Sqrt(scale.X * scale.Y),
             ShadowOffset = TransformVector(style.ShadowOffset)
         };
     }

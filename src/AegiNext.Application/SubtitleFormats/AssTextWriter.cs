@@ -58,6 +58,7 @@ internal static class AssTextWriter
             }
             var span = spanIndex < line.InlineSpans.Length && line.InlineSpans[spanIndex].Utf16Start <= offset ? line.InlineSpans[spanIndex] : null;
             var style = span?.Style.ApplyTo(line.Style) ?? line.Style;
+            style = conversion?.ApplyTypographyAnimations(style) ?? style;
             var styleChanged = style != previous;
             while (clipIndex < line.Karaoke.Length && line.Karaoke[clipIndex].Utf16Start + line.Karaoke[clipIndex].Utf16Length <= offset)
             {
@@ -177,7 +178,7 @@ internal static class AssTextWriter
             throw new InvalidDataException("ASS 字体名包含标签控制字符。");
         }
         return string.Create(CultureInfo.InvariantCulture,
-            $"\\fn{style.FontFamily}\\fs{AssFormatValues.Number(style.FontSize)}\\b{(style.Bold ? 1 : 0)}\\i{(style.Italic ? 1 : 0)}\\u{(style.Underline ? 1 : 0)}\\s{(style.Strikethrough ? 1 : 0)}\\1c{AssFormatValues.Color(style.Fill, false)}\\1a{AssFormatValues.Alpha(style.Fill)}\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? "\\blur" + AssFormatValues.Number(style.ShadowBlur) : string.Empty);
+            $"\\fn{style.FontFamily}\\fs{AssFormatValues.Number(style.FontSize)}\\fsp{AssFormatValues.Number(style.LetterSpacing)}\\b{(style.Bold ? 1 : 0)}\\i{(style.Italic ? 1 : 0)}\\u{(style.Underline ? 1 : 0)}\\s{(style.Strikethrough ? 1 : 0)}\\1c{AssFormatValues.Color(style.Fill, false)}\\1a{AssFormatValues.Alpha(style.Fill)}\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? string.Empty : style.WrapMode == SubtitleWrapMode.NO_WRAP ? "\\q2" : "\\q1") + "\\blur" + AssFormatValues.Number(AssBlurConversion.Value(style, projection));
     }
 
     private static bool OutOfGamut(SceneColor color) => color.Red is < 0 or > 1 || color.Green is < 0 or > 1 || color.Blue is < 0 or > 1;
@@ -185,7 +186,7 @@ internal static class AssTextWriter
     private static string VisualTags(SubtitleStyle style, bool projection)
     {
         return string.Create(CultureInfo.InvariantCulture,
-            $"\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? "\\blur" + AssFormatValues.Number(style.ShadowBlur) : string.Empty);
+            $"\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + "\\blur" + AssFormatValues.Number(AssBlurConversion.Value(style, projection));
     }
 
     private static string ChangedVisualTags(SubtitleStyle inactive, SubtitleStyle active, bool projection)
@@ -211,9 +212,9 @@ internal static class AssTextWriter
         {
             tags.Append("\\yshad").Append(AssFormatValues.Number(active.ShadowOffset.Y));
         }
-        if (projection && !inactive.ShadowBlur.Equals(active.ShadowBlur))
+        if (!AssBlurConversion.Value(inactive, projection).Equals(AssBlurConversion.Value(active, projection)))
         {
-            tags.Append("\\blur").Append(AssFormatValues.Number(active.ShadowBlur));
+            tags.Append("\\blur").Append(AssFormatValues.Number(AssBlurConversion.Value(active, projection)));
         }
         return tags.ToString();
     }
@@ -222,7 +223,8 @@ internal static class AssTextWriter
     {
         var strokeVisible = inactive.StrokeWidth > 0 && inactive.Stroke.Alpha > 0 || active.StrokeWidth > 0 && active.Stroke.Alpha > 0;
         var shadowVisible = inactive.ShadowColor.Alpha > 0 || active.ShadowColor.Alpha > 0;
-        return strokeVisible && (inactive.Stroke != active.Stroke || !inactive.StrokeWidth.Equals(active.StrokeWidth)) ||
+        return strokeVisible && (inactive.Stroke != active.Stroke || !inactive.StrokeWidth.Equals(active.StrokeWidth) || !inactive.StrokeBlur.Equals(active.StrokeBlur)) ||
+            !inactive.FillBlur.Equals(active.FillBlur) ||
             shadowVisible && (inactive.ShadowColor != active.ShadowColor || inactive.ShadowOffset != active.ShadowOffset || !inactive.ShadowBlur.Equals(active.ShadowBlur));
     }
 
@@ -232,9 +234,17 @@ internal static class AssTextWriter
         if (!projection)
         {
             AssExportPrecision.AddStyle(style, id, diagnostics);
-            if (!style.LetterSpacing.Equals(0d) || style.FillBlur > 0 || style.StrokeBlur > 0 || style.WrapMode != SubtitleWrapMode.GRAPHEME)
+            if (style.WrapMode == SubtitleWrapMode.GRAPHEME)
             {
-                diagnostics.Add(new("Ass.NativeTypography", "当前转换尚不能表达项目字距、独立填充/描边模糊或换行策略，已省略这些属性。", SubtitleId: id));
+                diagnostics.Add(new("Ass.WrapMode", "ASS 不支持项目的逐字素自动换行，已改为自然换行，断行位置可能改变。", SubtitleId: id));
+            }
+            if (style.StrokeWidth > 0 && style.FillBlur > 0)
+            {
+                diagnostics.Add(new("Ass.FillBlur", "ASS 有描边时只模糊描边及阴影，无法保留项目的独立填充模糊，已省略填充模糊。", SubtitleId: id));
+            }
+            if (style.StrokeWidth <= 0 && style.StrokeBlur > 0)
+            {
+                diagnostics.Add(new("Ass.StrokeBlur", "ASS 无描边时的模糊作用于填充，无法保留项目的独立描边模糊数值。", SubtitleId: id));
             }
         }
         if (!projection && style.FontVariant is not null)
@@ -245,11 +255,14 @@ internal static class AssTextWriter
         {
             diagnostics.Add(new("Ass.ColorRange", "ASS 8 位 sRGB 颜色会限制线性 HDR 或负颜色。", SubtitleId: id));
         }
-        if (style.ShadowBlur > 0 && (style.ShadowColor.Alpha > 0 || projection && (style.Fill.Alpha > 0 || style.StrokeWidth > 0 && style.Stroke.Alpha > 0)))
+        if (projection && style.ShadowBlur > 0 && (style.ShadowColor.Alpha > 0 || style.Fill.Alpha > 0 ||
+                style.StrokeWidth > 0 && style.Stroke.Alpha > 0))
         {
-            diagnostics.Add(new("Ass.ShadowBlur", projection
-                ? "项目的阴影模糊与 ASS 的文字边缘模糊语义不同，保留数值会改变文字或描边边缘。"
-                : "ASS 无法单独表达项目的阴影模糊，导出时已省略阴影模糊。", SubtitleId: id));
+            diagnostics.Add(new("Ass.ShadowBlur", "项目的阴影模糊与 ASS 的文字边缘模糊语义不同，保留数值会改变文字或描边边缘。", SubtitleId: id));
+        }
+        if (!projection && style.ShadowColor.Alpha > 0 && !style.ShadowBlur.Equals(AssBlurConversion.Sigma(style)))
+        {
+            diagnostics.Add(new("Ass.ShadowBlur", "ASS 阴影模糊与当前填充或描边模糊共用数值，无法独立保留项目的阴影模糊，已采用文字通道的模糊。", SubtitleId: id));
         }
     }
 

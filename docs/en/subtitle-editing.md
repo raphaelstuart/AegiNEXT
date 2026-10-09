@@ -64,6 +64,10 @@ Export preserves representable transform parameters, linear motion, and opacity 
 
 Conversion review identifies each subtitle by sequence, time, text, and specific loss, with copyable details. Cancelling an import preserves the project; cancelling an export preserves an existing destination. No compatibility mode is required.
 
+`Spacing` / `\fsp` maps to native letter spacing, including inline overrides. `\blur` selects fill or stroke blur from the final stroke width and converts to native Gaussian blur units. ASS also couples shadow blur, so independent edge/shadow settings cannot all round-trip; the report identifies these differences. Complete `LayoutRes` controls blur resampling, otherwise PlayRes is used with a report. Advanced code retains its existing `\blur` meaning for shadow blur; use the dedicated UI for native fill/stroke blur, which ordinary text edits preserve.
+
+`\q2` maps to no wrap and `\q1` to natural wrapping. Balanced `\q0/3` imports as natural with a report. Each soft `\n` becomes a hard break while q2 is active, otherwise a space; the final q sets the whole line's wrapping mode. Native grapheme wrapping exports as q1 with a line-break warning. See [ASS interoperability](ass-compatibility.md) for the complete boundaries and priorities.
+
 ASS style `MarginL`, `MarginR`, and `MarginV` map independently to these three margins. Nonzero dialogue values override the corresponding style value; zero inherits it. Import scales Left/Right by the PlayRes width ratio and Vertical by the height ratio. Export writes the three values separately, keeping ordinary margin placement automatic and preserving explicit `\pos` placement. Export uses `WrapStyle: 1`; font metrics and wrapping can still differ from an ASS player.
 
 Exports include all subtitle tracks. SRT reports loss of rich styling, highlighting, masks, and animation. ASS uses track order for layers; project times remain exact until millisecond SRT or centisecond ASS output. Unrepresentable positive karaoke durations reject export. Files use UTF-8 and atomic writes.

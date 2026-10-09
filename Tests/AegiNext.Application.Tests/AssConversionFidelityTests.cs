@@ -27,18 +27,27 @@ public sealed class AssConversionFidelityTests
     }
 
     [Theory]
-    [InlineData(0, false)]
-    [InlineData(3, true)]
-    public void ExternalEdgeBlurDoesNotChangeNativeShadowBlur(int blur, bool warns)
+    [InlineData(0)]
+    [InlineData(3)]
+    public void ExternalEdgeBlurUsesNativeStrokeAndShadowSigma(int blur)
     {
         var imported = AssSubtitleFormat.Parse(Source("{\\blur" + blur + "\\fs48}text"));
         var line = Assert.Single(imported.Lines);
         var style = Assert.Single(line.InlineSpans).Style.ApplyTo(line.Style);
 
         Assert.Equal(0, line.Style.ShadowBlur);
-        Assert.Equal(0, style.ShadowBlur);
+        Assert.Equal(0, style.FillBlur);
+        Assert.Equal(blur * 2 / Math.Sqrt(Math.Log(256)), style.StrokeBlur, 10);
+        Assert.Equal(style.StrokeBlur, style.ShadowBlur);
         Assert.Equal(48, style.FontSize);
-        Assert.Equal(warns, imported.Diagnostics.Any(item => item.Code == "Ass.ShadowBlur"));
+        if (blur == 0)
+        {
+            Assert.Empty(imported.Diagnostics);
+        }
+        else
+        {
+            Assert.Equal("Ass.BlurAppearance", Assert.Single(imported.Diagnostics).Code);
+        }
         Assert.Equal("text", line.Text);
     }
 
@@ -59,24 +68,32 @@ public sealed class AssConversionFidelityTests
     }
 
     [Fact]
-    public void ExternalEdgeBlurDoesNotEnterKaraokeVisualStyles()
+    public void ExternalEdgeBlurEntersKaraokeStrokeAndShadowStylesWithoutChangingFill()
     {
         var imported = AssSubtitleFormat.Parse(Source("{\\k50}a{\\blur4\\k50}b"));
         var line = Assert.Single(imported.Lines);
 
         Assert.Equal("ab", line.Text);
         Assert.Equal(2, line.Karaoke.Length);
-        Assert.Contains(imported.Diagnostics, item => item.Code == "Ass.ShadowBlur");
-        Assert.All(line.InlineSpans, span => Assert.Equal(0, span.Style.ApplyTo(line.Style).ShadowBlur));
-        Assert.All(line.Karaoke, segment =>
+        Assert.Equal("Ass.BlurAppearance", Assert.Single(imported.Diagnostics).Code);
+        for (var index = 0; index < line.Karaoke.Length; index++)
         {
-            Assert.Equal(0, KaraokeVisualStyleResolver.ResolveInactive(line.Style, segment).ShadowBlur);
-            Assert.Equal(0, KaraokeVisualStyleResolver.ResolveActive(line.Style, line.KaraokeStyle, segment).ShadowBlur);
-        });
+            var segment = line.Karaoke[index];
+            var body = line.InlineSpans.FirstOrDefault(span => span.Utf16Start <= segment.Utf16Start &&
+                span.Utf16Start + span.Utf16Length > segment.Utf16Start)?.Style.ApplyTo(line.Style) ?? line.Style;
+            var expected = index == 0 ? 0 : 4 * 2 / Math.Sqrt(Math.Log(256));
+            foreach (var style in new[] { body, KaraokeVisualStyleResolver.ResolveInactive(body, segment),
+                KaraokeVisualStyleResolver.ResolveActive(body, line.KaraokeStyle, segment) })
+            {
+                Assert.Equal(0, style.FillBlur);
+                Assert.Equal(expected, style.StrokeBlur, 10);
+                Assert.Equal(expected, style.ShadowBlur, 10);
+            }
+        }
     }
 
     [Fact]
-    public void UnsupportedBlurInsideInstantKaraokeTransformKeepsTheSupportedStrokeChange()
+    public void BlurInsideInstantKaraokeTransformKeepsStrokeWidthAndConvertedSigma()
     {
         var imported = AssSubtitleFormat.Parse(Source("{\\k50}a{\\t(500,500,\\blur8\\bord6)\\k50}b"));
         var line = Assert.Single(imported.Lines);
@@ -86,12 +103,14 @@ public sealed class AssConversionFidelityTests
         Assert.Equal("ab", line.Text);
         Assert.Equal(new MediaTime(1, 2), segment.Start);
         Assert.Equal(6, active.StrokeWidth);
-        Assert.Equal(0, active.ShadowBlur);
-        Assert.Contains(imported.Diagnostics, item => item.Code == "Ass.ShadowBlur");
+        Assert.Equal(0, active.FillBlur);
+        Assert.Equal(8 * 2 / Math.Sqrt(Math.Log(256)), active.StrokeBlur, 10);
+        Assert.Equal(active.StrokeBlur, active.ShadowBlur);
+        Assert.Equal("Ass.BlurAppearance", Assert.Single(imported.Diagnostics).Code);
     }
 
     [Fact]
-    public void IgnoringAnEntireBlurTransformDoesNotInventAKaraokeRequirementOrDropFollowingFontSize()
+    public void InstantBlurTransformWithoutKaraokeReportsItsUnsupportedScopeAndKeepsFollowingFontSize()
     {
         var imported = AssSubtitleFormat.Parse(Source("{\\t(500,500,\\blur8)\\fs48}text"));
         var line = Assert.Single(imported.Lines);
@@ -100,8 +119,10 @@ public sealed class AssConversionFidelityTests
         Assert.Equal("text", line.Text);
         Assert.Equal(48, style.FontSize);
         Assert.Equal(0, style.ShadowBlur);
+        Assert.Equal(0, style.FillBlur);
+        Assert.Equal(0, style.StrokeBlur);
         Assert.Empty(line.Karaoke);
-        Assert.Equal("Ass.ShadowBlur", Assert.Single(imported.Diagnostics).Code);
+        Assert.Equal("Ass.UnsupportedTag", Assert.Single(imported.Diagnostics).Code);
     }
 
     [Fact]
@@ -124,7 +145,7 @@ public sealed class AssConversionFidelityTests
         var document = Document(line);
         var written = AssSubtitleFormat.Write(document);
 
-        Assert.DoesNotContain("\\blur", written.Text, StringComparison.Ordinal);
+        AssertOnlyZeroExternalBlur(written.Text);
         Assert.Single(written.Diagnostics.Where(item => item.SubtitleId == line.Id && item.Code == "Ass.ShadowBlur"));
         Assert.Same(line, document.Subtitles[0]);
         Assert.Equal(3, line.Style.ShadowBlur);
@@ -139,7 +160,7 @@ public sealed class AssConversionFidelityTests
     {
         var line = Line("Native", "ab") with
         {
-            Style = new() { ShadowBlur = 3 },
+            Style = new() { ShadowBlur = 3, FillBlur = 1.25, StrokeBlur = 2.5 },
             InlineSpans = [new(1, 1, new() { ShadowBlur = 4 })]
         };
         var projection = AssTextProjection.Create(line);
@@ -151,6 +172,9 @@ public sealed class AssConversionFidelityTests
         Assert.Equal(line.Style, changedText.Line.Style);
         Assert.True(line.InlineSpans.SequenceEqual(changedText.Line.InlineSpans));
         Assert.Equal(6, Assert.Single(changedBlur.Line.InlineSpans).Style.ShadowBlur);
+        var editedStyle = Assert.Single(changedBlur.Line.InlineSpans).Style.ApplyTo(changedBlur.Line.Style);
+        Assert.Equal(1.25, editedStyle.FillBlur);
+        Assert.Equal(2.5, editedStyle.StrokeBlur);
         Assert.Equal(4, line.InlineSpans[0].Style.ShadowBlur);
     }
 
@@ -345,7 +369,7 @@ public sealed class AssConversionFidelityTests
         var diagnostic = Assert.Single(written.Diagnostics.Where(item => item.Code == "Ass.LayerBlur"));
 
         Assert.Equal(line.Id, diagnostic.SubtitleId);
-        Assert.DoesNotContain("\\blur", written.Text, StringComparison.Ordinal);
+        AssertOnlyZeroExternalBlur(written.Text);
         Assert.Same(layer, document.Layers[0]);
         Assert.Equal(6.5, document.Layers[0].Blur);
         Assert.Equal("text", Assert.Single(AssSubtitleFormat.Parse(written.Text).Lines).Text);
@@ -400,9 +424,17 @@ public sealed class AssConversionFidelityTests
             .Select(row => row[7..].Split(',')[0]).ToArray();
     }
 
+    private static void AssertOnlyZeroExternalBlur(string source)
+    {
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(source, @"\\blur([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)"))
+        {
+            Assert.Equal(0, double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
     private static string Source(string body)
     {
-        return "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\n" +
+        return "[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nLayoutResX: 1920\nLayoutResY: 1080\nWrapStyle: 1\n" +
             "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n" +
             "Style: Default,sans-serif,64,&H00FFFFFF,&H00808080,&H00000000,&H00000000,2,2,2,20,20,20\n" +
             "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n" +

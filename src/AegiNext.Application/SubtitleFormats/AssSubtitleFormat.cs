@@ -101,24 +101,39 @@ public static class AssSubtitleFormat
         }
         var scaleX = (double)targetWidth / width;
         var scaleY = (double)targetHeight / height;
+        var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
+        var wrapStyle = AssFormatValues.Integer(Get(info, "WrapStyle", "0"));
+        if (wrapStyle is < 0 or > 3)
+        {
+            diagnostics.Add(new("Ass.WrapStyle", "ASS WrapStyle 须为 0 至 3，已采用默认智能换行模式 0。"));
+            wrapStyle = 0;
+        }
+        var layoutWidth = AssFormatValues.Integer(Get(info, "LayoutResX", "0"));
+        var layoutHeight = AssFormatValues.Integer(Get(info, "LayoutResY", "0"));
+        var blurUsesPlayRes = layoutWidth <= 0 || layoutHeight <= 0;
+        var blurScaleX = (double)targetWidth / (blurUsesPlayRes ? width : layoutWidth);
+        var blurScaleY = (double)targetHeight / (blurUsesPlayRes ? height : layoutHeight);
         var styles = new Dictionary<string, AssStyleDefinition>(StringComparer.Ordinal);
         var unsupportedGeometry = new HashSet<string>(StringComparer.Ordinal);
         foreach (var fields in styleRows)
         {
-            var style = ParseStyle(fields, scaleX, scaleY);
+            var style = ParseStyle(fields, scaleX, scaleY, wrapStyle, diagnostics);
             if (!styles.TryAdd(style.Name, style))
             {
                 throw new InvalidDataException("ASS 样式名称重复。");
             }
-            if (!AssFormatValues.Number(Get(fields, "Spacing", "0")).Equals(0d) || Get(fields, "BorderStyle", "1") != "1")
+            if (Get(fields, "BorderStyle", "1") != "1")
             {
                 unsupportedGeometry.Add(style.Name);
             }
         }
-        var fallback = new AssStyleDefinition("Default", new() { FontSize = 20 * scaleY, ShadowBlur = 0 }, SceneColor.White);
+        var fallback = new AssStyleDefinition("Default", new()
+        {
+            FontSize = 20 * scaleY, ShadowBlur = 0,
+            WrapMode = wrapStyle == 2 ? SubtitleWrapMode.NO_WRAP : SubtitleWrapMode.NATURAL
+        }, SceneColor.White);
         var lines = ImmutableArray.CreateBuilder<SubtitleLine>();
         var clips = ImmutableArray.CreateBuilder<SubtitleClipImport>();
-        var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
         if (!hasWidth || !hasHeight)
         {
             diagnostics.Add(new("Ass.PlayRes", "ASS 缺失的 PlayRes 轴按目标画布尺寸解释，已声明的轴仍按其源尺寸重采样。"));
@@ -155,7 +170,9 @@ public static class AssSubtitleFormat
                     }
                 };
             }
-            var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth, canvasHeight: targetHeight).Parse(Required(fields, "Text"));
+            var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth,
+                canvasHeight: targetHeight, wrapStyle: wrapStyle, blurScaleX: blurScaleX, blurScaleY: blurScaleY,
+                blurUsesPlayRes: blurUsesPlayRes).Parse(Required(fields, "Text"));
             var normalized = SubtitleKaraokeNormalization.Normalize(parsed.Line);
             lines.Add(normalized);
             clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks).AddRange(parsed.OpacityTracks), parsed.ContentOffset)
@@ -173,7 +190,7 @@ public static class AssSubtitleFormat
             }
             if (unsupportedGeometry.Contains(name))
             {
-                diagnostics.Add(new("Ass.StyleGeometry", "ASS 样式的字距或背景框未导入。", SubtitleId: line.Id));
+                diagnostics.Add(new("Ass.StyleGeometry", "ASS 样式的背景框未导入。", SubtitleId: line.Id));
             }
         }
         return new(lines.ToImmutable(), diagnostics.ToImmutable()) { Clips = clips.ToImmutable() };
@@ -218,7 +235,7 @@ public static class AssSubtitleFormat
             {
                 diagnostics.Add(new("Ass.LineHeight", "ASS 不支持项目自定义行高。", SubtitleId: line.Id));
             }
-            AssExportPrecision.AddStyle(line.Style, line.Id, diagnostics);
+            AssExportPrecision.AddStyle(line.Style, line.Id, diagnostics, includeBlur: false);
             AssExportPrecision.AddTime(line.Start + timeOffset, line.End + timeOffset, line.Id, diagnostics);
             if (layer.Blur > 0)
             {
@@ -257,11 +274,19 @@ public static class AssSubtitleFormat
         return new(text, diagnostics.DistinctBy(diagnostic => (diagnostic.SubtitleId, diagnostic.Code)).ToImmutableArray());
     }
 
-    private static AssStyleDefinition ParseStyle(Dictionary<string, string> row, double sx, double sy)
+    private static AssStyleDefinition ParseStyle(Dictionary<string, string> row, double sx, double sy, int wrapStyle,
+        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
     {
+        var spacing = AssFormatValues.Number(Get(row, "Spacing", "0")) * sx;
+        if (!double.IsFinite(spacing) || spacing is < -4096 or > 4096)
+        {
+            diagnostics.Add(new("Ass.LetterSpacingRange", $"ASS 样式 {Required(row, "Name")} 的字距重采样后超出原生范围，已忽略该字距并保留其他样式。"));
+            spacing = 0;
+        }
         var style = new SubtitleStyle
         {
             FontFamily = Required(row, "Fontname"), FontSize = AssFormatValues.Number(Required(row, "Fontsize")) * sy,
+            LetterSpacing = spacing, WrapMode = wrapStyle == 2 ? SubtitleWrapMode.NO_WRAP : SubtitleWrapMode.NATURAL,
             Fill = AssFormatValues.Color(Required(row, "PrimaryColour")), Stroke = AssFormatValues.Color(Get(row, "OutlineColour", "&H00000000")),
             ShadowColor = AssFormatValues.Color(Get(row, "BackColour", "&H00000000")),
             Bold = AssFormatValues.Integer(Get(row, "Bold", "0")) != 0, Italic = AssFormatValues.Integer(Get(row, "Italic", "0")) != 0,

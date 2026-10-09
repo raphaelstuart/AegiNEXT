@@ -24,9 +24,9 @@ AegiNext retains its native expressive range. Import and export convert meaningf
 | Whole-line scale and Z rotation | Corresponding | Implemented lossless for supported static parameters. Mixed inline geometry is unsupported; shaping and compositing may differ. |
 | `\move` | Superset | Implemented lossless for representable constant-speed straight segments. Varying speed is reported as an approximation; complex paths do not map losslessly. |
 | `\fad` / `\fade` | Superset | Implemented lossless for supported envelope parameters. Complex native envelopes do not map generally; layer opacity and ASS internal fade produce different overlapping pixels. |
-| `Spacing` / `\fsp` | Corresponding | Native layout, animation, inline editing, and UI implemented; lossless parameter conversion feasible but not yet connected. |
-| Fill/stroke blur and `\blur` | Superset | Independent native controls implemented; conversion not yet connected. ASS selects an edge based on stroke presence, so arbitrary independent blurs cannot map losslessly. |
-| `WrapStyle` / `\q` | Partial correspondence and gaps | Native grapheme, natural, and no-wrap modes exist; conversion not yet connected. Balanced ASS modes 0/3 are missing; grapheme wrapping has no general exact mapping. |
+| `Spacing` / `\fsp` | Corresponding | Implemented lossless for representable static spacing, including inline overrides, resets, and constant animation. Shaping may still differ across engines. |
+| Fill/stroke blur and `\blur` | Superset | Edge selection and blur-unit conversion implemented. Generally not lossless: ASS selects an edge based on stroke presence and couples shadow blur; independent blurs and different rasterizers cannot all be preserved. |
+| `WrapStyle` / `\q` | Partial correspondence and gaps | Implemented lossless for no-wrap and explicit line-break semantics. Natural wrapping corresponds to q1, with font/algorithm differences. q0/q3 import as natural with a report; balanced wrapping is feasible but unimplemented. Grapheme export uses q1 with a report. |
 | Common whole-line numeric `\t` | Superset | Native keyframes, ordered transforms, easing, and UI exist; corresponding spacing/blur/stroke/scale/Z-rotation conversion is not yet connected. |
 | Color animation | Superset | Generally not lossless: native interpolation uses linear RGBA, while ASS uses a different color space. Not currently imported as equivalent animation. |
 | `\k`, `\kf`/`\K`, `\ko` | Superset | Implemented lossless for ordinary syllable timing and modes. Independent before/after appearance, sweeps, and centisecond rounding have reported limits. |
@@ -40,7 +40,7 @@ AegiNext retains its native expressive range. Import and export convert meaningf
 
 1. **P0: reliable conversion and actionable loss reports** — implemented naming, timing/number precision, shadow semantics, detailed review, and safe cancellation.
 2. **P1: common geometry and opacity** — implemented static transforms, straight motion, and fades using native editors.
-3. **P1: spacing, edge blur, wrapping** — native model, rendering, migration, animation/DSL, and three UI entry points implemented; connect ASS conversion next.
+3. **P1: spacing, edge blur, wrapping** — native model, rendering, migration, animation/DSL, three UI entry points, and static ASS conversion implemented.
 4. **P1: common whole-line numeric transforms** — use native tracks and UI for corresponding animations and report remaining losses.
 5. **P2: explicit weights, balanced wrapping, vector drawing, and color-animation policy** — require separate design and validation while retaining the native model.
 
