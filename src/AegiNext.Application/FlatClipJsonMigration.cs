@@ -128,43 +128,44 @@ internal static class FlatClipJsonMigration
     private static (JsonArray Tracks, Dictionary<Guid, List<Guid>> Owners) ArrangeTracks(JsonArray clips,
         JsonArray legacyTracks, HashSet<Guid> reserved, JsonSerializerOptions options)
     {
-        var originals = legacyTracks.OfType<JsonObject>().ToDictionary(track => RequiredId(track, "id"));
-        var owners = originals.Keys.ToDictionary(id => id, _ => new List<Guid>());
-        var drawingTracks = new List<JsonObject>();
-        var used = new HashSet<Guid>();
-        Guid? previousOriginal = null;
-        Guid? previousAssigned = null;
-        MediaTime previousEnd = default;
-        foreach (var node in clips)
+        var originals = legacyTracks.OfType<JsonObject>().ToArray();
+        var originalIds = originals.Select(track => RequiredId(track, "id")).ToArray();
+        var parsed = clips.Select(clip => clip!.Deserialize<ProjectLayer>(options) ??
+            throw new JsonException("旧片段不能为 null。")).ToArray();
+        var allocation = new LegacyTrackOrderAllocator(parsed, originalIds).Allocate();
+        var reverse = new LegacyTrackOrderAllocator(parsed, originalIds, true).Allocate();
+        if (reverse.TrackOwners.Length < allocation.TrackOwners.Length)
         {
-            var clip = node!.AsObject();
-            var originalId = RequiredId(clip, "trackId");
-            var start = clip["start"]!.Deserialize<MediaTime>(options);
-            var end = clip["end"]!.Deserialize<MediaTime>(options);
-            Guid assigned;
-            if (previousOriginal == originalId && start >= previousEnd)
-            {
-                assigned = previousAssigned!.Value;
-            }
-            else
-            {
-                var track = originals[originalId].DeepClone().AsObject();
-                assigned = used.Add(originalId) ? originalId : CreateSceneTrackId(RequiredId(clip, "id"), reserved);
-                track["id"] = assigned;
-                drawingTracks.Add(track);
-                owners[originalId].Add(assigned);
-            }
-            clip["trackId"] = assigned;
-            previousOriginal = originalId;
-            previousAssigned = assigned;
-            previousEnd = end;
+            allocation = reverse;
         }
-        foreach (var pair in originals.Where(pair => !used.Contains(pair.Key)))
+        var owners = originalIds.ToDictionary(id => id, _ => new List<Guid>());
+        var firstClips = new Guid[allocation.TrackOwners.Length];
+        for (var index = 0; index < parsed.Length; index++)
         {
-            drawingTracks.Add(pair.Value.DeepClone().AsObject());
-            owners[pair.Key].Add(pair.Key);
+            var target = allocation.ClipTracks[index];
+            if (firstClips[target] == Guid.Empty)
+            {
+                firstClips[target] = parsed[index].Id;
+            }
         }
-        return (new JsonArray(drawingTracks.AsEnumerable().Reverse().Select(track => (JsonNode)track).ToArray()), owners);
+
+        var ids = new Guid[allocation.TrackOwners.Length];
+        var tracks = new JsonObject[ids.Length];
+        for (var node = 0; node < tracks.Length; node++)
+        {
+            var original = allocation.TrackOwners[node];
+            var id = node < originals.Length ? originalIds[original] : CreateSceneTrackId(firstClips[node], reserved);
+            ids[node] = id;
+            tracks[node] = originals[original].DeepClone().AsObject();
+            tracks[node]["id"] = id;
+            owners[originalIds[original]].Add(id);
+        }
+        for (var index = 0; index < clips.Count; index++)
+        {
+            clips[index]!["trackId"] = ids[allocation.ClipTracks[index]];
+        }
+
+        return (new JsonArray(allocation.TrackOrder.Select(node => (JsonNode)tracks[node]).ToArray()), owners);
     }
 
     private static InvalidDataException CannotFlatten(ProjectLayer group)
