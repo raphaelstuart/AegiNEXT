@@ -53,7 +53,7 @@ public sealed class SubtitleMarginsPersistenceTests
         var library = SubtitleStylePresetStore.Deserialize(encoded);
         Assert.Equal(collection.Presets[0], library.Presets[0]);
         var root = JsonNode.Parse(encoded)!;
-        Assert.Equal(5, root["version"]!.GetValue<int>());
+        Assert.Equal(SubtitleStylePresetCollection.CURRENT_VERSION, root["version"]!.GetValue<int>());
         Assert.False(root["presets"]![0]!["style"]!.AsObject().ContainsKey("margin"));
     }
 
@@ -103,7 +103,7 @@ public sealed class SubtitleMarginsPersistenceTests
         }
         var restored = SubtitleStylePresetStore.Deserialize(Encoding.UTF8.GetBytes(root.ToJsonString()));
 
-        Assert.Equal(5, restored.Version);
+        Assert.Equal(SubtitleStylePresetCollection.CURRENT_VERSION, restored.Version);
         Assert.Equal(preset, Assert.Single(restored.Presets));
     }
 

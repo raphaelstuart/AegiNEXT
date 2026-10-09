@@ -56,7 +56,9 @@ internal static class SubtitleContentSplitMerge
         return new()
         {
             Fill = active?.Fill ?? style?.Fill ?? segment.HighlightColor,
+            FillBlur = active?.FillBlur ?? style?.FillBlur,
             Stroke = active?.Stroke ?? style?.Stroke,
+            StrokeBlur = active?.StrokeBlur ?? style?.StrokeBlur,
             StrokeWidth = active?.StrokeWidth ?? style?.StrokeWidth,
             ShadowOffset = active?.ShadowOffset ?? style?.ShadowOffset,
             ShadowBlur = active?.ShadowBlur ?? style?.ShadowBlur,

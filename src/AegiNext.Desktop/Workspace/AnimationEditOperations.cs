@@ -61,6 +61,20 @@ internal static class AnimationEditOperations
             });
         }
 
+        if (AnimationPropertyMetadata.IsSubtitleOnlyProperty(property) && layer.SubtitleId is { } styleId)
+        {
+            return WorkspaceDraftOperations.UpdateSubtitle(document, styleId, subtitle => subtitle with
+            {
+                Style = property switch
+                {
+                    AnimationProperty.LETTER_SPACING => subtitle.Style with { LetterSpacing = value.Scalar },
+                    AnimationProperty.FILL_BLUR => subtitle.Style with { FillBlur = value.Scalar },
+                    AnimationProperty.STROKE_BLUR => subtitle.Style with { StrokeBlur = value.Scalar },
+                    _ => throw new ArgumentOutOfRangeException(nameof(animationTarget))
+                }
+            });
+        }
+
         return WorkspaceDraftOperations.UpdateLayer(document, layer.Id, item => property switch
         {
             AnimationProperty.FILL => item with { Fill = value.Color },

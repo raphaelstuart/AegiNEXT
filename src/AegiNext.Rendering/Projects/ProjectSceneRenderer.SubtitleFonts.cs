@@ -39,7 +39,7 @@ public sealed partial class ProjectSceneRenderer
     private static void AddFontRun(TextShaper shaper, SubtitleStyle style, string text, int offset,
         TextDirection direction, ImmutableArray<SubtitleLayoutRun>.Builder runs)
     {
-        var shape = shaper.Shape(text, (float)style.FontSize, direction, "und");
+        var shape = shaper.Shape(text, (float)style.FontSize, direction, "und", (float)style.LetterSpacing);
         runs.Add(new(text, offset, style, shape, direction)
         {
             ResolvedFontFamily = shaper.FontFamily, ResolvedFontVariant = shaper.ResolvedFontVariant

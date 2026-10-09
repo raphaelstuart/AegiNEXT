@@ -252,6 +252,52 @@ public static class SceneEvaluator
             3 * inverse * t * t * segment.Control2.Y + t * t * t * segment.End.Y);
     }
 
+    /// <summary>以内容时钟求值单个已验证片段，不按可见时间过滤，可用于片段端点或不可见片段的测量。</summary>
+    public static EvaluatedLayer EvaluateLayer(ProjectLayer layer, SubtitleLine? subtitle, MediaTime contentTime)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        var values = layer.Tracks.ToDictionary(track => track.Target, track => EvaluateTrack(track, contentTime));
+        var transform = layer.Transform with
+        {
+            Position = GetVector(values, AnimationProperty.POSITION, layer.Transform.Position),
+            Scale = GetVector(values, AnimationProperty.SCALE, layer.Transform.Scale),
+            Rotation = Get(values, AnimationProperty.ROTATION, layer.Transform.Rotation)
+        };
+        if (layer.MotionPath is { } motion)
+        {
+            var progress = Get(values, AnimationProperty.PATH_PROGRESS, Fraction(contentTime, motion.Duration));
+            var point = EvaluatePath(motion.Path, progress);
+            var rotation = transform.Rotation;
+            if (motion.OrientToPath)
+            {
+                var before = EvaluatePath(motion.Path, progress - 0.00001);
+                var after = EvaluatePath(motion.Path, progress + 0.00001);
+                rotation += Math.Atan2(after.Y - before.Y, after.X - before.X) * 180 / Math.PI;
+            }
+
+            transform = transform with { X = transform.X + point.X, Y = transform.Y + point.Y, Rotation = rotation };
+        }
+
+        var fill = subtitle?.Style.Fill ?? layer.Fill;
+        var stroke = subtitle?.Style.Stroke ?? layer.Stroke;
+        return new(layer, contentTime, transform, Get(values, AnimationProperty.OPACITY, layer.Opacity),
+            GetColor(values, AnimationProperty.FILL, fill), GetColor(values, AnimationProperty.STROKE, stroke),
+            Get(values, AnimationProperty.STROKE_WIDTH, subtitle?.Style.StrokeWidth ?? layer.StrokeWidth),
+            Get(values, AnimationProperty.BLUR, layer.Blur), subtitle)
+        {
+            Mask = EvaluateMask(layer.Mask, values),
+            HasFillAnimation = values.ContainsKey(new(AnimationProperty.FILL)),
+            HasStrokeAnimation = values.ContainsKey(new(AnimationProperty.STROKE)),
+            HasStrokeWidthAnimation = values.ContainsKey(new(AnimationProperty.STROKE_WIDTH)),
+            LetterSpacing = Get(values, AnimationProperty.LETTER_SPACING, subtitle?.Style.LetterSpacing ?? 0),
+            FillBlur = Get(values, AnimationProperty.FILL_BLUR, subtitle?.Style.FillBlur ?? 0),
+            StrokeBlur = Get(values, AnimationProperty.STROKE_BLUR, subtitle?.Style.StrokeBlur ?? 0),
+            HasLetterSpacingAnimation = values.ContainsKey(new(AnimationProperty.LETTER_SPACING)),
+            HasFillBlurAnimation = values.ContainsKey(new(AnimationProperty.FILL_BLUR)),
+            HasStrokeBlurAnimation = values.ContainsKey(new(AnimationProperty.STROKE_BLUR))
+        };
+    }
+
     private static ImmutableArray<EvaluatedLayer> EvaluateLayers(ImmutableArray<ProjectLayer> layers,
         FrozenDictionary<Guid, SubtitleLine> subtitles, MediaTime time)
     {
@@ -265,40 +311,7 @@ public static class SceneEvaluator
 
             var subtitle = layer.SubtitleId is { } id ? subtitles[id] : null;
             var local = time - layer.Start + layer.AnimationOffset;
-            var values = layer.Tracks.ToDictionary(track => track.Target, track => EvaluateTrack(track, local));
-            var transform = layer.Transform with
-            {
-                Position = GetVector(values, AnimationProperty.POSITION, layer.Transform.Position),
-                Scale = GetVector(values, AnimationProperty.SCALE, layer.Transform.Scale),
-                Rotation = Get(values, AnimationProperty.ROTATION, layer.Transform.Rotation)
-            };
-            if (layer.MotionPath is { } motion)
-            {
-                var progress = Get(values, AnimationProperty.PATH_PROGRESS, Fraction(local, motion.Duration));
-                var point = EvaluatePath(motion.Path, progress);
-                var rotation = transform.Rotation;
-                if (motion.OrientToPath)
-                {
-                    var before = EvaluatePath(motion.Path, progress - 0.00001);
-                    var after = EvaluatePath(motion.Path, progress + 0.00001);
-                    rotation += Math.Atan2(after.Y - before.Y, after.X - before.X) * 180 / Math.PI;
-                }
-
-                transform = transform with { X = transform.X + point.X, Y = transform.Y + point.Y, Rotation = rotation };
-            }
-
-            var fill = subtitle?.Style.Fill ?? layer.Fill;
-            var stroke = subtitle?.Style.Stroke ?? layer.Stroke;
-            result.Add(new(layer, local, transform, Get(values, AnimationProperty.OPACITY, layer.Opacity),
-                GetColor(values, AnimationProperty.FILL, fill), GetColor(values, AnimationProperty.STROKE, stroke),
-                Get(values, AnimationProperty.STROKE_WIDTH, subtitle?.Style.StrokeWidth ?? layer.StrokeWidth),
-                Get(values, AnimationProperty.BLUR, layer.Blur), subtitle)
-            {
-                Mask = EvaluateMask(layer.Mask, values),
-                HasFillAnimation = values.ContainsKey(new(AnimationProperty.FILL)),
-                HasStrokeAnimation = values.ContainsKey(new(AnimationProperty.STROKE)),
-                HasStrokeWidthAnimation = values.ContainsKey(new(AnimationProperty.STROKE_WIDTH))
-            });
+            result.Add(EvaluateLayer(layer, subtitle, local));
         }
 
         return result.ToImmutable();

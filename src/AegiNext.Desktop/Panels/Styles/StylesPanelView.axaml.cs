@@ -66,6 +66,14 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
                 viewModel.CommitAlignment((int)e.Alignment);
             }
         };
+        var wrap = this.FindControl<ComboBox>("WrapModeInput")!;
+        wrap.SelectionChanged += (_, _) =>
+        {
+            if (!session.IsUpdating)
+            {
+                viewModel.CommitWrapMode(wrap.SelectedIndex);
+            }
+        };
         var position = this.FindControl<SubtitlePositionEditor>("PositionEditor")!;
         position.AutomaticPositionRequested += async (_, _) => await viewModel.RestoreAutomaticPositionAsync();
         position.ExplicitPositionChanged += (_, _) => viewModel.CommitDrafts();

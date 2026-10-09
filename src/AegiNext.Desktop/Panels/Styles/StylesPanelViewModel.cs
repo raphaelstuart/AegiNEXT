@@ -7,6 +7,7 @@ using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Settings;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.I18n;
 using Avalonia.Media;
 using TextAlignment = AegiNext.Core.Projects.TextAlignment;
 
@@ -20,6 +21,9 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private readonly NumericValueDraft shadowY = new() { RawText = "2" };
     private readonly NumericValueDraft shadowBlur = new() { RawText = "2" };
     private readonly NumericValueDraft lineHeight = new() { RawText = "1.2" };
+    private readonly NumericValueDraft letterSpacing = new() { RawText = "0" };
+    private readonly NumericValueDraft fillBlur = new() { RawText = "0" };
+    private readonly NumericValueDraft strokeBlur = new() { RawText = "0" };
     private bool loadingStyleNumbers;
     private readonly WorkbenchSession session;
     private string fontFamily = "Noto Sans CJK SC";
@@ -35,6 +39,7 @@ internal sealed class StylesPanelViewModel : ObservableObject
     private int alignment = (int)TextAlignment.BOTTOM_CENTER;
     private bool alignmentSelectionCommitted;
     private bool hasCue;
+    private int wrapMode;
     private int canvasWidth = 1920;
     private int canvasHeight = 1080;
     private StylePresetListItem[] presets = [];
@@ -51,6 +56,9 @@ internal sealed class StylesPanelViewModel : ObservableObject
         shadowY.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(ShadowYText), nameof(ShadowY));
         shadowBlur.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(ShadowBlurText), nameof(ShadowBlur));
         lineHeight.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(LineHeightText), nameof(LineHeight));
+        letterSpacing.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(LetterSpacingText), nameof(LetterSpacing));
+        fillBlur.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(FillBlurText), nameof(FillBlur));
+        strokeBlur.PropertyChanged += (_, e) => OnStyleNumberChanged(e.PropertyName, nameof(StrokeBlurText), nameof(StrokeBlur));
         Position.Changed += (_, _) => OnPropertyChanged(nameof(Position));
         Margins.Changed += (_, _) =>
         {
@@ -107,6 +115,26 @@ internal sealed class StylesPanelViewModel : ObservableObject
     public ColorDraft StrokeDraft { get; } = new(SceneColor.Black);
     public ColorDraft ShadowDraft { get; } = new(new(0, 0, 0, 0.6));
 
+    public bool CanEditLetterSpacing => CanEditAppearanceProperty(AnimationProperty.LETTER_SPACING);
+    public bool CanEditFillBlur => CanEditAppearanceProperty(AnimationProperty.FILL_BLUR);
+    public bool CanEditStrokeBlur => CanEditAppearanceProperty(AnimationProperty.STROKE_BLUR);
+    public string? LetterSpacingEditingHint => CanEditLetterSpacing ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
+    public string? FillBlurEditingHint => CanEditFillBlur ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
+    public string? StrokeBlurEditingHint => CanEditStrokeBlur ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
+
+    internal void RefreshAppearanceEditing()
+    {
+        OnPropertyChanged(nameof(CanEditLetterSpacing));
+        OnPropertyChanged(nameof(CanEditFillBlur));
+        OnPropertyChanged(nameof(CanEditStrokeBlur));
+        OnPropertyChanged(nameof(LetterSpacingEditingHint));
+        OnPropertyChanged(nameof(FillBlurEditingHint));
+        OnPropertyChanged(nameof(StrokeBlurEditingHint));
+    }
+
+    private bool CanEditAppearanceProperty(AnimationProperty property) => session.SelectedLayer?.Tracks.Any(track =>
+        track.Property == property && !track.Transforms.IsEmpty) != true;
+
     public decimal? ShadowX
     {
         get => shadowX.Value;
@@ -143,6 +171,42 @@ internal sealed class StylesPanelViewModel : ObservableObject
         set => shadowBlur.RawText = value;
     }
 
+    public decimal? LetterSpacing
+    {
+        get => letterSpacing.Value;
+        set => letterSpacing.Value = value;
+    }
+
+    public string LetterSpacingText
+    {
+        get => letterSpacing.RawText;
+        set => letterSpacing.RawText = value;
+    }
+
+    public decimal? FillBlur
+    {
+        get => fillBlur.Value;
+        set => fillBlur.Value = value;
+    }
+
+    public string FillBlurText
+    {
+        get => fillBlur.RawText;
+        set => fillBlur.RawText = value;
+    }
+
+    public decimal? StrokeBlur
+    {
+        get => strokeBlur.Value;
+        set => strokeBlur.Value = value;
+    }
+
+    public string StrokeBlurText
+    {
+        get => strokeBlur.RawText;
+        set => strokeBlur.RawText = value;
+    }
+
     public decimal? LineHeight
     {
         get => lineHeight.Value;
@@ -164,12 +228,18 @@ internal sealed class StylesPanelViewModel : ObservableObject
             LoadStyleNumberDraft(shadowX, style.ShadowOffset.X, culture);
             LoadStyleNumberDraft(shadowY, style.ShadowOffset.Y, culture);
             LoadStyleNumberDraft(shadowBlur, style.ShadowBlur, culture);
+            LoadStyleNumberDraft(letterSpacing, style.LetterSpacing, culture);
+            LoadStyleNumberDraft(fillBlur, style.FillBlur, culture);
+            LoadStyleNumberDraft(strokeBlur, style.StrokeBlur, culture);
             Margins.Load(style.Margins, culture);
         }
         finally
         {
             loadingStyleNumbers = false;
         }
+        PublishStyleNumber(nameof(LetterSpacingText), nameof(LetterSpacing));
+        PublishStyleNumber(nameof(FillBlurText), nameof(FillBlur));
+        PublishStyleNumber(nameof(StrokeBlurText), nameof(StrokeBlur));
         PublishStyleNumber(nameof(LineHeightText), nameof(LineHeight));
         PublishStyleNumber(nameof(ShadowXText), nameof(ShadowX));
         PublishStyleNumber(nameof(ShadowYText), nameof(ShadowY));
@@ -194,6 +264,9 @@ internal sealed class StylesPanelViewModel : ObservableObject
         }
         var (draft, textProperty, valueProperty) = fieldKey switch
         {
+            "LetterSpacingInput" => (letterSpacing, nameof(LetterSpacingText), nameof(LetterSpacing)),
+            "FillBlurInput" => (fillBlur, nameof(FillBlurText), nameof(FillBlur)),
+            "StrokeBlurInput" => (strokeBlur, nameof(StrokeBlurText), nameof(StrokeBlur)),
             "LineHeightInput" => (lineHeight, nameof(LineHeightText), nameof(LineHeight)),
             "ShadowXInput" => (shadowX, nameof(ShadowXText), nameof(ShadowX)),
             "ShadowYInput" => (shadowY, nameof(ShadowYText), nameof(ShadowY)),
@@ -299,6 +372,28 @@ internal sealed class StylesPanelViewModel : ObservableObject
     {
         get => alignmentSelectionCommitted;
         private set => SetProperty(ref alignmentSelectionCommitted, value);
+    }
+
+    public int WrapMode
+    {
+        get => wrapMode;
+        set
+        {
+            if (Enum.IsDefined((SubtitleWrapMode)value))
+            {
+                SetProperty(ref wrapMode, value);
+            }
+        }
+    }
+
+    internal bool CommitWrapMode(int value)
+    {
+        if (!Enum.IsDefined((SubtitleWrapMode)value))
+        {
+            return false;
+        }
+        WrapMode = value;
+        return session.TryCommitDrafts();
     }
 
     public bool HasCue

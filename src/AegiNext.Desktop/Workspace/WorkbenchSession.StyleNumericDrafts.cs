@@ -1,3 +1,5 @@
+using AegiNext.Core.Projects;
+
 namespace AegiNext.Desktop.Workspace;
 
 internal sealed partial class WorkbenchSession
@@ -10,6 +12,9 @@ internal sealed partial class WorkbenchSession
         }
         var value = fieldKey switch
         {
+            "LetterSpacingInput" => InspectorValue(SelectedLayer, AnimationProperty.LETTER_SPACING, cue.Style.LetterSpacing),
+            "FillBlurInput" => InspectorValue(SelectedLayer, AnimationProperty.FILL_BLUR, cue.Style.FillBlur),
+            "StrokeBlurInput" => InspectorValue(SelectedLayer, AnimationProperty.STROKE_BLUR, cue.Style.StrokeBlur),
             "LineHeightInput" => cue.Style.LineHeight,
             "MarginLeftInput" => cue.Style.Margins.Left,
             "MarginRightInput" => cue.Style.Margins.Right,

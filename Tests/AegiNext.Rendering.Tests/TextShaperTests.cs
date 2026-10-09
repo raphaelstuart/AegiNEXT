@@ -5,6 +5,49 @@ namespace AegiNext.Rendering.Tests;
 
 public class TextShaperTests
 {
+    [Theory]
+    [InlineData(12)]
+    [InlineData(-40)]
+    public void LetterSpacingMovesWholeClustersWithoutBreakingLigaturesOrCombiningMarks(float spacing)
+    {
+        using var shaper = new TextShaper(ReadFont("NotoSans.ttf"));
+        using var ordinary = shaper.Shape("A\u0301ffiB", 32, TextDirection.LEFT_TO_RIGHT, "en");
+        using var spaced = shaper.Shape("A\u0301ffiB", 32, TextDirection.LEFT_TO_RIGHT, "en", spacing);
+        Assert.Equal(ordinary.Glyphs.ToArray().Select(glyph => glyph.GlyphId), spaced.Glyphs.ToArray().Select(glyph => glyph.GlyphId));
+        Assert.Equal(ordinary.Glyphs.ToArray().Select(glyph => glyph.Utf16Cluster), spaced.Glyphs.ToArray().Select(glyph => glyph.Utf16Cluster));
+        var clusters = spaced.Clusters.ToArray();
+        Assert.Equal(3, clusters.Length);
+        Assert.Equal(ordinary.AdvanceWidth + (clusters.Length - 1) * spacing, spaced.AdvanceWidth, 4);
+        Assert.Equal(ordinary.Glyphs[0].Position, spaced.Glyphs[0].Position);
+        Assert.Equal(ordinary.Glyphs[^1].Position.X + 2 * spacing, spaced.Glyphs[^1].Position.X, 4);
+        Assert.True(float.IsFinite(spaced.InkBounds.Left));
+        Assert.True(spaced.InkBounds.Width > 0);
+    }
+
+    [Fact]
+    public void ArabicSpacingPreservesContextualGlyphsAndItsVisualClusterOrder()
+    {
+        using var shaper = new TextShaper(ReadFont("NotoSansArabic.ttf"));
+        using var ordinary = shaper.Shape("ببب", 32, TextDirection.RIGHT_TO_LEFT, "ar");
+        using var spaced = shaper.Shape("ببب", 32, TextDirection.RIGHT_TO_LEFT, "ar", 9);
+        Assert.Equal(ordinary.Glyphs.ToArray().Select(glyph => glyph.GlyphId), spaced.Glyphs.ToArray().Select(glyph => glyph.GlyphId));
+        Assert.Equal(ordinary.Clusters.ToArray().Select(cluster => cluster.Utf16Start), spaced.Clusters.ToArray().Select(cluster => cluster.Utf16Start));
+        Assert.Equal(ordinary.AdvanceWidth + 18, spaced.AdvanceWidth, 4);
+    }
+
+    [Fact]
+    public void SpacedRunOwnsItsBlobAfterShaperDisposalAndReleasesItWhenDisposed()
+    {
+        var shaper = new TextShaper(ReadFont("NotoSans.ttf"));
+        var run = shaper.Shape("AB", 32, TextDirection.LEFT_TO_RIGHT, "en", -64);
+        shaper.Dispose();
+        using var surface = new LinearRenderSurface(new(128, 64, 203));
+        surface.DrawText(run, new(72, 44), new(1, 1, 1, 1));
+        Assert.Contains(surface.CopySrgbBgra().Where((_, index) => index % 4 == 3), alpha => alpha > 0);
+        run.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => run.GetBlob());
+    }
+
     private static readonly int[] leftToRightClusters = [0, 1];
     private static readonly int[] rightToLeftClusters = [1, 0];
     private static readonly int[] supplementaryClusters = [0, 2];

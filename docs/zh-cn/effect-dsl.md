@@ -72,12 +72,16 @@ end
 | `opacity` | 0–1 或 `base` |
 | `fill`、`stroke` | 线性 `rgba(r, g, b, a)` 或 `base` |
 | `blur` | 0–512 像素或 `base` |
+| `letter-spacing` | 字幕字素间距，−4096–4096 像素或 `base` |
+| `fill-blur`、`stroke-blur` | 字幕填充／描边模糊，0–512 像素或 `base` |
 | `path-progress` | 显式 0–1 |
 | `mask-rectangle-top-left`、`mask-rectangle-bottom-right` | 工程坐标的矩形角向量 |
 | `mask-position`、`mask-scale`、`mask-rotation` | 独立蒙版变换 |
 | `mask-node(c,n).position`、`.in-handle`、`.out-handle` | 已有节点位置 / 相对控制柄向量 |
 
 `base` 读取应用前的目标值，`offset` 相加，`factor` 相乘。颜色采用非预乘线性 RGB，可表达 HDR，alpha 为 0–1；界面 HEX 使用 sRGB。`#` 表示注释，脚本不使用 HEX 字面量。
+
+`letter-spacing`、`fill-blur` 和 `stroke-blur` 必须应用于字幕片段，并提供应用前的字幕样式，即使使用显式数值也一样。它们的 `base` 来自该样式。原有 `blur` 对整层合成结果模糊，两个分通道模糊分别影响填充和描边。换行模式是字幕样式中的静态设置，不是 DSL 动画属性。这些属性仍使用 DSL 版本 1。
 
 插值支持 `hold`、`linear`、`ease-in`、`ease-out`、`ease-in-out` 和 `power(正指数)`。当前点控制到下一点的插值，默认线性。
 

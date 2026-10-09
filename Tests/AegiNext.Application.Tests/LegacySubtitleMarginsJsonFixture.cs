@@ -27,6 +27,14 @@ internal static class LegacySubtitleMarginsJsonFixture
 
     internal static void DowngradeLibrary(JsonObject root)
     {
+        if (root["version"]!.GetValue<int>() < 6)
+        {
+            LegacySubtitleAppearanceJsonFixture.Downgrade(root);
+        }
+        if (root["version"]!.GetValue<int>() >= 5)
+        {
+            return;
+        }
         foreach (var preset in root["presets"]!.AsArray().OfType<JsonObject>())
         {
             DowngradeStyle(preset["style"]!.AsObject());

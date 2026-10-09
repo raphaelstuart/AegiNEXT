@@ -31,5 +31,8 @@ public enum AnimationProperty
     MASK_ROTATION = 25,
     MASK_NODE_POSITION = 26,
     MASK_NODE_IN_HANDLE = 27,
-    MASK_NODE_OUT_HANDLE = 28
+    MASK_NODE_OUT_HANDLE = 28,
+    LETTER_SPACING = 29,
+    FILL_BLUR = 30,
+    STROKE_BLUR = 31
 }

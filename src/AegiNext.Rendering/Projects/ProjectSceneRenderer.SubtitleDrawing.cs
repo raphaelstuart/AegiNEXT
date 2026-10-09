@@ -33,7 +33,11 @@ public sealed partial class ProjectSceneRenderer
             surface.Canvas.Translate(-cropBounds.Left, -cropBounds.Top);
             var source = new ProjectLayer { Kind = LayerKind.SUBTITLE, SubtitleId = subtitle.Id };
             var layer = new EvaluatedLayer(source, localTime, new(), 1, subtitle.Style.Fill, subtitle.Style.Stroke,
-                subtitle.Style.StrokeWidth, 0, subtitle);
+                subtitle.Style.StrokeWidth, 0, subtitle)
+            {
+                LetterSpacing = subtitle.Style.LetterSpacing, FillBlur = subtitle.Style.FillBlur,
+                StrokeBlur = subtitle.Style.StrokeBlur
+            };
             DrawSubtitle(document, surface.Canvas, layer, previewMode);
             surface.Canvas.ResetMatrix();
             return surface;
@@ -49,7 +53,7 @@ public sealed partial class ProjectSceneRenderer
         SubtitlePreviewMode previewMode = SubtitlePreviewMode.TIMED)
     {
         var subtitle = layer.Subtitle!;
-        foreach (var line in Layout(document, subtitle).Lines)
+        foreach (var line in Layout(document, layer).Lines)
         {
             foreach (var run in line.Runs)
             {
@@ -168,14 +172,17 @@ public sealed partial class ProjectSceneRenderer
         {
             Fill = layer.HasFillAnimation ? layer.Fill : style.Fill,
             Stroke = layer.HasStrokeAnimation ? layer.Stroke : style.Stroke,
-            StrokeWidth = layer.HasStrokeWidthAnimation ? layer.StrokeWidth : style.StrokeWidth
+            StrokeWidth = layer.HasStrokeWidthAnimation ? layer.StrokeWidth : style.StrokeWidth,
+            FillBlur = layer.HasFillBlurAnimation ? layer.FillBlur : style.FillBlur,
+            StrokeBlur = layer.HasStrokeBlurAnimation ? layer.StrokeBlur : style.StrokeBlur
         };
     }
 
     private static float Padding(params SubtitleStyle[] styles)
     {
-        return (float)styles.Max(style => style.StrokeWidth +
-            Math.Max(Math.Abs(style.ShadowOffset.X), Math.Abs(style.ShadowOffset.Y)) + style.ShadowBlur * 4 + 1);
+        return (float)styles.Max(style => Math.Max(style.FillBlur * 4,
+            Math.Max(style.StrokeWidth + style.StrokeBlur * 4,
+                Math.Max(Math.Abs(style.ShadowOffset.X), Math.Abs(style.ShadowOffset.Y)) + style.ShadowBlur * 4)) + 1);
     }
 
     private static SKRect FullKaraokeBounds(SubtitleLayoutRun run, SubtitleKaraokeSpan span, float padding)
@@ -247,9 +254,13 @@ public sealed partial class ProjectSceneRenderer
             stroke.Style = SKPaintStyle.Stroke;
             stroke.StrokeWidth = (float)style.StrokeWidth * 2;
             stroke.StrokeJoin = SKStrokeJoin.Round;
+            using var filter = style.StrokeBlur > 0 ? SKMaskFilter.CreateBlur(SKBlurStyle.Normal, (float)style.StrokeBlur) : null;
+            stroke.MaskFilter = filter;
             DrawRunInk(canvas, run, stroke, SKPoint.Empty);
         }
         using var fill = Paint(style.Fill);
+        using var fillFilter = style.FillBlur > 0 ? SKMaskFilter.CreateBlur(SKBlurStyle.Normal, (float)style.FillBlur) : null;
+        fill.MaskFilter = fillFilter;
         DrawRunInk(canvas, run, fill, SKPoint.Empty);
     }
 

@@ -7,6 +7,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Selection;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -38,6 +39,15 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
             _ = LoadFontCandidatesAsync();
         };
         DetachedFromVisualTree += (_, _) => preview.Invalidate(++previewRevision);
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Key.Escape && e.Source is Control source &&
+                source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault()?.Name is { } field &&
+                model?.RestoreAppearanceField(field) == true)
+            {
+                e.Handled = true;
+            }
+        }, RoutingStrategies.Tunnel);
         this.FindControl<ListBox>("StyleList")!.SelectionChanged += SelectionChanged;
         this.FindControl<FontFamilyPicker>("FontInput")!.FamilyCommitted +=
             (_, value) => model?.CommitFont(value.Selection);

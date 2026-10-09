@@ -94,6 +94,11 @@ public static class EffectScriptCompiler
     private static AnimationTrackTarget ResolveTarget(EffectScriptKeyframe frame, ProjectLayer layer)
     {
         var property = EffectScriptPropertyMetadata.GetAnimationProperty(frame.Property);
+        if (AnimationPropertyMetadata.IsSubtitleOnlyProperty(property) &&
+            (layer.Kind != LayerKind.SUBTITLE || !layer.SubtitleId.HasValue))
+        {
+            throw new EffectScriptException("字幕排版和分通道模糊属性需要字幕片段。", frame.Line, frame.Column);
+        }
         if (!AnimationPropertyMetadata.IsNodeProperty(property))
         {
             return new(property);
@@ -112,6 +117,10 @@ public static class EffectScriptCompiler
     private static AnimationValue ResolveBaseValue(EffectScriptKeyframe frame, AnimationTrackTarget animationTarget,
         ProjectLayer layer, SubtitleStyle? subtitleStyle)
     {
+        if (AnimationPropertyMetadata.IsSubtitleOnlyProperty(animationTarget.Property) && subtitleStyle is null)
+        {
+            throw new EffectScriptException("字幕排版和分通道模糊属性需要应用前的字幕样式。", frame.Line, frame.Column);
+        }
         if (AnimationPropertyMetadata.IsMaskProperty(animationTarget.Property))
         {
             if (layer.Mask is not { } mask)
@@ -137,6 +146,9 @@ public static class EffectScriptCompiler
             AnimationProperty.OPACITY => layer.Opacity,
             AnimationProperty.BLUR => layer.Blur,
             AnimationProperty.STROKE_WIDTH => subtitleStyle?.StrokeWidth ?? layer.StrokeWidth,
+            AnimationProperty.LETTER_SPACING => subtitleStyle!.LetterSpacing,
+            AnimationProperty.FILL_BLUR => subtitleStyle!.FillBlur,
+            AnimationProperty.STROKE_BLUR => subtitleStyle!.StrokeBlur,
             AnimationProperty.FILL => subtitleStyle?.Fill ?? layer.Fill,
             AnimationProperty.STROKE => subtitleStyle?.Stroke ?? layer.Stroke,
             AnimationProperty.PATH_PROGRESS => 0,

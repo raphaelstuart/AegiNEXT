@@ -292,6 +292,9 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             AnimationProperty.OPACITY => layer.Opacity,
             AnimationProperty.BLUR => layer.Blur,
             AnimationProperty.STROKE_WIDTH => style?.StrokeWidth ?? layer.StrokeWidth,
+            AnimationProperty.LETTER_SPACING => style?.LetterSpacing ?? 0,
+            AnimationProperty.FILL_BLUR => style?.FillBlur ?? 0,
+            AnimationProperty.STROKE_BLUR => style?.StrokeBlur ?? 0,
             AnimationProperty.FILL => style?.Fill ?? layer.Fill,
             AnimationProperty.STROKE => style?.Stroke ?? layer.Stroke,
             _ => 0

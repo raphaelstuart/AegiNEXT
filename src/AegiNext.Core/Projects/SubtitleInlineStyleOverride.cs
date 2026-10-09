@@ -13,6 +13,9 @@ public sealed record SubtitleInlineStyleOverride
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool ClearFontVariant { get; init; }
     public double? FontSize { get; init; }
+    public double? LetterSpacing { get; init; }
+    public double? FillBlur { get; init; }
+    public double? StrokeBlur { get; init; }
     public bool? Bold { get; init; }
     public bool? Italic { get; init; }
     public bool? Underline { get; init; }
@@ -26,7 +29,7 @@ public sealed record SubtitleInlineStyleOverride
 
     [JsonIgnore]
     public bool HasOverrides => FontFamily is not null || FontAssetId.HasValue || ClearFontAsset ||
-        FontVariant is not null || ClearFontVariant || FontSize.HasValue ||
+        FontVariant is not null || ClearFontVariant || FontSize.HasValue || LetterSpacing.HasValue || FillBlur.HasValue || StrokeBlur.HasValue ||
         Bold.HasValue || Italic.HasValue || Underline.HasValue || Strikethrough.HasValue || Fill.HasValue ||
         Stroke.HasValue || StrokeWidth.HasValue || ShadowOffset.HasValue || ShadowBlur.HasValue || ShadowColor.HasValue;
 
@@ -42,6 +45,9 @@ public sealed record SubtitleInlineStyleOverride
             FontAssetId = FontAssetId ?? (ClearFontAsset || FontFamily is not null || FontVariant is not null ? null : style.FontAssetId),
             FontVariant = FontVariant ?? (ClearFontVariant || changesFont || changesFormatting ? null : style.FontVariant),
             FontSize = FontSize ?? style.FontSize,
+            LetterSpacing = LetterSpacing ?? style.LetterSpacing,
+            FillBlur = FillBlur ?? style.FillBlur,
+            StrokeBlur = StrokeBlur ?? style.StrokeBlur,
             Bold = Bold ?? (FontVariant is { } variant ? variant.Weight >= 700 : style.Bold),
             Italic = Italic ?? FontVariant?.Italic ?? style.Italic,
             Underline = Underline ?? style.Underline,
@@ -73,6 +79,9 @@ public sealed record SubtitleInlineStyleOverride
             FontVariant = changesVariant || changesFormatting ? overlay.FontVariant : FontVariant,
             ClearFontVariant = changesVariant ? overlay.ClearFontVariant : changesFormatting || ClearFontVariant,
             FontSize = overlay.FontSize ?? FontSize,
+            LetterSpacing = overlay.LetterSpacing ?? LetterSpacing,
+            FillBlur = overlay.FillBlur ?? FillBlur,
+            StrokeBlur = overlay.StrokeBlur ?? StrokeBlur,
             Bold = overlay.Bold ?? (overlay.FontVariant is { } selected ? selected.Weight >= 700 : Bold),
             Italic = overlay.Italic ?? overlay.FontVariant?.Italic ?? Italic,
             Underline = overlay.Underline ?? Underline,
@@ -95,6 +104,7 @@ public sealed record SubtitleInlineStyleOverride
             FontFamily = style.FontFamily, FontAssetId = style.FontAssetId, ClearFontAsset = !style.FontAssetId.HasValue,
             FontVariant = style.FontVariant, ClearFontVariant = style.FontVariant is null,
             FontSize = style.FontSize, Bold = style.Bold, Italic = style.Italic, Underline = style.Underline,
+            LetterSpacing = style.LetterSpacing, FillBlur = style.FillBlur, StrokeBlur = style.StrokeBlur,
             Strikethrough = style.Strikethrough, Fill = style.Fill, Stroke = style.Stroke, StrokeWidth = style.StrokeWidth,
             ShadowOffset = style.ShadowOffset, ShadowBlur = style.ShadowBlur, ShadowColor = style.ShadowColor
         };

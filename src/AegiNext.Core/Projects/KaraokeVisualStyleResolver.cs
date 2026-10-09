@@ -24,6 +24,7 @@ public static class KaraokeVisualStyleResolver
             ? ordinary with
             {
                 Fill = highlight.Fill, Stroke = highlight.Stroke, StrokeWidth = highlight.StrokeWidth,
+                FillBlur = highlight.FillBlur, StrokeBlur = highlight.StrokeBlur,
                 ShadowColor = highlight.ShadowColor, ShadowOffset = highlight.ShadowOffset, ShadowBlur = highlight.ShadowBlur
             }
             : ordinary with { Fill = segment.HighlightColor };

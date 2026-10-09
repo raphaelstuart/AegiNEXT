@@ -8,12 +8,14 @@ public sealed record KaraokeVisualStyleEdit
     public SceneColor? Fill { get; init; }
     public SceneColor? Stroke { get; init; }
     public double? StrokeWidth { get; init; }
+    public double? FillBlur { get; init; }
+    public double? StrokeBlur { get; init; }
     public double? ShadowX { get; init; }
     public double? ShadowY { get; init; }
     public double? ShadowBlur { get; init; }
     public SceneColor? ShadowColor { get; init; }
     public bool HasChanges => Fill.HasValue || Stroke.HasValue || StrokeWidth.HasValue || ShadowX.HasValue ||
-        ShadowY.HasValue || ShadowBlur.HasValue || ShadowColor.HasValue;
+        ShadowY.HasValue || ShadowBlur.HasValue || ShadowColor.HasValue || FillBlur.HasValue || StrokeBlur.HasValue;
 
     /// <summary>以当前字的有效阴影为基础，将明确修改的分量转换成可持久化视觉覆盖。</summary>
     public KaraokeVisualStyleOverride ToOverride(SubtitleStyle current)
@@ -22,6 +24,7 @@ public sealed record KaraokeVisualStyleEdit
         return new()
         {
             Fill = Fill, Stroke = Stroke, StrokeWidth = StrokeWidth, ShadowColor = ShadowColor, ShadowBlur = ShadowBlur,
+            FillBlur = FillBlur, StrokeBlur = StrokeBlur,
             ShadowOffset = ShadowX.HasValue || ShadowY.HasValue
                 ? new(ShadowX ?? current.ShadowOffset.X, ShadowY ?? current.ShadowOffset.Y) : null
         };
@@ -34,6 +37,7 @@ public sealed record KaraokeVisualStyleEdit
         return this with
         {
             Fill = overlay.Fill ?? Fill, Stroke = overlay.Stroke ?? Stroke, StrokeWidth = overlay.StrokeWidth ?? StrokeWidth,
+            FillBlur = overlay.FillBlur ?? FillBlur, StrokeBlur = overlay.StrokeBlur ?? StrokeBlur,
             ShadowX = overlay.ShadowX ?? ShadowX, ShadowY = overlay.ShadowY ?? ShadowY,
             ShadowBlur = overlay.ShadowBlur ?? ShadowBlur, ShadowColor = overlay.ShadowColor ?? ShadowColor
         };
@@ -46,6 +50,7 @@ public sealed record KaraokeVisualStyleEdit
         return new()
         {
             Fill = style.Fill, Stroke = style.Stroke, StrokeWidth = style.StrokeWidth, ShadowColor = style.ShadowColor,
+            FillBlur = style.FillBlur, StrokeBlur = style.StrokeBlur,
             ShadowX = style.ShadowOffset.X, ShadowY = style.ShadowOffset.Y, ShadowBlur = style.ShadowBlur
         };
     }

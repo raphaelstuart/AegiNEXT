@@ -666,6 +666,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
     private static SubtitleStyle AsSubtitleStyle(KaraokeHighlightStyle value) => new()
     {
         Fill = value.Fill, Stroke = value.Stroke, StrokeWidth = value.StrokeWidth,
+        FillBlur = value.FillBlur, StrokeBlur = value.StrokeBlur,
         ShadowColor = value.ShadowColor, ShadowOffset = value.ShadowOffset, ShadowBlur = value.ShadowBlur
     };
 

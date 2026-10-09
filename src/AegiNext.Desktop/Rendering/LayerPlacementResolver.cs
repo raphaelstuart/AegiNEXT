@@ -1,4 +1,6 @@
 using AegiNext.Core.Projects;
+using AegiNext.Core.Editing;
+using AegiNext.Core.Timing;
 using AegiNext.Desktop.Editing;
 using AegiNext.Rendering.Projects;
 
@@ -10,17 +12,17 @@ internal sealed class LayerPlacementResolver : IDisposable
     private ProjectSceneRenderer? renderer;
     private string? directory;
     private ProjectDocument? cachedDocument;
-    private readonly Dictionary<Guid, LayerPlacementResolution> cache = [];
+    private readonly Dictionary<Guid, (double? LetterSpacing, LayerPlacementResolution Result)> cache = [];
 
-    internal LayerPlacementResolution Resolve(ProjectDocument document, string projectDirectory, ProjectLayer? layer)
+    internal LayerPlacementResolution Resolve(ProjectDocument document, string projectDirectory, ProjectLayer? layer, MediaTime? contentTime = null)
     {
         lock (gate)
         {
-            return ResolveCore(document, projectDirectory, layer);
+            return ResolveCore(document, projectDirectory, layer, contentTime);
         }
     }
 
-    private LayerPlacementResolution ResolveCore(ProjectDocument document, string projectDirectory, ProjectLayer? layer)
+    private LayerPlacementResolution ResolveCore(ProjectDocument document, string projectDirectory, ProjectLayer? layer, MediaTime? contentTime = null)
     {
         if (layer?.SubtitleId is not { } id)
         {
@@ -41,16 +43,22 @@ internal sealed class LayerPlacementResolver : IDisposable
             cache.Clear();
         }
 
-        if (cache.TryGetValue(id, out var cached))
+        var spacingTrack = contentTime.HasValue
+            ? layer.Tracks.FirstOrDefault(track => track.Property == AnimationProperty.LETTER_SPACING) : null;
+        var letterSpacing = spacingTrack is not null
+            ? SceneEvaluator.EvaluateScalarTrack(spacingTrack, contentTime!.Value) : (double?)null;
+        if (cache.TryGetValue(id, out var cached) && cached.LetterSpacing == letterSpacing)
         {
-            return cached;
+            return cached.Result;
         }
 
         var subtitle = document.Subtitles.Single(line => line.Id == id);
         LayerPlacementResolution result;
         try
         {
-            var measurement = renderer.MeasureSubtitlePlacement(document, subtitle);
+            var measurement = letterSpacing.HasValue
+                ? renderer.MeasureSubtitlePlacement(document, SceneEvaluator.EvaluateLayer(layer, subtitle, contentTime!.Value))
+                : renderer.MeasureSubtitlePlacement(document, subtitle);
             var position = measurement.Position;
             result = new(new ScenePoint(position.Anchor.X * document.Width + position.Offset.X,
                 position.Anchor.Y * document.Height + position.Offset.Y), position, Geometry: new(
@@ -62,7 +70,7 @@ internal sealed class LayerPlacementResolver : IDisposable
             result = new(null, null, error);
         }
 
-        cache.Add(id, result);
+        cache[id] = (letterSpacing, result);
         return result;
     }
 

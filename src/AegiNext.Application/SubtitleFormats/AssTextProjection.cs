@@ -299,7 +299,9 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
         var restored = (previous ?? new()) with
         {
             Fill = next.Fill == serialized.Fill ? previous?.Fill : RestoreColor(native.Fill, serialized.Fill, next.Fill),
+            FillBlur = next.FillBlur.Equals(serialized.FillBlur) ? previous?.FillBlur : next.FillBlur,
             Stroke = next.Stroke == serialized.Stroke ? previous?.Stroke : RestoreColor(native.Stroke, serialized.Stroke, next.Stroke),
+            StrokeBlur = next.StrokeBlur.Equals(serialized.StrokeBlur) ? previous?.StrokeBlur : next.StrokeBlur,
             StrokeWidth = next.StrokeWidth.Equals(serialized.StrokeWidth) ? previous?.StrokeWidth : next.StrokeWidth,
             ShadowColor = next.ShadowColor == serialized.ShadowColor ? previous?.ShadowColor : RestoreColor(native.ShadowColor, serialized.ShadowColor, next.ShadowColor),
             ShadowOffset = next.ShadowOffset == serialized.ShadowOffset ? previous?.ShadowOffset : RestorePoint(native.ShadowOffset, serialized.ShadowOffset, next.ShadowOffset),
@@ -339,12 +341,14 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
                 next.Italic == serialized.Italic;
             var visual = RestoreVisualOverride(previousOverride is null ? null : new()
             {
-                Fill = previousOverride.Fill, Stroke = previousOverride.Stroke, StrokeWidth = previousOverride.StrokeWidth,
+                Fill = previousOverride.Fill, FillBlur = previousOverride.FillBlur,
+                Stroke = previousOverride.Stroke, StrokeBlur = previousOverride.StrokeBlur, StrokeWidth = previousOverride.StrokeWidth,
                 ShadowColor = previousOverride.ShadowColor, ShadowOffset = previousOverride.ShadowOffset, ShadowBlur = previousOverride.ShadowBlur
             }, previous, serialized, next);
             var style = (previousOverride ?? new()) with
             {
-                Fill = visual?.Fill, Stroke = visual?.Stroke, StrokeWidth = visual?.StrokeWidth,
+                Fill = visual?.Fill, FillBlur = visual?.FillBlur,
+                Stroke = visual?.Stroke, StrokeBlur = visual?.StrokeBlur, StrokeWidth = visual?.StrokeWidth,
                 ShadowColor = visual?.ShadowColor, ShadowOffset = visual?.ShadowOffset, ShadowBlur = visual?.ShadowBlur,
                 FontFamily = next.FontFamily == serialized.FontFamily ? previousOverride?.FontFamily : next.FontFamily,
                 FontAssetId = next.FontFamily == serialized.FontFamily ? previousOverride?.FontAssetId : null,
@@ -352,6 +356,7 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
                 FontVariant = preservesFont ? previousOverride?.FontVariant : null,
                 ClearFontVariant = preservesFont ? previousOverride?.ClearFontVariant ?? false : true,
                 FontSize = next.FontSize.Equals(serialized.FontSize) ? previousOverride?.FontSize : next.FontSize,
+                LetterSpacing = next.LetterSpacing.Equals(serialized.LetterSpacing) ? previousOverride?.LetterSpacing : next.LetterSpacing,
                 Bold = next.Bold == serialized.Bold ? previousOverride?.Bold : next.Bold,
                 Italic = next.Italic == serialized.Italic ? previousOverride?.Italic : next.Italic,
                 Underline = next.Underline == serialized.Underline ? previousOverride?.Underline : next.Underline,

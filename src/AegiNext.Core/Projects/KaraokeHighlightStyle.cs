@@ -8,6 +8,8 @@ public sealed record KaraokeHighlightStyle
     public SceneColor Fill { get; init; } = SceneColor.White;
     public SceneColor Stroke { get; init; } = SceneColor.Black;
     public double StrokeWidth { get; init; }
+    public double FillBlur { get; init; }
+    public double StrokeBlur { get; init; }
     public ScenePoint ShadowOffset { get; init; }
     public double ShadowBlur { get; init; }
     public SceneColor ShadowColor { get; init; } = SceneColor.Transparent;
@@ -16,6 +18,7 @@ public sealed record KaraokeHighlightStyle
     public bool VisuallyEquals(KaraokeHighlightStyle? other)
     {
         return other is not null && Fill == other.Fill && Stroke == other.Stroke && StrokeWidth == other.StrokeWidth &&
+            FillBlur == other.FillBlur && StrokeBlur == other.StrokeBlur &&
             ShadowOffset == other.ShadowOffset && ShadowBlur == other.ShadowBlur && ShadowColor == other.ShadowColor;
     }
 
@@ -30,6 +33,8 @@ public sealed record KaraokeHighlightStyle
             Fill = style.Fill,
             Stroke = style.Stroke,
             StrokeWidth = style.StrokeWidth,
+            FillBlur = style.FillBlur,
+            StrokeBlur = style.StrokeBlur,
             ShadowOffset = style.ShadowOffset,
             ShadowBlur = style.ShadowBlur,
             ShadowColor = style.ShadowColor

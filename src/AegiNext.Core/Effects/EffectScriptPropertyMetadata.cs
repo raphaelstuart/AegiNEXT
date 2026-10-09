@@ -10,7 +10,8 @@ public static class EffectScriptPropertyMetadata
     [
         "position", "scale", "rotation", "opacity", "blur", "stroke-width", "path-progress", "fill", "stroke",
         "mask-rectangle-top-left", "mask-rectangle-bottom-right", "mask-position", "mask-scale", "mask-rotation",
-        "mask-node(1,1).position", "mask-node(1,1).in-handle", "mask-node(1,1).out-handle"
+        "mask-node(1,1).position", "mask-node(1,1).in-handle", "mask-node(1,1).out-handle",
+        "letter-spacing", "fill-blur", "stroke-blur"
     ];
 
     /// <summary>识别编辑器中的属性名称；节点序号的语法及存在性由解析器和编译器验证。</summary>
@@ -64,6 +65,9 @@ public static class EffectScriptPropertyMetadata
         EffectScriptProperty.MASK_NODE_POSITION => AnimationProperty.MASK_NODE_POSITION,
         EffectScriptProperty.MASK_NODE_IN_HANDLE => AnimationProperty.MASK_NODE_IN_HANDLE,
         EffectScriptProperty.MASK_NODE_OUT_HANDLE => AnimationProperty.MASK_NODE_OUT_HANDLE,
+        EffectScriptProperty.LETTER_SPACING => AnimationProperty.LETTER_SPACING,
+        EffectScriptProperty.FILL_BLUR => AnimationProperty.FILL_BLUR,
+        EffectScriptProperty.STROKE_BLUR => AnimationProperty.STROKE_BLUR,
         _ => throw new ArgumentOutOfRangeException(nameof(property))
     };
 }

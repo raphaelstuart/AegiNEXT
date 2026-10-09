@@ -416,12 +416,18 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         };
         var fontField = Field("Workbench.Font", font);
         var fontSizeField = Field("Workbench.FontSize", Number(coordinator.StyleDraft, nameof(SubtitleDetailsStyleDraft.FontSizeText), "SelectionFontSizeInput", 0.01m, 4096));
+        var letterSpacingField = Field("Workbench.LetterSpacing", Number(coordinator.StyleDraft,
+            nameof(SubtitleDetailsStyleDraft.LetterSpacingText), "SelectionLetterSpacingInput", -4096, 4096));
+        bodyOnlyFields.Add(letterSpacingField);
         bodyOnlyFields.Add(fontField);
         bodyOnlyFields.Add(fontSizeField);
         styleFields.Children.Add(fontField);
         styleFields.Children.Add(fontSizeField);
+        styleFields.Children.Add(letterSpacingField);
         styleFields.Children.Add(Field("Workbench.Fill", StyleColor(nameof(SubtitleDetailsStyleDraft.Fill), "SelectionFillInput")));
         styleFields.Children.Add(Field("Workbench.Stroke", StyleColor(nameof(SubtitleDetailsStyleDraft.Stroke), "SelectionStrokeInput")));
+        styleFields.Children.Add(Field("Workbench.FillBlur", Number(null, nameof(SubtitleDetailsStyleDraft.FillBlurText), "SelectionFillBlurInput", 0, 512)));
+        styleFields.Children.Add(Field("Workbench.StrokeBlur", Number(null, nameof(SubtitleDetailsStyleDraft.StrokeBlurText), "SelectionStrokeBlurInput", 0, 512)));
         styleFields.Children.Add(Field("Workbench.StrokeWidth", Number(null, nameof(SubtitleDetailsStyleDraft.StrokeWidthText), "SelectionStrokeWidthInput", 0, 4096)));
         styleFields.Children.Add(Field("Workbench.Shadow", StyleColor(nameof(SubtitleDetailsStyleDraft.Shadow), "SelectionShadowInput")));
         styleFields.Children.Add(ShadowOffset(null, "Selection"));
@@ -720,6 +726,9 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         {
             return name switch
             {
+                "SelectionLetterSpacingInput" => nameof(SubtitleDetailsStyleDraft.LetterSpacingText),
+                "SelectionFillBlurInput" => nameof(SubtitleDetailsStyleDraft.FillBlurText),
+                "SelectionStrokeBlurInput" => nameof(SubtitleDetailsStyleDraft.StrokeBlurText),
                 "SelectionFontSizeInput" => nameof(SubtitleDetailsStyleDraft.FontSizeText),
                 "SelectionStrokeWidthInput" => nameof(SubtitleDetailsStyleDraft.StrokeWidthText),
                 "SelectionShadowXInput" => nameof(SubtitleDetailsStyleDraft.ShadowXText),
@@ -1071,6 +1080,9 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             var name = parts[1] switch
             {
                 nameof(SubtitleDetailsStyleDraft.FontFamily) => "SelectionFontInput",
+                nameof(SubtitleDetailsStyleDraft.LetterSpacingText) => "SelectionLetterSpacingInput",
+                nameof(SubtitleDetailsStyleDraft.FillBlurText) => "SelectionFillBlurInput",
+                nameof(SubtitleDetailsStyleDraft.StrokeBlurText) => "SelectionStrokeBlurInput",
                 nameof(SubtitleDetailsStyleDraft.FontSizeText) => "SelectionFontSizeInput",
                 nameof(SubtitleDetailsStyleDraft.Fill) => "SelectionFillInput",
                 nameof(SubtitleDetailsStyleDraft.Stroke) => "SelectionStrokeInput",

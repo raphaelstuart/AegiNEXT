@@ -58,6 +58,22 @@
           </StackPanel>
         </Grid>
       </StackPanel>
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding HasCue}">
+        <StackPanel Spacing="4" ToolTip.Tip="{Binding LetterSpacingEditingHint}">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.LetterSpacing}" />
+          <controls:NumericDraftInput Name="LetterSpacingInput" RawText="{Binding LetterSpacingText, Mode=TwoWay}"
+                                     Value="{Binding LetterSpacing, Mode=TwoWay}" IsEnabled="{Binding CanEditLetterSpacing}"
+                                     Minimum="-4096" Maximum="4096" Increment="0.5" ShowButtonSpinner="False" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="4">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.WrapMode}" />
+          <ComboBox Name="WrapModeInput" SelectedIndex="{Binding WrapMode, Mode=TwoWay}" HorizontalAlignment="Stretch">
+            <ComboBoxItem Content="{Loc Key=Workbench.WrapGrapheme}" />
+            <ComboBoxItem Content="{Loc Key=Workbench.WrapNatural}" />
+            <ComboBoxItem Content="{Loc Key=Workbench.WrapNone}" />
+          </ComboBox>
+        </StackPanel>
+      </Grid>
       <StackPanel Name="StylePaintGroup" Spacing="8">
         <Border BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,0,1" Padding="0,6,0,8">
           <TextBlock Name="StylePaintHeader" Classes="field" FontWeight="SemiBold"
@@ -78,6 +94,20 @@
                                      Minimum="0" Maximum="4096" Increment="0.5" />
         </StackPanel>
       </StackPanel>
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding HasCue}">
+        <StackPanel Grid.Column="0" Spacing="4" ToolTip.Tip="{Binding FillBlurEditingHint}">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.FillBlur}" />
+          <controls:NumericDraftInput Name="FillBlurInput" RawText="{Binding FillBlurText, Mode=TwoWay}"
+                                     Value="{Binding FillBlur, Mode=TwoWay}" IsEnabled="{Binding CanEditFillBlur}"
+                                     Minimum="0" Maximum="512" Increment="0.5" ShowButtonSpinner="False" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="4" ToolTip.Tip="{Binding StrokeBlurEditingHint}">
+          <TextBlock Classes="field" Text="{Loc Key=Workbench.StrokeBlur}" />
+          <controls:NumericDraftInput Name="StrokeBlurInput" RawText="{Binding StrokeBlurText, Mode=TwoWay}"
+                                     Value="{Binding StrokeBlur, Mode=TwoWay}" IsEnabled="{Binding CanEditStrokeBlur}"
+                                     Minimum="0" Maximum="512" Increment="0.5" ShowButtonSpinner="False" />
+        </StackPanel>
+      </Grid>
       <StackPanel Name="StyleShadowFields" IsEnabled="{Binding HasCue}" Spacing="8">
         <Border BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,0,1" Padding="0,6,0,8">
           <TextBlock Name="StyleShadowHeader" Classes="field" FontWeight="SemiBold"

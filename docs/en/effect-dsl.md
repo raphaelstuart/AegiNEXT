@@ -72,12 +72,16 @@ end
 | `opacity` | 0–1 or `base` |
 | `fill`, `stroke` | Linear `rgba(r, g, b, a)` or `base` |
 | `blur` | 0–512 pixels or `base` |
+| `letter-spacing` | Subtitle grapheme spacing, −4096–4096 pixels or `base` |
+| `fill-blur`, `stroke-blur` | Subtitle fill / outline blur, 0–512 pixels or `base` |
 | `path-progress` | Explicit 0–1 |
 | `mask-rectangle-top-left`, `mask-rectangle-bottom-right` | Project-coordinate corner vectors |
 | `mask-position`, `mask-scale`, `mask-rotation` | Independent mask transform |
 | `mask-node(c,n).position`, `.in-handle`, `.out-handle` | Existing node position / relative handle vectors |
 
 `base` reads the original target value; `offset` adds and `factor` multiplies it. Colors use straight linear RGB, permitting HDR values, with alpha 0–1; UI HEX is sRGB. `#` starts a comment, so HEX literals are not script values.
+
+`letter-spacing`, `fill-blur`, and `stroke-blur` require a subtitle Clip and its original subtitle style, including when using explicit numbers. Their `base` values come from that style. The existing `blur` applies to the composited layer; the two channel blurs affect fill and outline separately. Wrap mode is a static subtitle style setting and is not an animated DSL property. These properties remain part of DSL version 1.
 
 Easing is `hold`, `linear`, `ease-in`, `ease-out`, `ease-in-out`, or `power(positiveExponent)`. A point controls interpolation to the next point; default is linear.
 

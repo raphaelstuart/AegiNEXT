@@ -14,7 +14,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private readonly IProjectAssetResolver assets;
     private readonly GRContext? graphicsContext;
     private readonly Dictionary<ProjectAsset, SKImage> images = [];
-    private readonly Dictionary<(SubtitleLine Subtitle, int Width, int Height), SubtitleLayout> layouts = [];
+    private readonly SubtitleLayoutCache layouts = new();
     private readonly Dictionary<(Guid? Asset, string Family, SubtitleFontVariant? Variant, bool Bold, bool Italic), TextShaper> textShapers = [];
     private readonly Dictionary<(nint Handle, SubtitleFontVariant? Variant, int Instance, int Collection, bool Bold, bool Italic), TextShaper> actualTextShapers = [];
     private readonly Dictionary<(string Family, SubtitleFontVariant? Variant, bool Bold, bool Italic, string Grapheme), TextShaper> resolvedTextShapers = [];
@@ -51,6 +51,8 @@ public sealed partial class ProjectSceneRenderer : IDisposable
 
     /// <summary>返回渲染器拥有的临时表面池计数；不包含交给调用方或单独帧缓存持有的表面。</summary>
     public RenderSurfacePoolStatistics RenderSurfaceStatistics => surfacePool.Statistics;
+    internal int CachedSubtitleLayoutCount => layouts.Count;
+    internal int CachedTextShaperCount => actualTextShapers.Count;
 
     /// <summary>在工程精确时间渲染透明的预乘 F16 字幕与图形层，调用方负责释放结果。</summary>
     public LinearRenderSurface Render(ProjectDocument document, MediaTime time)
@@ -113,13 +115,32 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(subtitle);
         Prepare(document);
         var layout = Layout(document, subtitle);
+        return Placement(subtitle, layout, document.Width, document.Height);
+    }
+
+    /// <summary>测量已经求值的字幕，当前字距动画参与边界与轴心计算。</summary>
+    public SubtitlePlacementMeasurement MeasureSubtitlePlacement(ProjectDocument document, EvaluatedLayer layer)
+    {
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(layer);
+        if (layer.Subtitle is null)
+        {
+            throw new ArgumentException("排版测量需要字幕层。", nameof(layer));
+        }
+        Prepare(document);
+        return Placement(layer.Subtitle, Layout(document, layer), document.Width, document.Height);
+    }
+
+    private static SubtitlePlacementMeasurement Placement(SubtitleLine subtitle, SubtitleLayout layout, int width, int height)
+    {
         var resolved = subtitle.Style.Position ?? SubtitlePosition.FromAlignment(subtitle.Style.Alignment, subtitle.Style.Margins);
         if (subtitle.Style.Position is null)
         {
             resolved = resolved with
             {
-                Offset = new(layout.BasePosition.X - resolved.Anchor.X * document.Width,
-                    layout.BasePosition.Y - resolved.Anchor.Y * document.Height)
+                Offset = new(layout.BasePosition.X - resolved.Anchor.X * width,
+                    layout.BasePosition.Y - resolved.Anchor.Y * height)
             };
         }
 
@@ -336,6 +357,9 @@ public sealed partial class ProjectSceneRenderer : IDisposable
             if (!ReferenceEquals(a.Source, b.Source) || !ReferenceEquals(a.Subtitle, b.Subtitle) ||
                 a.HasFillAnimation != b.HasFillAnimation || a.HasStrokeAnimation != b.HasStrokeAnimation ||
                 a.HasStrokeWidthAnimation != b.HasStrokeWidthAnimation || a.Transform != b.Transform || !a.Opacity.Equals(b.Opacity) ||
+                a.HasLetterSpacingAnimation != b.HasLetterSpacingAnimation || !a.LetterSpacing.Equals(b.LetterSpacing) ||
+                a.HasFillBlurAnimation != b.HasFillBlurAnimation || !a.FillBlur.Equals(b.FillBlur) ||
+                a.HasStrokeBlurAnimation != b.HasStrokeBlurAnimation || !a.StrokeBlur.Equals(b.StrokeBlur) ||
                 a.Fill != b.Fill || a.Stroke != b.Stroke || !a.StrokeWidth.Equals(b.StrokeWidth) || !a.Blur.Equals(b.Blur) || !EquivalentMask(a.Mask, b.Mask) ||
                 (a.Subtitle is { Karaoke.IsEmpty: false } && a.LocalTime != b.LocalTime))
             {
@@ -502,7 +526,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         switch (layer.Source.Kind)
         {
             case LayerKind.SUBTITLE:
-                var layout = Layout(document, layer.Subtitle!);
+                var layout = Layout(document, layer);
                 bounds = layout.Bounds;
                 pivot = layout.Pivot;
                 basePosition = layout.BasePosition;
@@ -605,11 +629,6 @@ public sealed partial class ProjectSceneRenderer : IDisposable
 
     private void ClearLayouts()
     {
-        foreach (var layout in layouts.Values)
-        {
-            layout.Dispose();
-        }
-
         layouts.Clear();
         foreach (var shaper in actualTextShapers.Values)
         {

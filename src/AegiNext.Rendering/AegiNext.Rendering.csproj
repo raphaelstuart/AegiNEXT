@@ -7,5 +7,6 @@
     <ProjectReference Include="../AegiNext.Core/AegiNext.Core.csproj" />
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="SkiaSharp.HarfBuzz" />
+    <PackageReference Include="Uax14Net" />
   </ItemGroup>
 </Project>

@@ -72,12 +72,13 @@ public sealed class TextShaper : IDisposable
     /// <summary>
     /// 塑形非空单行文本，显式指定像素字号、方向和语言；缺字抛出异常，cluster 使用 UTF-16 下标。
     /// </summary>
-    public ShapedTextRun Shape(string text, float fontSize, TextDirection direction, string language)
+    public ShapedTextRun Shape(string text, float fontSize, TextDirection direction, string language, float letterSpacing = 0)
     {
         ObjectDisposedException.ThrowIf(isDisposed, this);
         ValidateText(text);
         ArgumentException.ThrowIfNullOrWhiteSpace(language);
         RenderValidation.Finite(fontSize, nameof(fontSize));
+        RenderValidation.Finite(letterSpacing, nameof(letterSpacing));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fontSize);
         if (!float.IsNormal(fontSize))
         {
@@ -111,6 +112,22 @@ public sealed class TextShaper : IDisposable
         var ids = new ushort[result.Codepoints.Length];
         var glyphs = new ShapedGlyph[ids.Length];
         RenderValidation.Finite(result.Width, nameof(fontSize));
+        var physicalClusters = result.Clusters.Select((cluster, index) => (Cluster: checked((int)cluster), X: result.Points[index].X))
+            .GroupBy(item => item.Cluster).Select(group => (Cluster: group.Key, X: group.Min(item => item.X))).OrderBy(item => item.X).ToArray();
+        var clusterIndices = physicalClusters.Select((item, index) => (item.Cluster, Index: index)).ToDictionary(item => item.Cluster, item => item.Index);
+        var clusters = new ShapedTextCluster[physicalClusters.Length];
+        for (var index = 0; index < physicalClusters.Length; index++)
+        {
+            var item = physicalClusters[index];
+            var end = index + 1 < physicalClusters.Length ? physicalClusters[index + 1].X + (index + 1) * letterSpacing :
+                result.Width + index * letterSpacing;
+            clusters[index] = new(item.Cluster, item.X + index * letterSpacing, end)
+            {
+                ContentEnd = index + 1 < physicalClusters.Length ? end - letterSpacing : end
+            };
+        }
+        var advanceWidth = result.Width + Math.Max(0, physicalClusters.Length - 1) * letterSpacing;
+        RenderValidation.Finite(advanceWidth, nameof(letterSpacing));
         for (var i = 0; i < ids.Length; i++)
         {
             ids[i] = checked((ushort)result.Codepoints[i]);
@@ -119,6 +136,8 @@ public sealed class TextShaper : IDisposable
                 throw new InvalidOperationException($"字体缺少 UTF-16 cluster {result.Clusters[i]} 所需的字形。");
             }
 
+            var original = result.Points[i];
+            result.Points[i] = new(original.X + clusterIndices[checked((int)result.Clusters[i])] * letterSpacing, original.Y);
             var point = new Vector2(result.Points[i].X, result.Points[i].Y);
             RenderValidation.Point(point, nameof(fontSize));
             glyphs[i] = new(ids[i], checked((int)result.Clusters[i]), point);
@@ -145,6 +164,12 @@ public sealed class TextShaper : IDisposable
                 }
 
                 glyphBound.Offset(result.Points[index]);
+                var clusterIndex = clusterIndices[checked((int)result.Clusters[index])];
+                var cluster = clusters[clusterIndex];
+                clusters[clusterIndex] = cluster with
+                {
+                    InkBounds = cluster.InkBounds.IsEmpty ? glyphBound : SKRect.Union(cluster.InkBounds, glyphBound)
+                };
                 RenderValidation.Finite(glyphBound.Left, nameof(fontSize));
                 RenderValidation.Finite(glyphBound.Top, nameof(fontSize));
                 RenderValidation.Finite(glyphBound.Right, nameof(fontSize));
@@ -152,7 +177,7 @@ public sealed class TextShaper : IDisposable
                 inkBounds = inkBounds.IsEmpty ? glyphBound : SKRect.Union(inkBounds, glyphBound);
             }
 
-            return new(blob, glyphs, result.Width, inkBounds, metrics);
+            return new(blob, glyphs, clusters, advanceWidth, inkBounds, metrics);
         }
         catch
         {

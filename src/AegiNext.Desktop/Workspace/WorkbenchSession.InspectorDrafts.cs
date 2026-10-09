@@ -25,6 +25,12 @@ internal sealed partial class WorkbenchSession
                 var fontSize = ReadNumber(vm.FontSizeText, line.Style.FontSize, "Size", "FontSizeInput");
                 var lineHeight = ReadNumber(vm.LineHeightText, line.Style.LineHeight, "LineHeight", "LineHeightInput");
                 var strokeWidth = PrepareStrokeWidth(ref prepared, selected, line.Style.StrokeWidth, vm.StrokeWidthText);
+                var letterSpacing = PrepareStyleAnimationNumber(ref prepared, selected, AnimationProperty.LETTER_SPACING,
+                    line.Style.LetterSpacing, vm.LetterSpacingText, "LetterSpacing");
+                var fillBlur = PrepareStyleAnimationNumber(ref prepared, selected, AnimationProperty.FILL_BLUR,
+                    line.Style.FillBlur, vm.FillBlurText, "FillBlur");
+                var strokeBlur = PrepareStyleAnimationNumber(ref prepared, selected, AnimationProperty.STROKE_BLUR,
+                    line.Style.StrokeBlur, vm.StrokeBlurText, "StrokeBlur");
                 var fill = PrepareColor(ref prepared, selected, ReadColorDraft(vm.FillDraft, "FillPicker"), line.Style.Fill, false);
                 var stroke = PrepareColor(ref prepared, selected, ReadColorDraft(vm.StrokeDraft, "StrokePicker"), line.Style.Stroke, true);
                 var shadowX = ReadNumber(vm.ShadowXText, line.Style.ShadowOffset.X, "ShadowX", "ShadowXInput");
@@ -54,6 +60,10 @@ internal sealed partial class WorkbenchSession
                     FontAssetId = fontChanged ? null : line.Style.FontAssetId,
                     FontSize = fontSize,
                     LineHeight = lineHeight,
+                    LetterSpacing = letterSpacing,
+                    FillBlur = fillBlur,
+                    StrokeBlur = strokeBlur,
+                    WrapMode = (SubtitleWrapMode)vm.WrapMode,
                     Margins = vm.Margins.CreateMargins(),
                     StrokeWidth = strokeWidth,
                     Fill = fill,

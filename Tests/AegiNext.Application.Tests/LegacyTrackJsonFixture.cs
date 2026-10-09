@@ -7,7 +7,11 @@ internal static class LegacyTrackJsonFixture
 {
     internal static void DowngradeProject(JsonObject root)
     {
-        if (root["version"]!.GetValue<int>() >= ProjectDocument.CURRENT_VERSION || root["tracks"] is not JsonArray tracks)
+        if (root["version"]!.GetValue<int>() < 10)
+        {
+            LegacySubtitleAppearanceJsonFixture.Downgrade(root);
+        }
+        if (root["version"]!.GetValue<int>() >= 9 || root["tracks"] is not JsonArray tracks)
         {
             return;
         }

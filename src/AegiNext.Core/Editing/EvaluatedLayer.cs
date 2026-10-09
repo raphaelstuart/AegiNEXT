@@ -12,4 +12,10 @@ public sealed record EvaluatedLayer(ProjectLayer Source, MediaTime LocalTime, La
     public bool HasFillAnimation { get; init; }
     public bool HasStrokeAnimation { get; init; }
     public bool HasStrokeWidthAnimation { get; init; }
+    public double LetterSpacing { get; init; }
+    public double FillBlur { get; init; }
+    public double StrokeBlur { get; init; }
+    public bool HasLetterSpacingAnimation { get; init; }
+    public bool HasFillBlurAnimation { get; init; }
+    public bool HasStrokeBlurAnimation { get; init; }
 }

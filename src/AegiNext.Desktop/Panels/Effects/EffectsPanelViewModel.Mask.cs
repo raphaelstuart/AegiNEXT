@@ -52,7 +52,14 @@ internal sealed partial class EffectsPanelViewModel
     }
 
     private static double Seconds(MediaTime time) => (double)time.Numerator / time.Denominator;
-    internal void RefreshMaskState() => RefreshChoices(Blends, session.MaskPropertyChoices(), Interpolations);
+    internal void RefreshMaskState()
+    {
+        RefreshChoices(Blends, session.MaskPropertyChoices(), Interpolations);
+        if (AnimationPropertyMetadata.IsSubtitleOnlyProperty(Property) && SelectedLayer?.Kind != LayerKind.SUBTITLE)
+        {
+            Target = new(AnimationProperty.OPACITY);
+        }
+    }
 
     public AnimationTransformChoice[] TransformOperations { get; private set; } = [];
     private AnimationTransformChoice? selectedOperation;

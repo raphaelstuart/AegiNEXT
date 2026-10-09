@@ -10,9 +10,13 @@ public sealed record SubtitleStyle
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SubtitleFontVariant? FontVariant { get; init; }
     public double FontSize { get; init; } = 64;
+    public double LetterSpacing { get; init; }
+    public SubtitleWrapMode WrapMode { get; init; } = SubtitleWrapMode.GRAPHEME;
     public SceneColor Fill { get; init; } = SceneColor.White;
+    public double FillBlur { get; init; }
     public SceneColor Stroke { get; init; } = SceneColor.Black;
     public double StrokeWidth { get; init; } = 2;
+    public double StrokeBlur { get; init; }
     public bool Bold { get; init; }
     public bool Italic { get; init; }
     public bool Underline { get; init; }

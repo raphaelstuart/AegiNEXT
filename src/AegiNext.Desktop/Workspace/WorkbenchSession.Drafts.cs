@@ -14,7 +14,7 @@ internal sealed partial class WorkbenchSession
     private static readonly HashSet<string> styleDraftProperties =
     [
         "FontFamily", "FontVariant", "FontSelectionCommitted", "FontDraft", "FontSize", "FontSizeText", "StrokeWidth", "StrokeWidthText", "Fill", "Stroke", "FillDraft", "StrokeDraft", "Bold", "Italic", "Alignment", "AlignmentSelectionCommitted", "Position",
-        "ShadowX", "ShadowXText", "ShadowY", "ShadowYText", "ShadowBlur", "ShadowBlurText", "ShadowDraft", "LineHeight", "LineHeightText", "Margins"
+        "ShadowX", "ShadowXText", "ShadowY", "ShadowYText", "ShadowBlur", "ShadowBlurText", "ShadowDraft", "LineHeight", "LineHeightText", "Margins", "LetterSpacing", "LetterSpacingText", "FillBlur", "FillBlurText", "StrokeBlur", "StrokeBlurText", "WrapMode"
     ];
     private static readonly HashSet<string> effectDraftProperties =
     [
@@ -259,7 +259,8 @@ internal sealed partial class WorkbenchSession
             "StrokeWidthInput" => (0m, 4096m),
             "LineHeightInput" => (0.1m, 10m),
             "ShadowXInput" or "ShadowYInput" => (-1000000000m, 1000000000m),
-            "ShadowBlurInput" => (0m, 512m),
+            "ShadowBlurInput" or "FillBlurInput" or "StrokeBlurInput" => (0m, 512m),
+            "LetterSpacingInput" => (-4096m, 4096m),
             "LayerWidthInput" or "LayerHeightInput" => (1m, 32768m),
             "PositionXInput" or "PositionYInput" => (-2000032768m, 2000032768m),
             "ScaleXInput" or "ScaleYInput" => (0.001m, 100m),
@@ -466,6 +467,7 @@ internal sealed partial class WorkbenchSession
         var vm = ViewModel.Styles;
         vm.LoadCanvasSize(editor.Snapshot.Width, editor.Snapshot.Height);
         vm.HasCue = cue is not null;
+        vm.RefreshAppearanceEditing();
         if (!stylesDirty)
         {
             vm.LoadFont(style);
@@ -473,7 +475,13 @@ internal sealed partial class WorkbenchSession
             vm.StrokeWidth = (decimal)(layer is null ? 0 : InspectorValue(layer, AnimationProperty.STROKE_WIDTH, cue is null ? layer.StrokeWidth : style.StrokeWidth));
             vm.FillDraft.Load(layer is null ? SceneColor.White : InspectorColor(layer, cue is null ? layer.Fill : style.Fill, false));
             vm.StrokeDraft.Load(layer is null ? SceneColor.Black : InspectorColor(layer, cue is null ? layer.Stroke : style.Stroke, true));
-            vm.LoadStyleNumbers(style, InterfaceCulture);
+            vm.LoadStyleNumbers(layer is null ? style : style with
+            {
+                LetterSpacing = InspectorValue(layer, AnimationProperty.LETTER_SPACING, style.LetterSpacing),
+                FillBlur = InspectorValue(layer, AnimationProperty.FILL_BLUR, style.FillBlur),
+                StrokeBlur = InspectorValue(layer, AnimationProperty.STROKE_BLUR, style.StrokeBlur)
+            }, InterfaceCulture);
+            vm.WrapMode = (int)style.WrapMode;
             vm.ShadowDraft.Load(style.ShadowColor);
             vm.Bold = style.Bold;
             vm.Italic = style.Italic;
@@ -535,7 +543,7 @@ internal sealed partial class WorkbenchSession
 
     private Rendering.LayerPlacementResolution ResolvePlacement(ProjectDocument document, ProjectLayer? layer)
     {
-        var result = layerPlacement.Resolve(document, projectDirectory, layer);
+        var result = layerPlacement.Resolve(document, projectDirectory, layer, AnimationTarget?.LocalTime);
         if (result.Error is { } error)
         {
             placementDiagnostic = new InvalidDataException($"{Localization.Get("Workbench.SubtitlePositionUnavailable")}: {error.Message}", error);

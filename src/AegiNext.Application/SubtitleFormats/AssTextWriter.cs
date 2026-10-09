@@ -232,6 +232,10 @@ internal static class AssTextWriter
         if (!projection)
         {
             AssExportPrecision.AddStyle(style, id, diagnostics);
+            if (!style.LetterSpacing.Equals(0d) || style.FillBlur > 0 || style.StrokeBlur > 0 || style.WrapMode != SubtitleWrapMode.GRAPHEME)
+            {
+                diagnostics.Add(new("Ass.NativeTypography", "当前转换尚不能表达项目字距、独立填充/描边模糊或换行策略，已省略这些属性。", SubtitleId: id));
+            }
         }
         if (!projection && style.FontVariant is not null)
         {

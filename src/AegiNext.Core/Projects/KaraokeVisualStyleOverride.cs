@@ -8,13 +8,15 @@ public sealed record KaraokeVisualStyleOverride
     public SceneColor? Fill { get; init; }
     public SceneColor? Stroke { get; init; }
     public double? StrokeWidth { get; init; }
+    public double? FillBlur { get; init; }
+    public double? StrokeBlur { get; init; }
     public ScenePoint? ShadowOffset { get; init; }
     public double? ShadowBlur { get; init; }
     public SceneColor? ShadowColor { get; init; }
 
     [JsonIgnore]
     public bool HasOverrides => Fill.HasValue || Stroke.HasValue || StrokeWidth.HasValue || ShadowOffset.HasValue ||
-        ShadowBlur.HasValue || ShadowColor.HasValue;
+        ShadowBlur.HasValue || ShadowColor.HasValue || FillBlur.HasValue || StrokeBlur.HasValue;
 
     /// <summary>只合并明确设置的字段，显式零和透明色均保留为覆盖。</summary>
     public KaraokeVisualStyleOverride Merge(KaraokeVisualStyleOverride overlay)
@@ -23,6 +25,7 @@ public sealed record KaraokeVisualStyleOverride
         return this with
         {
             Fill = overlay.Fill ?? Fill, Stroke = overlay.Stroke ?? Stroke, StrokeWidth = overlay.StrokeWidth ?? StrokeWidth,
+            FillBlur = overlay.FillBlur ?? FillBlur, StrokeBlur = overlay.StrokeBlur ?? StrokeBlur,
             ShadowOffset = overlay.ShadowOffset ?? ShadowOffset, ShadowBlur = overlay.ShadowBlur ?? ShadowBlur,
             ShadowColor = overlay.ShadowColor ?? ShadowColor
         };
@@ -37,6 +40,8 @@ public sealed record KaraokeVisualStyleOverride
             Fill = Fill ?? style.Fill,
             Stroke = Stroke ?? style.Stroke,
             StrokeWidth = StrokeWidth ?? style.StrokeWidth,
+            FillBlur = FillBlur ?? style.FillBlur,
+            StrokeBlur = StrokeBlur ?? style.StrokeBlur,
             ShadowOffset = ShadowOffset ?? style.ShadowOffset,
             ShadowBlur = ShadowBlur ?? style.ShadowBlur,
             ShadowColor = ShadowColor ?? style.ShadowColor

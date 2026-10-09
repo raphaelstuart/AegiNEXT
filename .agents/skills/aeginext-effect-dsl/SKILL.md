@@ -23,7 +23,7 @@ Use the repository's actual DSL v1 parser and compiler as the authority. This is
 - `base` reads the target's original base value, not the playhead, the previous segment, or accumulated effects. Prefer `offset(x, y)` for relative translation and `factor(x, y)` for relative scale; retain independent X/Y values.
 - `position` and `scale` are complete two-component values. `fill` and `stroke` are complete straight linear RGBA values: `rgba(r, g, b, a)` or `base`. Colors do not accept `offset` or `factor`; RGB may be HDR, Alpha stays within 0–1.
 - UI HEX/RGBA byte input is sRGB and differs from DSL linear color. Do not paste `#RRGGBB` into a value: `#` starts a comment. Convert intended sRGB colors to linear values when necessary and explain that conversion.
-- Supported scalar properties are `rotation`, `opacity`, `blur`, `stroke-width`, and `path-progress`. The last accepts only an explicit 0–1 number. Use only documented units, functions, properties, and interpolations (`hold`, `linear`, `ease-in`, `ease-out`, `ease-in-out`).
+- Supported scalar properties are `rotation`, `opacity`, `blur`, `stroke-width`, `letter-spacing`, `fill-blur`, `stroke-blur`, and `path-progress`. The last accepts only an explicit 0–1 number. `letter-spacing`, `fill-blur`, and `stroke-blur` require a subtitle target and its `SubtitleStyle`; their `base` values come from that style. Use only documented units, functions, properties, and interpolations (`hold`, `linear`, `ease-in`, `ease-out`, `ease-in-out`).
 - Do not add executable code, file access, loops, custom functions, per-axis property names, or rectangle/stretch semantics. Path animation requires an existing path; the script does not create its points.
 
 ## Validate the exact delivered source

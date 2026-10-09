@@ -23,9 +23,15 @@
 
 ## 文字与编辑几何
 
-`TextShaper` 使用显式字体字节、字号、方向和语言。字形 cluster 是 UTF-16 索引而非字符数；run API 要求有效单行/单文字系统文本，调用方负责分段，混合双向/逐 run 字体回退仍不完整。
+`TextShaper` 使用显式字体字节、字号、方向、语言及可选的像素字距。字距加在塑形后的 cluster 之间，保留组合附标、连字与阿拉伯连接形。cluster 使用 UTF-16 索引而非字符数；行末不额外加字距，行内样式/字体 run 边界只加一次。支持负字距，包括总 advance 为负的情况。run API 要求有效单行/单文字系统文本，调用方负责分段，混合双向/逐 run 字体回退仍不完整。
 
 场景渲染增加基础多行/换行和字素卡拉 OK。实际字形墨迹边界决定几何，描边/阴影/模糊不改变 Pivot；空文本使用逻辑编辑框。Anchor 相对画布、Pivot 相对墨迹、Offset 使用像素。`GetLayerGeometry` 与绘制、命中和拖拽共享边界/变换。
+
+`SubtitleStyle.WrapMode` 默认为 `GRAPHEME`，保留旧工程行为。`NATURAL` 使用 [Uax14Net 1.1.0](https://github.com/routersys/Uax14Net) 提供的 Unicode 自然断行位置，超宽普通单词可回退到字素断行。由 NBSP、窄 NBSP、Word Joiner 连接的组保持完整，允许超出画布。`NO_WRAP` 只按显式换行分行。负字距换行先测量一次整段 cluster 几何，再塑形选定的各行；重新塑形后复核实际墨迹，超宽时二分查找更早的断点，仍保留不可拆组。不反复塑形每个增长的前缀。
+
+`FillBlur` 与 `StrokeBlur` 分别模糊填充与描边，保留独立的 `ShadowBlur` 和整层 `Blur`。绘制 padding 包含两种模糊的扩散范围，编辑边界与 Pivot 仍按原始墨迹计算。字距、填充模糊、描边模糊动画覆盖对应行内值。`MeasureSubtitleTextLayout` 和 `MeasureSubtitlePlacement` 的 `EvaluatedLayer` 重载与绘制使用同一动画字距；`SubtitleLine` 重载和 `RenderSubtitlePreview` 保持静态样式预览契约。
+
+渲染器使用最多 256 项的 LRU 排版缓存，每层只保留最近一次动画排版。淘汰排版会释放其 text blob，不清除字体塑形器；工程变化或渲染器释放时统一清理排版和字体资源。返回的编辑几何快照不借用这些原生资源。
 
 ## Clip 蒙版
 

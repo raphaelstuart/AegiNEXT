@@ -17,6 +17,9 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
     private string shadowXText = string.Empty;
     private string shadowYText = string.Empty;
     private string shadowBlurText = string.Empty;
+    private string letterSpacingText = string.Empty;
+    private string fillBlurText = string.Empty;
+    private string strokeBlurText = string.Empty;
     private SubtitleStyle source = new();
     private readonly SubtitleFontSelectionService fonts;
     private FontSelection? selectedFont;
@@ -105,6 +108,42 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
         }
     }
 
+    public string LetterSpacingText
+    {
+        get => letterSpacingText;
+        set
+        {
+            if (SetProperty(ref letterSpacingText, value))
+            {
+                Mark(nameof(LetterSpacingText));
+            }
+        }
+    }
+
+    public string FillBlurText
+    {
+        get => fillBlurText;
+        set
+        {
+            if (SetProperty(ref fillBlurText, value))
+            {
+                Mark(nameof(FillBlurText));
+            }
+        }
+    }
+
+    public string StrokeBlurText
+    {
+        get => strokeBlurText;
+        set
+        {
+            if (SetProperty(ref strokeBlurText, value))
+            {
+                Mark(nameof(StrokeBlurText));
+            }
+        }
+    }
+
     private void Mark(string field)
     {
         if (!loading)
@@ -128,6 +167,9 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
             ShadowXText = style.ShadowOffset.X.ToString(CultureInfo.InvariantCulture);
             ShadowYText = style.ShadowOffset.Y.ToString(CultureInfo.InvariantCulture);
             ShadowBlurText = style.ShadowBlur.ToString(CultureInfo.InvariantCulture);
+            LetterSpacingText = style.LetterSpacing.ToString(CultureInfo.InvariantCulture);
+            FillBlurText = style.FillBlur.ToString(CultureInfo.InvariantCulture);
+            StrokeBlurText = style.StrokeBlur.ToString(CultureInfo.InvariantCulture);
             Fill.Load(style.Fill);
             Stroke.Load(style.Stroke);
             Shadow.Load(style.ShadowColor);
@@ -166,6 +208,15 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
                     break;
                 case nameof(ShadowBlurText):
                     ShadowBlurText = source.ShadowBlur.ToString(CultureInfo.InvariantCulture);
+                    break;
+                case nameof(LetterSpacingText):
+                    LetterSpacingText = source.LetterSpacing.ToString(CultureInfo.InvariantCulture);
+                    break;
+                case nameof(FillBlurText):
+                    FillBlurText = source.FillBlur.ToString(CultureInfo.InvariantCulture);
+                    break;
+                case nameof(StrokeBlurText):
+                    StrokeBlurText = source.StrokeBlur.ToString(CultureInfo.InvariantCulture);
                     break;
                 case nameof(Fill):
                     Fill.Load(source.Fill);
@@ -273,6 +324,9 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
                 InvalidField = field;
                 var label = field switch
                 {
+                    nameof(LetterSpacingText) => "LetterSpacing",
+                    nameof(FillBlurText) => "FillBlur",
+                    nameof(StrokeBlurText) => "StrokeBlur",
                     nameof(FontSizeText) => "FontSize", nameof(StrokeWidthText) => "StrokeWidth", nameof(ShadowXText) => "ShadowX",
                     nameof(ShadowYText) => "ShadowY", _ => "ShadowBlur"
                 };
@@ -301,6 +355,9 @@ internal sealed class SubtitleDetailsStyleDraft : ObservableObject
             : new SubtitleInlineStyleOverride();
         return font with
         {
+            LetterSpacing = Number(nameof(LetterSpacingText), LetterSpacingText, -4096, 4096),
+            FillBlur = Number(nameof(FillBlurText), FillBlurText, 0, 512),
+            StrokeBlur = Number(nameof(StrokeBlurText), StrokeBlurText, 0, 512),
             FontSize = Number(nameof(FontSizeText), FontSizeText, 0.01, 4096),
             StrokeWidth = Number(nameof(StrokeWidthText), StrokeWidthText, 0, 4096),
             Fill = Color(nameof(Fill), Fill), Stroke = Color(nameof(Stroke), Stroke),

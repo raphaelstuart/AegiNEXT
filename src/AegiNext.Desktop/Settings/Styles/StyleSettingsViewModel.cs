@@ -31,14 +31,21 @@ public sealed class StyleSettingsViewModel : ObservableObject
     internal Func<bool>? HasPendingInputs { get; set; }
     internal Task SelectionCompletion { get; private set; } = Task.CompletedTask;
     private int draftVersion;
+    private SubtitleStyle appearanceOriginal = new();
     private decimal? fontSize;
     private decimal? strokeWidth;
+    private decimal? letterSpacing;
+    private decimal? fillBlur;
+    private decimal? strokeBlur;
     private decimal? lineHeight;
     private decimal? shadowBlur;
     private decimal? shadowX;
     private decimal? shadowY;
     private string fontSizeText = string.Empty;
     private string strokeWidthText = string.Empty;
+    private string letterSpacingText = string.Empty;
+    private string fillBlurText = string.Empty;
+    private string strokeBlurText = string.Empty;
     private string lineHeightText = string.Empty;
     private string shadowBlurText = string.Empty;
     private string shadowXText = string.Empty;
@@ -139,7 +146,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public ImmutableArray<Guid> SelectedIds => selectedIds;
     public bool IsDirty => HasDraft && (draft!.Preset != styles.FirstOrDefault(value => value.Id == draft.Preset.Id) ||
         FillDraft.IsDirty || StrokeDraft.IsDirty || ShadowDraft.IsDirty || Position.Validate() is not null || Margins.Validate() is not null ||
-        new[] { FontSizeText, StrokeWidthText, LineHeightText, ShadowBlurText, ShadowXText, ShadowYText }
+        new[] { LetterSpacingText, FillBlurText, StrokeBlurText, FontSizeText, StrokeWidthText, LineHeightText, ShadowBlurText, ShadowXText, ShadowYText }
             .Any(value => ParseNumber(value) is null) || HasPendingInputs?.Invoke() == true);
     public bool CanDelete => !IsBusy && !switching && (!selectedIds.IsEmpty ||
         draft is not null && !styles.Any(value => value.Id == draft.Preset.Id));
@@ -185,6 +192,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
         var source = draft!.Preset.Style;
         var style = source with
         {
+            LetterSpacing = ReadPreviewNumber(LetterSpacingText, source.LetterSpacing),
+            FillBlur = ReadPreviewNumber(FillBlurText, source.FillBlur),
+            StrokeBlur = ReadPreviewNumber(StrokeBlurText, source.StrokeBlur),
             FontSize = ReadPreviewNumber(FontSizeText, source.FontSize),
             StrokeWidth = ReadPreviewNumber(StrokeWidthText, source.StrokeWidth),
             Margins = Margins.CreateMargins(),
@@ -306,6 +316,83 @@ public sealed class StyleSettingsViewModel : ObservableObject
     {
         get => strokeWidthText;
         set => SetNumericText(ref strokeWidthText, value, nameof(StrokeWidthText), number => StrokeWidth = number);
+    }
+
+    public int WrapModeIndex
+    {
+        get => (int)(draft?.Preset.Style.WrapMode ?? SubtitleWrapMode.GRAPHEME);
+        set
+        {
+            if (Enum.IsDefined((SubtitleWrapMode)value) && WrapModeIndex != value)
+            {
+                ChangeStyle(style => style with { WrapMode = (SubtitleWrapMode)value });
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    internal bool RestoreAppearanceField(string fieldKey)
+    {
+        switch (fieldKey)
+        {
+            case "LetterSpacingInput":
+                LetterSpacingText = FormatNumber((decimal)appearanceOriginal.LetterSpacing);
+                break;
+            case "FillBlurInput":
+                FillBlurText = FormatNumber((decimal)appearanceOriginal.FillBlur);
+                break;
+            case "StrokeBlurInput":
+                StrokeBlurText = FormatNumber((decimal)appearanceOriginal.StrokeBlur);
+                break;
+            default:
+                return false;
+        }
+        if (InvalidFieldKey == fieldKey)
+        {
+            InvalidFieldKey = null;
+            errorKey = null;
+            Error = null;
+        }
+        return true;
+    }
+
+    public decimal? LetterSpacing
+    {
+        get => letterSpacing;
+        set => SetNumericValue(ref letterSpacing, value, nameof(LetterSpacing),
+            (style, number) => style with { LetterSpacing = (double)number });
+    }
+
+    public string LetterSpacingText
+    {
+        get => letterSpacingText;
+        set => SetNumericText(ref letterSpacingText, value, nameof(LetterSpacingText), number => LetterSpacing = number);
+    }
+
+    public decimal? FillBlur
+    {
+        get => fillBlur;
+        set => SetNumericValue(ref fillBlur, value, nameof(FillBlur),
+            (style, number) => style with { FillBlur = (double)number });
+    }
+
+    public string FillBlurText
+    {
+        get => fillBlurText;
+        set => SetNumericText(ref fillBlurText, value, nameof(FillBlurText), number => FillBlur = number);
+    }
+
+    public decimal? StrokeBlur
+    {
+        get => strokeBlur;
+        set => SetNumericValue(ref strokeBlur, value, nameof(StrokeBlur),
+            (style, number) => style with { StrokeBlur = (double)number });
+    }
+
+    public string StrokeBlurText
+    {
+        get => strokeBlurText;
+        set => SetNumericText(ref strokeBlurText, value, nameof(StrokeBlurText), number => StrokeBlur = number);
     }
 
     public decimal? LineHeight
@@ -827,7 +914,14 @@ public sealed class StyleSettingsViewModel : ObservableObject
         try
         {
             var style = draft?.Preset.Style ?? new();
+            appearanceOriginal = style;
             Name = draft?.Preset.Name ?? string.Empty;
+            LetterSpacing = (decimal)style.LetterSpacing;
+            LetterSpacingText = FormatNumber(LetterSpacing);
+            FillBlur = (decimal)style.FillBlur;
+            FillBlurText = FormatNumber(FillBlur);
+            StrokeBlur = (decimal)style.StrokeBlur;
+            StrokeBlurText = FormatNumber(StrokeBlur);
             FontSize = (decimal)style.FontSize;
             StrokeWidth = (decimal)style.StrokeWidth;
             Margins.Load(style.Margins, CultureInfo.CurrentCulture);
@@ -848,7 +942,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
             foreach (var property in new[]
                      {
                          nameof(Bold), nameof(Italic), nameof(Fill), nameof(Stroke), nameof(ShadowColor),
-                         nameof(AlignmentIndex), nameof(FontSource), nameof(Draft)
+                         nameof(WrapModeIndex), nameof(AlignmentIndex), nameof(FontSource), nameof(Draft)
                      })
             {
                 OnPropertyChanged(property);
@@ -1019,6 +1113,9 @@ public sealed class StyleSettingsViewModel : ObservableObject
     {
         return
         [
+            (LetterSpacing is null ? null : ParseNumber(LetterSpacingText), -4096, 4096, "LetterSpacingInput"),
+            (FillBlur is null ? null : ParseNumber(FillBlurText), 0, 512, "FillBlurInput"),
+            (StrokeBlur is null ? null : ParseNumber(StrokeBlurText), 0, 512, "StrokeBlurInput"),
             (FontSize is null ? null : ParseNumber(FontSizeText), 0.01m, 4096, "FontSizeInput"),
             (StrokeWidth is null ? null : ParseNumber(StrokeWidthText), 0, 4096, "StrokeWidthInput"),
             (LineHeight is null ? null : ParseNumber(LineHeightText), 0.1m, 10, "LineHeightInput"),

@@ -9,12 +9,15 @@ public sealed class ShapedTextRun : IDisposable
 {
     private readonly SKTextBlob blob;
     private readonly ShapedGlyph[] glyphs;
+    private readonly ShapedTextCluster[] clusters;
     private bool isDisposed;
 
-    internal ShapedTextRun(SKTextBlob blob, ShapedGlyph[] glyphs, float advanceWidth, SKRect inkBounds, SKFontMetrics metrics)
+    internal ShapedTextRun(SKTextBlob blob, ShapedGlyph[] glyphs, ShapedTextCluster[] clusters,
+        float advanceWidth, SKRect inkBounds, SKFontMetrics metrics)
     {
         this.blob = blob;
         this.glyphs = glyphs;
+        this.clusters = clusters;
         AdvanceWidth = advanceWidth;
         InkBounds = inkBounds;
         FontMetrics = metrics;
@@ -24,6 +27,7 @@ public sealed class ShapedTextRun : IDisposable
     public SKRect InkBounds { get; }
     public SKFontMetrics FontMetrics { get; }
     public ReadOnlySpan<ShapedGlyph> Glyphs => glyphs;
+    public ReadOnlySpan<ShapedTextCluster> Clusters => clusters;
 
     /// <inheritdoc />
     public void Dispose()

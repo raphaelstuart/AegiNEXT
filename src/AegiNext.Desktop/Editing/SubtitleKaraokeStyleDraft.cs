@@ -42,6 +42,18 @@ internal sealed class SubtitleKaraokeStyleDraft : ObservableObject
         set => visual.ShadowBlurText = value;
     }
 
+    public string FillBlurText
+    {
+        get => visual.FillBlurText;
+        set => visual.FillBlurText = value;
+    }
+
+    public string StrokeBlurText
+    {
+        get => visual.StrokeBlurText;
+        set => visual.StrokeBlurText = value;
+    }
+
     internal void Load(KaraokeHighlightStyle style) => visual.Load(AsSubtitleStyle(style));
 
     internal void RestoreField(string field) => visual.RestoreField(field);
@@ -73,6 +85,8 @@ internal sealed class SubtitleKaraokeStyleDraft : ObservableObject
         var changed = visual.Read(AsSubtitleStyle(current));
         return current with
         {
+            FillBlur = changed.FillBlur ?? current.FillBlur,
+            StrokeBlur = changed.StrokeBlur ?? current.StrokeBlur,
             Fill = changed.Fill ?? current.Fill,
             Stroke = changed.Stroke ?? current.Stroke,
             StrokeWidth = changed.StrokeWidth ?? current.StrokeWidth,
@@ -84,6 +98,8 @@ internal sealed class SubtitleKaraokeStyleDraft : ObservableObject
 
     private static KaraokeVisualStyleEdit Convert(SubtitleInlineStyleOverride value, bool shadowX, bool shadowY) => new()
     {
+        FillBlur = value.FillBlur,
+        StrokeBlur = value.StrokeBlur,
         Fill = value.Fill, Stroke = value.Stroke, StrokeWidth = value.StrokeWidth,
         ShadowColor = value.ShadowColor, ShadowBlur = value.ShadowBlur,
         ShadowX = shadowX ? value.ShadowOffset?.X : null,
@@ -92,6 +108,8 @@ internal sealed class SubtitleKaraokeStyleDraft : ObservableObject
 
     private static SubtitleStyle AsSubtitleStyle(KaraokeHighlightStyle value) => new()
     {
+        FillBlur = value.FillBlur,
+        StrokeBlur = value.StrokeBlur,
         Fill = value.Fill,
         Stroke = value.Stroke,
         StrokeWidth = value.StrokeWidth,

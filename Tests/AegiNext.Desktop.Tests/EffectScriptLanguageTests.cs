@@ -28,6 +28,12 @@ public sealed class EffectScriptLanguageTests
     [InlineData("effect \"test\" version 1\nshort-clip compress\nsegment enter fixed 300ms\n    at 0 po", "position")]
     [InlineData("at 0 position ", "offset(0, 0)")]
     [InlineData("at 0 opacity ", "offset(0)")]
+    [InlineData("at 0 letter-s", "letter-spacing")]
+    [InlineData("at 0 fill-b", "fill-blur")]
+    [InlineData("at 0 stroke-b", "stroke-blur")]
+    [InlineData("at 0 letter-spacing ", "offset(0)")]
+    [InlineData("at 0 fill-blur ", "factor(1)")]
+    [InlineData("at 0 stroke-blur ", "base")]
     [InlineData("at 0 position offset(10, 20) ea", "ease-out")]
     [InlineData("at 0 fi", "fill")]
     [InlineData("at\t0\tpo", "position")]
@@ -83,6 +89,18 @@ public sealed class EffectScriptLanguageTests
         var tokens = EffectScriptLanguage.Tokenize(syntax);
         Assert.Equal(SyntaxTokenKind.PROPERTY, tokens.Single(token => syntax.Substring(token.Start, token.Length) == property).Kind);
         Assert.Equal(SyntaxTokenKind.FUNCTION, tokens.Single(token => syntax.Substring(token.Start, token.Length) == "rgba").Kind);
+    }
+
+    [Theory]
+    [InlineData("letter-spacing")]
+    [InlineData("fill-blur")]
+    [InlineData("stroke-blur")]
+    public void SubtitleAppearancePropertiesUseTheSharedMetadataForHighlighting(string property)
+    {
+        var source = $"at 0 {property} offset(2) linear";
+        var token = Assert.Single(EffectScriptLanguage.Tokenize(source), value =>
+            source.Substring(value.Start, value.Length) == property);
+        Assert.Equal(SyntaxTokenKind.PROPERTY, token.Kind);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using SkiaSharp;
 
@@ -18,16 +19,32 @@ public sealed partial class ProjectSceneRenderer
         return Layout(document, subtitle).Snapshot;
     }
 
-    private SubtitleLayout Layout(ProjectDocument document, SubtitleLine subtitle)
+    /// <summary>测量已经求值的字幕，动画字距与当前画面及命中几何一致。</summary>
+    public SubtitleTextLayout MeasureSubtitleTextLayout(ProjectDocument document, EvaluatedLayer layer)
     {
-        var key = (subtitle, document.Width, document.Height);
-        if (layouts.TryGetValue(key, out var existing))
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(layer);
+        if (layer.Subtitle is null)
+        {
+            throw new ArgumentException("排版测量需要字幕层。", nameof(layer));
+        }
+        Prepare(document);
+        return Layout(document, layer).Snapshot;
+    }
+
+    private SubtitleLayout Layout(ProjectDocument document, EvaluatedLayer layer)
+    {
+        return Layout(document, layer.Subtitle!, layer.HasLetterSpacingAnimation ? layer.LetterSpacing : null,
+            layer.HasLetterSpacingAnimation ? layer.Source.Id : null);
+    }
+
+    private SubtitleLayout Layout(ProjectDocument document, SubtitleLine subtitle, double? letterSpacing = null, Guid? animatedLayerId = null)
+    {
+        var key = new SubtitleLayoutKey(subtitle, document.Width, document.Height, letterSpacing);
+        if (layouts.TryGet(key, out var existing))
         {
             return existing;
-        }
-        if (layouts.Count >= 256)
-        {
-            ClearLayouts();
         }
         var lines = new List<SubtitleLayoutLine>();
         var offset = 0;
@@ -45,18 +62,25 @@ public sealed partial class ProjectSceneRenderer
                 var direction = text.EnumerateRunes().Any(value => value.Value is >= 0x0590 and <= 0x08ff)
                     ? TextDirection.RIGHT_TO_LEFT : TextDirection.LEFT_TO_RIGHT;
                 var boundaries = StringInfo.ParseCombiningCharacters(text);
+                int[] graphemeEnds = [.. boundaries.Skip(1), text.Length];
+                var natural = subtitle.Style.WrapMode == SubtitleWrapMode.NATURAL ? SubtitleLineBreaks.Create(text, boundaries) : null;
+                var negativeSpacing = letterSpacing.HasValue ? letterSpacing < 0 : subtitle.Style.LetterSpacing < 0 ||
+                    subtitle.InlineSpans.Any(span => span.Style.LetterSpacing < 0);
+                var measure = negativeSpacing && subtitle.Style.WrapMode != SubtitleWrapMode.NO_WRAP
+                    ? MeasureWrap(document, subtitle, text, offset, boundaries, direction, letterSpacing) : null;
                 var begin = 0;
                 while (begin < text.Length)
                 {
-                    var runs = ShapeWrappedRuns(document, subtitle, text, offset, begin, boundaries, direction, out var end);
+                    var runs = ShapeWrappedRuns(document, subtitle, text, offset, begin, graphemeEnds, direction,
+                        letterSpacing, natural, measure, out var end);
                     lines.Add(new(text[begin..end], offset + begin, runs, (float)runs.Max(run => run.Style.FontSize),
-                        runs.Sum(run => run.Shape.AdvanceWidth)));
+                        runs.Sum(run => run.AdvanceWidth)));
                     begin = end;
                 }
                 offset += paragraph.Length + 1;
             }
             var result = PositionLayout(document, subtitle, lines);
-            layouts.Add(key, result);
+            layouts.Add(key, result, animatedLayerId);
             return result;
         }
         catch
@@ -70,55 +94,163 @@ public sealed partial class ProjectSceneRenderer
     }
 
     private ImmutableArray<SubtitleLayoutRun> ShapeWrappedRuns(ProjectDocument document, SubtitleLine subtitle,
-        string text, int offset, int begin, int[] boundaries, TextDirection direction, out int end)
+        string text, int offset, int begin, int[] boundaries, TextDirection direction, double? letterSpacing,
+        SubtitleLineBreaks? natural, SubtitleWrapMeasure? measure, out int end)
     {
-        var startBoundary = Array.BinarySearch(boundaries, begin);
-        var available = Math.Max(1, document.Width - subtitle.Style.Margins.Left - subtitle.Style.Margins.Right);
-        var low = startBoundary + 1;
-        var high = Math.Min(boundaries.Length, startBoundary + WRAP_PROBE_GRAPHEMES);
-        while (true)
+        if (subtitle.Style.WrapMode == SubtitleWrapMode.NO_WRAP)
         {
-            var candidateEnd = high == boundaries.Length ? text.Length : boundaries[high];
-            var candidate = ShapeRuns(document, subtitle, text[begin..candidateEnd], offset + begin, direction);
-            if (candidate.Sum(run => run.Shape.AdvanceWidth) <= available)
+            end = text.Length;
+            return ShapeRuns(document, subtitle, text[begin..], offset + begin, direction, letterSpacing);
+        }
+        var candidates = natural?.Preferred ?? boundaries;
+        var available = (float)Math.Max(1, document.Width - subtitle.Style.Margins.Left - subtitle.Style.Margins.Right);
+        if (measure is not null)
+        {
+            end = measure.FindEnd(begin, candidates, available, out var fits);
+            var allowed = candidates;
+            if (!fits && natural is not null)
             {
-                if (high == boundaries.Length)
+                allowed = natural.Emergency;
+                end = measure.FindEnd(begin, allowed, available, out _);
+            }
+            var verified = Verify(allowed, end, out end, out var actualFits);
+            if (actualFits || natural is null || ReferenceEquals(allowed, natural.Emergency))
+            {
+                return verified;
+            }
+            DisposeRuns(verified);
+            end = measure.FindEnd(begin, natural.Emergency, available, out _);
+            return Verify(natural.Emergency, end, out end, out _);
+        }
+        var selected = Probe(candidates, out end, out var fitsPreferred);
+        if (fitsPreferred || natural is null)
+        {
+            return selected;
+        }
+        DisposeRuns(selected);
+        return Probe(natural.Emergency, out end, out _);
+
+        ImmutableArray<SubtitleLayoutRun> Verify(int[] allowed, int desiredEnd, out int selectedEnd, out bool fits)
+        {
+            var result = ShapeRuns(document, subtitle, text[begin..desiredEnd], offset + begin, direction, letterSpacing);
+            selectedEnd = desiredEnd;
+            fits = MeasureRunInkWidth(result, direction) <= available;
+            if (fits)
+            {
+                return result;
+            }
+            try
+            {
+                var first = Array.BinarySearch(allowed, begin);
+                first = first < 0 ? ~first : first + 1;
+                var low = first;
+                var high = Array.BinarySearch(allowed, desiredEnd) - 1;
+                while (low <= high)
                 {
-                    end = candidateEnd;
-                    return candidate;
+                    var middle = low + (high - low) / 2;
+                    var candidate = ShapeRuns(document, subtitle, text[begin..allowed[middle]], offset + begin, direction, letterSpacing);
+                    if (MeasureRunInkWidth(candidate, direction) <= available)
+                    {
+                        DisposeRuns(result);
+                        result = candidate;
+                        selectedEnd = allowed[middle];
+                        fits = true;
+                        low = middle + 1;
+                    }
+                    else
+                    {
+                        DisposeRuns(candidate);
+                        high = middle - 1;
+                    }
                 }
-                low = high;
-                high = Math.Min(boundaries.Length, startBoundary + (high - startBoundary) * 2);
-                DisposeRuns(candidate);
-                continue;
+                if (!fits && selectedEnd != allowed[first])
+                {
+                    DisposeRuns(result);
+                    result = [];
+                    selectedEnd = allowed[first];
+                    result = ShapeRuns(document, subtitle, text[begin..selectedEnd], offset + begin, direction, letterSpacing);
+                    fits = MeasureRunInkWidth(result, direction) <= available;
+                }
+                return result;
             }
-            DisposeRuns(candidate);
-            high--;
-            break;
+            catch
+            {
+                DisposeRuns(result);
+                throw;
+            }
         }
-        high = Math.Max(low, high);
-        while (low < high)
+
+        ImmutableArray<SubtitleLayoutRun> Probe(int[] allowed, out int selectedEnd, out bool fits)
         {
-            var middle = (low + high + 1) / 2;
-            var candidateEnd = middle == boundaries.Length ? text.Length : boundaries[middle];
-            var candidate = ShapeRuns(document, subtitle, text[begin..candidateEnd], offset + begin, direction);
-            var width = candidate.Sum(run => run.Shape.AdvanceWidth);
-            DisposeRuns(candidate);
-            if (width <= available)
+            var startCandidate = Array.BinarySearch(allowed, begin);
+            startCandidate = startCandidate < 0 ? ~startCandidate : startCandidate + 1;
+            var low = startCandidate;
+            var high = Math.Min(allowed.Length - 1, startCandidate + WRAP_PROBE_GRAPHEMES - 1);
+            while (true)
             {
-                low = middle;
+                var candidateEnd = allowed[high];
+                var candidate = ShapeRuns(document, subtitle, text[begin..candidateEnd], offset + begin, direction, letterSpacing);
+                if (candidate.Sum(run => run.AdvanceWidth) <= available)
+                {
+                    if (high == allowed.Length - 1)
+                    {
+                        selectedEnd = candidateEnd;
+                        fits = true;
+                        return candidate;
+                    }
+                    low = high;
+                    high = Math.Min(allowed.Length - 1, startCandidate + (high - startCandidate + 1) * 2 - 1);
+                    DisposeRuns(candidate);
+                    continue;
+                }
+                DisposeRuns(candidate);
+                high--;
+                break;
             }
-            else
+            high = Math.Max(low, high);
+            while (low < high)
             {
-                high = middle - 1;
+                var middle = (low + high + 1) / 2;
+                var candidateEnd = allowed[middle];
+                var candidate = ShapeRuns(document, subtitle, text[begin..candidateEnd], offset + begin, direction, letterSpacing);
+                var width = candidate.Sum(run => run.AdvanceWidth);
+                DisposeRuns(candidate);
+                if (width <= available)
+                {
+                    low = middle;
+                }
+                else
+                {
+                    high = middle - 1;
+                }
             }
+            selectedEnd = allowed[low];
+            var result = ShapeRuns(document, subtitle, text[begin..selectedEnd], offset + begin, direction, letterSpacing);
+            fits = result.Sum(run => run.AdvanceWidth) <= available;
+            return result;
         }
-        end = low == boundaries.Length ? text.Length : boundaries[low];
-        return ShapeRuns(document, subtitle, text[begin..end], offset + begin, direction);
+    }
+
+    private static float MeasureRunInkWidth(ImmutableArray<SubtitleLayoutRun> runs, TextDirection direction)
+    {
+        var ink = SKRect.Empty;
+        var advance = 0f;
+        var total = runs.Sum(run => run.AdvanceWidth);
+        foreach (var run in runs)
+        {
+            var bounds = RunInkBounds(run);
+            if (!bounds.IsEmpty)
+            {
+                bounds.Offset(direction == TextDirection.RIGHT_TO_LEFT ? total - advance - run.Shape.AdvanceWidth : advance, 0);
+                ink = ink.IsEmpty ? bounds : SKRect.Union(ink, bounds);
+            }
+            advance += run.AdvanceWidth;
+        }
+        return ink.IsEmpty ? Math.Abs(total) : ink.Width;
     }
 
     private ImmutableArray<SubtitleLayoutRun> ShapeRuns(ProjectDocument document, SubtitleLine subtitle,
-        string text, int offset, TextDirection direction)
+        string text, int offset, TextDirection direction, double? letterSpacing = null)
     {
         var runs = ImmutableArray.CreateBuilder<SubtitleLayoutRun>();
         try
@@ -142,9 +274,17 @@ public sealed partial class ProjectSceneRenderer
                         end = Math.Min(end, span.Utf16Start - offset);
                     }
                 }
+                if (letterSpacing.HasValue)
+                {
+                    style = style with { LetterSpacing = letterSpacing.Value };
+                }
                 var piece = text[start..end];
                 ShapeFontRuns(document, style, piece, offset + start, direction, runs);
                 start = end;
+            }
+            for (var index = 0; index < runs.Count - 1; index++)
+            {
+                runs[index] = runs[index] with { TrailingSpacing = (float)runs[index].Style.LetterSpacing };
             }
             return runs.ToImmutable();
         }
@@ -152,6 +292,49 @@ public sealed partial class ProjectSceneRenderer
         {
             DisposeRuns(runs);
             throw;
+        }
+    }
+
+    private SubtitleWrapMeasure MeasureWrap(ProjectDocument document, SubtitleLine subtitle, string text, int offset,
+        int[] boundaries, TextDirection direction, double? letterSpacing)
+    {
+        var runs = ShapeRuns(document, subtitle, text, offset, direction, letterSpacing);
+        try
+        {
+            var bounds = new SKRect[boundaries.Length];
+            var advance = 0f;
+            var total = runs.Sum(run => run.AdvanceWidth);
+            foreach (var run in runs)
+            {
+                var x = direction == TextDirection.RIGHT_TO_LEFT ? total - advance - run.Shape.AdvanceWidth : advance;
+                var geometries = MeasureGraphemes(run, new(x, 0), 0, 0, 1, includeSpacing: false);
+                var clusters = run.Shape.Clusters.ToArray().OrderBy(cluster => cluster.Utf16Start).ToArray();
+                var clusterIndex = 0;
+                foreach (var grapheme in geometries)
+                {
+                    var index = Array.BinarySearch(boundaries, grapheme.Utf16Start - offset);
+                    var local = grapheme.Utf16Start - run.Utf16Offset;
+                    while (clusterIndex + 1 < clusters.Length && clusters[clusterIndex + 1].Utf16Start <= local)
+                    {
+                        clusterIndex++;
+                    }
+                    var cluster = clusters[clusterIndex];
+                    var clusterEnd = clusterIndex + 1 < clusters.Length ? clusters[clusterIndex + 1].Utf16Start : run.Text.Length;
+                    var measured = grapheme.Bounds;
+                    if (!cluster.InkBounds.IsEmpty && local == cluster.Utf16Start && local + grapheme.Utf16Length == clusterEnd)
+                    {
+                        measured.Left = Math.Min(measured.Left, x + cluster.InkBounds.Left);
+                        measured.Right = Math.Max(measured.Right, x + cluster.InkBounds.Right);
+                    }
+                    bounds[index] = measured;
+                }
+                advance += run.AdvanceWidth;
+            }
+            return new(boundaries, bounds, text.Length);
+        }
+        finally
+        {
+            DisposeRuns(runs);
         }
     }
 
@@ -227,7 +410,7 @@ public sealed partial class ProjectSceneRenderer
                     localInk = localInk.IsEmpty ? bounds : SKRect.Union(localInk, bounds);
                 }
                 positioned.Add(run with { Position = new(runX, 0) });
-                advance += run.Shape.AdvanceWidth;
+                advance += run.AdvanceWidth;
             }
             var left = localInk.IsEmpty ? 0 : localInk.Left;
             var width = localInk.IsEmpty ? line.AdvanceWidth : localInk.Width;
@@ -320,7 +503,7 @@ public sealed partial class ProjectSceneRenderer
                     bounds.Offset(rtl ? line.AdvanceWidth - advance - run.Shape.AdvanceWidth : advance, 0);
                     ink = ink.IsEmpty ? bounds : SKRect.Union(ink, bounds);
                 }
-                advance += run.Shape.AdvanceWidth;
+                advance += run.AdvanceWidth;
             }
             width = Math.Max(width, ink.Width);
         }
@@ -328,13 +511,11 @@ public sealed partial class ProjectSceneRenderer
     }
 
     private static ImmutableArray<SubtitleGraphemeGeometry> MeasureGraphemes(SubtitleLayoutRun run, SKPoint position,
-        int lineIndex, float top, float bottom)
+        int lineIndex, float top, float bottom, bool includeSpacing = true)
     {
         var starts = StringInfo.ParseCombiningCharacters(run.Text);
-        var clusters = run.Shape.Glyphs.ToArray().GroupBy(value => value.Utf16Cluster)
-            .ToDictionary(group => group.Key, group => group.Min(value => value.Position.X));
+        var clusters = run.Shape.Clusters.ToArray().ToDictionary(cluster => cluster.Utf16Start);
         var keys = clusters.Keys.Order().ToArray();
-        var physical = clusters.Values.Distinct().Order().ToArray();
         var result = ImmutableArray.CreateBuilder<SubtitleGraphemeGeometry>();
         for (var index = 0; index < starts.Length; index++)
         {
@@ -349,11 +530,21 @@ public sealed partial class ProjectSceneRenderer
             var firstMember = BoundaryIndex(starts, clusterStart);
             var memberCount = Math.Max(1, BoundaryIndex(starts, clusterEnd) - firstMember);
             var member = index - firstMember;
-            var left = clusters[clusterStart];
-            var physicalIndex = Array.BinarySearch(physical, left);
-            var right = physicalIndex + 1 < physical.Length ? physical[physicalIndex + 1] : run.Shape.AdvanceWidth;
-            var step = (right - left) / memberCount;
             var rtl = run.Direction == TextDirection.RIGHT_TO_LEFT;
+            var left = clusters[clusterStart].Start;
+            var right = includeSpacing ? clusters[clusterStart].End : clusters[clusterStart].ContentEnd;
+            if (includeSpacing && keyIndex == keys.Length - 1)
+            {
+                if (rtl)
+                {
+                    left -= run.TrailingSpacing;
+                }
+                else
+                {
+                    right += run.TrailingSpacing;
+                }
+            }
+            var step = (right - left) / memberCount;
             var leading = position.X + left + step * (rtl ? memberCount - member : member);
             var trailing = leading + (rtl ? -step : step);
             var length = (index + 1 < starts.Length ? starts[index + 1] : run.Text.Length) - start;
@@ -476,13 +667,13 @@ public sealed partial class ProjectSceneRenderer
         {
             var position = metrics.UnderlinePosition ?? (float)run.Style.FontSize * 0.1f;
             var thickness = Math.Max(1, metrics.UnderlineThickness ?? (float)run.Style.FontSize * 0.05f);
-            yield return new(0, position, run.Shape.AdvanceWidth, position + thickness);
+            yield return new(Math.Min(0, run.Shape.AdvanceWidth), position, Math.Max(0, run.Shape.AdvanceWidth), position + thickness);
         }
         if (run.Style.Strikethrough)
         {
             var position = metrics.StrikeoutPosition ?? -(float)run.Style.FontSize * 0.3f;
             var thickness = Math.Max(1, metrics.StrikeoutThickness ?? (float)run.Style.FontSize * 0.05f);
-            yield return new(0, position, run.Shape.AdvanceWidth, position + thickness);
+            yield return new(Math.Min(0, run.Shape.AdvanceWidth), position, Math.Max(0, run.Shape.AdvanceWidth), position + thickness);
         }
     }
 }

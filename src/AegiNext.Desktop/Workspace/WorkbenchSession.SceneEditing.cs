@@ -164,6 +164,20 @@ internal sealed partial class WorkbenchSession
         return requested == original ? baseValue : requested;
     }
 
+    private double PrepareStyleAnimationNumber(ref ProjectDocument document, ProjectLayer layer,
+        AnimationProperty property, double baseValue, string text, string label)
+    {
+        var original = InspectorValue(layer, property, baseValue);
+        var requested = ReadNumber(text, original, label, label + "Input");
+        if (requested != original && AnimationTarget is { } target &&
+            (target.IsKeyframe || layer.Tracks.Any(track => track.Property == property)))
+        {
+            document = AnimationEditOperations.SetValue(document, target, property, requested);
+            return baseValue;
+        }
+        return requested == original ? baseValue : requested;
+    }
+
     private void RefreshEditingTargetLabel()
     {
         ViewModel.Effects.EditTargetLabel = AnimationTarget is { } target

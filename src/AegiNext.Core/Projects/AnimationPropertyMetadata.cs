@@ -15,7 +15,8 @@ public static class AnimationPropertyMetadata
         AnimationProperty.PATH_PROGRESS, AnimationProperty.MASK_RECTANGLE_TOP_LEFT,
         AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT, AnimationProperty.MASK_POSITION, AnimationProperty.MASK_SCALE,
         AnimationProperty.MASK_ROTATION, AnimationProperty.MASK_NODE_POSITION, AnimationProperty.MASK_NODE_IN_HANDLE,
-        AnimationProperty.MASK_NODE_OUT_HANDLE
+        AnimationProperty.MASK_NODE_OUT_HANDLE, AnimationProperty.LETTER_SPACING, AnimationProperty.FILL_BLUR,
+        AnimationProperty.STROKE_BLUR
     ];
 
     /// <summary>获取一个稳定属性的值类型，旧分量属性仍返回标量供显式迁移使用。</summary>
@@ -64,7 +65,9 @@ public static class AnimationPropertyMetadata
         {
             AnimationProperty.FILL or AnimationProperty.STROKE => component == 3 ? 0 : -65504,
             AnimationProperty.OPACITY or AnimationProperty.FILL_ALPHA or AnimationProperty.STROKE_ALPHA or
-                AnimationProperty.PATH_PROGRESS or AnimationProperty.BLUR or AnimationProperty.STROKE_WIDTH => 0,
+                AnimationProperty.PATH_PROGRESS or AnimationProperty.BLUR or AnimationProperty.STROKE_WIDTH or
+                AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR => 0,
+            AnimationProperty.LETTER_SPACING => -4096,
             AnimationProperty.SCALE or AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y or AnimationProperty.MASK_SCALE => -10000,
             AnimationProperty.FILL_RED or AnimationProperty.FILL_GREEN or AnimationProperty.FILL_BLUE or
                 AnimationProperty.STROKE_RED or AnimationProperty.STROKE_GREEN or AnimationProperty.STROKE_BLUE => -65504,
@@ -80,8 +83,8 @@ public static class AnimationPropertyMetadata
         {
             AnimationProperty.FILL or AnimationProperty.STROKE => component == 3 ? 1 : 65504,
             AnimationProperty.OPACITY or AnimationProperty.FILL_ALPHA or AnimationProperty.STROKE_ALPHA or AnimationProperty.PATH_PROGRESS => 1,
-            AnimationProperty.BLUR => 512,
-            AnimationProperty.STROKE_WIDTH => 4096,
+            AnimationProperty.BLUR or AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR => 512,
+            AnimationProperty.STROKE_WIDTH or AnimationProperty.LETTER_SPACING => 4096,
             AnimationProperty.SCALE or AnimationProperty.SCALE_X or AnimationProperty.SCALE_Y or AnimationProperty.MASK_SCALE => 10000,
             AnimationProperty.FILL_RED or AnimationProperty.FILL_GREEN or AnimationProperty.FILL_BLUE or
                 AnimationProperty.STROKE_RED or AnimationProperty.STROKE_GREEN or AnimationProperty.STROKE_BLUE => 65504,
@@ -97,6 +100,10 @@ public static class AnimationPropertyMetadata
 
     /// <summary>判断是否裁切蒙版的几何或独立变换属性。</summary>
     public static bool IsMaskProperty(AnimationProperty property) => property is >= AnimationProperty.MASK_RECTANGLE_TOP_LEFT and <= AnimationProperty.MASK_NODE_OUT_HANDLE;
+
+    /// <summary>判断是否只适用于字幕样式的动画属性。</summary>
+    public static bool IsSubtitleOnlyProperty(AnimationProperty property) => property is
+        AnimationProperty.LETTER_SPACING or AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR;
 
     /// <summary>判断是否必须携带稳定节点标识的形变属性。</summary>
     public static bool IsNodeProperty(AnimationProperty property) => property is

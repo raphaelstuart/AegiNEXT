@@ -173,6 +173,8 @@ public static class ProjectValidator
                 "逐字高亮样式预设来源无效。");
             ValidateText(karaokeStyle.PresetName);
             Number(karaokeStyle.StrokeWidth, 0, 4096, "高亮描边");
+            Number(karaokeStyle.FillBlur, 0, 512, "高亮填充模糊");
+            Number(karaokeStyle.StrokeBlur, 0, 512, "高亮描边模糊");
             Number(karaokeStyle.ShadowBlur, 0, 512, "高亮阴影模糊");
             Point(karaokeStyle.ShadowOffset);
             Color(karaokeStyle.Fill);
@@ -288,6 +290,8 @@ public static class ProjectValidator
         }
 
         Tracks(layer.Tracks, mask: layer.Mask, allowNegativeKeyTimes: true);
+        Require(layer.Kind == LayerKind.SUBTITLE || layer.Tracks.All(track => !AnimationPropertyMetadata.IsSubtitleOnlyProperty(track.Property)),
+            "字幕排版和分通道模糊动画只能应用于字幕片段。");
         if (enforceAnimationRange)
         {
             var (minimumKeyTime, maximumKeyTime) = Editing.LayerAnimationTiming.GetRange(layer);
@@ -331,6 +335,7 @@ public static class ProjectValidator
     {
         Require(style is not null && style.FontFamily is { Length: > 0 and <= 512 } && Enum.IsDefined(style.Alignment), "字幕样式无效。");
         Require(style.TextAlign is null || Enum.IsDefined(style.TextAlign.Value), "字幕文字对齐无效。");
+        Require(Enum.IsDefined(style.WrapMode), "字幕换行模式无效。");
         ValidateText(style.FontFamily);
         if (style.FontVariant is { } variant)
         {
@@ -346,6 +351,9 @@ public static class ProjectValidator
             Require(variant.Weight is >= 1 and <= 1000 && variant.Width is >= 1 and <= 9, "字体变体样式特征无效。");
         }
         Number(style.FontSize, 0.01, 4096, "字号");
+        Number(style.LetterSpacing, -4096, 4096, "字距");
+        Number(style.FillBlur, 0, 512, "填充模糊");
+        Number(style.StrokeBlur, 0, 512, "描边模糊");
         Number(style.StrokeWidth, 0, 4096, "描边");
         Number(style.Margins.Left, 0, 32768, "字幕左边距");
         Number(style.Margins.Right, 0, 32768, "字幕右边距");
