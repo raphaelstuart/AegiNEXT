@@ -14,5 +14,6 @@ public sealed record AssTextEditResult(SubtitleLine Line, ImmutableArray<Subtitl
 
     internal LayerTransform Transform { get; init; } = new();
     internal ImmutableArray<AnimationTrack> PlacementTracks { get; init; } = [];
+    internal ImmutableArray<AnimationTrack> OpacityTracks { get; init; } = [];
     internal ImmutableArray<AssKaraokeSourceMapEntry> KaraokeSourceMap { get; init; } = [];
 }

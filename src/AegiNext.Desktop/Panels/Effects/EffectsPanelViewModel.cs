@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.I18n;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Media.Analysis;
@@ -112,11 +113,16 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
             if (SetProperty(ref selectedLayer, value))
             {
                 OnPropertyChanged(nameof(CanResetPosition));
+                OnPropertyChanged(nameof(CanEditOpacity));
+                OnPropertyChanged(nameof(OpacityEditingHint));
             }
         }
     }
 
     public bool CanResetPosition => SelectedLayer?.SubtitleId is not null;
+    public bool CanEditOpacity => SelectedLayer?.Tracks.Any(track =>
+        track.Property == AnimationProperty.OPACITY && !track.Transforms.IsEmpty) != true;
+    public string? OpacityEditingHint => CanEditOpacity ? null : Localization.Get("Workbench.OpacityOrderedTransformHint");
 
     public MediaTime Position
     {
@@ -525,6 +531,7 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
 
     internal void RefreshChoices(string[] blendOptions, AnimationPropertyChoice[] propertyOptions, string[] interpolationOptions)
     {
+        OnPropertyChanged(nameof(OpacityEditingHint));
         if (Blends.SequenceEqual(blendOptions) && Properties.SequenceEqual(propertyOptions) && Interpolations.SequenceEqual(interpolationOptions))
         {
             return;

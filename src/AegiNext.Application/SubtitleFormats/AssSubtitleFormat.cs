@@ -158,7 +158,7 @@ public static class AssSubtitleFormat
             var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth, canvasHeight: targetHeight).Parse(Required(fields, "Text"));
             var normalized = SubtitleKaraokeNormalization.Normalize(parsed.Line);
             lines.Add(normalized);
-            clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks), parsed.ContentOffset)
+            clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks).AddRange(parsed.OpacityTracks), parsed.ContentOffset)
             {
                 Transform = parsed.Transform
             });
@@ -241,9 +241,10 @@ public static class AssSubtitleFormat
                     }
                 }
                 var placement = conversion.PlacementTags(sample, timeOffset);
+                var opacity = conversion.OpacityTags(sample, timeOffset);
                 var maskTags = sample.Tags.Length == 0 ? string.Empty : "{" + sample.Tags + "}";
                 result.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                    $"Dialogue: {order},{AssFormatValues.Time(sample.Start + timeOffset, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End + timeOffset, MediaTimeRounding.CEILING)},{styles[line.Id]},,0,0,0,,{placement}{maskTags}{body.Text}"));
+                    $"Dialogue: {order},{AssFormatValues.Time(sample.Start + timeOffset, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End + timeOffset, MediaTimeRounding.CEILING)},{styles[line.Id]},,0,0,0,,{placement}{opacity}{maskTags}{body.Text}"));
             }
             order++;
         }

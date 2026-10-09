@@ -11,6 +11,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
 {
     private readonly AssMaskParser maskParser = new(original.End - original.Start, scaleX, scaleY, canvasWidth, canvasHeight);
     private readonly AssGeometryParser geometryParser = new(original, styles, scaleX, scaleY);
+    private readonly AssOpacityParser opacityParser = new(original.End - original.Start, original.Id);
     private readonly StringBuilder text = new();
     private readonly ImmutableArray<SubtitleInlineSpan>.Builder spans = ImmutableArray.CreateBuilder<SubtitleInlineSpan>();
     private readonly ImmutableArray<KaraokeSegment>.Builder karaoke = ImmutableArray.CreateBuilder<KaraokeSegment>();
@@ -132,10 +133,13 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         ValidateLine(line);
         diagnostics.AddRange(maskParser.Diagnostics);
+        var opacityTracks = projectSource ? [] : opacityParser.Tracks(contentOffset);
+        diagnostics.AddRange(opacityParser.Diagnostics);
         return new(line, diagnostics.ToImmutable(), map.ToImmutable())
         {
             KaraokeSourceMap = karaokeMap.ToImmutable(), Mask = maskParser.Mask, ContentOffset = contentOffset,
             Transform = transform, PlacementTracks = projectSource ? [] : geometryParser.Tracks(contentOffset),
+            OpacityTracks = opacityTracks,
             MaskTracks = maskParser.Tracks().Select(track => contentOffset == MediaTime.Zero ? track : track with
             {
                 Keyframes = track.Keyframes.Select(key => key with { Time = key.Time + contentOffset }).ToImmutableArray(),
@@ -336,6 +340,17 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             case "clip":
             case "iclip":
                 maskParser.Apply(name, value, original.Id, sourceStart, sourceLength);
+                break;
+            case "fad":
+            case "fade":
+                if (projectSource)
+                {
+                    Report("Ass.UnsupportedTag", $"项目 ASS 代码不支持 {name}，请在原生不透明度属性或时间轴中调整淡化。", sourceStart, sourceLength);
+                }
+                else
+                {
+                    opacityParser.Apply(name, value, sourceStart, sourceLength);
+                }
                 break;
             case "t":
                 if (!maskParser.TryTransform(value, original.Id, sourceStart, sourceLength))

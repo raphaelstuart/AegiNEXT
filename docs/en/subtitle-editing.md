@@ -54,7 +54,11 @@ Leaving the whole panel or deactivating its floating window pauses playback. Cha
 
 Imports create independent tracks; overlapping cues keep their times on additional tracks. One Undo removes the batch. ASS PlayRes maps to the existing project canvas. Invalid structure, times, dimensions, UTF-8, or resource limits reject the import.
 
-ASS supports base/local styles, resets, colors/alpha, outline/shadow, alignment/static position, `\k`, `\kf`/`\K`, `\ko`, rectangle/vector clips, and supported rectangle transforms. Unsupported tags/animation require confirmation before conversion; `\move` is not imported as a project motion effect.
+ASS supports base/local styles, resets, colors/alpha, outline/shadow, alignment/position, whole-line static scale and Z rotation, `\move`, `\fad`/`\fade`, `\k`, `\kf`/`\K`, `\ko`, rectangle/vector clips, and supported rectangle transforms. Imported position and opacity animation uses native tracks, editable with Undo through the canvas, Effects panel, and timeline. Ordinary fades use keyframes; envelopes with instantaneous jumps use ordered transforms, edited through the Effects panel's transform operations.
+
+Export preserves representable transform parameters, linear motion, and opacity envelopes with up to two transitions. Recognized variable-speed straight motion and eased fades report their constant-speed/linear approximation. Unsupported animation is omitted from the output without modifying the project. Opacity envelopes preserve each fill, outline, and shadow alpha. The project applies opacity after composing a layer, while ASS applies fading within the text, so overlapping pixels can differ. Font metrics, scaled wrapping, and nonuniform outlines also have visual differences; parameter correspondence does not imply pixel equivalence.
+
+Conversion review identifies each subtitle by sequence, time, text, and specific loss, with copyable details. Cancelling an import preserves the project; cancelling an export preserves an existing destination. No compatibility mode is required.
 
 ASS style `MarginL`, `MarginR`, and `MarginV` map independently to these three margins. Nonzero dialogue values override the corresponding style value; zero inherits it. Import scales Left/Right by the PlayRes width ratio and Vertical by the height ratio. Export writes the three values separately, keeping ordinary margin placement automatic and preserving explicit `\pos` placement. Export uses `WrapStyle: 1`; font metrics and wrapping can still differ from an ASS player.
 

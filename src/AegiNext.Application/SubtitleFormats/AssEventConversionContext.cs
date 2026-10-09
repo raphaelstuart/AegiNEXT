@@ -18,6 +18,7 @@ internal sealed class AssEventConversionContext
     private readonly ScenePoint placementOffset;
     private readonly ScenePoint position;
     private readonly AssLinearMove? move;
+    private readonly AssOpacityEnvelope? opacity;
     private readonly bool hasPlacement;
     private readonly bool convertedPath;
 
@@ -27,6 +28,23 @@ internal sealed class AssEventConversionContext
         this.layer = layer;
         this.line = line;
         this.diagnostics = diagnostics;
+        var opacityTrack = layer.Tracks.FirstOrDefault(track => track.Property == AnimationProperty.OPACITY);
+        opacity = opacityTrack is null ? new(layer.Opacity, []) : AssOpacityConversion.FromTrack(opacityTrack);
+        if (opacityTrack is not null)
+        {
+            if (opacity is null)
+            {
+                Report("Ass.OpacityAnimation", "ASS 淡入淡出不能保留这条多段或重叠透明度动画，导出时已省略该动画。");
+            }
+            else
+            {
+                consumed.Add(AnimationProperty.OPACITY);
+            }
+        }
+        if (opacity is { Approximate: true })
+        {
+            Report("Ass.OpacityApproximation", "ASS 淡入淡出仅支持线性变化，已保留透明度端点、延迟和起止时间，将缓动近似为线性。");
+        }
         var transform = layer.Transform;
         scale = Constant(AnimationProperty.SCALE)?.Vector ?? transform.Scale;
         rotation = Constant(AnimationProperty.ROTATION)?.Scalar ?? transform.Rotation;
@@ -86,9 +104,9 @@ internal sealed class AssEventConversionContext
         var compensation = TransformVector(delta);
         placementOffset = new(basis.X + compensation.X, basis.Y + compensation.Y);
         if (layer.Tracks.Any(track => !AnimationPropertyMetadata.IsMaskProperty(track.Property) && !consumed.Contains(track.Property)) ||
-            layer.MotionPath is not null && !convertedPath || !layer.Opacity.Equals(1d) || layer.Blend != BlendMode.NORMAL)
+            layer.MotionPath is not null && !convertedPath || layer.Blend != BlendMode.NORMAL)
         {
-            Report("Subtitle.Composition", "字幕格式不能保留部分项目合成或动画；已保留可以转换的位置、缩放和旋转。");
+            Report("Subtitle.Composition", "字幕格式不能保留部分项目合成或动画；已保留可以转换的位置、缩放、旋转和透明度。");
         }
     }
 
@@ -144,6 +162,24 @@ internal sealed class AssEventConversionContext
         AssExportPrecision.AddNumbers(line.Id, diagnostics, first.X, first.Y, last.X, last.Y);
         return alignment + "\\move(" + Point(first) + "," + Point(last) + "," +
             startMs.ToString(CultureInfo.InvariantCulture) + "," + endMs.ToString(CultureInfo.InvariantCulture) + ")}";
+    }
+
+    internal string OpacityTags(AssMaskSample sample, MediaTime timeOffset)
+    {
+        if (opacity is null)
+        {
+            return string.Empty;
+        }
+        var origin = new MediaTime((sample.Start + timeOffset).ToTimestamp(new(1, 100), MediaTimeRounding.FLOOR).Value, 100) -
+            timeOffset - line.Start + layer.AnimationOffset;
+        var end = new MediaTime((sample.End + timeOffset).ToTimestamp(new(1, 100), MediaTimeRounding.CEILING).Value, 100) -
+            timeOffset - line.Start + layer.AnimationOffset;
+        var tags = AssOpacityConversion.WriteTags(opacity, origin, end, line.Id, diagnostics);
+        if (tags.Length > 0 && opacity.Clip(origin, end).HasPartialOpacity)
+        {
+            Report("Ass.OpacityComposition", "ASS 淡入淡出在字形组成部分绘制时应用透明度，项目在整层绘制后应用；填充、描边或阴影重叠区域可能不同。");
+        }
+        return tags.Length == 0 ? string.Empty : "{" + tags + "}";
     }
 
     private AnimationValue? Constant(AnimationProperty property)

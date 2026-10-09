@@ -44,10 +44,11 @@
           <controls:NumericDraftInput Name="RotationInput" RawText="{Binding RotationText, Mode=TwoWay}"
                                       Minimum="-36000" Maximum="36000" Value="{Binding Rotation, Mode=TwoWay}" />
         </StackPanel>
-        <StackPanel Grid.Column="1">
+        <StackPanel Grid.Column="1" ToolTip.Tip="{Binding OpacityEditingHint}">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.Opacity}" />
           <controls:NumericDraftInput Name="OpacityInput" RawText="{Binding OpacityText, Mode=TwoWay}" Minimum="0"
-                                      Maximum="1" Increment="0.05" Value="{Binding Opacity, Mode=TwoWay}" />
+                                      Maximum="1" Increment="0.05" Value="{Binding Opacity, Mode=TwoWay}"
+                                      IsEnabled="{Binding CanEditOpacity}" />
         </StackPanel>
       </Grid>
       <Grid ColumnDefinitions="*,*" ColumnSpacing="8">

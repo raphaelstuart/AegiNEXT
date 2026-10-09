@@ -654,6 +654,7 @@
     "Workbench.MaskPivotY": "固定轴心 Y",
     "Workbench.Power": "幂指数",
     "Workbench.OrderedTransforms": "有序变换",
+    "Workbench.OpacityOrderedTransformHint": "选择透明度动画，通过下方变换操作编辑。",
     "Workbench.TransformOrder": "顺序",
     "Workbench.MASK_RECTANGLE_TOP_LEFT": "矩形左上角",
     "Workbench.MASK_RECTANGLE_BOTTOM_RIGHT": "矩形右下角",

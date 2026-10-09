@@ -654,6 +654,7 @@
     "Workbench.MaskPivotY": "Fixed pivot Y",
     "Workbench.Power": "Power exponent",
     "Workbench.OrderedTransforms": "Ordered transforms",
+    "Workbench.OpacityOrderedTransformHint": "Select the opacity animation and edit its transform operations below.",
     "Workbench.TransformOrder": "Order",
     "Workbench.MASK_RECTANGLE_TOP_LEFT": "Rectangle top left",
     "Workbench.MASK_RECTANGLE_BOTTOM_RIGHT": "Rectangle bottom right",
