@@ -13,8 +13,8 @@ namespace AegiNext.Desktop.Controls;
 internal sealed class FontNamePreviewPresenter : Decorator, IDisposable
 {
     private const double MAXIMUM_PREVIEW_WIDTH = 320;
-    public static readonly StyledProperty<double> FontSizeProperty = TextBlock.FontSizeProperty.AddOwner<FontNamePreviewPresenter>();
-    public static readonly StyledProperty<IBrush?> ForegroundProperty = TextBlock.ForegroundProperty.AddOwner<FontNamePreviewPresenter>();
+    public static readonly StyledProperty<double> fontSizeProperty = TextBlock.FontSizeProperty.AddOwner<FontNamePreviewPresenter>();
+    public static readonly StyledProperty<IBrush?> foregroundProperty = TextBlock.ForegroundProperty.AddOwner<FontNamePreviewPresenter>();
     private readonly FontSelection selection;
     private readonly IFontNamePreviewProvider provider;
     private readonly TextBlock fallback = new() { TextTrimming = TextTrimming.CharacterEllipsis, IsHitTestVisible = false };
@@ -31,7 +31,7 @@ internal sealed class FontNamePreviewPresenter : Decorator, IDisposable
 
     static FontNamePreviewPresenter()
     {
-        AffectsRender<FontNamePreviewPresenter>(ForegroundProperty);
+        AffectsRender<FontNamePreviewPresenter>(foregroundProperty);
     }
 
     internal FontNamePreviewPresenter(string name, FontSelection selection, IFontNamePreviewProvider provider)
@@ -51,14 +51,14 @@ internal sealed class FontNamePreviewPresenter : Decorator, IDisposable
 
     public double FontSize
     {
-        get => GetValue(FontSizeProperty);
-        set => SetValue(FontSizeProperty, value);
+        get => GetValue(fontSizeProperty);
+        set => SetValue(fontSizeProperty, value);
     }
 
     public IBrush? Foreground
     {
-        get => GetValue(ForegroundProperty);
-        set => SetValue(ForegroundProperty, value);
+        get => GetValue(foregroundProperty);
+        set => SetValue(foregroundProperty, value);
     }
 
     /// <inheritdoc />
@@ -150,7 +150,7 @@ internal sealed class FontNamePreviewPresenter : Decorator, IDisposable
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == FontSizeProperty || change.Property == MaxWidthProperty)
+        if (change.Property == fontSizeProperty || change.Property == MaxWidthProperty)
         {
             CancelRequest();
             ClearPreview();
