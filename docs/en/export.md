@@ -12,6 +12,10 @@
 
 Export captures the project when started and runs in an independent `aegn-exporter` process. Later edits do not affect the job. Success atomically commits the new file; failure/cancellation cleans only its own temporary output. Existing destinations are rejected.
 
+Saved projects default to `project directory/output/project name-yyyyMMdd-HHmmss.mp4`; the `output` directory is created when needed. The save dialog lets you change the location, filename, or container to MKV. Unsaved projects require choosing an output location in the dialog.
+
+Invalid input, output selection failures, task startup failures, and encoding failures show an error dialog and record full details in the log. After acknowledging the error, correct the settings and retry. Cancelling an export does not show an error dialog.
+
 ## Choose CPU or GPU
 
 | Mode | Controls and scope |

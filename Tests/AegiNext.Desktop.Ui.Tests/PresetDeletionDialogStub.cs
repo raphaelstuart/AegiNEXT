@@ -27,8 +27,12 @@ internal sealed class PresetDeletionDialogStub : IWorkbenchDialogService
     public Task<string?> OpenFolderAsync(string title) => inner.OpenFolderAsync(title);
     public Task<int?> ShowIntegerInputAsync(IntegerInputRequest request, CancellationToken cancellationToken = default)
         => inner.ShowIntegerInputAsync(request, cancellationToken);
-    public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName)
-        => inner.SaveFileAsync(title, typeName, patterns, extension, suggestedName);
+    public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName,
+        string? suggestedDirectory = null)
+        => inner.SaveFileAsync(title, typeName, patterns, extension, suggestedName, suggestedDirectory);
+    /// <inheritdoc />
+    public Task ShowErrorAsync(string titleKey, string message, CancellationToken cancellationToken = default)
+        => inner.ShowErrorAsync(titleKey, message, cancellationToken);
     public Task<int> ConfirmUnsavedAsync() => inner.ConfirmUnsavedAsync();
     public Task<bool> ConfirmUnavailableMediaAsync(string mediaPath, string reason, CancellationToken cancellationToken)
         => inner.ConfirmUnavailableMediaAsync(mediaPath, reason, cancellationToken);

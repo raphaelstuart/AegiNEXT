@@ -61,13 +61,21 @@ internal sealed class StartupTestDialogService : IWorkbenchDialogService
         return PendingSelection?.Task ?? Task.FromResult(OpenPath);
     }
 
-    public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName)
+    public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName,
+        string? suggestedDirectory = null)
     {
         SaveCount++;
         SaveTitle = title;
         SaveExtension = extension;
         SuggestedSaveName = suggestedName;
         return PendingSaveSelection?.Task ?? Task.FromResult(SavePath);
+    }
+
+    /// <summary>不展示原生错误窗口；错误由会话和日志断言验证。</summary>
+    public Task ShowErrorAsync(string titleKey, string message, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
     }
 
     public async Task<bool> ShowNewProjectAsync(string workspaceRoot,

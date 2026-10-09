@@ -89,11 +89,18 @@ internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
     }
 
     public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension,
-        string suggestedName)
+        string suggestedName, string? suggestedDirectory = null)
     {
         SaveRequests++;
         SuggestedSaveName = suggestedName;
         return Task.FromResult(SavePath);
+    }
+
+    /// <summary>不展示原生错误窗口；错误由会话和日志断言验证。</summary>
+    public Task ShowErrorAsync(string titleKey, string message, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
     }
 
     public Task<bool> ConfirmSubtitleConversionAsync(IReadOnlyList<string> diagnostics)

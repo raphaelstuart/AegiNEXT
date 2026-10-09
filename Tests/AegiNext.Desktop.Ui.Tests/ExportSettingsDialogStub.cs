@@ -52,11 +52,17 @@ internal sealed class ExportSettingsDialogStub : IWorkbenchDialogService
 
     /// <inheritdoc />
     public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension,
-        string suggestedName)
+        string suggestedName, string? suggestedDirectory = null)
     {
-        var result = Inner.SaveFileAsync(title, typeName, patterns, extension, suggestedName);
+        var result = Inner.SaveFileAsync(title, typeName, patterns, extension, suggestedName, suggestedDirectory);
         OutputShown.TrySetResult();
         return PendingOutput?.Task ?? result;
+    }
+
+    /// <inheritdoc />
+    public Task ShowErrorAsync(string titleKey, string message, CancellationToken cancellationToken = default)
+    {
+        return Inner.ShowErrorAsync(titleKey, message, cancellationToken);
     }
 
     /// <inheritdoc />

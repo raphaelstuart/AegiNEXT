@@ -101,16 +101,31 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
     }
 
     /// <summary>选择带指定扩展名的本地保存路径，并由系统确认覆盖。</summary>
-    public async Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName)
+    public async Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName,
+        string? suggestedDirectory = null)
     {
-        var file = await (storageProvider?.Invoke() ?? ownerProvider().StorageProvider).SaveFilePickerAsync(new()
+        var provider = storageProvider?.Invoke() ?? ownerProvider().StorageProvider;
+        var startLocation = suggestedDirectory is null ? null : await provider.TryGetFolderFromPathAsync(suggestedDirectory);
+        var file = await provider.SaveFilePickerAsync(new()
         {
-            Title = Localization.Get("Workbench." + (title)),
+            Title = Localization.Get("Workbench." + title),
+            SuggestedStartLocation = startLocation,
             SuggestedFileName = suggestedName.EndsWith(extension, StringComparison.OrdinalIgnoreCase) ? suggestedName[..^extension.Length] : suggestedName,
             DefaultExtension = extension.TrimStart('.'),
-            FileTypeChoices = [new(Localization.Get("Workbench." + (typeName))) { Patterns = patterns }], ShowOverwritePrompt = true
+            FileTypeChoices = [new(Localization.Get("Workbench." + typeName)) { Patterns = patterns }], ShowOverwritePrompt = true
         });
         return file is null ? null : file.TryGetLocalPath() ?? throw new NotSupportedException(Localization.Get("Preview.LocalFile"));
+    }
+
+    /// <summary>显示可复制的错误原因；所属工程关闭时取消等待并关闭提示。</summary>
+    public async Task ShowErrorAsync(string titleKey, string message, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var dialog = new ErrorDialog(titleKey, message);
+        registerWindow?.Invoke(dialog);
+        var answer = dialog.ShowDialog(ownerProvider());
+        await using var registration = cancellationToken.Register(() => Dispatcher.UIThread.Post(dialog.Close));
+        await answer;
     }
 
     /// <summary>填写项目创建信息；错误留在同一面板中，成功后才关闭。</summary>

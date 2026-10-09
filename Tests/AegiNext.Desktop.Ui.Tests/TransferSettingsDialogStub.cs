@@ -50,9 +50,16 @@ internal sealed class TransferSettingsDialogStub : IWorkbenchDialogService
     }
 
     /// <inheritdoc />
-    public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName)
+    public Task<string?> SaveFileAsync(string title, string typeName, string[] patterns, string extension, string suggestedName,
+        string? suggestedDirectory = null)
     {
-        return Inner.SaveFileAsync(title, typeName, patterns, extension, suggestedName);
+        return Inner.SaveFileAsync(title, typeName, patterns, extension, suggestedName, suggestedDirectory);
+    }
+
+    /// <inheritdoc />
+    public Task ShowErrorAsync(string titleKey, string message, CancellationToken cancellationToken = default)
+    {
+        return Inner.ShowErrorAsync(titleKey, message, cancellationToken);
     }
 
     /// <inheritdoc />

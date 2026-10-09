@@ -14,6 +14,7 @@ internal sealed class ControlledWorkbenchExportService : IWorkbenchExportService
     internal int DisposeCount { get; private set; }
 
     internal void Release() => release.TrySetResult();
+    internal void Fail(Exception error) => release.TrySetException(error);
     internal void Report(VideoExportProgress value) => progress!.Report(value);
 
     /// <summary>保留不可变请求并模拟必须等待资源排空的可取消导出边界。</summary>

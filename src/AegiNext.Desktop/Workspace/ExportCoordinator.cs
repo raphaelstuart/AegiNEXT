@@ -1,3 +1,4 @@
+using System.Globalization;
 using AegiNext.Desktop.I18n;
 using AegiNext.Application.Tasks;
 using AegiNext.Core.Timing;
@@ -14,6 +15,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
     private long revision;
     private string? statusKey;
     private string? statusEncoder;
+    private string? failureReason;
     internal bool IsChoosingOutput { get; private set; }
     internal bool IsRunning => session.ViewModel.Export.IsRunning;
     internal bool CanStart => !disposed && !activeOperation;
@@ -25,64 +27,86 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
     {
         if (statusKey is not null)
         {
-            session.ViewModel.Export.Status = Localization.Get(statusKey) +
-                (string.IsNullOrWhiteSpace(statusEncoder) ? string.Empty : " · " + statusEncoder);
+            session.ViewModel.Export.Status = failureReason is not null
+                ? Localization.Format("Workbench.ExportFailureStatus", failureReason)
+                : Localization.Get(statusKey) +
+                    (string.IsNullOrWhiteSpace(statusEncoder) ? string.Empty : " · " + statusEncoder);
         }
     }
 
     internal Task EncodeAsync()
     {
-        if (!CanStart || session.IsProjectBusy || session.IsClosing || !session.TryCommitDrafts())
+        if (!CanStart || session.IsProjectBusy || session.IsClosing)
         {
             return Task.CompletedTask;
         }
 
-        var snapshot = session.Editor.Snapshot;
-        var directory = session.ProjectDirectory;
-        var vm = session.ViewModel.Export;
-        var request = new VideoExportRequest(snapshot, directory, string.Empty).WithSettings(vm.CaptureSettings());
         activeOperation = true;
         revision++;
-        IsChoosingOutput = true;
         session.ViewModel.RefreshCommands();
-        Completion = ChooseAndRunAsync(request, session.Controller.Snapshot.Duration);
+        Completion = ChooseAndRunAsync();
         return Completion;
     }
 
-    private async Task ChooseAndRunAsync(VideoExportRequest request, MediaTime? duration)
+    private async Task ChooseAndRunAsync()
     {
         try
         {
-            var path = await dialogs.SaveFileAsync("Export", "Videos", ["*.mp4", "*.mkv"], ".mp4", session.ProjectDisplayName + ".mp4");
+            if (!session.TryCommitDrafts())
+            {
+                var draftError = session.LastError ?? new InvalidDataException(session.ViewModel.Error ??
+                    Localization.Get("Workbench.ExportInvalidDrafts"));
+                await ShowFailureAsync(draftError, session.LastError is null);
+                return;
+            }
+            var vm = session.ViewModel.Export;
+            var request = new VideoExportRequest(session.Editor.Snapshot, session.ProjectDirectory, string.Empty)
+                .WithSettings(vm.CaptureSettings());
+            var duration = session.Controller.Snapshot.Duration;
+            var outputDirectory = session.ProjectPath is null ? null : Path.Combine(request.ProjectDirectory, "output");
+            if (outputDirectory is not null)
+            {
+                Directory.CreateDirectory(outputDirectory);
+            }
+            var invalidCharacters = Path.GetInvalidFileNameChars();
+            var name = string.Concat(session.ProjectDisplayName.Select(character =>
+                Array.IndexOf(invalidCharacters, character) >= 0 ? '_' : character));
+            var timestamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            IsChoosingOutput = true;
+            session.ViewModel.RefreshCommands();
+            var path = await dialogs.SaveFileAsync("Export", "Videos", ["*.mp4", "*.mkv"], ".mp4",
+                $"{name}-{timestamp}.mp4", outputDirectory);
             if (path is null || session.IsClosing)
             {
                 return;
             }
 
             IsChoosingOutput = false;
-            var vm = session.ViewModel.Export;
             vm.IsRunning = true;
             vm.ProgressVisible = true;
             vm.ProgressIndeterminate = true;
             statusKey = "Tasks.Queued";
             statusEncoder = null;
+            failureReason = null;
             RefreshLanguage();
             taskHandle = session.ApplicationContext.Tasks.Submit(new VideoExportTask(session, this, request with { OutputPath = path }, duration));
             await taskHandle.Completion;
         }
         catch (OperationCanceledException)
         {
-            statusKey = "Workbench.Cancelled";
-            statusEncoder = null;
-            RefreshLanguage();
-            session.ViewModel.Export.ProgressVisible = false;
+            if (!session.IsClosing)
+            {
+                statusKey = "Workbench.Cancelled";
+                statusEncoder = null;
+                failureReason = null;
+                RefreshLanguage();
+                session.LogInfo("Export", session.ViewModel.Export.Status);
+                session.ViewModel.Export.ProgressVisible = false;
+            }
         }
         catch (Exception error)
         {
-            if (!session.IsClosing)
-            {
-                session.ShowError(error);
-            }
+            await ShowFailureAsync(error);
         }
         finally
         {
@@ -90,6 +114,31 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
             activeOperation = false;
             session.ViewModel.Export.IsRunning = false;
             session.ViewModel.RefreshCommands();
+        }
+    }
+
+    private async Task ShowFailureAsync(Exception error, bool recordLog = true)
+    {
+        if (session.IsClosing)
+        {
+            return;
+        }
+        session.ShowError(error, recordLog);
+        statusKey = "Workbench.ExportFailed";
+        statusEncoder = null;
+        failureReason = string.IsNullOrWhiteSpace(error.Message)
+            ? error.GetType().Name : error.Message;
+        var vm = session.ViewModel.Export;
+        vm.IsRunning = false;
+        vm.ProgressVisible = false;
+        vm.ProgressIndeterminate = false;
+        RefreshLanguage();
+        try
+        {
+            await dialogs.ShowErrorAsync(statusKey, failureReason, session.ProjectOperationsToken);
+        }
+        catch (OperationCanceledException) when (session.ProjectOperationsToken.IsCancellationRequested)
+        {
         }
     }
 
@@ -107,6 +156,7 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
         vm.ProgressIndeterminate = true;
         statusKey = null;
         statusEncoder = null;
+        failureReason = null;
         session.LogInfo("Export", Localization.Get("Workbench.Export"));
         var exportRevision = revision;
         string? reportedEncoder = null;
@@ -148,27 +198,6 @@ internal sealed class ExportCoordinator(WorkbenchSession session, IWorkbenchDial
                 session.LogInfo("Export", vm.Status);
             }
             return result;
-        }
-        catch (OperationCanceledException)
-        {
-            statusKey = "Workbench.Cancelled";
-            statusEncoder = null;
-            RefreshLanguage();
-            session.LogInfo("Export", vm.Status);
-            vm.ProgressVisible = false;
-            throw;
-        }
-        catch (Exception error)
-        {
-            if (!session.IsClosing)
-            {
-                session.ShowError(error);
-                statusKey = null;
-                statusEncoder = null;
-                vm.Status = error.Message;
-                vm.ProgressVisible = false;
-            }
-            throw;
         }
         finally
         {
