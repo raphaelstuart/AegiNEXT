@@ -85,7 +85,8 @@ internal static class AssTextWriter
                     {
                         throw new InvalidDataException("卡拉 OK 的正时长厘秒量化超出字幕范围，无法导出。");
                     }
-                    if (endCount != end.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value)
+                    if (endCount != end.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value ||
+                        !projection && (new MediaTime(clipStartCount, 100) != start || new MediaTime(endCount, 100) != end))
                     {
                         diagnostics.Add(new("Ass.KaraokeQuantization", "卡拉 OK 的正时长厘秒量化调整了片段边界。", SubtitleId: line.Id));
                     }
@@ -94,7 +95,8 @@ internal static class AssTextWriter
             if (styleChanged || clip != previousClip)
             {
                 CheckTagBoundary(result);
-                result.Append("{\\r").Append(StyleTags(style)).Append('}');
+                result.Append("{\\r").Append(StyleTags(style, projection)).Append('}');
+                AddStyleDiagnostics(style, line.Id, diagnostics, projection);
                 previous = style;
                 if (clip is not null)
                 {
@@ -106,7 +108,7 @@ internal static class AssTextWriter
                     result.Append("\\1c").Append(AssFormatValues.Color(active.Fill, false)).Append("\\1a").Append(AssFormatValues.Alpha(active.Fill));
                     if (clip.HighlightKind == KaraokeHighlightKind.SWEEP)
                     {
-                        result.Append(VisualTags(inactive));
+                        result.Append(VisualTags(inactive, projection));
                         if (VisualsDiffer(inactive, active))
                         {
                             diagnostics.Add(new("Ass.KaraokeVisual", "ASS 的逐字扫过不能完整保留前后的独立描边和阴影，已采用未激活外观。", SubtitleId: line.Id));
@@ -114,12 +116,12 @@ internal static class AssTextWriter
                     }
                     else if (clipStartCount <= 0)
                     {
-                        result.Append(VisualTags(active));
+                        result.Append(VisualTags(active, projection));
                     }
                     else
                     {
-                        result.Append(VisualTags(inactive));
-                        var changes = ChangedVisualTags(inactive, active);
+                        result.Append(VisualTags(inactive, projection));
+                        var changes = ChangedVisualTags(inactive, active, projection);
                         if (changes.Length > 0)
                         {
                             var startMs = checked(clipStartCount * 10).ToString(CultureInfo.InvariantCulture);
@@ -131,7 +133,6 @@ internal static class AssTextWriter
                 else
                 {
                     result.Append("{\\2c").Append(AssFormatValues.Color(style.Fill, false)).Append("\\2a").Append(AssFormatValues.Alpha(style.Fill)).Append('}');
-                    AddStyleDiagnostics(style, line.Id, diagnostics, projection);
                 }
             }
             if (clip != previousClip)
@@ -165,25 +166,25 @@ internal static class AssTextWriter
         return new(result.ToString(), diagnostics.Distinct().ToImmutableArray(), new(time, 100));
     }
 
-    internal static string StyleTags(SubtitleStyle style)
+    private static string StyleTags(SubtitleStyle style, bool projection)
     {
         if (style.FontFamily.IndexOfAny(['\\', '{', '}', '\r', '\n']) >= 0)
         {
             throw new InvalidDataException("ASS 字体名包含标签控制字符。");
         }
         return string.Create(CultureInfo.InvariantCulture,
-            $"\\fn{style.FontFamily}\\fs{AssFormatValues.Number(style.FontSize)}\\b{(style.Bold ? 1 : 0)}\\i{(style.Italic ? 1 : 0)}\\u{(style.Underline ? 1 : 0)}\\s{(style.Strikethrough ? 1 : 0)}\\1c{AssFormatValues.Color(style.Fill, false)}\\1a{AssFormatValues.Alpha(style.Fill)}\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}\\blur{AssFormatValues.Number(style.ShadowBlur)}");
+            $"\\fn{style.FontFamily}\\fs{AssFormatValues.Number(style.FontSize)}\\b{(style.Bold ? 1 : 0)}\\i{(style.Italic ? 1 : 0)}\\u{(style.Underline ? 1 : 0)}\\s{(style.Strikethrough ? 1 : 0)}\\1c{AssFormatValues.Color(style.Fill, false)}\\1a{AssFormatValues.Alpha(style.Fill)}\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? "\\blur" + AssFormatValues.Number(style.ShadowBlur) : string.Empty);
     }
 
     private static bool OutOfGamut(SceneColor color) => color.Red is < 0 or > 1 || color.Green is < 0 or > 1 || color.Blue is < 0 or > 1;
 
-    private static string VisualTags(SubtitleStyle style)
+    private static string VisualTags(SubtitleStyle style, bool projection)
     {
         return string.Create(CultureInfo.InvariantCulture,
-            $"\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}\\blur{AssFormatValues.Number(style.ShadowBlur)}");
+            $"\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? "\\blur" + AssFormatValues.Number(style.ShadowBlur) : string.Empty);
     }
 
-    private static string ChangedVisualTags(SubtitleStyle inactive, SubtitleStyle active)
+    private static string ChangedVisualTags(SubtitleStyle inactive, SubtitleStyle active, bool projection)
     {
         var tags = new StringBuilder();
         if (inactive.Stroke != active.Stroke)
@@ -206,7 +207,7 @@ internal static class AssTextWriter
         {
             tags.Append("\\yshad").Append(AssFormatValues.Number(active.ShadowOffset.Y));
         }
-        if (!inactive.ShadowBlur.Equals(active.ShadowBlur))
+        if (projection && !inactive.ShadowBlur.Equals(active.ShadowBlur))
         {
             tags.Append("\\blur").Append(AssFormatValues.Number(active.ShadowBlur));
         }
@@ -224,6 +225,10 @@ internal static class AssTextWriter
     private static void AddStyleDiagnostics(SubtitleStyle style, Guid id,
         ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, bool projection)
     {
+        if (!projection)
+        {
+            AssExportPrecision.AddStyle(style, id, diagnostics);
+        }
         if (!projection && style.FontVariant is not null)
         {
             diagnostics.Add(new("Ass.FontVariant", "ASS 的字体家族与粗体、斜体标记无法完整保留系统字体命名变体。", SubtitleId: id));
@@ -232,9 +237,11 @@ internal static class AssTextWriter
         {
             diagnostics.Add(new("Ass.ColorRange", "ASS 8 位 sRGB 颜色会限制线性 HDR 或负颜色。", SubtitleId: id));
         }
-        if (style.ShadowBlur > 0 && (style.ShadowColor.Alpha > 0 || style.Fill.Alpha > 0 || style.StrokeWidth > 0 && style.Stroke.Alpha > 0))
+        if (style.ShadowBlur > 0 && (style.ShadowColor.Alpha > 0 || projection && (style.Fill.Alpha > 0 || style.StrokeWidth > 0 && style.Stroke.Alpha > 0)))
         {
-            diagnostics.Add(new("Ass.ShadowBlur", "项目的阴影模糊与 ASS 的文字边缘模糊语义不同，保留数值会改变文字或描边边缘。", SubtitleId: id));
+            diagnostics.Add(new("Ass.ShadowBlur", projection
+                ? "项目的阴影模糊与 ASS 的文字边缘模糊语义不同，保留数值会改变文字或描边边缘。"
+                : "ASS 无法单独表达项目的阴影模糊，导出时已省略阴影模糊。", SubtitleId: id));
         }
     }
 

@@ -38,7 +38,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private bool drawing;
     private bool explicitPosition;
     private bool explicitAlignment;
-    private static readonly string[] knownTags = ["iclip", "alpha", "xbord", "ybord", "xshad", "yshad", "fscx", "fscy", "bord", "shad", "blur", "move", "clip", "fade", "pos", "fad", "frz", "frx", "fry", "fsp", "org", "pbo", "fn", "fs", "an", "kf", "ko", "kt", "1c", "2c", "3c", "4c", "1a", "2a", "3a", "4a", "b", "i", "u", "s", "c", "r", "k", "K", "p", "q", "t", "a"];
+    private static readonly string[] knownTags = ["iclip", "alpha", "xbord", "ybord", "xshad", "yshad", "fscx", "fscy", "bord", "shad", "blur", "move", "clip", "fade", "pos", "fad", "frz", "frx", "fry", "fsp", "fax", "fay", "org", "pbo", "fn", "fs", "fe", "fr", "be", "an", "kf", "ko", "kt", "1c", "2c", "3c", "4c", "1a", "2a", "3a", "4a", "b", "i", "u", "s", "c", "r", "k", "K", "p", "q", "t", "a"];
 
     internal AssTextEditResult Parse(string source)
     {
@@ -226,6 +226,11 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             case "xshad": current = current with { ShadowOffset = current.ShadowOffset with { X = AssFormatValues.Number(value) * scaleX } }; break;
             case "yshad": current = current with { ShadowOffset = current.ShadowOffset with { Y = AssFormatValues.Number(value) * scaleY } }; break;
             case "blur":
+                if (!projectSource)
+                {
+                    ReportExternalBlur(value, sourceStart, sourceLength);
+                    break;
+                }
                 current = current with { ShadowBlur = value.Length == 0 ? baseline.ShadowBlur : AssFormatValues.Number(value) * scaleY };
                 if (current.ShadowBlur > 0 && (current.Fill.Alpha > 0 || current.StrokeWidth > 0 && current.Stroke.Alpha > 0 || current.ShadowColor.Alpha > 0))
                 {
@@ -385,6 +390,11 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         {
             var name = knownTags.FirstOrDefault(tag => token.StartsWith(tag, StringComparison.Ordinal));
             var argument = name is null ? string.Empty : token[name.Length..].Trim();
+            if (name == "blur" && !projectSource)
+            {
+                ReportExternalBlur(argument, sourceStart, sourceLength);
+                continue;
+            }
             var target = visual.ApplyTo(current);
             visual = name switch
             {
@@ -405,10 +415,22 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 return;
             }
         }
+        if (!visual.HasOverrides)
+        {
+            return;
+        }
         instantVisual = visual;
         instantVisualTime = new(start, 1000);
         instantSourceStart = sourceStart;
         instantSourceLength = sourceLength;
+    }
+
+    private void ReportExternalBlur(string value, int sourceStart, int sourceLength)
+    {
+        if (value.Length > 0 && AssFormatValues.Number(value) != 0)
+        {
+            Report("Ass.ShadowBlur", "ASS 的文字或描边边缘模糊与项目阴影模糊含义不同，边缘模糊未导入。", sourceStart, sourceLength);
+        }
     }
 
     private void AppendStyle(int start, int length)

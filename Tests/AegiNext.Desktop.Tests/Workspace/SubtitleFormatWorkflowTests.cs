@@ -1,6 +1,7 @@
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Application;
 using AegiNext.Core.Projects;
+using AegiNext.Desktop.Workspace;
 using System.Text;
 
 namespace AegiNext.Desktop.Tests.Workspace;
@@ -113,11 +114,45 @@ public sealed class SubtitleFormatWorkflowTests
         Assert.Same(original, context.Editor.Snapshot);
         Assert.False(context.Editor.CanUndo);
         Assert.Contains(context.Dialogs.ConversionDiagnostics, message => message.Contains("move", StringComparison.OrdinalIgnoreCase));
+        var review = Assert.IsType<SubtitleConversionReview>(context.Dialogs.ConversionReview);
+        var importedLine = Assert.Single(review.Subtitles);
+        Assert.Equal("hello", importedLine.Text);
+        Assert.Contains("00:00:00.000 → 00:00:02.000", review.FormatDetails());
+        Assert.DoesNotContain(importedLine.Id.ToString(), review.FormatDetails());
         context.Dialogs.ConversionChoice = true;
         await context.Session.ExecuteCommandAsync(WorkbenchCommand.IMPORT_ASS);
         Assert.Equal("hello", Assert.Single(context.Editor.Snapshot.Subtitles).Text);
         Assert.True(context.Editor.Undo());
         Assert.Same(original, context.Editor.Snapshot);
+    }
+
+    [Fact]
+    public async Task AssExportReviewIdentifiesTheOriginalSubtitleAndCancelPreservesTheDestination()
+    {
+        var line = new SubtitleLine
+        {
+            Start = new(1), End = new(3), Text = "Export 中文",
+            Style = new() { ShadowBlur = 5 }
+        };
+        await using var context = new WorkspaceSessionTestContext(new()
+        {
+            Subtitles = [line], Layers = [new() { Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End }]
+        });
+        await context.InitializeAsync();
+        var snapshot = context.Editor.Snapshot;
+        context.Dialogs.SavePath = Path.Combine(context.DirectoryPath, "review.ass");
+        await File.WriteAllTextAsync(context.Dialogs.SavePath, "Original destination");
+
+        await context.Session.ExecuteCommandAsync(WorkbenchCommand.EXPORT_ASS);
+
+        var review = Assert.IsType<SubtitleConversionReview>(context.Dialogs.ConversionReview);
+        Assert.Equal(line.Id, Assert.Single(review.Subtitles).Id);
+        Assert.Contains("Export 中文", review.FormatDetails());
+        Assert.Contains("00:00:01.000 → 00:00:03.000", review.FormatDetails());
+        Assert.DoesNotContain(line.Id.ToString(), review.FormatDetails());
+        Assert.Equal("Original destination", await File.ReadAllTextAsync(context.Dialogs.SavePath));
+        Assert.Same(snapshot, context.Editor.Snapshot);
+        Assert.False(context.Editor.CanUndo);
     }
 
     [Fact]

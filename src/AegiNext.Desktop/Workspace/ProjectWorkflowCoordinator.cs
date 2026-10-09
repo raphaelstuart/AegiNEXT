@@ -657,7 +657,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         if (ass)
         {
             var result = await Task.Run(() => AssSubtitleFormat.Parse(text, captured.Width, captured.Height), context.CancellationToken);
-            if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(timingDiagnostics)))
+            if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(timingDiagnostics), result.Lines))
             {
                 return;
             }
@@ -667,7 +667,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         else
         {
             lines = await Task.Run(() => SubtitleTextFormat.ParseSrt(text), context.CancellationToken);
-            if (!await ConfirmConversionAsync(timingDiagnostics))
+            if (!await ConfirmConversionAsync(timingDiagnostics, lines))
             {
                 return;
             }
@@ -725,7 +725,7 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         var result = await Task.Run(() => ass ? AssSubtitleFormat.Write(document, timeOffset) : new SubtitleFormatWriteResult(
             SubtitleTextFormat.WriteSrt(document.Subtitles.OrderBy(line => line.Start), timeOffset),
             SubtitleFormatLossAnalysis.ForSrt(document)), context.CancellationToken);
-        if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(SubtitleTimingDiagnostics(mapping))))
+        if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(SubtitleTimingDiagnostics(mapping)), document.Subtitles))
         {
             throw new OperationCanceledException(context.CancellationToken);
         }
@@ -763,15 +763,14 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         return mapping.HasValue ? [] : [new("Subtitle.PlaybackOriginUnknown", Localization.Get("Workflow.SubtitleTimelineOriginUnknown"))];
     }
 
-    private Task<bool> ConfirmConversionAsync(ImmutableArray<SubtitleFormatDiagnostic> diagnostics)
+    private Task<bool> ConfirmConversionAsync(ImmutableArray<SubtitleFormatDiagnostic> diagnostics,
+        ImmutableArray<SubtitleLine> lines)
     {
         if (diagnostics.IsEmpty)
         {
             return Task.FromResult(true);
         }
-        var messages = diagnostics.Select(item => item.SubtitleId is { } id
-            ? $"[{id}] {item.Code}: {item.Message}" : $"{item.Code}: {item.Message}").ToArray();
-        return dialogs.ConfirmSubtitleConversionAsync(messages);
+        return dialogs.ConfirmSubtitleConversionAsync(new(diagnostics, lines));
     }
 
     private static async Task<string> ReadSubtitleFileAsync(string path, CancellationToken cancellationToken)

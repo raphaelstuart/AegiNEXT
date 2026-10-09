@@ -116,7 +116,7 @@ public static class AssSubtitleFormat
                 unsupportedGeometry.Add(style.Name);
             }
         }
-        var fallback = new AssStyleDefinition("Default", new() { FontSize = 20 * scaleY }, SceneColor.White);
+        var fallback = new AssStyleDefinition("Default", new() { FontSize = 20 * scaleY, ShadowBlur = 0 }, SceneColor.White);
         var lines = ImmutableArray.CreateBuilder<SubtitleLine>();
         var clips = ImmutableArray.CreateBuilder<SubtitleClipImport>();
         var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
@@ -189,25 +189,9 @@ public static class AssSubtitleFormat
             .AppendLine("LayoutResY: " + document.Height.ToString(CultureInfo.InvariantCulture))
             .AppendLine("YCbCr Matrix: None").AppendLine("WrapStyle: 1").AppendLine("ScaledBorderAndShadow: yes").AppendLine();
         result.AppendLine("[V4+ Styles]").AppendLine("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding");
-        var styles = new Dictionary<SubtitleStyle, string>();
         var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
-        var expandedDiagnostics = new HashSet<(Guid? SubtitleId, string Code)>();
-        foreach (var line in document.Subtitles)
-        {
-            var style = line.Style with { FontAssetId = null, Position = null };
-            if (styles.ContainsKey(style))
-            {
-                continue;
-            }
-            if (style.FontFamily.Contains(',', StringComparison.Ordinal))
-            {
-                throw new InvalidDataException("ASS 样式字体名不能包含逗号。");
-            }
-            var name = "Style" + (styles.Count + 1).ToString(CultureInfo.InvariantCulture);
-            styles.Add(style, name);
-            result.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                $"Style: {name},{style.FontFamily},{AssFormatValues.Number(style.FontSize)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Fill)},{AssFormatValues.Color(style.Stroke)},{AssFormatValues.Color(style.ShadowColor)},{(style.Bold ? -1 : 0)},{(style.Italic ? -1 : 0)},{(style.Underline ? -1 : 0)},{(style.Strikethrough ? -1 : 0)},100,100,0,0,1,{AssFormatValues.Number(style.StrokeWidth)},{AssFormatValues.Number(style.ShadowOffset.Y)},{AssFormatValues.Alignment(style.Alignment)},{AssFormatValues.Number(style.Margins.Left)},{AssFormatValues.Number(style.Margins.Right)},{AssFormatValues.Number(style.Margins.Vertical)},1"));
-        }
+        var styles = AssStyleTable.Write(document.Subtitles, result, diagnostics);
+        var reportedDiagnostics = new HashSet<(Guid? SubtitleId, string Code)>();
         result.AppendLine().AppendLine("[Events]").AppendLine("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text");
         var byId = document.Subtitles.ToDictionary(line => line.Id);
         var order = 0;
@@ -231,6 +215,12 @@ public static class AssSubtitleFormat
             {
                 diagnostics.Add(new("Ass.LineHeight", "ASS 不支持项目自定义行高。", SubtitleId: line.Id));
             }
+            AssExportPrecision.AddStyle(line.Style, line.Id, diagnostics);
+            AssExportPrecision.AddTime(line.Start + timeOffset, line.End + timeOffset, line.Id, diagnostics);
+            if (layer.Blur > 0)
+            {
+                diagnostics.Add(new("Ass.LayerBlur", "ASS 文字边缘模糊不能表达项目整层模糊，导出时已省略整层模糊。", SubtitleId: line.Id));
+            }
             var position = line.Style.Position;
             var placement = "{\\an" + AssFormatValues.Alignment(line.Style.Alignment).ToString(CultureInfo.InvariantCulture);
             if (position is not null)
@@ -242,6 +232,7 @@ public static class AssSubtitleFormat
                 }
                 var px = position.Anchor.X * document.Width + position.Offset.X;
                 var py = position.Anchor.Y * document.Height + position.Offset.Y;
+                AssExportPrecision.AddNumbers(line.Id, diagnostics, px, py);
                 placement += "\\pos(" + AssFormatValues.Number(px) + "," + AssFormatValues.Number(py) + ")";
             }
             placement += "}";
@@ -253,30 +244,23 @@ public static class AssSubtitleFormat
                 }
                 var sampleLine = line with { Start = sample.Start, End = sample.End };
                 var body = AssTextWriter.Write(sampleLine, sample.ContentTime, preserveContentClock: sample.Expanded);
-                if (sample.Expanded)
+                foreach (var diagnostic in body.Diagnostics)
                 {
-                    foreach (var diagnostic in body.Diagnostics)
+                    if (reportedDiagnostics.Add((diagnostic.SubtitleId, diagnostic.Code)))
                     {
-                        if (expandedDiagnostics.Add((diagnostic.SubtitleId, diagnostic.Code)))
-                        {
-                            diagnostics.Add(diagnostic);
-                        }
+                        diagnostics.Add(diagnostic);
                     }
-                }
-                else
-                {
-                    diagnostics.AddRange(body.Diagnostics);
                 }
                 var maskTags = sample.Tags.Length == 0 ? string.Empty : "{" + sample.Tags + "}";
                 result.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                    $"Dialogue: {order},{AssFormatValues.Time(sample.Start + timeOffset, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End + timeOffset, MediaTimeRounding.CEILING)},{styles[line.Style with { FontAssetId = null, Position = null }]},,0,0,0,,{placement}{maskTags}{body.Text}"));
+                    $"Dialogue: {order},{AssFormatValues.Time(sample.Start + timeOffset, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End + timeOffset, MediaTimeRounding.CEILING)},{styles[line.Id]},,0,0,0,,{placement}{maskTags}{body.Text}"));
             }
             order++;
         }
         SubtitleFormatLossAnalysis.AddCompositionLoss(document, diagnostics, supportsMasks: true);
         var text = result.ToString();
         AssFormatValues.CheckText(text);
-        return new(text, diagnostics.Distinct().ToImmutableArray());
+        return new(text, diagnostics.DistinctBy(diagnostic => (diagnostic.SubtitleId, diagnostic.Code)).ToImmutableArray());
     }
 
     private static AssStyleDefinition ParseStyle(Dictionary<string, string> row, double sx, double sy)

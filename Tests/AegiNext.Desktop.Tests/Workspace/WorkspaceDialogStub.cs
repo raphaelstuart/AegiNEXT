@@ -37,6 +37,7 @@ internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
     internal int ConfirmationRequests { get; private set; }
     internal bool ConversionChoice { get; set; }
     internal IReadOnlyList<string> ConversionDiagnostics { get; private set; } = [];
+    internal SubtitleConversionReview? ConversionReview { get; private set; }
     internal TrackStyleUpdateDecision TrackStyleChoice { get; set; } = TrackStyleUpdateDecision.DEFAULT_ONLY;
     internal int TrackStyleRequests { get; private set; }
     internal bool TrackDeletionChoice { get; set; }
@@ -103,9 +104,10 @@ internal sealed class WorkspaceDialogStub : IWorkbenchDialogService
         return Task.CompletedTask;
     }
 
-    public Task<bool> ConfirmSubtitleConversionAsync(IReadOnlyList<string> diagnostics)
+    public Task<bool> ConfirmSubtitleConversionAsync(SubtitleConversionReview review)
     {
-        ConversionDiagnostics = diagnostics;
+        ConversionReview = review;
+        ConversionDiagnostics = review.Diagnostics.Select(item => $"{item.Code}: {item.Message}").ToArray();
         return Task.FromResult(ConversionChoice);
     }
 

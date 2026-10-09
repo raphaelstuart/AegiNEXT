@@ -164,9 +164,9 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
     }
 
     /// <summary>展示具体字幕转换损失，并等待用户明确继续或取消。</summary>
-    public Task<bool> ConfirmSubtitleConversionAsync(IReadOnlyList<string> diagnostics)
+    public Task<bool> ConfirmSubtitleConversionAsync(SubtitleConversionReview review)
     {
-        var dialog = new SubtitleConversionDialog(diagnostics);
+        var dialog = new SubtitleConversionDialog(review);
         registerWindow?.Invoke(dialog);
         return dialog.ShowDialog<bool>(ownerProvider());
     }

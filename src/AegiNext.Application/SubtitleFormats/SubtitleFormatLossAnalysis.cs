@@ -20,6 +20,10 @@ public static class SubtitleFormatLossAnalysis
         }
         foreach (var layer in document.Layers)
         {
+            if (layer.Blur > 0)
+            {
+                diagnostics.Add(new("Srt.Blur", "SRT 不支持整层模糊，导出时模糊将被舍弃。", SubtitleId: layer.SubtitleId));
+            }
             if (layer.Mask is not null)
             {
                 diagnostics.Add(new("Srt.Mask", "SRT 不支持裁切蒙版，导出时蒙版几何将被舍弃。", SubtitleId: layer.SubtitleId));
