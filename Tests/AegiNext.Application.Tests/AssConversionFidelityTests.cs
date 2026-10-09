@@ -11,7 +11,6 @@ public sealed class AssConversionFidelityTests
     [InlineData("fax0.25")]
     [InlineData("fay-0.25")]
     [InlineData("fe128")]
-    [InlineData("fr25")]
     public void UnsupportedLegalTagKeepsFollowingFormattingAndText(string tag)
     {
         var body = "{\\" + tag + "\\fs48}保留 text";

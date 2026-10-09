@@ -10,6 +10,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     SceneColor secondary, double scaleX = 1, double scaleY = 1, bool projectSource = false, int canvasWidth = 1920, int canvasHeight = 1080)
 {
     private readonly AssMaskParser maskParser = new(original.End - original.Start, scaleX, scaleY, canvasWidth, canvasHeight);
+    private readonly AssGeometryParser geometryParser = new(original, styles, scaleX, scaleY);
     private readonly StringBuilder text = new();
     private readonly ImmutableArray<SubtitleInlineSpan>.Builder spans = ImmutableArray.CreateBuilder<SubtitleInlineSpan>();
     private readonly ImmutableArray<KaraokeSegment>.Builder karaoke = ImmutableArray.CreateBuilder<KaraokeSegment>();
@@ -36,7 +37,6 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private int segmentSourceStart;
     private int segmentSourceLength;
     private bool drawing;
-    private bool explicitPosition;
     private bool explicitAlignment;
     private static readonly string[] knownTags = ["iclip", "alpha", "xbord", "ybord", "xshad", "yshad", "fscx", "fscy", "bord", "shad", "blur", "move", "clip", "fade", "pos", "fad", "frz", "frx", "fry", "fsp", "fax", "fay", "org", "pbo", "fn", "fs", "fe", "fr", "be", "an", "kf", "ko", "kt", "1c", "2c", "3c", "4c", "1a", "2a", "3a", "4a", "b", "i", "u", "s", "c", "r", "k", "K", "p", "q", "t", "a"];
 
@@ -75,6 +75,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             var offset = text.Length;
             if (!drawing)
             {
+                if (!projectSource && content.Any(character => character is not ('\r' or '\n')))
+                {
+                    geometryParser.Observe();
+                }
                 if (segmentDuration > MediaTime.Zero)
                 {
                     var inactiveColor = inactive ?? secondaryColor;
@@ -117,11 +121,21 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         {
             line = line with { Karaoke = line.Karaoke.Select(clip => clip with { Start = clip.Start + contentOffset, End = clip.End + contentOffset }).ToImmutableArray() };
         }
+        var transform = new LayerTransform();
+        if (!projectSource)
+        {
+            transform = geometryParser.Transform();
+            var appearance = new AssTransformAppearance(transform, original.Id);
+            line = appearance.Import(line);
+            diagnostics.AddRange(geometryParser.Diagnostics);
+            diagnostics.AddRange(appearance.Diagnostics);
+        }
         ValidateLine(line);
         diagnostics.AddRange(maskParser.Diagnostics);
         return new(line, diagnostics.ToImmutable(), map.ToImmutable())
         {
             KaraokeSourceMap = karaokeMap.ToImmutable(), Mask = maskParser.Mask, ContentOffset = contentOffset,
+            Transform = transform, PlacementTracks = projectSource ? [] : geometryParser.Tracks(contentOffset),
             MaskTracks = maskParser.Tracks().Select(track => contentOffset == MediaTime.Zero ? track : track with
             {
                 Keyframes = track.Keyframes.Select(key => key with { Time = key.Time + contentOffset }).ToImmutableArray(),
@@ -242,6 +256,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 inactive = value.Length == 0 ? secondaryColor : styles.TryGetValue(value, out var reset) ? reset.Secondary : secondaryColor;
                 instantVisual = null;
                 instantVisualTime = null;
+                if (!projectSource)
+                {
+                    geometryParser.Reset(value);
+                }
                 if (value.Length > 0 && !styles.ContainsKey(value))
                 {
                     Report("Ass.UnknownStyle", $"未找到重置样式 {value}，使用当前行样式。", sourceStart, sourceLength);
@@ -265,25 +283,31 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                         : null
                 };
                 break;
-            case "pos":
+            case "fscx":
+            case "fscy":
+            case "frz":
+            case "fr":
                 if (projectSource)
                 {
-                    Report("Ass.ProjectPositionUnsupported", "项目 ASS 代码不支持位置标签，请移除 \\pos，并在项目原生位置属性中调整定位。", sourceStart, sourceLength);
+                    Report("Ass.UnsupportedTag", $"项目 ASS 代码不支持 {name}，请在项目原生变换属性中调整。", sourceStart, sourceLength);
+                }
+                else
+                {
+                    geometryParser.Apply(name, value);
+                }
+                break;
+            case "pos":
+            case "move":
+                if (projectSource)
+                {
+                    Report(name == "pos" ? "Ass.ProjectPositionUnsupported" : "Ass.UnsupportedTag",
+                        $"项目 ASS 代码不支持位置标签，请移除 \\{name}，并在项目原生位置属性中调整定位。", sourceStart, sourceLength);
                     break;
                 }
-                var coordinates = value.Trim('(', ')').Split(',');
-                if (coordinates.Length != 2)
+                if (geometryParser.TryPlacement(name, value, sourceStart, sourceLength, out var offset))
                 {
-                    throw new InvalidDataException("ASS pos 必须有两个坐标。");
+                    lineStyle = lineStyle with { Position = new() { Anchor = new(0, 0), Pivot = Pivot(lineStyle.Alignment), Offset = offset } };
                 }
-                var offset = new ScenePoint(AssFormatValues.Number(coordinates[0]) * scaleX, AssFormatValues.Number(coordinates[1]) * scaleY);
-                if (explicitPosition)
-                {
-                    Report("Ass.DuplicatePlacement", "ASS 同一行重复的位置标签已忽略，采用首个值。", sourceStart, sourceLength);
-                    break;
-                }
-                lineStyle = lineStyle with { Position = new() { Anchor = new(0, 0), Pivot = Pivot(lineStyle.Alignment), Offset = offset } };
-                explicitPosition = true;
                 break;
             case "kt":
                 FlushKaraoke();

@@ -110,8 +110,7 @@ public static class AssSubtitleFormat
             {
                 throw new InvalidDataException("ASS 样式名称重复。");
             }
-            if (!AssFormatValues.Number(Get(fields, "ScaleX", "100")).Equals(100d) || !AssFormatValues.Number(Get(fields, "ScaleY", "100")).Equals(100d) ||
-                !AssFormatValues.Number(Get(fields, "Spacing", "0")).Equals(0d) || !AssFormatValues.Number(Get(fields, "Angle", "0")).Equals(0d) || Get(fields, "BorderStyle", "1") != "1")
+            if (!AssFormatValues.Number(Get(fields, "Spacing", "0")).Equals(0d) || Get(fields, "BorderStyle", "1") != "1")
             {
                 unsupportedGeometry.Add(style.Name);
             }
@@ -159,7 +158,10 @@ public static class AssSubtitleFormat
             var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth, canvasHeight: targetHeight).Parse(Required(fields, "Text"));
             var normalized = SubtitleKaraokeNormalization.Normalize(parsed.Line);
             lines.Add(normalized);
-            clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks, parsed.ContentOffset));
+            clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks), parsed.ContentOffset)
+            {
+                Transform = parsed.Transform
+            });
             diagnostics.AddRange(parsed.Diagnostics);
             if (!styles.ContainsKey(name))
             {
@@ -171,14 +173,15 @@ public static class AssSubtitleFormat
             }
             if (unsupportedGeometry.Contains(name))
             {
-                diagnostics.Add(new("Ass.StyleGeometry", "ASS 样式的缩放、字距、旋转或背景框未导入，请使用项目特效。", SubtitleId: line.Id));
+                diagnostics.Add(new("Ass.StyleGeometry", "ASS 样式的字距或背景框未导入。", SubtitleId: line.Id));
             }
         }
         return new(lines.ToImmutable(), diagnostics.ToImmutable()) { Clips = clips.ToImmutable() };
     }
 
     /// <summary>按工程合成层顺序导出全部字幕，静态样式去重，时间显式量化到厘秒。</summary>
-    public static SubtitleFormatWriteResult Write(ProjectDocument document, MediaTime timeOffset = default)
+    public static SubtitleFormatWriteResult Write(ProjectDocument document, MediaTime timeOffset = default,
+        ISubtitlePlacementMeasurer? placementMeasurer = null)
     {
         ProjectValidator.Validate(document);
         var result = new StringBuilder();
@@ -221,21 +224,7 @@ public static class AssSubtitleFormat
             {
                 diagnostics.Add(new("Ass.LayerBlur", "ASS 文字边缘模糊不能表达项目整层模糊，导出时已省略整层模糊。", SubtitleId: line.Id));
             }
-            var position = line.Style.Position;
-            var placement = "{\\an" + AssFormatValues.Alignment(line.Style.Alignment).ToString(CultureInfo.InvariantCulture);
-            if (position is not null)
-            {
-                var pivot = AssTextParser.Pivot(line.Style.Alignment);
-                if (position.Pivot != pivot)
-                {
-                    diagnostics.Add(new("Ass.Pivot", "ASS 九宫格定位不能完整保留自定义文字轴心。", SubtitleId: line.Id));
-                }
-                var px = position.Anchor.X * document.Width + position.Offset.X;
-                var py = position.Anchor.Y * document.Height + position.Offset.Y;
-                AssExportPrecision.AddNumbers(line.Id, diagnostics, px, py);
-                placement += "\\pos(" + AssFormatValues.Number(px) + "," + AssFormatValues.Number(py) + ")";
-            }
-            placement += "}";
+            var conversion = new AssEventConversionContext(document, layer, line, placementMeasurer, diagnostics);
             foreach (var sample in AssMaskSampling.Samples(document, layer, line, diagnostics, timeOffset))
             {
                 if (exportedCount++ >= 100000)
@@ -243,7 +232,7 @@ public static class AssSubtitleFormat
                     throw new InvalidDataException("ASS 蒙版展开后的总对白数量超过 100,000 条预算。");
                 }
                 var sampleLine = line with { Start = sample.Start, End = sample.End };
-                var body = AssTextWriter.Write(sampleLine, sample.ContentTime, preserveContentClock: sample.Expanded);
+                var body = AssTextWriter.Write(sampleLine, sample.ContentTime, preserveContentClock: sample.Expanded, conversion: conversion);
                 foreach (var diagnostic in body.Diagnostics)
                 {
                     if (reportedDiagnostics.Add((diagnostic.SubtitleId, diagnostic.Code)))
@@ -251,13 +240,17 @@ public static class AssSubtitleFormat
                         diagnostics.Add(diagnostic);
                     }
                 }
+                var placement = conversion.PlacementTags(sample, timeOffset);
                 var maskTags = sample.Tags.Length == 0 ? string.Empty : "{" + sample.Tags + "}";
                 result.AppendLine(string.Create(CultureInfo.InvariantCulture,
                     $"Dialogue: {order},{AssFormatValues.Time(sample.Start + timeOffset, MediaTimeRounding.FLOOR)},{AssFormatValues.Time(sample.End + timeOffset, MediaTimeRounding.CEILING)},{styles[line.Id]},,0,0,0,,{placement}{maskTags}{body.Text}"));
             }
             order++;
         }
-        SubtitleFormatLossAnalysis.AddCompositionLoss(document, diagnostics, supportsMasks: true);
+        if (document.Layers.Any(layer => layer.Kind != LayerKind.SUBTITLE))
+        {
+            diagnostics.Add(new("Subtitle.Composition", "ASS 导出未包含项目中的图形或图片片段。"));
+        }
         var text = result.ToString();
         AssFormatValues.CheckText(text);
         return new(text, diagnostics.DistinctBy(diagnostic => (diagnostic.SubtitleId, diagnostic.Code)).ToImmutableArray());
@@ -281,7 +274,11 @@ public static class AssSubtitleFormat
                 AssFormatValues.Number(Get(row, "MarginV", "0")) * sy)
         };
         ProjectValidator.ValidateSubtitleStyle(style);
-        return new(Required(row, "Name"), style, AssFormatValues.Color(Get(row, "SecondaryColour", "&H000000FF")));
+        return new(Required(row, "Name"), style, AssFormatValues.Color(Get(row, "SecondaryColour", "&H000000FF")))
+        {
+            Scale = new(AssFormatValues.Number(Get(row, "ScaleX", "100")) / 100, AssFormatValues.Number(Get(row, "ScaleY", "100")) / 100),
+            Rotation = AssFormatValues.Number(Get(row, "Angle", "0"))
+        };
     }
 
     private static string[] ParseFormat(string value)

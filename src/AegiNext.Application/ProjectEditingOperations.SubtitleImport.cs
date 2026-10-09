@@ -1,7 +1,6 @@
 using System.Collections.Immutable;
 using AegiNext.Core.Projects;
 using AegiNext.Application.SubtitleFormats;
-using AegiNext.Core.Timing;
 
 namespace AegiNext.Application;
 
@@ -24,7 +23,7 @@ public static partial class ProjectEditingOperations
         return Verified(result with
         {
             Layers = result.Layers.Select(layer => layer.SubtitleId is { } id && clips.TryGetValue(id, out var clip)
-                ? layer with { Mask = clip.Mask, Tracks = clip.Tracks, AnimationOffset = clip.ContentOffset } : layer).ToImmutableArray()
+                ? layer with { Mask = clip.Mask, Tracks = clip.Tracks, AnimationOffset = clip.ContentOffset, Transform = clip.Transform } : layer).ToImmutableArray()
         });
     }
 

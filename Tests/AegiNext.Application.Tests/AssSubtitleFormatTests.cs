@@ -65,7 +65,8 @@ public sealed class AssSubtitleFormatTests
     {
         var parsed = AssSubtitleFormat.Parse(File("{\\move(0,0,10,10)\\t(0,100,\\fs40)\\clip(0,0,100,100)}keep{\\p1}m 0 0 l 10 10{\\p0} text"));
         Assert.Equal("keep text", Assert.Single(parsed.Lines).Text);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Message.Contains("move", StringComparison.Ordinal));
+        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.UnsupportedTag");
+        Assert.Contains(Assert.Single(parsed.Clips).Tracks, track => track.Property == AnimationProperty.POSITION);
         Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.Drawing");
         Assert.All(parsed.Diagnostics, diagnostic => Assert.NotNull(diagnostic.SubtitleId));
     }
@@ -398,7 +399,7 @@ public sealed class AssSubtitleFormatTests
     }
 
     [Fact]
-    public void ExplicitWeightsMarginsAndUnsupportedStyleGeometryAreDiagnosed()
+    public void ExplicitWeightsAndScaledStylePreserveMarginsAndReportLayoutDifferences()
     {
         var source = File("{\\b400}normal{\\b700}bold").Replace("Outline, Shadow, Alignment, MarginV", "Outline, Shadow, Alignment, MarginV, ScaleX", StringComparison.Ordinal)
             .Replace(",2,2,2,20\n", ",2,2,2,20,120\n", StringComparison.Ordinal);
@@ -406,7 +407,9 @@ public sealed class AssSubtitleFormatTests
         var line = Assert.Single(parsed.Lines);
         Assert.False(line.InlineSpans.FirstOrDefault(span => span.Utf16Start == 0)?.Style.Bold ?? false);
         Assert.Contains(line.InlineSpans, span => span.Style.Bold == true);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.StyleGeometry");
+        Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.StyleGeometry");
+        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformLayout");
+        Assert.Equal(new ScenePoint(1.2, 1), Assert.Single(parsed.Clips).Transform.Scale);
         Assert.Equal(new SubtitleMargins(20, 20, 20), line.Style.Margins);
         Assert.Null(line.Style.Position);
     }

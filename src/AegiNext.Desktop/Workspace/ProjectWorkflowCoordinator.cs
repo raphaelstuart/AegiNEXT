@@ -8,6 +8,7 @@ using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controllers;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Rendering;
 
 namespace AegiNext.Desktop.Workspace;
 
@@ -722,9 +723,18 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
     {
         var mapping = SubtitleTimelineExchange.GetMapping(document.Media);
         var timeOffset = mapping?.Origin ?? MediaTime.Zero;
-        var result = await Task.Run(() => ass ? AssSubtitleFormat.Write(document, timeOffset) : new SubtitleFormatWriteResult(
-            SubtitleTextFormat.WriteSrt(document.Subtitles.OrderBy(line => line.Start), timeOffset),
-            SubtitleFormatLossAnalysis.ForSrt(document)), context.CancellationToken);
+        var projectDirectory = session.ProjectDirectory;
+        var result = await Task.Run(() =>
+        {
+            if (ass)
+            {
+                using var measurer = new AssSubtitlePlacementMeasurer(projectDirectory);
+                return AssSubtitleFormat.Write(document, timeOffset, measurer);
+            }
+            return new SubtitleFormatWriteResult(
+                SubtitleTextFormat.WriteSrt(document.Subtitles.OrderBy(line => line.Start), timeOffset),
+                SubtitleFormatLossAnalysis.ForSrt(document));
+        }, context.CancellationToken);
         if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(SubtitleTimingDiagnostics(mapping)), document.Subtitles))
         {
             throw new OperationCanceledException(context.CancellationToken);

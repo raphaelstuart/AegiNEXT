@@ -8,7 +8,8 @@ namespace AegiNext.Application.SubtitleFormats;
 
 internal static class AssTextWriter
 {
-    internal static AssBodyWriteResult Write(SubtitleLine line, MediaTime origin, bool projection = false, bool preserveContentClock = false)
+    internal static AssBodyWriteResult Write(SubtitleLine line, MediaTime origin, bool projection = false, bool preserveContentClock = false,
+        AssEventConversionContext? conversion = null)
     {
         AssTextParser.ValidateLine(line);
         var result = new StringBuilder();
@@ -95,13 +96,16 @@ internal static class AssTextWriter
             if (styleChanged || clip != previousClip)
             {
                 CheckTagBoundary(result);
-                result.Append("{\\r").Append(StyleTags(style, projection)).Append('}');
-                AddStyleDiagnostics(style, line.Id, diagnostics, projection);
+                var outputStyle = conversion?.ConvertStyle(style) ?? style;
+                result.Append("{\\r").Append(StyleTags(outputStyle, projection)).Append(conversion?.GeometryTags).Append('}');
+                AddStyleDiagnostics(outputStyle, line.Id, diagnostics, projection);
                 previous = style;
                 if (clip is not null)
                 {
                     var inactive = KaraokeVisualStyleResolver.ResolveInactive(style, clip);
                     var active = KaraokeVisualStyleResolver.ResolveActive(style, line.KaraokeStyle, clip);
+                    inactive = conversion?.ConvertStyle(inactive) ?? inactive;
+                    active = conversion?.ConvertStyle(active) ?? active;
                     AddStyleDiagnostics(inactive, line.Id, diagnostics, projection);
                     AddStyleDiagnostics(active, line.Id, diagnostics, projection);
                     result.Append("{\\2c").Append(AssFormatValues.Color(inactive.Fill, false)).Append("\\2a").Append(AssFormatValues.Alpha(inactive.Fill));
