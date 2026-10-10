@@ -4,7 +4,7 @@ namespace AegiNext.Desktop.Panels.SubtitleDetails;
 
 internal sealed class SubtitleDetailsLayout : Grid
 {
-    internal SubtitleDetailsLayout(Control toolbar, Control properties, TabControl editor, Control feedback)
+    internal SubtitleDetailsLayout(Control toolbar, Control properties, Control editor, Control feedback)
     {
         Margin = new(12, 8);
         RowDefinitions = new("Auto,Auto,Auto,Auto");

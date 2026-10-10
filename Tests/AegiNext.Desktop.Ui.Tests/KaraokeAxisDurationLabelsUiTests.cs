@@ -32,7 +32,7 @@ public sealed class KaraokeAxisDurationLabelsUiTests
         var axis = new KaraokeClipAxis { IsSnapEnabled = false };
         Assert.False(axis.KeepDurationLabelsVisible);
         axis.ClipSelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.ClipId);
-        axis.SetContent(line, MediaTime.Zero, null);
+        axis.SetContent(line, MediaTime.Zero, line.Karaoke[5].Id);
         var window = new Window { Width = 300, Height = 300, Content = new StackPanel
             { Children = { new Border { Height = 150 }, axis } } };
         try
@@ -41,7 +41,7 @@ public sealed class KaraokeAxisDurationLabelsUiTests
             window.UpdateLayout();
             var origin = axis.TranslatePoint(default, window)!.Value;
             var pixels = (axis.Bounds.Width - 24) / 4;
-            var point = axis.TranslatePoint(new Point(12 + 0.11 * pixels, 40), window)!.Value;
+            var point = axis.TranslatePoint(axis.GeometryFor(line.Karaoke[5].Id).EndHandle.Center, window)!.Value;
             window.MouseDown(point, MouseButton.Left);
             window.MouseMove(point + new Vector(20, 0));
             window.UpdateLayout();
@@ -55,8 +55,8 @@ public sealed class KaraokeAxisDurationLabelsUiTests
                 var label = axis.DurationLabels.Single(item => item.ClipId == line.Karaoke[index].Id);
                 var expected = line.Karaoke[index].End - line.Karaoke[index].Start + (index == 5 ? delta : MediaTime.Zero);
                 Assert.Equal(expected, label.Duration);
-                var start = line.Karaoke[index].Start + (index > 5 ? delta : MediaTime.Zero);
-                var end = line.Karaoke[index].End + (index >= 5 ? delta : MediaTime.Zero);
+                var start = line.Karaoke[index].Start;
+                var end = line.Karaoke[index].End + (index == 5 ? delta : MediaTime.Zero);
                 var center = 12 + (Seconds(start) + Seconds(end)) / 2 * pixels;
                 Assert.InRange(Math.Abs(label.Bounds.Center.X - center), 0, 0.001);
                 Assert.True(label.Bounds.Width > 8);
@@ -105,8 +105,9 @@ public sealed class KaraokeAxisDurationLabelsUiTests
         Dispatcher.UIThread.RunJobs();
         window.UpdateLayout();
         var origin = axis.TranslatePoint(default, window)!.Value;
-        var pixels = (axis.Bounds.Width - 24) / 4;
-        var point = axis.TranslatePoint(new Point(12 + 0.11 * pixels, 40), window)!.Value;
+        context.Session.Details.SelectClip(original.Subtitles[0].Karaoke[5].Id);
+        Flush(window);
+        var point = axis.TranslatePoint(axis.GeometryFor(original.Subtitles[0].Karaoke[5].Id).EndHandle.Center, window)!.Value;
         window.MouseDown(point, MouseButton.Left);
         window.MouseMove(point + new Vector(20, 0));
         window.UpdateLayout();
@@ -132,8 +133,7 @@ public sealed class KaraokeAxisDurationLabelsUiTests
         var axis = new KaraokeClipAxis();
         axis.SetContent(line, offset, line.Karaoke[1].Id);
         var requests = 0;
-        axis.DurationRequested += (_, _) => requests++;
-        axis.LeadingDelayRequested += (_, _) => requests++;
+        axis.RangeRequested += (_, _) => requests++;
         var container = new StackPanel
         {
             Children = { new Border { Height = 150 }, axis }
@@ -225,8 +225,8 @@ public sealed class KaraokeAxisDurationLabelsUiTests
         var line = DurationLine();
         var axis = new KaraokeClipAxis { IsSnapEnabled = false, KeepDurationLabelsVisible = true };
         axis.ClipSelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.ClipId);
-        var requests = new List<KaraokeClipDurationEventArgs>();
-        axis.DurationRequested += (_, e) => requests.Add(e);
+        var requests = new List<KaraokeClipRangeEventArgs>();
+        axis.RangeRequested += (_, e) => requests.Add(e);
         axis.SetContent(line, MediaTime.Zero, null);
         var window = new Window
         {
@@ -241,7 +241,7 @@ public sealed class KaraokeAxisDurationLabelsUiTests
             AssertDurationLabels(axis, line, MediaTime.Zero);
             var pixels = (axis.Bounds.Width - 24) / 4;
             var clip = line.Karaoke[1];
-            var point = axis.TranslatePoint(new Point(12 + (Seconds(clip.Start) + Seconds(clip.End)) / 2 * pixels, 40), window)!.Value;
+            var point = axis.TranslatePoint(axis.GeometryFor(clip.Id).EndHandle.Center, window)!.Value;
             var moved = point + new Vector(20, 0);
             var delta = new MediaTime((long)Math.Round(20 / pixels * TimeSpan.TicksPerSecond), TimeSpan.TicksPerSecond);
             var expectedDuration = clip.End - clip.Start + delta;
@@ -262,7 +262,7 @@ public sealed class KaraokeAxisDurationLabelsUiTests
             Flush(window);
             var request = Assert.Single(requests);
             Assert.Equal(clip.Id, request.ClipId);
-            Assert.Equal(expectedDuration, request.Duration);
+            Assert.Equal(expectedDuration, request.End - request.Start);
             AssertDurationLabels(axis, line, MediaTime.Zero);
             window.MouseDown(point, MouseButton.Left);
             window.MouseMove(moved);
@@ -372,15 +372,13 @@ public sealed class KaraokeAxisDurationLabelsUiTests
     private static void AssertDurationLabels(KaraokeClipAxis axis, SubtitleLine line, MediaTime offset)
     {
         Assert.Equal(line.Karaoke.Length, axis.DurationLabels.Count);
-        var seconds = Math.Max(Seconds(line.End - line.Start), line.Karaoke.Max(clip => Seconds(clip.End - offset)));
-        var pixels = (axis.Bounds.Width - 24) / seconds;
         foreach (var clip in line.Karaoke)
         {
             var label = Assert.Single(axis.DurationLabels, item => item.ClipId == clip.Id);
             var duration = clip.End - clip.Start;
             Assert.Equal(duration, label.Duration);
             Assert.Equal(((decimal)duration.Numerator / duration.Denominator).ToString("0.#######", CultureInfo.InvariantCulture) + " s", label.Text);
-            var center = 12 + (Seconds(clip.Start - offset) + Seconds(clip.End - offset)) / 2 * pixels;
+            var center = axis.GeometryFor(clip.Id).TimeBounds.Center.X;
             Assert.InRange(Math.Abs(label.Bounds.Center.X - center), 0, 0.001);
             Assert.True(label.Bounds.Width > 8);
         }

@@ -35,7 +35,7 @@ public sealed class SubtitleDetailsFieldsUiTests
             Style = line.Style with { ShadowOffset = new(-1.1234567891234567, 7.1234567891234567) }
         });
         context.Session.SelectCue(id);
-        context.Session.Details.SetKaraokeEnabled(true);
+        Assert.True(context.Session.Details.GenerateAllTiming());
         var original = context.Session.Editor.Snapshot;
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
         var host = Assert.Single(context.Window.Layouts.FloatingWindows);
@@ -45,7 +45,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         Flush(host);
         foreach (var highlight in new[] { false, true })
         {
-            UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsChecked = highlight;
+            UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex = highlight ? 2 : 0;
             var grid = UiTestActions.Find<Grid>(host, "SelectionShadowOffsetInput");
             foreach (var expander in grid.GetLogicalAncestors().OfType<Expander>())
             {
@@ -143,7 +143,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         context.Session.UpdatePreferences(context.Session.Preferences with { Theme = dark ? WorkbenchTheme.DARK : WorkbenchTheme.LIGHT, Language = "zh-CN" });
         var id = context.Session.Editor.AddSubtitle(new(0), new(4), "你好 Karaoke 👩‍💻");
         context.Session.SelectCue(id);
-        context.Session.Details.SetKaraokeEnabled(true);
+        Assert.True(context.Session.Details.GenerateAllTiming());
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
         var host = Assert.Single(context.Window.Layouts.FloatingWindows);
         host.Width = width;
@@ -165,7 +165,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         Assert.False(groups.IsEffectivelyEnabled);
         Assert.False(UiTestActions.Find<ColorDraftInput>(host, "SelectionFillInput").IsEffectivelyEnabled);
         Capture(host, $"details-revision-{(dark ? "dark" : "light")}-{width}-disabled.png");
-        UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsChecked = true;
+        UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex = 2;
         Flush(host);
         Assert.True(groups.IsEffectivelyVisible);
         Assert.Same(context.Session.Details.HighlightDraft.Fill, UiTestActions.Find<ColorDraftInput>(host, "SelectionFillInput").Draft);
@@ -274,8 +274,8 @@ public sealed class SubtitleDetailsFieldsUiTests
         Assert.InRange(Math.Abs(restoreBounds.Right - toolbarBounds.Right), 0, 1);
         Assert.True(restoreBounds.Left >= 0 && restoreBounds.Right <= host.ClientSize.Width);
         Assert.True(body.IsEffectivelyVisible);
-        Assert.False(UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis").IsEffectivelyVisible);
-        Assert.False(UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsEffectivelyEnabled);
+        Assert.True(UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis").IsEffectivelyVisible);
+        Assert.True(UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").IsEffectivelyEnabled);
         Assert.False(UiTestActions.Find<ToggleButton>(host, "SubtitleLoopToggle").IsChecked);
         Assert.Single(host.GetVisualDescendants().OfType<Button>(), button => button.Name == "SubtitlePlayPauseButton");
         Assert.Same(original, context.Session.Editor.Snapshot);
@@ -357,7 +357,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         await using var context = new MainWindowTestContext();
         var id = context.Session.Editor.AddSubtitle(new(0), new(4), "你好👩‍💻");
         context.Session.SelectCue(id);
-        context.Session.Details.SetKaraokeEnabled(true);
+        Assert.True(context.Session.Details.GenerateAllTiming());
         var original = context.Session.Editor.Snapshot;
         context.Session.Editor.Reset(original);
         context.Session.SelectCue(id);
@@ -366,22 +366,22 @@ public sealed class SubtitleDetailsFieldsUiTests
         host.Width = 300;
         host.Height = 600;
         Flush(host);
-        var target = UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle");
+        var target = UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput");
         Assert.IsNotType<CheckBox>(target);
         Assert.True(target.IsEffectivelyEnabled);
-        target.IsChecked = true;
+        target.SelectedIndex = 2;
         Flush(host);
         var rich = UiTestActions.Find<RichSubtitleEditor>(host, "RichSubtitleInput");
         var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
         AssertUnifiedScroll(host, rich);
         AssertUnifiedScroll(host, axis);
         Assert.True(axis.IsEffectivelyVisible);
-        Assert.Equal(88, axis.Bounds.Height);
+        Assert.True(axis.Bounds.Height >= 88);
         axis.BringIntoView();
         Flush(host);
         var axisBounds = BoundsIn(axis, host);
         Assert.True(axisBounds.Top >= 0 && axisBounds.Bottom <= host.ClientSize.Height);
-        Assert.Equal(0, UiTestActions.Find<TabControl>(host, "SubtitleDetailsTabs").SelectedIndex);
+        Assert.DoesNotContain(host.GetLogicalDescendants().OfType<Control>(), control => control.Name is "SubtitleDetailsTabs" or "SubtitleCodeInput");
         Assert.Same(original, context.Session.Editor.Snapshot);
         Assert.False(context.Session.Editor.CanUndo);
         Capture(host, "details-toolbar-narrow-highlight-300-600.png");
@@ -460,7 +460,7 @@ public sealed class SubtitleDetailsFieldsUiTests
     }
 
     [AvaloniaFact]
-    public async Task ActualEnableToggleShowsIndependentHighlightFieldsAndRetainsTypographyWhenApplying()
+    public async Task ExplicitGenerationAndVisualStateExposeIndependentHighlightFieldsAndRetainTypographyWhenApplying()
     {
         await using var context = new MainWindowTestContext();
         var id = context.Session.Editor.AddSubtitle(new(0), new(4), "ab");
@@ -477,12 +477,11 @@ public sealed class SubtitleDetailsFieldsUiTests
         var enable = UiTestActions.Find<ToggleButton>(host, "EnableKaraokeToggle");
         enable.BringIntoView();
         Flush(host);
-        var point = enable.TranslatePoint(new Point(12, enable.Bounds.Height / 2), host)!.Value;
-        host.MouseDown(point, MouseButton.Left);
-        host.MouseUp(point, MouseButton.Left);
+        Assert.False(enable.IsEffectivelyEnabled);
+        UiTestActions.Click(host, "GenerateAllTimingButton");
         Flush(host);
         Assert.True(enable.IsChecked);
-        UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsChecked = true;
+        UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex = 2;
         var highlight = UiTestActions.Find<WrapPanel>(host, "SelectionStyleFields");
         Assert.True(highlight.IsEffectivelyVisible);
         Assert.True(highlight.IsEffectivelyEnabled);
@@ -497,8 +496,9 @@ public sealed class SubtitleDetailsFieldsUiTests
         Assert.False(context.Session.Details.StyleDraft.IsDirty);
         strokeWidth.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter });
         var after = context.Session.Editor.Snapshot.Subtitles[0];
-        Assert.Equal(new SceneColor(4, 0.25, 2, 0.6), after.KaraokeStyle!.Fill);
-        Assert.Equal(5.125, after.KaraokeStyle.StrokeWidth);
+        Assert.Null(after.KaraokeStyle);
+        Assert.Equal(new SceneColor(4, 0.25, 2, 0.6), KaraokeVisualStyleResolver.RangeStyleAt(after, 0, KaraokeVisualState.ACTIVE)!.Fill);
+        Assert.Equal(5.125, KaraokeVisualStyleResolver.RangeStyleAt(after, 0, KaraokeVisualState.ACTIVE)!.StrokeWidth);
         Assert.Equal(original.Style, after.Style);
         Assert.Equal(original.InlineSpans, after.InlineSpans);
         Assert.Equal(before.Karaoke, after.Karaoke);
@@ -507,8 +507,8 @@ public sealed class SubtitleDetailsFieldsUiTests
         enable.IsChecked = false;
         Assert.Empty(context.Session.Editor.Snapshot.Subtitles[0].Karaoke);
         Assert.Equal(before.Karaoke.ToArray(), context.Session.Editor.Snapshot.Subtitles[0].InactiveKaraoke.ToArray());
-        Assert.False(UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis").IsEffectivelyVisible);
-        Assert.False(UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsEffectivelyEnabled);
+        Assert.True(UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis").IsEffectivelyVisible);
+        Assert.True(UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").IsEffectivelyEnabled);
         Assert.DoesNotContain(host.GetLogicalDescendants().OfType<Control>(), control => control.Name is
             "KaraokePropertiesExpander" or "KaraokeHighlightExpander" or "KaraokeHighlightFields" or "ApplyHighlightStyleButton" or "ApplyHighlightPresetButton");
         Assert.DoesNotContain(context.Window.Panels[WorkbenchPanelIds.STYLES].GetLogicalDescendants().OfType<Control>(),
@@ -569,7 +569,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         host.Height = 900;
         Flush(host);
         var enable = UiTestActions.Find<ToggleButton>(host, "EnableKaraokeToggle");
-        var target = UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle");
+        var target = UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput");
         var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
         Assert.True(enable.IsChecked);
         Assert.True(axis.IsEffectivelyVisible);
@@ -578,8 +578,8 @@ public sealed class SubtitleDetailsFieldsUiTests
         Flush(host);
         var disabled = context.Session.Editor.Snapshot;
         Assert.False(enable.IsChecked);
-        Assert.False(axis.IsEffectivelyVisible);
-        Assert.False(target.IsEffectivelyEnabled);
+        Assert.True(axis.IsEffectivelyVisible);
+        Assert.True(target.IsEffectivelyEnabled);
         Assert.Empty(disabled.Subtitles[0].Karaoke);
         Assert.Equal(expected.Karaoke.ToArray(), disabled.Subtitles[0].InactiveKaraoke.ToArray());
         Assert.Equal(expected.KaraokeStyle, disabled.Subtitles[0].KaraokeStyle);
@@ -602,7 +602,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         Flush(host);
         Assert.Same(disabled, context.Session.Editor.Snapshot);
         Assert.False(enable.IsChecked);
-        Assert.False(axis.IsEffectivelyVisible);
+        Assert.True(axis.IsEffectivelyVisible);
         Assert.True(context.Session.Editor.Redo());
         Flush(host);
         Assert.Same(restored, context.Session.Editor.Snapshot);

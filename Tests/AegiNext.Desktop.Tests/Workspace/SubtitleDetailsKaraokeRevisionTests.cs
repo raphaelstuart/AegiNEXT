@@ -17,7 +17,9 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         var line = original.Subtitles[0];
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         details.SelectClip(line.Karaoke[0].Id);
+        details.LinkedDurationEnabled = true;
         details.EditDuration("9");
         Assert.True(details.TryCommit(), details.Error);
         Assert.Equal(new MediaTime(10), context.Editor.Snapshot.Subtitles[0].Karaoke[^1].End);
@@ -53,6 +55,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         await context.InitializeAsync();
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         var exactColor = new SceneColor(2.5123456789012345, 0.1234567890123456, 0.8, 0.7312345678901234);
         var highlight = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "HDR", new() { Fill = exactColor, StrokeWidth = 3 });
         details.ApplyHighlightStyle(highlight);
@@ -60,19 +63,20 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         Assert.True(details.TryCommit(), details.Error);
         var changed = context.Editor.Snapshot.Subtitles[0];
         Assert.Equal(exactColor, changed.KaraokeStyle!.Fill);
-        Assert.Equal(4.5, changed.KaraokeStyle.StrokeWidth);
+        Assert.Equal(3, changed.KaraokeStyle.StrokeWidth);
+        Assert.Equal(4.5, KaraokeVisualStyleResolver.RangeStyleAt(changed, 1, KaraokeVisualState.ACTIVE)!.StrokeWidth);
         Assert.Equal(line.Style, changed.Style);
         Assert.Equal(line.InlineSpans, changed.InlineSpans);
         Assert.Equal(line.Karaoke.Select(value => (value.Id, value.Start, value.End)),
             changed.Karaoke.Select(value => (value.Id, value.Start, value.End)));
-        Assert.Equal(line.KaraokeStyleSpans, changed.KaraokeStyleSpans);
+        Assert.Equal(SceneColor.Black, KaraokeVisualStyleResolver.RangeStyleAt(changed, 0, KaraokeVisualState.ACTIVE)!.Fill);
         Assert.True(context.Editor.Undo());
         Assert.True(context.Editor.Undo());
         Assert.Same(document, context.Editor.Snapshot);
     }
 
     [Fact]
-    public async Task EnablingCreatesFullGraphemesAndDisablingRetainsHighlightAndRichContent()
+    public async Task ExplicitGenerationCreatesFullGraphemesAndDisablingRetainsHighlightAndRichContent()
     {
         var document = Document();
         var highlight = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "saved", new());
@@ -86,7 +90,8 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         await context.InitializeAsync();
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
-        details.SetKaraokeEnabled(true);
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
+        Assert.True(details.GenerateAllTiming(), details.Error);
         var enabled = context.Editor.Snapshot.Subtitles[0];
         Assert.True(details.IsKaraokeEnabled);
         Assert.Equal(StringInfo.ParseCombiningCharacters(line.Text), enabled.Karaoke.Select(clip => clip.Utf16Start));
@@ -114,6 +119,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         var line = original.Subtitles[0];
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SelectClip(line.Karaoke[1].Id));
         details.SetKaraokeEnabled(false);
         var disabled = context.Editor.Snapshot;
@@ -209,6 +215,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         var line = original.Subtitles[0];
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         details.SetKaraokeEnabled(false);
         var disabled = context.Editor.Snapshot;
         details.EditText(0, 1, "👨‍👩‍👧‍👦");

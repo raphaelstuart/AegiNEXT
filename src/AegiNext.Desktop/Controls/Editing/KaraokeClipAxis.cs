@@ -1,8 +1,10 @@
+using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Styling;
-using System.Diagnostics.CodeAnalysis;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -12,10 +14,10 @@ using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Controls;
 
-/// <summary>共用同一时间投影绘制、命中和拖拽的逐字轴；释放时提交一次时长或句前留白请求。</summary>
+/// <summary>共享时间几何的计时组轴；独立编辑起点、终点与位置，释放提交一次范围请求。</summary>
 public sealed class KaraokeClipAxis : Control
 {
-    /// <summary>可绑定的吸附开关元数据，使用 Avalonia 的标准属性命名。</summary>
+    /// <summary>可绑定的吸附开关元数据。</summary>
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Avalonia styled property metadata uses the public NameProperty convention.")]
     public static readonly StyledProperty<bool> IsSnapEnabledProperty =
         AvaloniaProperty.Register<KaraokeClipAxis, bool>(nameof(IsSnapEnabled), true);
@@ -23,14 +25,22 @@ public sealed class KaraokeClipAxis : Control
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Avalonia styled property metadata uses the public NameProperty convention.")]
     public static readonly StyledProperty<bool> KeepDurationLabelsVisibleProperty =
         AvaloniaProperty.Register<KaraokeClipAxis, bool>(nameof(KeepDurationLabelsVisible));
+    private const double EDGE_PADDING = 12;
+    private const double TRACK_TOP = 22;
+    private const double LANE_HEIGHT = 42;
+    private const double LANE_PITCH = 50;
     private SubtitleLine? line;
     private MediaTime offset;
     private Guid? selectedId;
     private Guid? draggingId;
-    private int draggingIndex = -1;
     private SubtitleLine? frozen;
+    private MediaTime frozenOffset;
+    private TimelineViewport viewport = new();
+    private TimelineViewport? frozenViewport;
+    private ImmutableDictionary<Guid, int> lanes = ImmutableDictionary<Guid, int>.Empty;
+    private Dictionary<Guid, KaraokeSegment> clipsById = [];
+    private bool fitted = true;
     private double pointerStart;
-    private double frozenPixelsPerSecond;
     private MediaTime delta;
     private IPointer? capturedPointer;
     private IReadOnlyList<MediaTime> snapBoundaries = [];
@@ -41,58 +51,86 @@ public sealed class KaraokeClipAxis : Control
     private AdornerLayer? durationLabelLayer;
     private readonly List<Visual> visibilityAncestors = [];
     internal IReadOnlyList<KaraokeDurationLabel> DurationLabels { get; private set; } = [];
+    internal TimelineViewport Viewport => frozenViewport ?? viewport;
+    internal IReadOnlyDictionary<Guid, int> ClipLanes => lanes;
+    internal bool HasActiveGesture => draggingId is not null;
+    internal MediaTime? SnapTarget => snapTarget;
+    private double Seconds => line is null ? 1 : ToSeconds(line.End - line.Start);
+    private MediaTime ActiveOffset => frozen is not null ? frozenOffset : offset;
+    private MediaTime DomainMinimum => Min(ActiveOffset, MediaTime.Zero);
+    private double ContentDuration => Math.Max(0.001, Math.Max(ToSeconds(offset) + Seconds,
+        line?.Karaoke.Select(clip => ToSeconds(clip.End)).DefaultIfEmpty(0).Max() ?? 0) - ToSeconds(DomainMinimum));
+    private double ContentHeight => Math.Max(1, lanes.Values.DefaultIfEmpty(0).Max() + 1) * LANE_PITCH - 8;
+    private double NavigationDuration => ContentDuration + Viewport.VisibleDuration;
+    private Rect TrackBounds => new(EDGE_PADDING, TRACK_TOP, Math.Max(1, Bounds.Width - EDGE_PADDING * 2),
+        Math.Max(1, Bounds.Height - TRACK_TOP - 22));
 
-    /// <summary>创建可捕获本地指针的卡拉 OK 编辑轴。</summary>
+    /// <summary>创建可捕获本地指针、缩放及滚动的卡拉 OK 计时轴。</summary>
     public KaraokeClipAxis()
     {
         MinHeight = 88;
         Height = 88;
         ClipToBounds = true;
         Focusable = true;
+        AddHandler(PointerTouchPadGestureMagnifyEvent, OnMagnify);
     }
 
+    /// <summary>请求选中计时组。</summary>
     public event EventHandler<KaraokeClipSelectionEventArgs>? ClipSelectionRequested;
-    public event EventHandler<KaraokeClipDurationEventArgs>? DurationRequested;
-    /// <summary>释放首字左柄时请求平移整组字时间，保留各字时长及字幕边界。</summary>
-    public event EventHandler<KaraokeLeadingDelayEventArgs>? LeadingDelayRequested;
-    private void RequestLeadingDelay(Guid subtitleId, MediaTime delay)
-    {
-        LeadingDelayRequested?.Invoke(this, new(subtitleId, delay));
-    }
-    /// <summary>单击片段请求弹出属性；拖拽保持一次时长事务，不打开编辑弹层。</summary>
+    /// <summary>释放拖拽后基于冻结数据提交一次范围请求。</summary>
+    public event EventHandler<KaraokeClipRangeEventArgs>? RangeRequested;
+    /// <summary>单击片段请求弹出属性。</summary>
     public event EventHandler<KaraokeClipEditRequestedEventArgs>? ClipEditRequested;
-    /// <summary>启用右端拖拽的十毫秒网格和邻近时间边界吸附；Alt 暂时绕过。</summary>
+    /// <summary>启用十毫秒网格和邻近时间边界吸附；Alt 暂时绕过。</summary>
     public bool IsSnapEnabled
     {
         get => GetValue(IsSnapEnabledProperty);
         set => SetValue(IsSnapEnabledProperty, value);
     }
-    /// <summary>常驻显示片段的实际时长；关闭后仅在时长拖拽期间显示。</summary>
+    /// <summary>常驻显示实际时长；关闭后仅在拖拽期间显示。</summary>
     public bool KeepDurationLabelsVisible
     {
         get => GetValue(KeepDurationLabelsVisibleProperty);
         set => SetValue(KeepDurationLabelsVisibleProperty, value);
     }
-    /// <summary>当前字轴是否超过字幕结束边界；越界只影响提示与最终裁剪。</summary>
-    public bool HasOverflow => line is not null && line.Karaoke.Select((clip, index) =>
-        ToSeconds(PreviewEnd(clip, index) - offset)).Any(end => end > Seconds);
-    private double Seconds => line is null ? 1 : (double)(line.End - line.Start).Numerator / (line.End - line.Start).Denominator;
-    private double ViewSeconds => line is null || line.Karaoke.IsEmpty ? Seconds :
-        Math.Max(Seconds, line.Karaoke.Max(clip => ToSeconds(clip.End - offset)));
-    private double PixelsPerSecond => draggingId is not null ? frozenPixelsPerSecond :
-        Math.Max(1, Bounds.Width - 24) / Math.Max(0.001, ViewSeconds);
-    private static double ToSeconds(MediaTime value) => (double)value.Numerator / value.Denominator;
+    /// <summary>是否存在超出字幕可见结束边界的计时组。</summary>
+    public bool HasOverflow => line is not null && line.Karaoke.Any(clip => PreviewRange(clip).End > offset + line.End - line.Start);
 
-    /// <summary>同步数据；替换目标、撤销和外部字幕数据变化取消未完成的拖拽。</summary>
+    /// <summary>同步数据；外部字幕、内容偏移及选择变化取消未完成的拖拽。</summary>
     public void SetContent(SubtitleLine? value, MediaTime animationOffset, Guid? selectedClipId)
     {
-        if (value != line || animationOffset != offset)
+        var changed = value != line || animationOffset != offset;
+        var targetChanged = value?.Id != line?.Id || animationOffset != offset;
+        if (changed || draggingId is not null && selectedClipId != selectedId)
         {
             CancelGesture();
         }
         line = value;
         offset = animationOffset;
         selectedId = selectedClipId;
+        if (changed)
+        {
+            lanes = KaraokeAxisLaneAllocator.Allocate(value?.Karaoke ?? []);
+            clipsById = value?.Karaoke.ToDictionary(clip => clip.Id) ?? [];
+            if (targetChanged)
+            {
+                fitted = true;
+            }
+            RefreshViewport();
+        }
+        UpdateDurationLabels();
+        InvalidateVisual();
+    }
+
+    /// <summary>将全部计时组与字幕可见窗口适配到轴宽度；不产生文档编辑。</summary>
+    public void FitToContent()
+    {
+        if (HasActiveGesture)
+        {
+            return;
+        }
+        fitted = true;
+        RefreshViewport();
         UpdateDurationLabels();
         InvalidateVisual();
     }
@@ -103,13 +141,15 @@ public sealed class KaraokeClipAxis : Control
         var pointer = capturedPointer;
         capturedPointer = null;
         draggingId = null;
-        draggingIndex = -1;
         frozen = null;
+        frozenViewport = null;
         gestureKind = null;
         delta = MediaTime.Zero;
         snapTarget = null;
         snapBoundaries = [];
+        pointerMoved = false;
         pointer?.Capture(null);
+        RefreshViewport();
         UpdateDurationLabels();
         InvalidateVisual();
     }
@@ -118,133 +158,250 @@ public sealed class KaraokeClipAxis : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == BoundsProperty && !HasActiveGesture)
+        {
+            RefreshViewport();
+        }
+        if (change.Property == IsVisibleProperty && !IsVisible || change.Property == IsEnabledProperty && !IsEnabled)
+        {
+            CancelGesture();
+        }
         if (change.Property == KeepDurationLabelsVisibleProperty || change.Property == BoundsProperty || change.Property == IsVisibleProperty)
         {
             UpdateDurationLabels();
         }
     }
 
-    private Rect Rectangle(KaraokeSegment clip, int index)
+    private void RefreshViewport()
     {
-        var start = clip.Start;
-        var end = clip.End;
-        if (draggingIndex >= 0)
-        {
-            if (gestureKind == KaraokeAxisGestureKind.LEADING_DELAY || index > draggingIndex)
-            {
-                start += delta;
-                end += delta;
-            }
-            else if (index == draggingIndex)
-            {
-                end += delta;
-            }
-        }
-        return new(12 + ToSeconds(start - offset) * PixelsPerSecond, 22,
-            Math.Max(1, ToSeconds(end - start) * PixelsPerSecond), 42);
+        var width = TrackBounds.Width;
+        var height = TrackBounds.Height;
+        viewport = fitted
+            ? new TimelineViewport(0, width / ContentDuration, 0, width, height).Normalize(ContentDuration, ContentHeight)
+            : viewport.Resize(width, height, NavigationDuration, ContentHeight);
     }
 
-    private MediaTime PreviewEnd(KaraokeSegment clip, int index)
+    private void SetViewport(TimelineViewport value)
     {
-        return draggingIndex >= 0 && index >= draggingIndex ? clip.End + delta : clip.End;
+        if (HasActiveGesture)
+        {
+            return;
+        }
+        fitted = false;
+        viewport = value;
+        UpdateDurationLabels();
+        InvalidateVisual();
+    }
+
+    /// <inheritdoc />
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (!HasActiveGesture)
+        {
+            if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0)
+            {
+                SetViewport(viewport.ZoomAt(Math.Exp(Math.Clamp(e.Delta.Y, -20, 20) * 0.12),
+                    e.GetPosition(this).X - EDGE_PADDING, NavigationDuration, ContentHeight));
+            }
+            else
+            {
+                var horizontal = -e.Delta.X * 48;
+                var vertical = -e.Delta.Y * 36;
+                if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
+                {
+                    horizontal += -e.Delta.Y * 48;
+                    vertical = 0;
+                }
+                SetViewport(viewport.Pan(horizontal, vertical, NavigationDuration, ContentHeight));
+            }
+        }
+        e.Handled = true;
+    }
+
+    private void OnMagnify(object? sender, PointerDeltaEventArgs e)
+    {
+        if (!HasActiveGesture)
+        {
+            SetViewport(viewport.ZoomAt(Math.Exp(Math.Clamp(e.Delta.X, -2, 2)),
+                e.GetPosition(this).X - EDGE_PADDING, NavigationDuration, ContentHeight));
+        }
+        e.Handled = true;
+    }
+
+    private static double ToSeconds(MediaTime value) => (double)value.Numerator / value.Denominator;
+    internal MediaTime VisibleRelativeTime(MediaTime contentTime) => contentTime - offset;
+    private double X(MediaTime time) => EDGE_PADDING + (ToSeconds(time - DomainMinimum) - Viewport.StartSeconds) * Viewport.PixelsPerSecond;
+    private (MediaTime Start, MediaTime End) PreviewRange(KaraokeSegment clip)
+    {
+        return clip.Id != draggingId ? (clip.Start, clip.End) : gestureKind switch
+        {
+            KaraokeAxisGestureKind.START => (clip.Start + delta, clip.End),
+            KaraokeAxisGestureKind.END => (clip.Start, clip.End + delta),
+            KaraokeAxisGestureKind.MOVE => (clip.Start + delta, clip.End + delta),
+            _ => (clip.Start, clip.End)
+        };
+    }
+
+    internal KaraokeAxisClipGeometry GeometryFor(Guid clipId)
+    {
+        var clip = clipsById[clipId];
+        var range = PreviewRange(clip);
+        var start = X(range.Start);
+        var end = X(range.End);
+        var y = TRACK_TOP + lanes[clip.Id] * LANE_PITCH - Viewport.VerticalOffset;
+        var timeBounds = new Rect(start, y, Math.Max(0, end - start), LANE_HEIGHT);
+        var body = new Rect(timeBounds.Center.X - Math.Max(1, timeBounds.Width) / 2, y,
+            Math.Max(1, timeBounds.Width), LANE_HEIGHT);
+        var floating = clip.Id == selectedId && timeBounds.Width < 28 && body.Intersects(TrackBounds);
+        var left = floating ? Math.Clamp(timeBounds.Center.X - 18, TrackBounds.Left + 10,
+            Math.Max(TrackBounds.Left + 10, TrackBounds.Right - 41)) : start + Math.Min(3, timeBounds.Width / 4);
+        var right = floating ? left + 36 : end - Math.Min(3, timeBounds.Width / 4);
+        return new(timeBounds, body, new(left - 5, y + 7, 10, LANE_HEIGHT - 14),
+            new(right - 5, y + 7, 10, LANE_HEIGHT - 14));
     }
 
     /// <inheritdoc />
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(22, 120, 120, 120)), null, new(12, 22, Math.Max(1, Bounds.Width - 24), 42));
+        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(22, 120, 120, 120)), null, TrackBounds);
         if (line is null)
         {
             return;
         }
-        var cueEnd = 12 + Seconds * PixelsPerSecond;
-        if (HasOverflow && cueEnd < Bounds.Width - 12)
+        using (context.PushClip(TrackBounds))
         {
-            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(30, 240, 50, 50)), null,
-                new(cueEnd, 22, Bounds.Width - 12 - cueEnd, 42));
-        }
-        for (var index = 0; index < line.Karaoke.Length; index++)
-        {
-            var clip = line.Karaoke[index];
-            var rect = Rectangle(clip, index);
-            var selected = clip.Id == selectedId;
-            context.DrawRectangle(new SolidColorBrush(selected ? Color.Parse("#496CA9") : Color.Parse("#58717D")),
-                new Pen(selected ? Brushes.DodgerBlue : Brushes.Gray, selected ? 2 : 1), rect);
-            using var text = WorkbenchTextFormatting.CreateLayout(this, line.Text.Substring(clip.Utf16Start, clip.Utf16Length), 14,
-                Brushes.White, maximumWidth: Math.Max(1, rect.Width - 8));
-            using (context.PushClip(rect))
+            var visibleStart = X(offset);
+            var visibleEnd = X(offset + line.End - line.Start);
+            var visible = new Rect(Math.Clamp(visibleStart, TrackBounds.Left, TrackBounds.Right), TrackBounds.Top,
+                Math.Max(0, Math.Min(visibleEnd, TrackBounds.Right) - Math.Max(visibleStart, TrackBounds.Left)), TrackBounds.Height);
+            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(18, 30, 144, 255)), null, visible);
+            foreach (var clip in line.Karaoke.OrderBy(value => value.Id == selectedId))
             {
-                text.Draw(context, WorkbenchTextFormatting.CenteredOrigin(text, new(rect.X + 4, rect.Y, Math.Max(1, rect.Width - 8), rect.Height)));
+                DrawClip(context, clip);
             }
-            context.DrawLine(new Pen(Brushes.White), new(rect.Right - 3, rect.Top + 10), new(rect.Right - 3, rect.Bottom - 10));
-            if (index == 0)
+            foreach (var edge in new[] { offset, offset + line.End - line.Start })
             {
-                context.DrawLine(new Pen(Brushes.White), new(rect.Left + 3, rect.Top + 10), new(rect.Left + 3, rect.Bottom - 10));
+                var x = X(edge);
+                context.DrawLine(new Pen(Brushes.IndianRed), new(x, TrackBounds.Top), new(x, TrackBounds.Bottom));
+            }
+            if (IsSnapEnabled && snapTarget is { } snapped)
+            {
+                var x = X(snapped);
+                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(64, 30, 144, 255)), new Pen(Brushes.DodgerBlue),
+                    new(x - 2, TrackBounds.Top, 4, TrackBounds.Height));
             }
         }
-        if (HasOverflow)
+        DrawRuler(context);
+    }
+
+    private void DrawClip(DrawingContext context, KaraokeSegment clip)
+    {
+        var geometry = GeometryFor(clip.Id);
+        if (!geometry.Body.Intersects(TrackBounds))
         {
-            context.DrawLine(new Pen(Brushes.IndianRed, 2), new(cueEnd, 18), new(cueEnd, 64));
-            context.DrawLine(new Pen(Brushes.IndianRed, 3), new(Bounds.Width - 12, 20), new(Bounds.Width - 12, 66));
+            return;
         }
-        if (IsSnapEnabled && snapTarget is { } snapped)
+        var selected = clip.Id == selectedId;
+        context.DrawRectangle(new SolidColorBrush(selected ? Color.Parse("#496CA9") : Color.Parse("#58717D")),
+            new Pen(selected ? Brushes.DodgerBlue : Brushes.Gray, selected ? 2 : 1), geometry.Body);
+        using var text = WorkbenchTextFormatting.CreateLayout(this, line!.Text.Substring(clip.Utf16Start, clip.Utf16Length), 14,
+            Brushes.White, maximumWidth: Math.Max(1, geometry.Body.Width - 8));
+        using (context.PushClip(geometry.Body))
         {
-            var x = 12 + ToSeconds(snapped - offset) * PixelsPerSecond;
-            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(64, 30, 144, 255)), new Pen(Brushes.DodgerBlue),
-                new(x - 2, 16, 4, 50));
+            text.Draw(context, WorkbenchTextFormatting.CenteredOrigin(text,
+                new(geometry.Body.X + 4, geometry.Body.Y, Math.Max(1, geometry.Body.Width - 8), geometry.Body.Height)));
         }
-        using var startLabel = WorkbenchTextFormatting.CreateLayout(this, "0", 11, Brushes.Gray);
-        startLabel.Draw(context, new(12, 66));
-        using var endLabel = WorkbenchTextFormatting.CreateLayout(this, ViewSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " s", 11, Brushes.Gray);
-        endLabel.Draw(context, new(Math.Max(12, Bounds.Width - endLabel.Width - 12), 66));
-        if (HasOverflow && cueEnd < Bounds.Width - endLabel.Width - 24)
+        foreach (var handle in new[] { geometry.StartHandle, geometry.EndHandle })
         {
-            using var cueLabel = WorkbenchTextFormatting.CreateLayout(this,
-                Seconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " s", 11, Brushes.IndianRed);
-            cueLabel.Draw(context, new(cueEnd, 66));
+            if (selected && geometry.TimeBounds.Width < 28)
+            {
+                context.DrawLine(new Pen(Brushes.DodgerBlue), geometry.TimeBounds.Center, handle.Center);
+                context.DrawRectangle(new SolidColorBrush(Color.Parse("#496CA9")), new Pen(Brushes.DodgerBlue), handle, 2, 2);
+            }
+            context.DrawLine(new Pen(Brushes.White), new(handle.Center.X, handle.Top + 3), new(handle.Center.X, handle.Bottom - 3));
         }
+    }
+
+    private void DrawRuler(DrawingContext context)
+    {
+        var y = Bounds.Height - 20;
+        foreach (var tick in RulerTicks())
+        {
+            context.DrawLine(new Pen(Brushes.Gray), new(tick.X, y), new(tick.X, y + 3));
+            using var text = WorkbenchTextFormatting.CreateLayout(this, tick.Label, 11, Brushes.Gray);
+            text.Draw(context, new(Math.Clamp(tick.X + 2, EDGE_PADDING,
+                Math.Max(EDGE_PADDING, Bounds.Width - EDGE_PADDING - text.Width)), y + 3));
+        }
+    }
+
+    internal IReadOnlyList<(double Seconds, string Label, double X)> RulerTicks()
+    {
+        var first = Viewport.StartSeconds + ToSeconds(DomainMinimum - offset);
+        var step = TimelineTimeScale.MajorStep(Viewport.PixelsPerSecond);
+        var last = first + Viewport.VisibleDuration;
+        var start = Math.Ceiling(first / step) * step;
+        var ticks = new List<(double Seconds, string Label, double X)>();
+        for (var index = 0; index <= Math.Ceiling(Viewport.VisibleDuration / step); index++)
+        {
+            var value = start + index * step;
+            if (value > last)
+            {
+                break;
+            }
+            var x = EDGE_PADDING + (value - first) * Viewport.PixelsPerSecond;
+            ticks.Add((value, value.ToString("0.###", CultureInfo.InvariantCulture) + " s", x));
+        }
+        return ticks;
     }
 
     /// <inheritdoc />
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (line is null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        if (line is null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || !TrackBounds.Contains(e.GetPosition(this)))
         {
             return;
         }
         var point = e.GetPosition(this);
-        var first = line.Karaoke.IsEmpty ? default : Rectangle(line.Karaoke[0], 0);
-        var leadingHandle = !line.Karaoke.IsEmpty && new Rect(first.Left - 6, first.Top, 12, first.Height).Contains(point);
-        for (var index = 0; index < line.Karaoke.Length; index++)
+        var source = line;
+        var sourceOffset = offset;
+        foreach (var clip in source.Karaoke.OrderByDescending(value => value.Id == selectedId)
+                     .ThenBy(value => Math.Abs(GeometryFor(value.Id).TimeBounds.Center.X - point.X)))
         {
-            var clip = line.Karaoke[index];
-            if (!Rectangle(clip, index).Contains(point) && !(index == 0 && leadingHandle))
+            var geometry = GeometryFor(clip.Id);
+            var start = geometry.StartHandle.Contains(point);
+            var end = geometry.EndHandle.Contains(point);
+            var bodyHit = new Rect(geometry.Body.Center.X - Math.Max(8, geometry.Body.Width) / 2,
+                geometry.Body.Y, Math.Max(8, geometry.Body.Width), geometry.Body.Height).Contains(point);
+            if (!start && !end && !bodyHit)
             {
                 continue;
             }
+            var kind = start && (!end || point.X < geometry.TimeBounds.Center.X)
+                ? KaraokeAxisGestureKind.START : end ? KaraokeAxisGestureKind.END : KaraokeAxisGestureKind.MOVE;
             ClipSelectionRequested?.Invoke(this, new(clip.Id));
-            if (selectedId != clip.Id)
+            if (selectedId != clip.Id || line != source || offset != sourceOffset)
             {
                 return;
             }
             Focus();
-            frozenPixelsPerSecond = PixelsPerSecond;
+            frozenViewport = viewport;
             draggingId = clip.Id;
-            draggingIndex = index;
-            frozen = line;
-            gestureKind = index == 0 && leadingHandle ? KaraokeAxisGestureKind.LEADING_DELAY : KaraokeAxisGestureKind.DURATION;
-            snapBoundaries = gestureKind == KaraokeAxisGestureKind.LEADING_DELAY
-                ? [offset, offset + line.End - line.Start]
-                : line.Karaoke.SelectMany(item => new[] { item.Start, item.End })
-                    .Append(offset + line.End - line.Start).Where(boundary => boundary > clip.Start).Distinct().Order().ToArray();
+            frozen = source;
+            frozenOffset = sourceOffset;
+            gestureKind = kind;
+            snapBoundaries = source.Karaoke.Where(item => item.Id != clip.Id).SelectMany(item => new[] { item.Start, item.End })
+                .Append(MediaTime.Zero).Append(offset).Append(offset + source.End - source.Start)
+                .Where(boundary => boundary >= MediaTime.Zero).Distinct().Order().ToArray();
             pointerStart = PointerX(e);
             pointerMoved = false;
             delta = MediaTime.Zero;
             capturedPointer = e.Pointer;
             e.Pointer.Capture(this);
             e.Handled = true;
+            InvalidateVisual();
             return;
         }
     }
@@ -253,79 +410,71 @@ public sealed class KaraokeClipAxis : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (draggingId is not null)
+        if (draggingId is not { } id || frozen is null || e.Pointer != capturedPointer)
         {
-            var pointerDelta = PointerX(e) - pointerStart;
-            pointerMoved |= Math.Abs(pointerDelta) >= 4;
-            var ticks = checked((long)Math.Round(pointerDelta / frozenPixelsPerSecond * TimeSpan.TicksPerSecond));
-            delta = new(ticks, TimeSpan.TicksPerSecond);
-            snapTarget = null;
-            if (frozen is not null && draggingIndex >= 0)
-            {
-                var clip = frozen.Karaoke[draggingIndex];
-                var leading = gestureKind == KaraokeAxisGestureKind.LEADING_DELAY;
-                if (IsSnapEnabled && (e.KeyModifiers & KeyModifiers.Alt) == 0)
-                {
-                    var edge = leading ? clip.Start : clip.End;
-                    var value = leading
-                        ? offset + TimelineQuantization.Quantize(edge + delta - offset, new(1, 100))
-                        : TimelineQuantization.Quantize(edge + delta, new(1, 100));
-                    var snap = TimelineQuantization.ResolveSnap(value, snapBoundaries, frozenPixelsPerSecond);
-                    if (leading || snap.Value > clip.Start)
-                    {
-                        delta = snap.Value - edge;
-                        snapTarget = snap.Value;
-                    }
-                }
-                if (leading)
-                {
-                    var minimum = offset > MediaTime.Zero ? offset : MediaTime.Zero;
-                    if (clip.Start + delta < minimum)
-                    {
-                        delta = minimum - clip.Start;
-                        snapTarget = null;
-                    }
-                }
-                else
-                {
-                    var duration = clip.End - clip.Start;
-                    var minimum = new MediaTime(1, TimeSpan.TicksPerSecond);
-                    minimum = duration < minimum ? duration : minimum;
-                    if (duration + delta < minimum)
-                    {
-                        delta = minimum - duration;
-                        snapTarget = null;
-                    }
-                }
-            }
-            UpdateDurationLabels();
-            InvalidateVisual();
+            return;
         }
+        var pointerDelta = PointerX(e) - pointerStart;
+        pointerMoved |= Math.Abs(pointerDelta) >= 4;
+        if (!pointerMoved)
+        {
+            return;
+        }
+        delta = new(checked((long)Math.Round(pointerDelta / Viewport.PixelsPerSecond * TimeSpan.TicksPerSecond)), TimeSpan.TicksPerSecond);
+        snapTarget = null;
+        var clip = clipsById[id];
+        var duration = clip.End - clip.Start;
+        var minimum = duration < new MediaTime(1, TimeSpan.TicksPerSecond) ? duration : new(1, TimeSpan.TicksPerSecond);
+        if (IsSnapEnabled && (e.KeyModifiers & KeyModifiers.Alt) == 0)
+        {
+            var edge = gestureKind == KaraokeAxisGestureKind.END ? clip.End : clip.Start;
+            delta = TimelineQuantization.Quantize(edge + delta, new(1, 100)) - edge;
+            var boundaries = gestureKind switch
+            {
+                KaraokeAxisGestureKind.START => snapBoundaries.Where(value => value <= clip.End - minimum).ToArray(),
+                KaraokeAxisGestureKind.END => snapBoundaries.Where(value => value >= clip.Start + minimum).ToArray(),
+                _ => snapBoundaries
+            };
+            var snap = gestureKind == KaraokeAxisGestureKind.MOVE
+                ? TimelineQuantization.ResolveSnapOffset(clip.Start + delta, clip.End + delta, boundaries, Viewport.PixelsPerSecond)
+                : TimelineQuantization.ResolveSnap(edge + delta, boundaries, Viewport.PixelsPerSecond);
+            delta = gestureKind == KaraokeAxisGestureKind.MOVE ? delta + snap.Value : snap.Value - edge;
+            snapTarget = snap.Boundary;
+        }
+        var unclamped = delta;
+        delta = gestureKind switch
+        {
+            KaraokeAxisGestureKind.START => Max(-clip.Start, Min(delta, duration - minimum)),
+            KaraokeAxisGestureKind.END => Max(delta, minimum - duration),
+            _ => Max(delta, -clip.Start)
+        };
+        if (unclamped != delta)
+        {
+            snapTarget = null;
+        }
+        UpdateDurationLabels();
+        InvalidateVisual();
     }
 
     /// <inheritdoc />
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        if (draggingId is { } id && frozen is { } source && source.Karaoke.FirstOrDefault(value => value.Id == id) is { } clip)
+        if (draggingId is { } id && frozen is { } source && e.Pointer == capturedPointer)
         {
-            var duration = clip.End - clip.Start + delta;
-            var delay = clip.Start + delta - offset;
-            var leading = gestureKind == KaraokeAxisGestureKind.LEADING_DELAY;
-            var changed = delta != MediaTime.Zero;
+            var clip = clipsById[id];
+            var range = PreviewRange(clip);
+            var sourceOffset = frozenOffset;
             var editing = !pointerMoved;
-            var anchor = Rectangle(clip, draggingIndex);
+            var changed = range.Start != clip.Start || range.End != clip.End;
+            var anchor = GeometryFor(id).Body;
             CancelGesture();
-            if (leading && !editing && changed)
-            {
-                RequestLeadingDelay(source.Id, delay);
-            }
-            else if (editing)
+            if (editing)
             {
                 ClipEditRequested?.Invoke(this, new(source.Id, id, anchor));
             }
-            else if (!leading && changed)
+            else if (changed)
             {
-                DurationRequested?.Invoke(this, new(source.Id, id, duration));
+                RangeRequested?.Invoke(this, new(source, sourceOffset, id, range.Start, range.End));
             }
             e.Handled = true;
         }
@@ -340,26 +489,31 @@ public sealed class KaraokeClipAxis : Control
     }
 
     private double PointerX(PointerEventArgs e) => e.GetPosition(TopLevel.GetTopLevel(this) ?? (Visual)this).X;
+    private static MediaTime Min(MediaTime first, MediaTime second) => first < second ? first : second;
+    private static MediaTime Max(MediaTime first, MediaTime second) => first > second ? first : second;
 
     private void UpdateDurationLabels()
     {
         var source = frozen ?? line;
-        var editingDuration = pointerMoved && gestureKind == KaraokeAxisGestureKind.DURATION && frozen is not null;
         if (!IsVisible || visibilityAncestors.Any(ancestor => !ancestor.IsVisible) || Bounds.Width <= 0 || source is null ||
-            !KeepDurationLabelsVisible && !editingDuration)
+            !KeepDurationLabelsVisible && !(pointerMoved && frozen is not null))
         {
             DurationLabels = [];
             durationLabelsAdorner.SetLabels(DurationLabels);
             return;
         }
         var candidates = new List<KaraokeDurationLabel>();
-        for (var index = 0; index < source.Karaoke.Length; index++)
+        foreach (var clip in source.Karaoke)
         {
-            var clip = source.Karaoke[index];
-            var duration = clip.End - clip.Start + (gestureKind == KaraokeAxisGestureKind.DURATION && index == draggingIndex ? delta : MediaTime.Zero);
-            var value = ((decimal)duration.Numerator / duration.Denominator).ToString("0.#######", System.Globalization.CultureInfo.InvariantCulture) + " s";
+            var rect = GeometryFor(clip.Id).Body;
+            if (!rect.Intersects(TrackBounds))
+            {
+                continue;
+            }
+            var range = PreviewRange(clip);
+            var duration = range.End - range.Start;
+            var value = ((decimal)duration.Numerator / duration.Denominator).ToString("0.#######", CultureInfo.InvariantCulture) + " s";
             using var text = WorkbenchTextFormatting.CreateLayout(this, value, 11, Brushes.White, lineHeight: 20);
-            var rect = Rectangle(clip, index);
             var width = text.Width + 8;
             candidates.Add(new(clip.Id, duration, value, new(rect.Center.X - width / 2, 1, width, 20)));
         }
@@ -422,6 +576,10 @@ public sealed class KaraokeClipAxis : Control
     {
         if (e.Property == IsVisibleProperty)
         {
+            if (!IsEffectivelyVisible)
+            {
+                CancelGesture();
+            }
             UpdateDurationLabels();
         }
     }

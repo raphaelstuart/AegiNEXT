@@ -22,7 +22,7 @@ public sealed class KaraokeStylePresetUiTests
         await context.Session.Styles.UpsertAsync(preset);
         var id = context.Session.Editor.AddSubtitle(new(0), new(4), "ab");
         context.Session.SelectCue(id);
-        context.Session.Details.SetKaraokeEnabled(true);
+        Assert.True(context.Session.Details.GenerateAllTiming());
         var original = context.Session.Editor.Snapshot;
         context.Session.Editor.Reset(original);
         context.Session.SelectCue(id);
@@ -32,8 +32,8 @@ public sealed class KaraokeStylePresetUiTests
         host.Height = 1200;
         var input = UiTestActions.Find<RichSubtitleEditor>(host, "RichSubtitleInput");
         input.SetSelection(0, 1);
-        var target = UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle");
-        Assert.False(target.IsChecked);
+        var target = UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput");
+        Assert.Equal(0, target.SelectedIndex);
         var selector = UiTestActions.Find<ComboBox>(host, "SelectionStylePresetCombo");
         selector.SelectedItem = selector.Items.OfType<StylePresetListItem>().Single(value => value.Id == preset.Id);
         Assert.Same(original, context.Session.DocumentSnapshot);
@@ -46,7 +46,7 @@ public sealed class KaraokeStylePresetUiTests
         Assert.Equal(1, selectedStyle.Utf16Length);
         Assert.Equal(96d, selectedStyle.Style.FontSize);
         input.SetSelection(0, 0);
-        target.IsChecked = true;
+        target.SelectedIndex = 2;
         var previousHighlightPresetId = Assert.IsType<StylePresetListItem>(selector.SelectedItem).Id;
         context.Session.Details.EditDuration("invalid");
         selector.SelectedItem = selector.Items.OfType<StylePresetListItem>().Single(value => value.Id == preset.Id);
@@ -93,7 +93,7 @@ public sealed class KaraokeStylePresetUiTests
         host.Height = 1200;
         host.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
-        UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsChecked = true;
+        UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex = 2;
         var selector = UiTestActions.Find<ComboBox>(host, "SelectionStylePresetCombo");
         selector.SelectedItem = selector.Items.OfType<StylePresetListItem>().Single(value => value.Id == preset.Id);
         var appliedSnapshot = context.Session.DocumentSnapshot;
@@ -132,8 +132,8 @@ public sealed class KaraokeStylePresetUiTests
         context.Session.SelectCue(id);
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
         var host = Assert.Single(context.Window.Layouts.FloatingWindows);
-        UiTestActions.Find<ToggleButton>(host, "EnableKaraokeToggle").IsChecked = true;
-        UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsChecked = true;
+        UiTestActions.Click(host, "GenerateAllTimingButton");
+        UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex = 2;
         var selector = UiTestActions.Find<ComboBox>(host, "SelectionStylePresetCombo");
         Assert.Equal(Guid.Empty, Assert.IsType<StylePresetListItem>(selector.SelectedItem).Id);
 

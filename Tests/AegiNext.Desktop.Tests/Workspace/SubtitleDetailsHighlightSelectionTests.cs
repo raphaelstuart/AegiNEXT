@@ -15,6 +15,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var line = original.Subtitles[0];
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SetStyleSelection(0, 1));
         details.HighlightDraft.StrokeWidthText = "7.25";
         Assert.Equal(7.25, ActiveStyleAt(details.Line!, 0)!.StrokeWidth);
@@ -37,6 +38,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var line = context.Editor.Snapshot.Subtitles[0];
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         var preset = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "Red", new() { Fill = new(1, 0, 0), StrokeWidth = 3 });
         Assert.True(details.SetStyleSelection(0, 1));
         details.ApplyHighlightStyle(preset);
@@ -62,6 +64,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var original = context.Editor.Snapshot;
         context.Session.SelectCue(original.Subtitles[0].Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SetStyleSelection(0, 1));
         details.StyleDraft.FontSizeText = "88";
         details.StyleDraft.ShadowBlurText = "invalid";
@@ -82,6 +85,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var original = context.Editor.Snapshot;
         context.Session.SelectCue(original.Subtitles[0].Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SetStyleSelection(0, 1));
         var originalBlur = details.HighlightDraft.ShadowBlurText;
         details.HighlightDraft.StrokeWidthText = "3.25";
@@ -102,6 +106,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var original = context.Editor.Snapshot;
         context.Session.SelectCue(original.Subtitles[0].Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SetStyleSelection(0, 1));
         details.StyleDraft.ShadowBlurText = "invalid";
         details.EditText(1, 1, "C");
@@ -123,26 +128,6 @@ public sealed class SubtitleDetailsHighlightSelectionTests
     }
 
     [Fact]
-    public async Task CompletingInvalidCodeRestoresCodeWithoutAcceptingOrDiscardingOtherStyleDrafts()
-    {
-        await using var context = new WorkspaceSessionTestContext(Document());
-        await context.InitializeAsync();
-        var original = context.Editor.Snapshot;
-        context.Session.SelectCue(original.Subtitles[0].Id);
-        var details = context.Session.Details;
-        Assert.True(details.SetStyleSelection(0, 1));
-        var originalSource = details.Source;
-        details.StyleDraft.StrokeWidthText = "3.25";
-        details.EditSource("{\\unsupported}AB");
-        Assert.NotNull(details.Error);
-        Assert.True(details.CompleteInput("Code", false));
-        Assert.Equal(originalSource, details.Source);
-        Assert.Equal("3.25", details.StyleDraft.StrokeWidthText);
-        Assert.True(details.StyleDraft.IsDirty);
-        Assert.Same(original, context.Editor.Snapshot);
-    }
-
-    [Fact]
     public async Task CompletingOneStyleFieldKeepsPendingTextAndDurationOutsideTheTransaction()
     {
         await using var context = new WorkspaceSessionTestContext(Document());
@@ -150,6 +135,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var original = context.Editor.Snapshot;
         context.Session.SelectCue(original.Subtitles[0].Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SelectClip(original.Subtitles[0].Karaoke[0].Id));
         Assert.True(details.SetStyleSelection(0, 1));
         details.EditText(1, 1, "C");
@@ -190,6 +176,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var original = context.Editor.Snapshot;
         context.Session.SelectCue(original.Subtitles[0].Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SelectClip(original.Subtitles[0].Karaoke[0].Id));
         Assert.True(details.SetStyleSelection(0, 1));
         details.EditText(1, 1, "C");
@@ -226,6 +213,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         await context.InitializeAsync();
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SetStyleSelection(0, 1));
         Assert.True(details.SelectionHasTimedKaraoke);
         Assert.Equal(60, details.SelectionStyle().FontSize);
@@ -246,7 +234,8 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         Assert.Equal(applied.Subtitles[0].InlineSpans, untimed.InlineSpans);
         Assert.True(details.SetStyleSelection(0, 0));
         Assert.True(details.SelectionHasTimedKaraoke);
-        Assert.Equal(highlight, details.HighlightStyle());
+        Assert.Equal(highlight.Fill, details.HighlightStyle().Fill);
+        Assert.Equal(9, details.HighlightStyle().StrokeWidth);
     }
 
     [Fact]
@@ -257,6 +246,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var original = context.Editor.Snapshot;
         context.Session.SelectCue(original.Subtitles[0].Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SetStyleSelection(1, 1));
         details.StyleDraft.FontSizeText = "88";
         details.StyleDraft.StrokeWidthText = "invalid";
@@ -285,6 +275,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         await context.InitializeAsync();
         context.Session.SelectCue(first.Id);
         var details = context.Session.Details;
+        Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         Assert.True(details.SetStyleSelection(0, 1));
         details.HighlightDraft.StrokeWidthText = "invalid";
         Assert.False(details.SetStyleSelection(1, 1));

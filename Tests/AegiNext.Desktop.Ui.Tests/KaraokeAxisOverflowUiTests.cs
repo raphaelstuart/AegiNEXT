@@ -1,21 +1,16 @@
 using AegiNext.Application;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
-using AegiNext.Desktop.Controls;
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
-using Avalonia.Input;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class KaraokeAxisOverflowUiTests
 {
     [AvaloniaFact]
-    public void OverflowClipRemainsSelectableAndDraggableAndEarlierClipCanShrinkBackIntoCue()
+    public void OverflowRemainsEditableWithoutMovingNeighborsAndEachReleaseCanUndoOnce()
     {
-        using var environment = new UiTestEnvironment();
         var line = new SubtitleLine
         {
             Text = "ab", End = new(4), Karaoke =
@@ -24,50 +19,28 @@ public sealed class KaraokeAxisOverflowUiTests
         var document = new ProjectDocument { Subtitles = [line], Layers =
             [new() { Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End }] };
         var editor = new ProjectEditor(document);
-        var axis = new KaraokeClipAxis();
-        Guid? selected = null;
-        axis.ClipSelectionRequested += (_, e) =>
+        using var host = new KaraokeAxisUiTestHost(line);
+        host.Axis.RangeRequested += (_, e) =>
         {
-            selected = e.ClipId;
-            axis.SetContent(editor.Snapshot.Subtitles[0], MediaTime.Zero, selected);
+            editor.SetKaraokeClipRange(e.SubtitleId, e.ClipId, e.Start, e.End);
+            host.Replace(editor.Snapshot.Subtitles[0], e.ClipId);
         };
-        axis.DurationRequested += (_, e) =>
-        {
-            editor.SetKaraokeClipDuration(e.SubtitleId, e.ClipId, e.Duration);
-            axis.SetContent(editor.Snapshot.Subtitles[0], MediaTime.Zero, selected);
-        };
-        axis.SetContent(line, MediaTime.Zero, null);
-        var window = new Window { Width = 420, Height = 160, Content = axis };
-        try
-        {
-            window.Show();
-            window.UpdateLayout();
-            Assert.True(axis.HasOverflow);
-            var pixels = (axis.Bounds.Width - 24) / 10;
-            var endPoint = axis.TranslatePoint(new Point(12 + 9.5 * pixels, 40), window)!.Value;
-            window.MouseDown(endPoint, MouseButton.Left);
-            Assert.Equal(line.Karaoke[1].Id, selected);
-            window.MouseMove(endPoint - new Vector(0.5 * pixels, 0));
-            window.MouseUp(endPoint - new Vector(0.5 * pixels, 0), MouseButton.Left);
-            Assert.Equal(new MediaTime(19, 2), editor.Snapshot.Subtitles[0].Karaoke[^1].End);
-            Assert.True(axis.HasOverflow);
-            window.UpdateLayout();
-            pixels = (axis.Bounds.Width - 24) / 9.5;
-            var firstPoint = axis.TranslatePoint(new Point(12 + 4.5 * pixels, 40), window)!.Value;
-            window.MouseDown(firstPoint, MouseButton.Left);
-            Assert.Equal(line.Karaoke[0].Id, selected);
-            window.MouseMove(firstPoint - new Vector(7 * pixels, 0));
-            window.MouseUp(firstPoint - new Vector(7 * pixels, 0), MouseButton.Left);
-            Assert.Equal(new MediaTime(5, 2), editor.Snapshot.Subtitles[0].Karaoke[^1].End);
-            Assert.False(axis.HasOverflow);
-            Assert.Equal(line.End, editor.Snapshot.Subtitles[0].End);
-            Assert.True(editor.Undo());
-            Assert.True(editor.Undo());
-            Assert.Same(document, editor.Snapshot);
-        }
-        finally
-        {
-            window.Close();
-        }
+        Assert.True(host.Axis.HasOverflow);
+        var pixels = host.Axis.Viewport.PixelsPerSecond;
+        var first = line.Karaoke[0];
+        host.Drag(host.Axis.GeometryFor(first.Id).EndHandle.Center, new(-6 * pixels, 0));
+        Assert.Equal(new MediaTime(3), editor.Snapshot.Subtitles[0].Karaoke[0].End);
+        Assert.Equal(line.Karaoke[1], editor.Snapshot.Subtitles[0].Karaoke[1]);
+        Assert.True(host.Axis.HasOverflow);
+        pixels = host.Axis.Viewport.PixelsPerSecond;
+        host.Drag(host.Axis.GeometryFor(line.Karaoke[1].Id).Body.Center, new(-8 * pixels, 0));
+        Assert.Equal(new MediaTime(1), editor.Snapshot.Subtitles[0].Karaoke[1].Start);
+        Assert.Equal(new MediaTime(2), editor.Snapshot.Subtitles[0].Karaoke[1].End);
+        Assert.False(host.Axis.HasOverflow);
+        Assert.Equal(line.End, editor.Snapshot.Subtitles[0].End);
+        Assert.True(editor.Undo());
+        Assert.True(editor.Undo());
+        Assert.Same(document, editor.Snapshot);
+        Assert.False(editor.CanUndo);
     }
 }

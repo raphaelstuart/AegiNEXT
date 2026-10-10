@@ -16,7 +16,7 @@ public sealed class KaraokeAxisSnappingUiTests
     [InlineData(4, 1, 3.97, 4)]
     [InlineData(4, 1, 1.97, 2)]
     [InlineData(4, 1, 4.12, 4.12)]
-    public void RightDurationUsesGridAndFrozenBoundariesAndCanLeaveCueEnd(double cueEnd, double originalEnd,
+    public void RightEndUsesGridAndFrozenBoundariesAndCanLeaveCueEnd(double cueEnd, double originalEnd,
         double desiredEnd, double expectedEnd)
     {
         VerifyDrag(cueEnd, originalEnd, desiredEnd, expectedEnd, true);
@@ -25,7 +25,7 @@ public sealed class KaraokeAxisSnappingUiTests
     [AvaloniaTheory]
     [InlineData(false, RawInputModifiers.None)]
     [InlineData(true, RawInputModifiers.Alt)]
-    public void DisabledOrAltBypassKeepsFineDuration(bool snap, RawInputModifiers modifier)
+    public void DisabledOrAltBypassKeepsFineEnd(bool snap, RawInputModifiers modifier)
     {
         VerifyDrag(4, 1, 1.345, 1.345, snap, modifier);
     }
@@ -42,8 +42,8 @@ public sealed class KaraokeAxisSnappingUiTests
         };
         var axis = new KaraokeClipAxis { IsSnapEnabled = snap };
         axis.ClipSelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.ClipId);
-        var requests = new List<KaraokeClipDurationEventArgs>();
-        axis.DurationRequested += (_, e) => requests.Add(e);
+        var requests = new List<KaraokeClipRangeEventArgs>();
+        axis.RangeRequested += (_, e) => requests.Add(e);
         axis.SetContent(line, MediaTime.Zero, null);
         var window = new Window { Width = 424, Height = 140, Content = axis };
         try
@@ -58,7 +58,10 @@ public sealed class KaraokeAxisSnappingUiTests
             Assert.Empty(requests);
             window.MouseUp(moved, MouseButton.Left, modifiers);
             var request = Assert.Single(requests);
-            Assert.Equal(Time(expectedEnd), request.Duration);
+            Assert.Equal(Time(expectedEnd), request.End);
+            Assert.Equal(MediaTime.Zero, request.Start);
+            Assert.Same(line, request.BaselineLine);
+            Assert.Equal(MediaTime.Zero, request.AnimationOffset);
             Assert.Equal(line.Id, request.SubtitleId);
             Assert.Equal(line.Karaoke[0].Id, request.ClipId);
         }

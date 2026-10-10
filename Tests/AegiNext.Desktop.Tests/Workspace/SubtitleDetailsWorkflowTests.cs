@@ -66,49 +66,7 @@ public sealed class SubtitleDetailsWorkflowTests
     }
 
     [Fact]
-    public async Task UnsupportedAdvancedCodeBlocksSaveAndSelectionEvenAfterStyleDraftChanges()
-    {
-        await using var context = new WorkspaceSessionTestContext(Document());
-        await context.InitializeAsync();
-        var original = context.Editor.Snapshot;
-        context.Session.SelectCue(original.Subtitles[0].Id);
-        var details = context.Session.Details;
-        details.EditSource("{\\move(0,0,100,100)}ab");
-        details.SetStyleSelection(0, 1);
-        details.StyleDraft.FontSizeText = "72";
-        Assert.False(context.Session.TryCommitDrafts());
-        context.Session.SelectCue(original.Subtitles[1].Id);
-        Assert.Equal(original.Subtitles[0].Id, context.Session.SelectedCueId);
-        Assert.Same(original, context.Editor.Snapshot);
-        Assert.Contains("move", details.Error, StringComparison.OrdinalIgnoreCase);
-        details.Restore("All");
-    }
-
-    [Fact]
-    public async Task UnrepresentableAssProjectionDoesNotBlockOrdinaryEditingOrSaving()
-    {
-        var document = Document();
-        var first = document.Subtitles[0] with { Text = "\\N", Karaoke = [] };
-        document = document with { Subtitles = [first, document.Subtitles[1]] };
-        await using var context = new WorkspaceSessionTestContext(document);
-        await context.InitializeAsync();
-        context.Session.SelectCue(first.Id);
-        var details = context.Session.Details;
-        Assert.NotNull(details.SourceDiagnostic);
-        Assert.False(details.CanEditSource);
-        Assert.Null(details.Error);
-        Assert.True(context.Session.TryCommitDrafts());
-        details.EditText(0, 2, "正文");
-        Assert.True(context.Session.TryCommitDrafts());
-        Assert.Null(details.SourceDiagnostic);
-        Assert.True(details.CanEditSource);
-        context.Session.SelectCue(document.Subtitles[1].Id);
-        Assert.Equal(document.Subtitles[1].Id, context.Session.SelectedCueId);
-        Assert.Equal("正文", context.Editor.Snapshot.Subtitles[0].Text);
-    }
-
-    [Fact]
-    public async Task DurationRetainsInvalidDraftAndThenShiftsOnlyFollowingClips()
+    public async Task DurationRetainsInvalidDraftAndChangesOnlyTheSelectedEnd()
     {
         await using var context = new WorkspaceSessionTestContext(Document());
         await context.InitializeAsync();
@@ -124,8 +82,8 @@ public sealed class SubtitleDetailsWorkflowTests
         Assert.True(details.TryCommit());
         var edited = context.Editor.Snapshot.Subtitles[0];
         Assert.Equal(new MediaTime(3, 2), edited.Karaoke[0].End);
-        Assert.Equal(new MediaTime(3, 2), edited.Karaoke[1].Start);
-        Assert.Equal(new MediaTime(5, 2), edited.Karaoke[1].End);
+        Assert.Equal(new MediaTime(1), edited.Karaoke[1].Start);
+        Assert.Equal(new MediaTime(2), edited.Karaoke[1].End);
         Assert.Equal(original.Subtitles[0].End, edited.End);
         Assert.True(context.Editor.Undo());
         Assert.Same(original, context.Editor.Snapshot);
@@ -199,9 +157,10 @@ public sealed class SubtitleDetailsWorkflowTests
     [InlineData("Selection.FontSizeText")]
     [InlineData("Selection.Fill.Red")]
     [InlineData("Highlight.ShadowBlurText")]
+    [InlineData("Start")]
+    [InlineData("End")]
     [InlineData("Duration")]
     [InlineData("LeadingDelay")]
-    [InlineData("Code")]
     [InlineData("Text")]
     public async Task DetailsFailurePublishesExactOriginToWorkspaceEvenWithASelectedClip(string field)
     {
@@ -222,17 +181,20 @@ public sealed class SubtitleDetailsWorkflowTests
                 details.StyleDraft.Fill.Red.RawText = "7e-";
                 break;
             case "Highlight.ShadowBlurText":
+                Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
                 details.HighlightDraft.ShadowBlurText = "7e-";
+                break;
+            case "Start":
+                details.EditStart("7e-");
+                break;
+            case "End":
+                details.EditEnd("7e-");
                 break;
             case "Duration":
                 details.EditDuration("7e-");
                 break;
             case "LeadingDelay":
                 details.EditLeadingDelay("7e-");
-                break;
-            case "Code":
-                details.EditSource("{\\move(0,0,100,100)}ab");
-                details.StyleDraft.StrokeWidthText = "3";
                 break;
             case "Text":
                 details.EditText(1, 0, "\ud800");

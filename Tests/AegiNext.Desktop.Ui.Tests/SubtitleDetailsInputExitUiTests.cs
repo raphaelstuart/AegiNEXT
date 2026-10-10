@@ -4,7 +4,6 @@ using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Shortcuts;
 using AegiNext.Core.Projects;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -99,38 +98,39 @@ public sealed class SubtitleDetailsInputExitUiTests
     [AvaloniaTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task CodeInputExitCommitsValidSourceOrRestoresInvalidSourceWithoutTouchingOtherDraft(bool invalid)
+    public async Task ChangingVisualStateCommitsValidNativeDraftOrKeepsInvalidStateAndTarget(bool invalid)
     {
         await using var context = new MainWindowTestContext();
         var host = await OpenAsync(context);
         var original = context.Session.Editor.Snapshot;
-        var tabs = UiTestActions.Find<TabControl>(host, "SubtitleDetailsTabs");
-        tabs.SelectedIndex = 1;
-        var input = UiTestActions.Find<TextBox>(host, "SubtitleCodeInput");
-        input.BringIntoView();
+        var state = UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput");
+        state.SelectedIndex = 2;
+        var input = UiTestActions.Find<NumericDraftInput>(host, "SelectionStrokeWidthInput");
+        var previous = input.RawText;
+        Focus(input, host);
+        input.RawText = invalid ? "invalid" : "3.25";
+        context.Session.Details.EditText(1, 1, "C");
+        state.SelectedIndex = 1;
         Flush(host);
-        Assert.True(input.Focus());
-        var source = input.Text;
-        input.Text = invalid ? "{\\t(0,1000,\\fs100)}ab" : "abc";
-        if (!invalid)
-        {
-            Assert.Equal("abc", input.Text);
-            Assert.Equal("abc", context.Session.Details.Line?.Text);
-        }
-        context.Session.Details.StyleDraft.ShadowBlurText = "invalid";
-        UiTestActions.Press(host, Key.Escape);
-        Flush(host);
-        Assert.IsNotType<TextBox>(host.FocusManager.GetFocusedElement());
-        Assert.Equal("invalid", context.Session.Details.StyleDraft.ShadowBlurText);
         if (invalid)
         {
-            Assert.Equal(source, input.Text);
+            Assert.Equal(2, state.SelectedIndex);
+            Assert.Equal("invalid", input.RawText);
             Assert.Same(original, context.Session.Editor.Snapshot);
+            Assert.Equal("aC", context.Session.Details.Line!.Text);
+            UiTestActions.Press(host, Key.Escape);
+            Flush(host);
+            Assert.Equal(previous, input.RawText);
+            Assert.Equal("aC", context.Session.Details.Line!.Text);
             Assert.False(context.Session.Editor.CanUndo);
         }
         else
         {
-            Assert.Equal("abc", context.Session.Editor.Snapshot.Subtitles[0].Text);
+            Assert.Equal(1, state.SelectedIndex);
+            var changed = context.Session.Editor.Snapshot.Subtitles[0];
+            Assert.Equal("aC", changed.Text);
+            Assert.Equal(3.25, KaraokeVisualStyleResolver.RangeStyleAt(changed, 0, KaraokeVisualState.ACTIVE)!.StrokeWidth);
+            Assert.Null(KaraokeVisualStyleResolver.RangeStyleAt(changed, 0, KaraokeVisualState.INACTIVE));
             Assert.True(context.Session.Editor.Undo());
             Assert.Same(original, context.Session.Editor.Snapshot);
             Assert.False(context.Session.Editor.CanUndo);
@@ -142,7 +142,7 @@ public sealed class SubtitleDetailsInputExitUiTests
     {
         await using var context = new MainWindowTestContext();
         var host = await OpenAsync(context);
-        context.Session.Details.SetKaraokeEnabled(true);
+        Assert.True(context.Session.Details.GenerateAllTiming());
         var id = context.Session.Editor.Snapshot.Subtitles[0].Id;
         context.Session.Editor.UpdateSubtitle(id, line => line with
         {
@@ -152,7 +152,7 @@ public sealed class SubtitleDetailsInputExitUiTests
         context.Session.Editor.Reset(original);
         context.Session.SelectCue(id);
         UiTestActions.Find<RichSubtitleEditor>(host, "RichSubtitleInput").SetSelection(0, 1);
-        UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsChecked = true;
+        UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex = 2;
         var presets = UiTestActions.Find<ComboBox>(host, "SelectionStylePresetCombo");
         Assert.NotEqual(Guid.Empty, Assert.IsType<StylePresetListItem>(presets.SelectedItem).Id);
         presets.SelectedItem = presets.Items.OfType<StylePresetListItem>().Single(item => item.Id == Guid.Empty);

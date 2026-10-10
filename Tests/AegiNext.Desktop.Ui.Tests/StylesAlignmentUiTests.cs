@@ -1,4 +1,3 @@
-using AegiNext.Application.SubtitleFormats;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
@@ -28,7 +27,7 @@ public sealed class StylesAlignmentUiTests
     [InlineData(300, true, "zh-CN")]
     [InlineData(650, false, "zh-CN")]
     [InlineData(650, true, "en-US")]
-    public async Task AxisButtonsComposeAlignmentAndKeepCodeAndUndoInSync(double width, bool dark, string language)
+    public async Task AxisButtonsComposeAlignmentAndKeepNativeStyleAndUndoInSync(double width, bool dark, string language)
     {
         await using var context = new MainWindowTestContext();
         context.Session.UpdatePreferences(context.Session.Preferences with
@@ -62,8 +61,6 @@ public sealed class StylesAlignmentUiTests
             Assert.Null(context.Session.SelectedCue.Style.TextAlign);
             Assert.Equal(original.Subtitles[0].Text, context.Session.SelectedCue.Text);
             Assert.Equal(original.Subtitles[0].Style.Position, context.Session.SelectedCue.Style.Position);
-            var code = AssTextProjection.Create(context.Session.SelectedCue).Source;
-            Assert.StartsWith("{\\an9}", code, StringComparison.Ordinal);
             Assert.True(context.Session.Editor.Undo());
             Assert.Equal((int)TextAlignment.TOP_LEFT, picker.AlignmentIndex);
             Assert.True(context.Session.Editor.Redo());
@@ -138,7 +135,7 @@ public sealed class StylesAlignmentUiTests
     }
 
     [AvaloniaFact]
-    public async Task ExplicitSameAxisClickClearsLegacyOverrideAndCodeEditsRefreshBothAxes()
+    public async Task ExplicitSameAxisClickClearsLegacyOverrideAndNativeEditsRefreshBothAxes()
     {
         await using var context = new MainWindowTestContext();
         var id = context.Session.Editor.AddSubtitle(new(0), new(4), "Long line\nShort");
@@ -157,9 +154,10 @@ public sealed class StylesAlignmentUiTests
             Assert.Null(context.Session.SelectedCue.Style.TextAlign);
             Assert.True(context.Session.Editor.Undo());
             Assert.Same(original, context.Session.Editor.Snapshot);
-            var code = AssTextProjection.Create(context.Session.SelectedCue!).Source;
-            context.Session.Details.EditSource(code.Replace("\\an2", "\\an7", StringComparison.Ordinal));
-            Assert.True(context.Session.Details.TryCommit());
+            context.Session.Editor.UpdateSubtitle(id, line => line with
+            {
+                Style = line.Style with { Alignment = TextAlignment.TOP_LEFT, TextAlign = null }
+            });
             Assert.Equal((int)TextAlignment.TOP_LEFT, picker.AlignmentIndex);
             Assert.Null(context.Session.SelectedCue!.Style.TextAlign);
         }
@@ -192,7 +190,7 @@ public sealed class StylesAlignmentUiTests
         await using var context = new MainWindowTestContext();
         var id = context.Session.Editor.AddSubtitle(new(0), new(4), "AB");
         context.Session.SelectCue(id);
-        context.Session.Details.SetKaraokeEnabled(true);
+        context.Session.Details.GenerateAllTiming();
         var original = context.Session.Editor.Snapshot;
         context.Session.Editor.Reset(original);
         Assert.True(context.Session.Details.SelectClip(original.Subtitles[0].Karaoke[0].Id));
@@ -212,7 +210,11 @@ public sealed class StylesAlignmentUiTests
         UiTestActions.SetText(text, invalid ? "invalid" : "1.5");
         Assert.Same(original, context.Session.Editor.Snapshot);
 
+        button.BringIntoView();
+        host.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
         var point = button.TranslatePoint(new Point(16, 16), host)!.Value;
+        host.MouseMove(point);
         host.MouseDown(point, MouseButton.Left);
         Dispatcher.UIThread.RunJobs();
         Assert.Same(original, context.Session.Editor.Snapshot);

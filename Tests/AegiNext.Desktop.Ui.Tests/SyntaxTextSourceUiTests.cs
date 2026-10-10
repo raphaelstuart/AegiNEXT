@@ -61,10 +61,10 @@ public sealed class SyntaxTextSourceUiTests
     }
 
     [AvaloniaFact]
-    public void DenseAssTagsRemainColoredWithoutDroppingAnySourceCharacters()
+    public void DenseEffectSyntaxRemainsColoredWithoutDroppingAnySourceCharacters()
     {
-        var source = "{" + string.Concat(Enumerable.Repeat("\\b1\\i0", 5000)) + "}中文 😀";
-        var presenter = new AssTextPresenter { Text = source };
+        var source = string.Concat(Enumerable.Repeat("at 0 opacity 1 linear ", 5000)) + "# 中文 😀";
+        var presenter = new EffectScriptTextPresenter { Text = source };
         var window = new Window { Width = 500, Height = 200, Content = presenter };
         try
         {

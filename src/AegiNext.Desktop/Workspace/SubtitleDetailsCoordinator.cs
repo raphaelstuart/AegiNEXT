@@ -1,7 +1,5 @@
 using System.Collections.Immutable;
-using System.Globalization;
 using AegiNext.Application;
-using AegiNext.Application.SubtitleFormats;
 using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
@@ -10,7 +8,7 @@ using AegiNext.Desktop.Editing;
 
 namespace AegiNext.Desktop.Workspace;
 
-internal sealed class SubtitleDetailsCoordinator : IDisposable
+internal sealed partial class SubtitleDetailsCoordinator : IDisposable
 {
     private readonly WorkbenchSession session;
     private readonly SemaphoreSlim playbackGate = new(1, 1);
@@ -18,20 +16,10 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
     private SubtitleLine? original;
     private SubtitleLine? draft;
     private string? validationError;
-    private string source = string.Empty;
-    private bool sourceDirty;
-    private AssTextEditResult? sourceEdit;
-    private ProjectLayer? SourceLayer => session.Editor.Snapshot.Layers.FirstOrDefault(layer => layer.SubtitleId == original?.Id);
-    private ImmutableArray<AssSourceMapEntry> sourceMap = [];
     private int styleSelectionStart;
     private int styleSelectionLength;
     private bool committing;
     private bool disposed;
-    private Guid? durationClipId;
-    private string durationText = string.Empty;
-    private bool durationDirty;
-    private string leadingDelayText = string.Empty;
-    private bool leadingDelayDirty;
     private CancellationTokenSource? playbackCancellation;
     private long playbackRevision;
     private bool playbackRequested;
@@ -54,10 +42,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
     internal SubtitleLine? Line => draft is null ? null : PreviewDocument.Subtitles.FirstOrDefault(line => line.Id == draft.Id);
     internal SubtitleDetailsStyleDraft StyleDraft { get; }
     internal SubtitleKaraokeStyleDraft HighlightDraft { get; } = new();
-    internal string Source => source;
-    internal ImmutableArray<AssSourceMapEntry> SourceMap => sourceMap;
-    internal string DurationText => durationText;
-    internal string LeadingDelayText => leadingDelayText;
+    internal KaraokeVisualState? VisualState { get; private set; }
     internal string? Error
     {
         get => validationError;
@@ -71,10 +56,8 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         }
     }
     internal string? InvalidFieldKey { get; private set; }
-    internal string? SourceDiagnostic { get; private set; }
-    internal bool HasDrafts => draft is not null && (sourceDirty || durationDirty || leadingDelayDirty || draft != original ||
+    internal bool HasDrafts => draft is not null && (HasTimingDrafts || draft != original ||
         StyleDraft.IsDirty || HighlightDraft.IsDirty);
-    internal bool CanEditSource => SourceDiagnostic is null;
     internal Guid? SelectedClipId { get; private set; }
     internal bool IsPlaying => playbackCancellation is { } cancellation && session.Controller.IsPlaybackRangeOwnedBy(cancellation.Token);
     internal bool IsKaraokeEnabled => draft is { Karaoke.IsEmpty: false };
@@ -114,7 +97,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             {
             }
         }
-        if (HighlightDraft.IsDirty && !draft.Karaoke.IsEmpty)
+        if (HighlightDraft.IsDirty && VisualState is not null && draft.Text.Length > 0)
         {
             try
             {
@@ -136,10 +119,6 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         if (draft is null)
         {
             return document;
-        }
-        if (sourceDirty && sourceEdit is { } edited)
-        {
-            return ProjectEditingOperations.ApplyAssTextEdit(document, draft.Id, edited with { Line = draft });
         }
         return draft == original ? document : document with { Subtitles = document.Subtitles.Select(line => line.Id == draft.Id ? draft : line).ToImmutableArray() };
     }
@@ -170,9 +149,8 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         original = draft = selected;
         LoadSelectionStyle();
         LoadHighlightStyle();
-        sourceDirty = durationDirty = leadingDelayDirty = false;
+        ClearTimingDrafts();
         Error = null;
-        RefreshSource();
         RefreshDuration();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -236,7 +214,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
 
     internal bool CompleteInput(string field, bool highlight)
     {
-        if (field is "Text" or "Code" or "Duration")
+        if (field is "Text" or "Duration" or "Start" or "End" or "LeadingDelay")
         {
             return CompleteContentInput(field);
         }
@@ -309,7 +287,6 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
                     StyleDraft.AcceptField(field, SelectionStyle());
                 }
                 Error = null;
-                RefreshSource();
                 RefreshDuration();
             }
             finally
@@ -335,70 +312,8 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
 
     private bool CompleteContentInput(string field)
     {
-        if (draft is null || original is null || committing)
+        if (draft is null || original is null || committing || field != "Text" && !IsTimingFieldDirty(field))
         {
-            return true;
-        }
-        if (field == "Code" && !sourceDirty || field == "Duration" && !durationDirty)
-        {
-            return true;
-        }
-        var candidate = draft;
-        MediaTime? duration = null;
-        try
-        {
-            if (field == "Code" && sourceDirty)
-            {
-                var parsed = AssTextProjection.Apply(original, source, ContentOrigin,
-                    session.Editor.Snapshot.Width, session.Editor.Snapshot.Height, layer: SourceLayer);
-                if (!parsed.Diagnostics.IsEmpty)
-                {
-                    throw new InvalidDataException(string.Join(Environment.NewLine,
-                        parsed.Diagnostics.Select(item => item.Code + ": " + item.Message)));
-                }
-                candidate = parsed.Line;
-                sourceEdit = parsed;
-            }
-            else if (field == "Duration" && durationDirty && durationClipId is not null)
-            {
-                if (!decimal.TryParse(durationText, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) || seconds <= 0)
-                {
-                    throw new InvalidDataException(Localization.Get("Workbench.KaraokeDurationInvalid"));
-                }
-                duration = TimelineTimeText.Parse(seconds.ToString("0.############################", CultureInfo.InvariantCulture));
-            }
-            else if (field == "Text" && InvalidFieldKey == "Text")
-            {
-                throw new InvalidDataException(Error);
-            }
-            ProjectValidator.Validate(session.Editor.Snapshot with
-            {
-                Subtitles = session.Editor.Snapshot.Subtitles.Select(line => line.Id == candidate.Id ? candidate : line).ToImmutableArray()
-            });
-        }
-        catch (InvalidOperationException error)
-        {
-            InvalidFieldKey = field;
-            Error = error.Message;
-            Changed?.Invoke(this, EventArgs.Empty);
-            return false;
-        }
-        catch (Exception error) when (error is InvalidDataException or ArgumentException or FormatException or OverflowException)
-        {
-            if (field == "Duration")
-            {
-                durationDirty = false;
-                RefreshDuration();
-            }
-            else
-            {
-                draft = original;
-                sourceDirty = false;
-            sourceEdit = null;
-                RefreshSource();
-            }
-            Error = null;
-            Changed?.Invoke(this, EventArgs.Empty);
             return true;
         }
         var document = session.Editor.Snapshot;
@@ -408,24 +323,16 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             {
                 throw new InvalidOperationException(Localization.Get("Workbench.SubtitleDraftConflict"));
             }
-            var prepared = field == "Code" && sourceEdit is { } assEdit
-                ? ProjectEditingOperations.ApplyAssTextEdit(document, candidate.Id, assEdit with { Line = candidate })
-                : field == "Duration" || candidate == original ? document : document with
-                {
-                    Subtitles = document.Subtitles.Select(line => line.Id == candidate.Id ? candidate : line).ToImmutableArray()
-                };
-            if (duration is { } length && durationClipId is { } id)
+            if (field == "Text" && InvalidFieldKey == "Text")
             {
-                prepared = ProjectEditingOperations.SetKaraokeClipDuration(prepared, candidate.Id, id, length);
-                if (candidate != original)
-                {
-                    candidate = ProjectEditingOperations.SetKaraokeClipDuration(document with
-                    {
-                        Subtitles = document.Subtitles.Select(line => line.Id == candidate.Id ? candidate : line).ToImmutableArray()
-                    }, candidate.Id, id, length).Subtitles.Single(line => line.Id == candidate.Id);
-                }
+                throw new InvalidDataException(Error);
             }
+            var pending = OverlayContent(document);
+            var prepared = field == "Text" ? pending : ApplyTimingDraft(document, field);
+            var rebased = field == "Text" || ReferenceEquals(pending, document)
+                ? prepared : ApplyTimingDraft(pending, field);
             ProjectValidator.Validate(prepared);
+            ProjectValidator.Validate(rebased);
             committing = true;
             try
             {
@@ -433,20 +340,11 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
                 {
                     session.Editor.Apply("Edit subtitle detail field", _ => prepared);
                 }
-                var hasPendingContent = candidate != draft || draft != original;
-                original = session.Editor.Snapshot.Subtitles.Single(line => line.Id == candidate.Id);
-                draft = field == "Duration" && hasPendingContent ? candidate : original;
-                if (field == "Duration")
-                {
-                    durationDirty = false;
-                }
-                else
-                {
-                    sourceDirty = false;
-                    sourceEdit = null;
-                }
+                original = session.Editor.Snapshot.Subtitles.Single(line => line.Id == draft.Id);
+                draft = field == "Text" || ReferenceEquals(pending, document)
+                    ? original : rebased.Subtitles.Single(line => line.Id == original.Id);
+                ClearTimingField(field);
                 Error = null;
-                RefreshSource();
                 RefreshDuration();
             }
             finally
@@ -456,45 +354,28 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             Changed?.Invoke(this, EventArgs.Empty);
             return true;
         }
-        catch (Exception error) when (error is InvalidDataException or ArgumentException or InvalidOperationException or FormatException or OverflowException)
+        catch (InvalidOperationException error)
         {
             InvalidFieldKey = field;
             Error = error.Message;
             Changed?.Invoke(this, EventArgs.Empty);
             return false;
         }
-    }
-
-    internal void EditSource(string value)
-    {
-        source = value;
-        sourceDirty = true;
-        if (draft is null)
+        catch (Exception error) when (error is InvalidDataException or ArgumentException or FormatException or OverflowException or KeyNotFoundException)
         {
-            return;
-        }
-        try
-        {
-            var result = AssTextProjection.Apply(original!, value, ContentOrigin, session.Editor.Snapshot.Width, session.Editor.Snapshot.Height, layer: SourceLayer);
-            if (!result.Diagnostics.IsEmpty)
+            if (field == "Text")
             {
-                InvalidFieldKey = "Code";
-                Error = string.Join(Environment.NewLine, result.Diagnostics.Select(item => item.Code + ": " + item.Message));
+                draft = original;
             }
             else
             {
-                draft = result.Line;
-                sourceEdit = result;
-                sourceMap = result.SourceMap;
-                Error = null;
+                ClearTimingField(field);
+                RefreshDuration();
             }
+            Error = null;
+            Changed?.Invoke(this, EventArgs.Empty);
+            return true;
         }
-        catch (Exception error) when (error is InvalidDataException or ArgumentException or InvalidOperationException or FormatException or OverflowException)
-        {
-            InvalidFieldKey = "Code";
-            Error = error.Message;
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     internal bool SelectClip(Guid? clipId)
@@ -520,7 +401,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             return true;
         }
-        if ((durationDirty || leadingDelayDirty) && !TryCommit())
+        if (HasTimingDrafts && !TryCommit())
         {
             return false;
         }
@@ -529,114 +410,75 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         return true;
     }
 
-    internal void EditLeadingDelay(string value)
+    internal void SetHighlightKind(KaraokeHighlightKind kind)
     {
-        leadingDelayText = value;
-        leadingDelayDirty = true;
-        Error = null;
+        if (draft is null || SelectedClipId is not { } id)
+        {
+            return;
+        }
+        ExecuteTiming("Edit karaoke highlight mode", document =>
+        {
+            var line = document.Subtitles.Single(line => line.Id == draft.Id);
+            var changed = line with
+            {
+                Karaoke = line.Karaoke.Select(clip => clip.Id == id ? clip with { HighlightKind = kind } : clip).ToImmutableArray()
+            };
+            return document with { Subtitles = document.Subtitles.SetItem(document.Subtitles.IndexOf(line), changed) };
+        }, "Start");
     }
 
-    internal void EditDuration(string value)
+    internal bool SetVisualState(KaraokeVisualState? state)
     {
-        durationText = value;
-        durationDirty = true;
-        Error = null;
-    }
-
-    internal bool SetDuration(Guid clipId, MediaTime duration)
-    {
+        if (state == VisualState)
+        {
+            return true;
+        }
         if (!TryCommit())
         {
             return false;
         }
-        durationClipId = SelectedClipId = clipId;
-        durationText = ((decimal)duration.Numerator / duration.Denominator).ToString(CultureInfo.InvariantCulture);
-        durationDirty = true;
-        return TryCommit();
-    }
-
-    internal bool SetLeadingDelay(MediaTime delay)
-    {
-        if (!TryCommit() || draft is null || draft.Karaoke.IsEmpty)
-        {
-            return false;
-        }
-        session.Editor.SetKaraokeLeadingDelay(draft.Id, delay, draft.Start - ContentOrigin);
+        VisualState = state;
+        LoadHighlightStyle();
+        previewRevision++;
+        Changed?.Invoke(this, EventArgs.Empty);
         return true;
-    }
-
-    internal void SetHighlightKind(KaraokeHighlightKind kind)
-    {
-        if (!TryCommit() || draft is null || SelectedClipId is not { } id)
-        {
-            return;
-        }
-        session.Editor.UpdateSubtitle(draft.Id, line => line with
-        {
-            Karaoke = line.Karaoke.Select(clip => clip.Id == id ? clip with { HighlightKind = kind } : clip).ToImmutableArray()
-        });
-    }
-
-    internal void SetKaraokeEnabled(bool enabled)
-    {
-        if (!TryCommit() || draft is null || enabled == IsKaraokeEnabled)
-        {
-            return;
-        }
-        session.Editor.SetSubtitleKaraokeEnabled(draft.Id, enabled);
     }
 
     internal void ApplyHighlightStyle(KaraokeHighlightStyle? style)
     {
-        if (!TryCommit() || draft is null || !IsKaraokeEnabled)
+        if (draft is null || VisualState is not { } state || draft.Text.Length == 0)
         {
             return;
         }
-        if (styleSelectionLength > 0)
+        ExecuteTiming("Apply subtitle visual style", document =>
         {
-            if (style is null)
+            if (styleSelectionLength == 0 && state == KaraokeVisualState.ACTIVE)
             {
-                session.Editor.ClearSubtitleKaraokeStyleRange(draft.Id, styleSelectionStart, styleSelectionLength);
+                var line = document.Subtitles.Single(line => line.Id == draft.Id);
+                return document with { Subtitles = document.Subtitles.SetItem(document.Subtitles.IndexOf(line), line with { KaraokeStyle = style }) };
             }
-            else
-            {
-                session.Editor.ApplySubtitleKaraokeStyleRange(draft.Id, styleSelectionStart, styleSelectionLength,
+            var length = styleSelectionLength > 0 ? styleSelectionLength : draft.Text.Length;
+            var start = styleSelectionLength > 0 ? styleSelectionStart : 0;
+            return style is null
+                ? ProjectEditingOperations.ClearSubtitleKaraokeStyleRange(document, draft.Id, start, length, state)
+                : ProjectEditingOperations.ApplySubtitleKaraokeStyleRange(document, draft.Id, start, length, state,
                     KaraokeVisualStyleEdit.FromStyle(AsSubtitleStyle(style)));
-            }
-        }
-        else
-        {
-            session.Editor.UpdateSubtitle(draft.Id, line => line with { KaraokeStyle = style });
-        }
+        }, "Highlight.Fill");
     }
 
     internal KaraokeHighlightStyle HighlightStyle()
     {
-        return HighlightStyle(draft, styleSelectionLength > 0);
-    }
-
-    private KaraokeHighlightStyle HighlightStyle(SubtitleLine? line, bool selection)
-    {
-        var clip = selection
-            ? line?.Karaoke.FirstOrDefault(value => value.Utf16Start + value.Utf16Length > styleSelectionStart &&
-                value.Utf16Start < styleSelectionStart + styleSelectionLength)
-            : null;
-        if (clip is null && line?.KaraokeStyle is { } style)
-        {
-            return style;
-        }
-        var visual = line?.Style ?? new();
-        if (clip is not null)
-        {
-            var inline = line!.InlineSpans.FirstOrDefault(span => span.Utf16Start <= styleSelectionStart &&
-                span.Utf16Start + span.Utf16Length > styleSelectionStart);
-            visual = KaraokeVisualStyleResolver.ResolveActive(inline?.Style.ApplyTo(visual) ?? visual, line.KaraokeStyle, clip,
-                KaraokeVisualStyleResolver.RangeStyleAt(line, styleSelectionStart, KaraokeVisualState.ACTIVE));
-        }
-        else
-        {
-            visual = visual with { Fill = line?.Karaoke.FirstOrDefault()?.HighlightColor ?? visual.Fill };
-        }
+        var line = draft;
+        var offset = Math.Clamp(styleSelectionStart, 0, Math.Max(0, (line?.Text.Length ?? 0) - 1));
+        var ordinary = line?.Style ?? new();
+        var inline = line?.InlineSpans.FirstOrDefault(span => span.Utf16Start <= offset && span.Utf16Start + span.Utf16Length > offset);
+        ordinary = inline?.Style.ApplyTo(ordinary) ?? ordinary;
+        var state = VisualState ?? KaraokeVisualState.ACTIVE;
+        var range = line is null ? null : KaraokeVisualStyleResolver.RangeStyleAt(line, offset, state);
+        var clip = line?.Karaoke.Concat(line.InactiveKaraoke).FirstOrDefault(value => value.Utf16Start <= offset && value.Utf16Start + value.Utf16Length > offset);
+        var visual = state == KaraokeVisualState.ACTIVE
+            ? KaraokeVisualStyleResolver.ResolveActive(ordinary, line?.KaraokeStyle, clip, range)
+            : range?.ApplyTo(ordinary) ?? ordinary;
         return KaraokeHighlightStyle.FromStyle(line?.KaraokeStyle?.PresetId ?? customHighlightId,
             line?.KaraokeStyle?.PresetName ?? Localization.Get("Workbench.CustomKaraokeStyle"), visual);
     }
@@ -649,19 +491,13 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             return document;
         }
-        if (styleSelectionLength > 0)
+        if (VisualState is not { } state)
         {
-            return ProjectEditingOperations.ApplySubtitleKaraokeStyleRange(document, draft.Id,
-                styleSelectionStart, styleSelectionLength, edit);
+            throw new InvalidDataException("请选择未激活或已激活视觉状态。");
         }
-        var line = document.Subtitles.Single(value => value.Id == draft.Id);
-        var current = HighlightStyle(line, false);
-        var changed = edit.ToOverride(AsSubtitleStyle(current)).ApplyTo(AsSubtitleStyle(current));
-        var style = KaraokeHighlightStyle.FromStyle(current.PresetId, current.PresetName, changed);
-        return line.KaraokeStyle == style ? document : document with
-        {
-            Subtitles = document.Subtitles.SetItem(document.Subtitles.IndexOf(line), line with { KaraokeStyle = style })
-        };
+        var length = styleSelectionLength > 0 ? styleSelectionLength : draft.Text.Length;
+        var start = styleSelectionLength > 0 ? styleSelectionStart : 0;
+        return ProjectEditingOperations.ApplySubtitleKaraokeStyleRange(document, draft.Id, start, length, state, edit);
     }
 
     private static SubtitleStyle AsSubtitleStyle(KaraokeHighlightStyle value) => new()
@@ -682,17 +518,6 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         var validatingField = "Text";
         try
         {
-            if (sourceDirty)
-            {
-                validatingField = "Code";
-                var parsed = AssTextProjection.Apply(original, source, ContentOrigin, document.Width, document.Height, layer: SourceLayer);
-                if (!parsed.Diagnostics.IsEmpty)
-                {
-                    throw new InvalidDataException(string.Join(Environment.NewLine, parsed.Diagnostics.Select(item => item.Code + ": " + item.Message)));
-                }
-                draft = parsed.Line;
-                sourceEdit = parsed;
-            }
             if (Error is not null)
             {
                 Changed?.Invoke(this, EventArgs.Empty);
@@ -715,30 +540,22 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
                 var style = StyleDraft.Read(SelectionStyle());
                 prepared = ProjectEditingOperations.ApplySubtitleInlineStyle(prepared, draft.Id, styleSelectionStart, styleSelectionLength, style);
             }
-            if (HighlightDraft.IsDirty && !draft.Karaoke.IsEmpty)
+            if (HighlightDraft.IsDirty)
             {
                 validatingField = "Highlight.Fill";
                 prepared = ApplyHighlightEdit(prepared, HighlightDraft.ReadOverride(AsSubtitleStyle(HighlightStyle())));
             }
-            if (durationDirty && durationClipId is { } id)
+            if (startDirty || endDirty)
             {
-                validatingField = "Duration";
-                if (!decimal.TryParse(durationText, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) || seconds <= 0)
-                {
-                    throw new InvalidDataException(Localization.Get("Workbench.KaraokeDurationInvalid"));
-                }
-                var exact = TimelineTimeText.Parse(seconds.ToString("0.############################", CultureInfo.InvariantCulture));
-                prepared = ProjectEditingOperations.SetKaraokeClipDuration(prepared, draft.Id, id, exact);
+                prepared = ApplyEndpointDrafts(prepared, field => validatingField = field);
             }
-            if (leadingDelayDirty && draft.Karaoke.Length > 0)
+            foreach (var field in new[] { "Duration", "LeadingDelay" })
             {
-                validatingField = "LeadingDelay";
-                var delay = TimelineTimeText.Parse(leadingDelayText);
-                if (delay < MediaTime.Zero)
+                if (IsTimingFieldDirty(field))
                 {
-                    throw new InvalidDataException(Localization.Get("Workbench.KaraokeDurationInvalid"));
+                    validatingField = field;
+                    prepared = ApplyTimingDraft(prepared, field);
                 }
-                prepared = ProjectEditingOperations.SetKaraokeLeadingDelay(prepared, draft.Id, delay, draft.Start - ContentOrigin);
             }
             if (!ReferenceEquals(prepared, document))
             {
@@ -785,11 +602,9 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
                 session.Editor.Apply(description, _ => prepared);
             }
             original = draft = session.Editor.Snapshot.Subtitles.Single(line => line.Id == id);
-            sourceDirty = durationDirty = leadingDelayDirty = false;
-            sourceEdit = null;
+            ClearTimingDrafts();
             LoadSelectionStyle();
             LoadHighlightStyle();
-            RefreshSource();
             RefreshDuration();
         }
         finally
@@ -801,9 +616,14 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
 
     internal void Restore(string field)
     {
-        if (field == "LeadingDelay")
+        if (field == "Timing")
         {
-            leadingDelayDirty = false;
+            ClearTimingDrafts();
+            RefreshDuration();
+        }
+        else if (field is "Start" or "End" or "Duration" or "LeadingDelay")
+        {
+            ClearTimingField(field);
             RefreshDuration();
         }
         else if (field == "Style")
@@ -814,24 +634,16 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         {
             LoadHighlightStyle();
         }
-        else if (field == "Duration")
-        {
-            durationDirty = false;
-            RefreshDuration();
-        }
         else
         {
             draft = original;
-            sourceDirty = false;
-            sourceEdit = null;
             LoadSelectionStyle();
             LoadHighlightStyle();
             if (field == "All")
             {
-                durationDirty = leadingDelayDirty = false;
+                ClearTimingDrafts();
                 RefreshDuration();
             }
-            RefreshSource();
         }
         Error = null;
         Changed?.Invoke(this, EventArgs.Empty);
@@ -877,10 +689,7 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         try
         {
             draft = edit();
-            sourceDirty = false;
-            sourceEdit = null;
             Error = null;
-            RefreshSource();
         }
         catch (Exception error) when (error is InvalidDataException or ArgumentException or InvalidOperationException or FormatException or OverflowException)
         {
@@ -888,44 +697,6 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
             Error = error.Message;
         }
         Changed?.Invoke(this, EventArgs.Empty);
-    }
-
-    private void RefreshSource()
-    {
-        if (!sourceDirty)
-        {
-            try
-            {
-                var projection = draft is null ? null : AssTextProjection.Create(draft, ContentOrigin, session.Editor.Snapshot.Width, session.Editor.Snapshot.Height, layer: SourceLayer);
-                source = projection?.Source ?? string.Empty;
-                sourceMap = projection?.SourceMap ?? [];
-                SourceDiagnostic = null;
-            }
-            catch (Exception error) when (error is InvalidDataException or ArgumentException or InvalidOperationException)
-            {
-                source = string.Empty;
-                sourceMap = [];
-                SourceDiagnostic = error.Message;
-            }
-        }
-    }
-
-    private void RefreshDuration()
-    {
-        if (!leadingDelayDirty)
-        {
-            var first = draft?.Karaoke.FirstOrDefault();
-            var delay = first is null || draft is null ? MediaTime.Zero : ContentOrigin + first.Start - draft.Start;
-            leadingDelayText = ((decimal)delay.Numerator / delay.Denominator).ToString("0.################", CultureInfo.InvariantCulture);
-        }
-        if (durationDirty)
-        {
-            return;
-        }
-        var clip = draft?.Karaoke.FirstOrDefault(clip => clip.Id == SelectedClipId);
-        durationClipId = clip?.Id;
-        durationText = clip is null ? string.Empty : ((decimal)(clip.End - clip.Start).Numerator / (clip.End - clip.Start).Denominator)
-            .ToString("0.################", CultureInfo.InvariantCulture);
     }
 
     internal async Task PlayAsync(bool selectedClip, bool loop)

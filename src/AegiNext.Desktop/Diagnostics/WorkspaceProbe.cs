@@ -217,19 +217,20 @@ internal sealed class WorkspaceProbe
             rich.Focus();
             rich.SetSelection(0, cue.Text.Length);
             rich.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = "你好👩‍💻" });
-            var tabs = panel.GetVisualDescendants().OfType<TabControl>().Single(control => control.Name == "SubtitleDetailsTabs");
-            tabs.SelectedIndex = 1;
+            var state = panel.GetVisualDescendants().OfType<ComboBox>().Single(control => control.Name == "SubtitleVisualStateInput");
+            state.SelectedIndex = 1;
             await SettleAsync();
             Verify(MainWindow.Session.Editor.Snapshot.Subtitles[0].Text == "你好👩‍💻" && rich.RenderDiagnostic is null,
                 "Native detail rich input rendered and committed Chinese with a ZWJ emoji");
             var committed = MainWindow.Session.Editor.Snapshot;
-            Verify(tabs.Items.Count == 2, "Subtitle details has rich text and AegiSub code pages");
-            tabs.SelectedIndex = 1;
+            Verify(!panel.GetVisualDescendants().OfType<Control>().Any(control => control.Name == "SubtitleCodeInput"),
+                "Subtitle details exposes native visual editing without an ASS source page");
+            state.SelectedIndex = 2;
             await SettleAsync();
-            tabs.SelectedIndex = 0;
+            state.SelectedIndex = 0;
             await SettleAsync();
-            Verify(ReferenceEquals(committed, MainWindow.Session.Editor.Snapshot) && tabs.SelectedIndex == 0,
-                "Both detail tabs preserved the same content without new transactions");
+            Verify(ReferenceEquals(committed, MainWindow.Session.Editor.Snapshot) && state.SelectedIndex == 0,
+                "Visual state previews preserved content without new transactions");
             Capture("subtitle-details-floating");
             var source = MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.SUBTITLE_DETAILS];
             var target = MainWindow.Layouts.PanelAdapters[WorkbenchPanelIds.SUBTITLES];

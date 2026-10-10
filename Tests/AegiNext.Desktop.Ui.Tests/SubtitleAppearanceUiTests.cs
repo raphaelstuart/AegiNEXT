@@ -169,7 +169,7 @@ public sealed class SubtitleAppearanceUiTests
     {
         await using var context = new MainWindowTestContext();
         var id = Prepare(context);
-        context.Session.Details.SetKaraokeEnabled(true);
+        Assert.True(context.Session.Details.GenerateAllTiming());
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
         var host = Assert.Single(context.Window.Layouts.FloatingWindows);
         host.Width = 1000;
@@ -194,7 +194,7 @@ public sealed class SubtitleAppearanceUiTests
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.DocumentSnapshot);
         editor.SetSelection(0, 2);
-        UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle").IsChecked = true;
+        UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex = 2;
         Dispatcher.UIThread.RunJobs();
         host.UpdateLayout();
         Assert.False(spacing.IsEffectivelyEnabled);

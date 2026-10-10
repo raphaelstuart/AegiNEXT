@@ -31,21 +31,19 @@ using Avalonia.Markup.Xaml.MarkupExtensions;
 
 namespace AegiNext.Desktop.Panels.SubtitleDetails;
 
-internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelView, IWorkbenchFocusCommandTarget
+internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelView, IWorkbenchFocusCommandTarget
 {
     private readonly WorkbenchSession session;
     private readonly SubtitleDetailsCoordinator coordinator;
     private readonly List<IDisposable> bindings = [];
     private readonly RichSubtitleEditor rich = new() { Name = "RichSubtitleInput", RestoreOnEscape = false };
     private readonly KaraokeClipAxis axis = new() { Name = "KaraokeAxis" };
-    private readonly TextBox code = new() { Name = "SubtitleCodeInput", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, IsUndoEnabled = false };
     private readonly TextBlock error = new() { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap };
-    private readonly TabControl tabs = new() { Name = "SubtitleDetailsTabs" };
-    private readonly NumericDraftInput duration = new() { Name = "KaraokeDurationInput", Width = 200, Minimum = 0, Maximum = 86400, Increment = 0.01m, ShowButtonSpinner = false };
+    private readonly NumericDraftInput duration = TimingInput("KaraokeDurationInput");
     private readonly ComboBox kind = new() { Name = "KaraokeHighlightKindInput", Width = 200 };
     private readonly ComboBox presets = new() { Name = "SelectionStylePresetCombo", Width = 200 };
     private readonly FontFamilyPicker selectionFont = new() { Name = "SelectionFontInput", Width = 200, RestoreOnEscape = false, CommitOnLostFocus = false };
-    private readonly ToolbarToggleButton highlightTarget = new() { Name = "HighlightStyleToggle" };
+    private readonly ComboBox visualState = new() { Name = "SubtitleVisualStateInput", Width = 132 };
     private readonly DraftPopup clipPopup = new() { OverlayDismissEventPassThrough = true,
         Placement = PlacementMode.BottomEdgeAlignedLeft, VerticalOffset = 4 };
     private readonly ToolbarToggleButton enableKaraoke = new() { Name = "EnableKaraokeToggle" };
@@ -66,7 +64,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private bool formattingFocusPending;
     private Window? hostWindow;
     private int focusRevision;
-    private int activeTab;
     private int styleFocusRevision;
     private int selectionStart;
     private int selectionEnd;
@@ -74,8 +71,9 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
     private long lastPreviewRefresh;
     private Guid? loadedHighlightCueId;
     private KaraokeHighlightStyle? loadedHighlightStyle;
+    private KaraokeVisualState? loadedVisualState;
     private bool lastPlaybackState;
-    private bool editingHighlight;
+    private bool IsEditingVisualState => coordinator.VisualState is not null;
     private Guid? bodyPresetId;
     private Guid? highlightPresetId;
     private readonly Guid selectionOverridePresetId = Guid.NewGuid();
@@ -86,20 +84,10 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         coordinator = session.Details;
         MinHeight = 220;
         Focusable = true;
-        code.Classes.Add("multiline-input");
-        code.Bind(ThemeProperty, new DynamicResourceExtension("SubtitleCodeTextBoxTheme"));
         Classes.Add("business-surface");
         rich.TextEditRequested += OnTextEdit;
         rich.SelectionChanged += OnSelection;
         rich.RestoreRequested += (_, _) => coordinator.Restore("Text");
-        code.PropertyChanged += (_, e) =>
-        {
-            if (!synchronizing && e.Property == TextBox.TextProperty && (code.Text ?? string.Empty) != coordinator.Source)
-            {
-                coordinator.EditSource(code.Text ?? string.Empty);
-            }
-        };
-        tabs.SelectionChanged += OnTabChanged;
         axis.ClipSelectionRequested += (_, e) =>
         {
             if (coordinator.SelectClip(e.ClipId) && coordinator.Line?.Karaoke.FirstOrDefault(value => value.Id == e.ClipId) is { } clip)
@@ -108,20 +96,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
                 Refresh();
             }
         };
-        axis.DurationRequested += (_, e) =>
-        {
-            if (coordinator.Line?.Id == e.SubtitleId)
-            {
-                coordinator.SetDuration(e.ClipId, e.Duration);
-            }
-        };
-        axis.LeadingDelayRequested += (_, e) =>
-        {
-            if (coordinator.Line?.Id == e.SubtitleId)
-            {
-                coordinator.SetLeadingDelay(e.Delay);
-            }
-        };
+        axis.RangeRequested += (_, e) => coordinator.SetRange(e.BaselineLine, e.AnimationOffset, e.ClipId, e.Start, e.End);
         axis.ClipEditRequested += (_, e) =>
         {
             if (coordinator.Line?.Id == e.SubtitleId && coordinator.SelectedClipId == e.ClipId)
@@ -136,51 +111,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             if (!e.Cancel)
             {
                 QueueStyleFocusCommit();
-            }
-        };
-        code.PropertyChanged += (_, e) =>
-        {
-            if (!synchronizing && activeTab == 1 && e.Property is { } property &&
-                (property == TextBox.SelectionStartProperty || property == TextBox.SelectionEndProperty))
-            {
-                var entries = coordinator.SourceMap.Where(entry => entry.Utf16Length > 0).ToArray();
-                if (entries.Length > 0)
-                {
-                    int Offset(int sourceOffset)
-                    {
-                        var entry = entries.FirstOrDefault(entry => entry.SourceStart + entry.SourceLength >= sourceOffset) ?? entries[^1];
-                        return entry.Utf16Start + (sourceOffset >= entry.SourceStart + entry.SourceLength ? entry.Utf16Length : 0);
-                    }
-                    SetTextSelection(Offset(code.SelectionStart), Offset(code.SelectionEnd));
-                }
-            }
-        };
-        duration.PropertyChanged += (_, e) =>
-        {
-            if (!synchronizing && e.Property == NumericDraftInput.RawTextProperty)
-            {
-                coordinator.EditDuration(duration.RawText);
-            }
-        };
-        duration.LostFocus += (_, _) =>
-        {
-            if (!completingInput)
-            {
-                if (formattingPointerActive)
-                {
-                    formattingFocusPending = true;
-                }
-                else
-                {
-                    QueueStyleFocusCommit();
-                }
-            }
-        };
-        kind.SelectionChanged += (_, _) =>
-        {
-            if (!synchronizing && kind.SelectedIndex >= 0)
-            {
-                coordinator.SetHighlightKind((KaraokeHighlightKind)kind.SelectedIndex);
             }
         };
         play = IconButton("Workbench.PlaySegment", "Play", async () =>
@@ -208,16 +138,16 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         ConfigureToggle(enableKaraoke, "Workbench.EnableKaraoke", IconLabel("Workbench.EnableKaraoke", "EnableHighlight"));
         enableKaraoke.Width = double.NaN;
         enableKaraoke.Padding = new(8, 0);
-        ConfigureToggle(highlightTarget, "Workbench.HighlightStyleTarget", WorkbenchIcon.Create("HighlightStyle"));
-        highlightTarget.PropertyChanged += (_, e) =>
+        visualState.SelectionChanged += (_, _) =>
         {
-            if (!synchronizing && e.Property == ToggleButton.IsCheckedProperty)
+            if (!synchronizing && visualState.SelectedIndex >= 0)
             {
-                var requested = highlightTarget.IsChecked == true;
-                if (coordinator.TryCommit())
+                coordinator.SetVisualState(visualState.SelectedIndex switch
                 {
-                    editingHighlight = requested && coordinator.IsKaraokeEnabled;
-                }
+                    1 => KaraokeVisualState.INACTIVE,
+                    2 => KaraokeVisualState.ACTIVE,
+                    _ => null
+                });
                 Refresh();
             }
         };
@@ -227,7 +157,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         styleToolbar.Children.Add(loop);
         styleToolbar.Children.Add(snap);
         styleToolbar.Children.Add(keepTimeLabels);
-        styleToolbar.Children.Add(highlightTarget);
+        styleToolbar.Children.Add(visualState);
         var restore = Button("Workbench.RestoreDraft", "Reset", () =>
         {
             coordinator.Restore("All");
@@ -262,58 +192,15 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
                 Refresh();
             }
         };
-        timingFields.Children.Add(Field("Workbench.ClipDuration", duration));
-        timingFields.Children.Add(Field("Workbench.HighlightBehavior", kind));
-        snap.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == ToggleButton.IsCheckedProperty)
-            {
-                axis.IsSnapEnabled = snap.IsChecked == true;
-            }
-        };
-        keepTimeLabels.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == ToggleButton.IsCheckedProperty)
-            {
-                axis.KeepDurationLabelsVisible = keepTimeLabels.IsChecked == true;
-            }
-        };
-        var popupFrame = new Border { Padding = new(12), BorderThickness = new(1), CornerRadius = new(6), Child = timingFields };
-        popupFrame.Bind(Border.BackgroundProperty, new DynamicResourceExtension("PreviewSurface"));
-        popupFrame.Bind(Border.BorderBrushProperty, new DynamicResourceExtension("PreviewBorder"));
-        popupFrame.Classes.Add("business-surface");
-        popupFrame.AddHandler(KeyDownEvent, (_, e) =>
-        {
-            if (e.Key != Key.Escape || !clipPopup.IsOpen)
-            {
-                return;
-            }
-            completingInput = true;
-            try
-            {
-                coordinator.Restore("Duration");
-                clipPopup.ForceClose();
-                axis.Focus();
-                e.Handled = true;
-            }
-            finally
-            {
-                completingInput = false;
-            }
-        }, RoutingStrategies.Tunnel, true);
-        clipPopup.Child = popupFrame;
-        FlyoutBase.SetAttachedFlyout(axis, clipPopup);
-        var richContent = new Grid { RowDefinitions = new("Auto,Auto"), RowSpacing = 4 };
+        var timingActions = BuildTimingEditor();
+        var richContent = new Grid { RowDefinitions = new("Auto,Auto,Auto"), RowSpacing = 4 };
         rich.MinHeight = 96;
         richContent.Children.Add(rich);
-        Grid.SetRow(axis, 1);
+        Grid.SetRow(timingActions, 1);
+        richContent.Children.Add(timingActions);
+        Grid.SetRow(axis, 2);
         richContent.Children.Add(axis);
-        tabs.Items.Add(Tab("Workbench.RichText", richContent));
-        code.MinHeight = 96;
-        ScrollViewer.SetHorizontalScrollBarVisibility(code, ScrollBarVisibility.Disabled);
-        ScrollViewer.SetVerticalScrollBarVisibility(code, ScrollBarVisibility.Disabled);
-        tabs.Items.Add(Tab("Workbench.AdvancedCode", code));
-        var root = new SubtitleDetailsLayout(toolbar, styleFields, tabs, error);
+        var root = new SubtitleDetailsLayout(toolbar, styleFields, richContent, error);
         Content = new ScrollViewer
         {
             Name = "SubtitleDetailsScroll", Content = root,
@@ -324,7 +211,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         {
             if (!synchronizing && presets.SelectedItem is StylePresetListItem item)
             {
-                if (editingHighlight)
+                if (IsEditingVisualState)
                 {
                     await session.RunCommandAsync(ApplyHighlightPresetAsync);
                 }
@@ -336,17 +223,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         };
         styleFields.AddHandler(KeyDownEvent, OnStyleFieldKeyDown, RoutingStrategies.Bubble, true);
         styleFields.AddHandler(LostFocusEvent, OnStyleFieldLostFocus, RoutingStrategies.Bubble);
-        foreach (var input in new[] { duration })
-        {
-            input.KeyDown += (_, e) =>
-            {
-                if (e.Key == Key.Enter)
-                {
-                    coordinator.TryCommit();
-                    e.Handled = true;
-                }
-            };
-        }
         coordinator.Changed += OnCoordinatorChanged;
         session.StyleLibraryChanged += OnStyleLibraryChanged;
         session.Fonts.Changed += OnFontsChanged;
@@ -393,7 +269,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         }));
         styleToolbar.Children.Add(SelectionAction("Workbench.ClearSelectionStyle", "ClearSelectionStyle", () =>
         {
-            if (editingHighlight)
+            if (IsEditingVisualState)
             {
                 coordinator.ApplyHighlightStyle(null);
             }
@@ -555,13 +431,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         })
     };
 
-    private TabItem Tab(string key, Control content)
-    {
-        var tab = new TabItem { Content = content };
-        bindings.Add(tab.Bind(HeaderedContentControl.HeaderProperty, Localization.Observe(key).ToBinding()));
-        return tab;
-    }
-
     private void Toggle(string name)
     {
         var requested = toggles[name].IsChecked == true;
@@ -576,7 +445,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
 
     private async Task ApplyPresetAsync()
     {
-        if (editingHighlight)
+        if (IsEditingVisualState)
         {
             await ApplyHighlightPresetAsync();
             return;
@@ -623,17 +492,25 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
 
     private void RefreshHighlightPresets(SubtitleLine? line)
     {
-        var style = line?.KaraokeStyle;
-        var targetChanged = line?.Id != loadedHighlightCueId || style != loadedHighlightStyle;
+        var style = coordinator.VisualState == KaraokeVisualState.ACTIVE ? line?.KaraokeStyle : null;
+        var targetChanged = line?.Id != loadedHighlightCueId || style != loadedHighlightStyle || coordinator.VisualState != loadedVisualState;
         var id = targetChanged ? style?.PresetId ?? Guid.Empty : highlightPresetId ?? style?.PresetId ?? Guid.Empty;
         loadedHighlightCueId = line?.Id;
         loadedHighlightStyle = style;
-        var options = new List<StylePresetListItem> { new(Guid.Empty, Localization.Get("Workbench.DefaultKaraokeStyle")) };
+        loadedVisualState = coordinator.VisualState;
+        var options = new List<StylePresetListItem> { new(Guid.Empty, Localization.Get(
+            coordinator.VisualState == KaraokeVisualState.INACTIVE ? "Workbench.InheritBodyVisual" : "Workbench.DefaultKaraokeStyle")) };
         options.AddRange(session.ViewModel.Styles.Presets);
         var start = Math.Min(selectionStart, selectionEnd);
         var end = Math.Max(selectionStart, selectionEnd);
-        if (start != end && line?.KaraokeStyleSpans.Any(span => span.Utf16Start < end &&
-            span.Utf16Start + span.Utf16Length > start && span.ActiveStyle is { HasOverrides: true }) == true)
+        if (start == end)
+        {
+            start = 0;
+            end = line?.Text.Length ?? 0;
+        }
+        if (line?.KaraokeStyleSpans.Any(span => span.Utf16Start < end &&
+            span.Utf16Start + span.Utf16Length > start &&
+            (coordinator.VisualState == KaraokeVisualState.INACTIVE ? span.InactiveStyle : span.ActiveStyle) is { HasOverrides: true }) == true)
         {
             options.Add(new(selectionOverridePresetId, Localization.Get("Workbench.CustomKaraokeStyle")));
             id = selectionOverridePresetId;
@@ -706,7 +583,9 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             if (!disposed && revision == styleFocusRevision && ReferenceEquals(draft, styleFields.DataContext) &&
                 root is not null && ReferenceEquals(root, hostWindow) &&
                 ReferenceEquals(document, session.DocumentSnapshot) &&
-                !styleFields.GetVisualDescendants().OfType<Button>().Any(button => button.Flyout?.IsOpen == true))
+                !styleFields.GetVisualDescendants().OfType<Button>().Any(button => button.Flyout?.IsOpen == true) &&
+                !(clipPopup.IsOpen && root.FocusManager.GetFocusedElement() is Visual focused &&
+                  (ReferenceEquals(focused, timingFields) || focused.GetVisualAncestors().Contains(timingFields))))
             {
                 if (formattingPointerActive)
                 {
@@ -785,38 +664,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         coordinator.SetStyleSelection(Math.Min(start, end), Math.Abs(end - start));
     }
 
-    private void OnTabChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (synchronizing || tabs.SelectedIndex == activeTab)
-        {
-            return;
-        }
-        if (!coordinator.TryCommit())
-        {
-            synchronizing = true;
-            tabs.SelectedIndex = activeTab;
-            synchronizing = false;
-            return;
-        }
-        activeTab = tabs.SelectedIndex;
-        if (activeTab != 0)
-        {
-            clipPopup.ForceClose();
-        }
-        SetTextSelection(selectionStart, selectionEnd);
-        Refresh();
-        if (activeTab == 1)
-        {
-            synchronizing = true;
-            var entries = coordinator.SourceMap.Where(entry => entry.Utf16Length > 0).ToArray();
-            var first = entries.FirstOrDefault(entry => entry.Utf16Start + entry.Utf16Length > Math.Min(selectionStart, selectionEnd));
-            var last = entries.LastOrDefault(entry => entry.Utf16Start < Math.Max(selectionStart, selectionEnd));
-            code.SelectionStart = first?.SourceStart ?? coordinator.Source.Length;
-            code.SelectionEnd = last is null ? code.SelectionStart : last.SourceStart + last.SourceLength;
-            synchronizing = false;
-        }
-    }
-
     private void Refresh()
     {
         synchronizing = true;
@@ -829,31 +676,18 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
                 previousTarget = line?.Id;
                 selectionStart = selectionEnd = 0;
             }
-            if (code.Text != coordinator.Source)
-            {
-                var caret = code.CaretIndex;
-                code.Text = coordinator.Source;
-                code.CaretIndex = Math.Min(caret, coordinator.Source.Length);
-            }
-            if (decimal.TryParse(coordinator.DurationText, NumberStyles.Float, CultureInfo.InvariantCulture, out var clipDuration))
-            {
-                duration.Value = clipDuration;
-            }
-            duration.RawText = coordinator.DurationText;
-            var clip = line?.Karaoke.FirstOrDefault(item => item.Id == coordinator.SelectedClipId);
-            kind.ItemsSource = Enum.GetValues<KaraokeHighlightKind>().Select(value => Localization.Get("Workbench.KaraokeKind." + value)).ToArray();
-            kind.SelectedIndex = clip is null ? -1 : (int)clip.HighlightKind;
-            kind.IsEnabled = duration.IsEnabled = clip is not null;
+            RefreshTimingControls(line);
             axis.SetContent(line, line is null ? MediaTime.Zero : line.Start - coordinator.ContentOrigin, coordinator.SelectedClipId);
             var localTime = session.ProjectPosition - coordinator.ContentOrigin;
-            if (!coordinator.IsKaraokeEnabled)
-            {
-                editingHighlight = false;
-            }
             rich.SetContent(coordinator.PreviewDocument, line, session.ProjectDirectory, localTime >= MediaTime.Zero ? localTime : MediaTime.Zero,
-                editingHighlight ? SubtitlePreviewMode.HIGHLIGHTED : SubtitlePreviewMode.NORMAL);
+                coordinator.VisualState switch
+                {
+                    KaraokeVisualState.ACTIVE => SubtitlePreviewMode.HIGHLIGHTED,
+                    KaraokeVisualState.INACTIVE => SubtitlePreviewMode.INACTIVE,
+                    _ => SubtitlePreviewMode.NORMAL
+                });
             rich.SetSelection(selectionStart, selectionEnd);
-            error.Text = coordinator.Error ?? (tabs.SelectedIndex == 1 ? coordinator.SourceDiagnostic : rich.RenderDiagnostic);
+            error.Text = coordinator.Error ?? rich.RenderDiagnostic;
             error.IsVisible = !string.IsNullOrEmpty(error.Text);
             play.IsEnabled = line is not null && session.Controller.MediaInfo is not null;
             if (coordinator.IsPlaying != lastPlaybackState)
@@ -864,32 +698,32 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
             ToolTip.SetTip(play, playbackHint);
             AutomationProperties.SetName(play, playbackHint);
             lastPlaybackState = coordinator.IsPlaying;
-            enableKaraoke.IsEnabled = line is not null;
+            enableKaraoke.IsEnabled = line is not null && (!line.Karaoke.IsEmpty || !line.InactiveKaraoke.IsEmpty);
             enableKaraoke.IsChecked = coordinator.IsKaraokeEnabled;
-            axis.IsVisible = coordinator.IsKaraokeEnabled && activeTab == 0;
-            highlightTarget.IsEnabled = coordinator.IsKaraokeEnabled;
-            if (!coordinator.IsKaraokeEnabled)
+            axis.IsVisible = line is not null;
+            visualState.IsEnabled = line is not null;
+            visualState.ItemsSource = new[] { Localization.Get("Workbench.VisualState.Normal"),
+                Localization.Get("Workbench.VisualState.Inactive"), Localization.Get("Workbench.VisualState.Active") };
+            visualState.SelectedIndex = coordinator.VisualState switch
             {
-                editingHighlight = false;
-                clipPopup.ForceClose();
-            }
-            highlightTarget.IsChecked = editingHighlight;
-            styleFields.DataContext = editingHighlight ? coordinator.HighlightDraft : coordinator.StyleDraft;
+                KaraokeVisualState.INACTIVE => 1,
+                KaraokeVisualState.ACTIVE => 2,
+                _ => 0
+            };
+            styleFields.DataContext = IsEditingVisualState ? coordinator.HighlightDraft : coordinator.StyleDraft;
             rich.IsEnabled = line is not null;
-            code.IsEnabled = line is not null && coordinator.CanEditSource;
             var start = Math.Min(selectionStart, selectionEnd);
             var end = Math.Max(selectionStart, selectionEnd);
-            var hasHighlightTarget = start == end || coordinator.SelectionHasTimedKaraoke;
-            styleFields.IsEnabled = line is not null && (editingHighlight ? hasHighlightTarget : start != end);
+            styleFields.IsEnabled = line is not null && (IsEditingVisualState ? line.Text.Length > 0 : start != end);
             foreach (var field in bodyOnlyFields)
             {
-                field.IsEnabled = line is not null && !editingHighlight && selectionStart != selectionEnd;
+                field.IsEnabled = line is not null && !IsEditingVisualState && selectionStart != selectionEnd;
             }
             foreach (var action in selectionActions)
             {
                 action.IsEnabled = styleFields.IsEnabled;
             }
-            if (editingHighlight)
+            if (IsEditingVisualState)
             {
                 RefreshHighlightPresets(line);
             }
@@ -1027,7 +861,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         completingInput = true;
         try
         {
-            if (!coordinator.CompleteInput(field, editingHighlight))
+            if (!coordinator.CompleteInput(field, IsEditingVisualState))
             {
                 return false;
             }
@@ -1046,13 +880,9 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         {
             return "Text";
         }
-        if (ancestors.Contains(code))
+        if (TimingInputField(ancestors) is { } timingField)
         {
-            return "Code";
-        }
-        if (ancestors.Contains(duration))
-        {
-            return "Duration";
+            return timingField;
         }
         return StyleField(source);
     }
@@ -1063,6 +893,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         formattingPointerActive = formattingFocusPending = false;
         ++styleFocusRevision;
         axis.CancelGesture();
+        CancelManualTiming(false);
     }
 
     /// <summary>将验证失败的详情输入重新聚焦。</summary>
@@ -1072,10 +903,6 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         var parts = fieldKey?.Split('.') ?? [];
         if (parts.Length > 1 && parts[0] is "Selection" or "Highlight")
         {
-            editingHighlight = parts[0] == "Highlight";
-            synchronizing = true;
-            activeTab = tabs.SelectedIndex = 0;
-            synchronizing = false;
             Refresh();
             var name = parts[1] switch
             {
@@ -1100,17 +927,9 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
                 return;
             }
         }
-        if (fieldKey == "Code" || tabs.SelectedIndex == 1)
+        if (FocusTimingInput(fieldKey))
         {
-            code.Focus();
-        }
-        else if (fieldKey == "Duration")
-        {
-            if (!clipPopup.IsOpen)
-            {
-                clipPopup.ShowAt(axis);
-            }
-            FocusInput(duration);
+            return;
         }
         else
         {
@@ -1146,6 +965,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         return focused is not null && (ReferenceEquals(focused, this) || focused.GetVisualAncestors().Contains(this) ||
             clipPopup.IsOpen && clipPopup.Child is { } popupContent &&
             (ReferenceEquals(focused, popupContent) || focused.GetVisualAncestors().Contains(popupContent))) ||
+            createTimingPopup.IsOpen ||
             this.GetVisualDescendants().OfType<Button>().Any(button => button.Flyout?.IsOpen == true) ||
             this.GetVisualDescendants().OfType<FontFamilyPicker>().Any(picker => picker.IsDropDownOpen) ||
             this.GetVisualDescendants().OfType<ComboBox>().Any(picker => picker.IsDropDownOpen);
@@ -1198,6 +1018,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         }
         axis.CancelGesture();
         clipPopup.ForceClose();
+        CancelManualTiming(false);
         _ = session.RunCommandAsync(coordinator.StopPlaybackAsync);
         base.OnDetachedFromVisualTree(e);
     }
@@ -1244,6 +1065,7 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         Localization.LanguageChanged -= OnLanguageChanged;
         axis.CancelGesture();
         clipPopup.ForceClose();
+        CancelManualTiming(false);
         rich.Dispose();
         foreach (var binding in bindings)
         {

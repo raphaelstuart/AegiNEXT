@@ -22,7 +22,7 @@ namespace AegiNext.Desktop.Ui.Tests;
 public sealed class SubtitleDetailsEditingUiTests
 {
     [AvaloniaFact]
-    public async Task DetailsUsesTwoContentTabsAndShowsTheClipAxisInTheRichView()
+    public async Task DetailsShowsOneNativeEditorAndTheClipAxis()
     {
         await using var context = new MainWindowTestContext();
         var original = Prepare(context, true);
@@ -31,19 +31,10 @@ public sealed class SubtitleDetailsEditingUiTests
         host.Width = 950;
         host.Height = 900;
         Flush(host);
-        var tabs = UiTestActions.Find<TabControl>(host, "SubtitleDetailsTabs");
-        Assert.Equal(2, tabs.Items.Count);
-        Assert.Equal(0, tabs.SelectedIndex);
         Assert.True(UiTestActions.Find<RichSubtitleEditor>(host, "RichSubtitleInput").IsEffectivelyVisible);
-        var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
-        Assert.True(axis.IsEffectivelyVisible);
-        tabs.SelectedIndex = 1;
-        Flush(host);
-        Assert.True(UiTestActions.Find<TextBox>(host, "SubtitleCodeInput").IsEffectivelyVisible);
-        Assert.False(axis.IsEffectivelyVisible);
-        tabs.SelectedIndex = 0;
-        Flush(host);
-        Assert.True(axis.IsEffectivelyVisible);
+        Assert.True(UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis").IsEffectivelyVisible);
+        Assert.DoesNotContain(host.GetVisualDescendants().OfType<Control>(),
+            control => control.Name is "SubtitleDetailsTabs" or "SubtitleCodeInput");
         Assert.Same(original, context.Session.Editor.Snapshot);
         Assert.False(context.Session.Editor.CanUndo);
     }
@@ -60,9 +51,9 @@ public sealed class SubtitleDetailsEditingUiTests
         Flush(host);
         var input = UiTestActions.Find<RichSubtitleEditor>(host, "RichSubtitleInput");
         input.SetSelection(0, 0);
-        var target = UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle");
+        var target = UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput");
         Assert.True(target.IsEffectivelyEnabled);
-        target.IsChecked = true;
+        target.SelectedIndex = 2;
         Flush(host);
         var fill = UiTestActions.Find<ColorDraftInput>(host, "SelectionFillInput");
         Assert.Same(context.Session.Details.HighlightDraft.Fill, fill.Draft);
@@ -80,9 +71,9 @@ public sealed class SubtitleDetailsEditingUiTests
         }
         var blur = UiTestActions.Find<NumericDraftInput>(host, "SelectionShadowBlurInput");
         blur.RawText = "invalid";
-        target.IsChecked = false;
+        target.SelectedIndex = 0;
         Flush(host);
-        Assert.True(target.IsChecked);
+        Assert.Equal(2, target.SelectedIndex);
         Assert.Equal("invalid", blur.RawText);
         Assert.Equal("invalid", context.Session.Details.HighlightDraft.ShadowBlurText);
         Assert.Same(original, context.Session.Editor.Snapshot);
@@ -95,14 +86,14 @@ public sealed class SubtitleDetailsEditingUiTests
         blur.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter });
         Flush(host);
         var edited = context.Session.Editor.Snapshot.Subtitles[0];
-        Assert.Equal(5.125, edited.KaraokeStyle!.ShadowBlur);
+        Assert.Equal(5.125, Assert.Single(edited.KaraokeStyleSpans).ActiveStyle!.ShadowBlur);
         Assert.Equal(original.Subtitles[0].Style, edited.Style);
         Assert.Equal(original.Subtitles[0].InlineSpans, edited.InlineSpans);
         Assert.Equal(original.Subtitles[0].Karaoke, edited.Karaoke);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.Editor.Snapshot);
         Assert.False(context.Session.Editor.CanUndo);
-        target.IsChecked = false;
+        target.SelectedIndex = 0;
         input.SetSelection(0, 1);
         Flush(host);
         Assert.Same(context.Session.Details.StyleDraft.Fill, fill.Draft);
@@ -127,7 +118,9 @@ public sealed class SubtitleDetailsEditingUiTests
         await context.Session.Details.PlayAsync(false, false);
         Assert.True(context.Session.Details.IsPlaying);
         var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
-        var point = axis.TranslatePoint(new Point(12 + (axis.Bounds.Width - 24) / 8, 40), host)!.Value;
+        axis.BringIntoView();
+        Flush(host);
+        var point = axis.TranslatePoint(axis.GeometryFor(original.Subtitles[0].Karaoke[0].Id).Body.Center, host)!.Value;
         host.MouseDown(point, MouseButton.Left);
         host.MouseUp(point, MouseButton.Left);
         Flush(host);
@@ -182,7 +175,7 @@ public sealed class SubtitleDetailsEditingUiTests
         duration.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter });
         var edited = context.Session.Editor.Snapshot.Subtitles[0];
         Assert.Equal(new MediaTime(5, 4), edited.Karaoke[0].End);
-        Assert.Equal(edited.Karaoke[0].End, edited.Karaoke[1].Start);
+        Assert.Equal(original.Subtitles[0].Karaoke[1], edited.Karaoke[1]);
         Assert.Equal(original.Subtitles[0].Start, edited.Start);
         Assert.Equal(original.Subtitles[0].End, edited.End);
         Assert.True(context.Session.Editor.Undo());
@@ -202,12 +195,12 @@ public sealed class SubtitleDetailsEditingUiTests
         Flush(host);
         var rich = UiTestActions.Find<RichSubtitleEditor>(host, "RichSubtitleInput");
         rich.SetSelection(0, 1);
-        var target = UiTestActions.Find<ToggleButton>(host, "HighlightStyleToggle");
+        var target = UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput");
         var size = UiTestActions.Find<NumericDraftInput>(host, "SelectionFontSizeInput");
         size.RawText = "invalid";
-        target.IsChecked = true;
+        target.SelectedIndex = 2;
         Flush(host);
-        Assert.False(target.IsChecked);
+        Assert.Equal(0, target.SelectedIndex);
         Assert.Equal("invalid", size.RawText);
         Assert.Equal("invalid", context.Session.Details.StyleDraft.FontSizeText);
         Assert.Same(original, context.Session.Editor.Snapshot);
@@ -220,9 +213,9 @@ public sealed class SubtitleDetailsEditingUiTests
         UiTestActions.Press(host, Key.Escape);
         Assert.Equal("32", size.RawText);
         size.RawText = "48.125";
-        target.IsChecked = true;
+        target.SelectedIndex = 2;
         Flush(host);
-        Assert.True(target.IsChecked);
+        Assert.Equal(2, target.SelectedIndex);
         var bodySnapshot = context.Session.Editor.Snapshot;
         var body = bodySnapshot.Subtitles[0];
         Assert.Equal(48.125, Assert.Single(body.InlineSpans).Style.FontSize);
@@ -248,7 +241,7 @@ public sealed class SubtitleDetailsEditingUiTests
     }
 
     [AvaloniaFact]
-    public async Task FloatingDetailsReusesItsPanelAndActualTypingCommitsOnceOnTabChange()
+    public async Task FloatingDetailsReusesItsPanelAndActualTypingCommitsOnceOnVisualStateChange()
     {
         await using var context = new MainWindowTestContext();
         var original = Prepare(context);
@@ -275,7 +268,7 @@ public sealed class SubtitleDetailsEditingUiTests
         Assert.Equal("你好👩‍💻", context.Session.Details.Line!.Text);
         Assert.Equal("ab", context.Session.Editor.Snapshot.Subtitles[0].Text);
         Assert.False(context.Session.Editor.CanUndo);
-        UiTestActions.Find<TabControl>(host, "SubtitleDetailsTabs").SelectedIndex = 1;
+        UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex = 1;
         Flush(host);
         Assert.Equal("你好👩‍💻", context.Session.Editor.Snapshot.Subtitles[0].Text);
         Assert.True(context.Session.Editor.Undo());
@@ -346,7 +339,7 @@ public sealed class SubtitleDetailsEditingUiTests
         input.Focus();
         input.SetSelection(0, 1);
         Assert.Equal(line.Karaoke[0].Id, context.Session.Details.SelectedClipId);
-        Assert.Equal(0, UiTestActions.Find<TabControl>(host, "SubtitleDetailsTabs").SelectedIndex);
+        Assert.Equal(0, UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput").SelectedIndex);
         Assert.False(Assert.IsType<DraftPopup>(FlyoutBase.GetAttachedFlyout(UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis"))).IsOpen);
         Assert.Equal("1.001", context.Session.Details.DurationText);
         host.KeyTextInput("x");
@@ -360,7 +353,7 @@ public sealed class SubtitleDetailsEditingUiTests
         Assert.True(context.Session.Details.TryCommit(), context.Session.Details.Error);
         var edited = context.Session.Editor.Snapshot.Subtitles[0];
         Assert.Equal(new MediaTime(1501, 1000), edited.Karaoke[0].End);
-        Assert.Equal(new MediaTime(2501, 1000), edited.Karaoke[^1].End);
+        Assert.Equal(new MediaTime(2001, 1000), edited.Karaoke[^1].End);
         Assert.NotEmpty(edited.InlineSpans);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.Editor.Snapshot);
@@ -368,27 +361,25 @@ public sealed class SubtitleDetailsEditingUiTests
     }
 
     [AvaloniaFact]
-    public async Task InvalidCodeRetainsLastValidContentAndBlocksTabSelectionAndFloatingClose()
+    public async Task InvalidNativeDraftBlocksVisualStateSelectionAndFloatingClose()
     {
         await using var context = new MainWindowTestContext();
         var original = Prepare(context);
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
         var host = Assert.Single(context.Window.Layouts.FloatingWindows);
         Flush(host);
-        var tabs = UiTestActions.Find<TabControl>(host, "SubtitleDetailsTabs");
-        tabs.SelectedIndex = 1;
-        var source = UiTestActions.Find<TextBox>(host, "SubtitleCodeInput");
-        source.Text = "{\\move(0,0,100,100)}ab";
-        Flush(host);
-        tabs.SelectedIndex = 0;
-        Assert.Equal(1, tabs.SelectedIndex);
+        UiTestActions.Find<RichSubtitleEditor>(host, "RichSubtitleInput").SetSelection(0, 1);
+        var size = UiTestActions.Find<NumericDraftInput>(host, "SelectionFontSizeInput");
+        size.RawText = "invalid";
+        var state = UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput");
+        state.SelectedIndex = 1;
+        Assert.Equal(0, state.SelectedIndex);
         context.Session.SelectCue(original.Subtitles[1].Id);
         Assert.Equal(original.Subtitles[0].Id, context.Session.SelectedCueId);
         host.Close();
         Assert.True(host.IsVisible);
-        Assert.Equal("ab", context.Session.Details.Line!.Text);
         Assert.Same(original, context.Session.Editor.Snapshot);
-        context.Session.Details.Restore("Code");
+        context.Session.Details.Restore("FontSize");
         host.Close();
         Assert.False(host.IsVisible);
     }
@@ -401,11 +392,15 @@ public sealed class SubtitleDetailsEditingUiTests
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
         var host = Assert.Single(context.Window.Layouts.FloatingWindows);
         Flush(host);
+        host.Width = 950;
+        host.Height = 1200;
         var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
         Flush(host);
         IPointer? pointer = null;
         axis.AddHandler(InputElement.PointerPressedEvent, (_, e) => pointer = e.Pointer, RoutingStrategies.Bubble, true);
-        var point = axis.TranslatePoint(new Point(12 + (axis.Bounds.Width - 24) / 8, 40), host)!.Value;
+        axis.BringIntoView();
+        Flush(host);
+        var point = axis.TranslatePoint(axis.GeometryFor(original.Subtitles[0].Karaoke[0].Id).Body.Center, host)!.Value;
         host.MouseDown(point, MouseButton.Left);
         Assert.NotNull(pointer);
         Assert.Same(axis, pointer.Captured);
@@ -418,25 +413,30 @@ public sealed class SubtitleDetailsEditingUiTests
     }
 
     [AvaloniaFact]
-    public async Task KaraokeDurationDraftAndActualDragKeepOneUndoAndCueBounds()
+    public async Task KaraokeBodyDragMovesOnlyTheSelectedGroupWithOneUndo()
     {
         await using var context = new MainWindowTestContext();
         var original = Prepare(context, true);
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SUBTITLE_DETAILS);
         var host = Assert.Single(context.Window.Layouts.FloatingWindows);
         Flush(host);
+        host.Width = 950;
+        host.Height = 1200;
         var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
         Flush(host);
         var first = original.Subtitles[0].Karaoke[0];
-        var point = axis.TranslatePoint(new Point(12 + (axis.Bounds.Width - 24) / 8, 40), host)!.Value;
+        axis.BringIntoView();
+        Flush(host);
+        var point = axis.TranslatePoint(axis.GeometryFor(original.Subtitles[0].Karaoke[0].Id).Body.Center, host)!.Value;
         host.MouseDown(point, MouseButton.Left);
         host.MouseMove(point + new Vector((axis.Bounds.Width - 24) / 8, 0));
         Assert.False(context.Session.Editor.CanUndo);
         host.MouseUp(point + new Vector((axis.Bounds.Width - 24) / 8, 0), MouseButton.Left);
         Flush(host);
         var edited = context.Session.Editor.Snapshot.Subtitles[0];
-        Assert.True(edited.Karaoke[0].End > first.End);
-        Assert.Equal(edited.Karaoke[0].End, edited.Karaoke[1].Start);
+        Assert.True(edited.Karaoke[0].Start > first.Start);
+        Assert.Equal(first.End - first.Start, edited.Karaoke[0].End - edited.Karaoke[0].Start);
+        Assert.Equal(original.Subtitles[0].Karaoke[1], edited.Karaoke[1]);
         Assert.Equal(original.Subtitles[0].End, edited.End);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.Editor.Snapshot);
