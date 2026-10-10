@@ -108,12 +108,18 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
             {
                 foreach (var field in Fields)
                 {
-                    field.Draft.PropertyChanged -= OnFieldChanged;
+                    if (field.Target is null)
+                    {
+                        field.Draft.PropertyChanged -= OnFieldChanged;
+                    }
                 }
                 Fields = CreateFields(layer).ToArray();
                 foreach (var field in Fields)
                 {
-                    field.Draft.PropertyChanged += OnFieldChanged;
+                    if (field.Target is null)
+                    {
+                        field.Draft.PropertyChanged += OnFieldChanged;
+                    }
                 }
             }
             fieldLayerId = layer?.Id;
@@ -126,7 +132,10 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
                     var value = field.Target is { } target ? ClipMaskAnimation.GetBaseValue(mask, target).GetComponent(field.Component) :
                         field.Component == 0 ? mask.Transform.Pivot.X : mask.Transform.Pivot.Y;
                     field.Original = value;
-                    field.Draft.Load(value);
+                    if (field.Target is null)
+                    {
+                        field.Draft.Load(value);
+                    }
                 }
             }
             draftSource = null;
@@ -161,13 +170,11 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         }
         foreach (var target in properties)
         {
+            var row = session.PropertyEditing.GetRow(layer.Id, target);
             for (var component = 0; component < AnimationPropertyMetadata.GetComponentCount(target.Property); component++)
             {
                 yield return new($"{target.Property}.{component}", "Workbench." + target.Property, target, component,
-                    AnimationPropertyMetadata.GetMinimum(target.Property, component), AnimationPropertyMetadata.GetMaximum(target.Property, component))
-                {
-                    CanEdit = layer.Tracks.FirstOrDefault(track => track.Target == target)?.IsOrdered != true
-                };
+                    AnimationPropertyMetadata.GetMinimum(target.Property, component), AnimationPropertyMetadata.GetMaximum(target.Property, component), row);
             }
         }
         yield return new("MaskPivotX", "Workbench.MaskPivotX", null, 0, -1e9, 1e9);
@@ -190,7 +197,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
 
     internal ProjectDocument Prepare(ProjectDocument document)
     {
-        if (!Fields.Any(field => field.IsDirty) || draftTarget is not { } frozen)
+        if (!Fields.Any(field => field.Target is null && field.IsDirty) || draftTarget is not { } frozen)
         {
             return document;
         }
@@ -201,16 +208,6 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         var layer = document.Layers.Single(value => value.Id == frozen.LayerId);
         var mask = layer.Mask ?? throw new InvalidOperationException(Localization.Get("Workbench.ClipMask"));
         var changed = document;
-        foreach (var group in Fields.Where(field => field.Target is not null).GroupBy(field => field.Target!.Value))
-        {
-            if (!group.Any(field => field.IsDirty))
-            {
-                continue;
-            }
-            var values = group.Select(Parse).ToArray();
-            AnimationValue value = values.Length == 2 ? new ScenePoint(values[0], values[1]) : values[0];
-            changed = AnimationEditOperations.SetValue(changed, frozen, group.Key, value);
-        }
         var pivotFields = Fields.Where(field => field.Target is null).ToArray();
         if (pivotFields.Any(field => field.IsDirty))
         {
@@ -274,7 +271,10 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         draftTarget = null;
         foreach (var field in Fields)
         {
-            field.Draft.PropertyChanged -= OnFieldChanged;
+            if (field.Target is null)
+            {
+                field.Draft.PropertyChanged -= OnFieldChanged;
+            }
         }
         Fields = [];
         fieldLayerId = null;
@@ -282,6 +282,11 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
 
     internal void Restore(MaskNumericField field)
     {
+        if (field.Row is { } row)
+        {
+            row.Restore(field.Component == 0 ? row.XFieldKey : row.YFieldKey);
+            return;
+        }
         loading = true;
         try
         {

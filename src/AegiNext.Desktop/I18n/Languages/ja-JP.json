@@ -2,6 +2,7 @@
   "LanguageName": "日本語",
   "LanguageID": "ja-JP",
   "Strings": {
+    "Workbench.EditAnimationDetails": "アニメーションの詳細を編集",
     "Workbench.CollapseTrack": "トラックを折りたたむ",
     "Workbench.ExpandTrack": "トラックを展開",
     "Workbench.RestoreField": "無効な入力を元に戻す（Esc）",

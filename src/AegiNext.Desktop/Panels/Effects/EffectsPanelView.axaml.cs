@@ -82,11 +82,22 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
             }
             suppressFocusCommit = false;
         }, RoutingStrategies.Tunnel);
-        AddHandler(NumericDragLabel.DragStartedEvent, (_, _) =>
+        AddHandler(GotFocusEvent, (_, e) =>
+        {
+            if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<EffectPropertyRowView>().FirstOrDefault()?.DataContext is AnimationPropertyRowViewModel row)
+            {
+                row.BeginEdit(PanelId);
+            }
+        }, RoutingStrategies.Bubble);
+        AddHandler(NumericDragLabel.DragStartedEvent, (_, e) =>
         {
             ++focusCommitRevision;
             suppressFocusCommit = true;
             numericDragTarget = new(session);
+            if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<EffectPropertyRowView>().FirstOrDefault()?.DataContext is AnimationPropertyRowViewModel row)
+            {
+                row.BeginEdit(PanelId);
+            }
         });
         AddHandler(NumericDragLabel.DragCompletedEvent, (_, e) =>
         {

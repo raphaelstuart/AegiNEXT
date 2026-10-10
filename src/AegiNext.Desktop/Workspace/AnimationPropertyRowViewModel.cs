@@ -4,13 +4,12 @@ using System.Windows.Input;
 using AegiNext.Core.Projects;
 using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.I18n;
-using AegiNext.Desktop.Workspace;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace AegiNext.Desktop.Panels.Effects;
+namespace AegiNext.Desktop.Workspace;
 
-internal sealed class EffectPropertyRowViewModel : ObservableObject
+internal sealed class AnimationPropertyRowViewModel : ObservableObject
 {
     private readonly WorkbenchSession session;
     private bool loading;
@@ -24,8 +23,9 @@ internal sealed class EffectPropertyRowViewModel : ObservableObject
     private bool canAddKeyframe;
     private string? error;
     private string? invalidFieldKey;
+    private string editingPanel = "effects";
 
-    internal EffectPropertyRowViewModel(WorkbenchSession session, Guid layerId, AnimationTrackTarget target)
+    internal AnimationPropertyRowViewModel(WorkbenchSession session, Guid layerId, AnimationTrackTarget target)
     {
         this.session = session;
         LayerId = layerId;
@@ -34,17 +34,18 @@ internal sealed class EffectPropertyRowViewModel : ObservableObject
         Y.PropertyChanged += OnNumberChanged;
         Color.Changed += (_, _) => Changed();
         Color.Committed += (_, _) => session.TryCommitDrafts(false);
-        SelectCommand = new RelayCommand(() => session.ViewModel.Effects.Target = Target);
-        ToggleAnimationCommand = new AsyncRelayCommand(() => session.SetEffectPropertyAnimationAsync(Target, !IsAnimated));
-        AddKeyframeCommand = new AsyncRelayCommand(() => session.AddEffectPropertyKeyframeAsync(Target));
-        ResetCommand = new AsyncRelayCommand(() => session.ResetEffectPropertyAsync(Target));
+        SelectCommand = new RelayCommand(() => session.SelectAnimationProperty(LayerId, Target));
+        ToggleAnimationCommand = new AsyncRelayCommand(() => session.SetAnimationPropertyEnabledAsync(LayerId, Target, !IsAnimated));
+        AddKeyframeCommand = new AsyncRelayCommand(() => session.AddAnimationPropertyKeyframeAsync(LayerId, Target));
+        DetailsCommand = new RelayCommand(() => session.OpenAnimationPropertyDetails(LayerId, Target));
+        ResetCommand = new AsyncRelayCommand(() => session.ResetAnimationPropertyAsync(LayerId, Target));
     }
 
     internal Guid LayerId { get; }
     internal AnimationTrackTarget Target { get; }
     internal bool HasDraft => X.RawText != originalX || IsVector && Y.RawText != originalY || IsColor && Color.IsDirty;
     public string Name => AnimationPropertyLocalization.Get(Target.Property);
-    public string FieldKey => $"EffectProperty_{LayerId:N}_{Target.TextRangeId:N}_{Target.State}_{Target.Property}";
+    public string FieldKey => $"EffectProperty_{LayerId:N}_{Target.NodeId:N}_{Target.TextRangeId:N}_{Target.State}_{Target.Property}";
     public string XFieldKey => FieldKey + "_X";
     public string YFieldKey => FieldKey + "_Y";
     public NumericValueDraft X { get; } = new();
@@ -57,7 +58,7 @@ internal sealed class EffectPropertyRowViewModel : ObservableObject
     public decimal Maximum => (decimal)AnimationPropertyMetadata.GetMaximum(Target.Property);
     public decimal Increment => Target.Property switch
     {
-        AnimationProperty.SCALE => 0.01m,
+        AnimationProperty.SCALE or AnimationProperty.MASK_SCALE => 0.01m,
         AnimationProperty.LETTER_SPACING or AnimationProperty.STROKE_WIDTH or AnimationProperty.FILL_BLUR or
             AnimationProperty.STROKE_BLUR or AnimationProperty.SHADOW_BLUR => 0.5m,
         _ => 1m
@@ -65,6 +66,9 @@ internal sealed class EffectPropertyRowViewModel : ObservableObject
     public bool IsAnimated { get => isAnimated; private set => SetProperty(ref isAnimated, value); }
     public bool IsEnabled { get => isEnabled; private set => SetProperty(ref isEnabled, value); }
     public bool CanAddKeyframe { get => canAddKeyframe; private set => SetProperty(ref canAddKeyframe, value); }
+    public bool IsOrdered => !IsEnabled;
+    public ICommand DetailsCommand { get; }
+    public string DetailsHint { get; private set; } = Localization.Get("Workbench.EditAnimationDetails");
     public bool CanReset => IsAnimated && IsEnabled;
     public bool CanToggleAnimation => IsAnimated || CanAddKeyframe;
     public bool IsMixed { get => isMixed; private set => SetProperty(ref isMixed, value); }
@@ -86,6 +90,7 @@ internal sealed class EffectPropertyRowViewModel : ObservableObject
         IsAnimated = track is not null;
         IsEnabled = track?.Transforms.IsEmpty != false;
         CanAddKeyframe = IsEnabled && session.CanAddEffectPropertyKeyframe(LayerId);
+        OnPropertyChanged(nameof(IsOrdered));
         OnPropertyChanged(nameof(CanToggleAnimation));
         OnPropertyChanged(nameof(CanReset));
         if (HasDraft)
@@ -120,6 +125,8 @@ internal sealed class EffectPropertyRowViewModel : ObservableObject
 
     internal void RefreshLabels()
     {
+        DetailsHint = Localization.Get("Workbench.EditAnimationDetails");
+        OnPropertyChanged(nameof(DetailsHint));
         KeyframeHint = Localization.Get("Workbench.Keyframe");
         ResetHint = Localization.Get("Workbench.ResetProperty");
         OnPropertyChanged(nameof(Name));
@@ -129,13 +136,17 @@ internal sealed class EffectPropertyRowViewModel : ObservableObject
         OnPropertyChanged(nameof(ResetHint));
     }
 
+    internal void BeginEdit(string panelId) => editingPanel = panelId;
+
+    internal bool OwnsField(string? field) => field == FieldKey || field == XFieldKey || field == YFieldKey;
+
     internal ProjectDocument Prepare(ProjectDocument document)
     {
         if (!HasDraft)
         {
             return document;
         }
-        session.ViewModel.InvalidPanelId = "effects";
+        session.ViewModel.InvalidPanelId = editingPanel;
         session.ViewModel.InvalidFieldKey = FieldKey;
         if (!ReferenceEquals(draftSource, session.DocumentSnapshot) || draftTarget is null)
         {
@@ -228,6 +239,8 @@ internal sealed class EffectPropertyRowViewModel : ObservableObject
         draftSource ??= session.DocumentSnapshot;
         draftTarget ??= session.AnimationTarget is { } current
             ? current with { LayerId = LayerId, Target = Target } : null;
+        session.SceneEditing.DraftTarget ??= draftTarget;
+        _ = session.RunCommandAsync(session.PauseForSceneEditAsync);
         session.NotifyEffectPropertyDraftChanged();
         session.RefreshMaskPreview();
     }

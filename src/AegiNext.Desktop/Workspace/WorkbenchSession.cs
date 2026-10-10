@@ -45,6 +45,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
     private readonly StyleLibraryCoordinator styles;
     private readonly LayerEditingCoordinator layerEditing;
     internal ClipMaskEditingCoordinator MaskEditing { get; }
+    internal AnimationPropertyEditingCoordinator PropertyEditing { get; }
     private readonly PlaybackSeekingCoordinator playback;
     private readonly PreviewFrameCatalog previewFrames = new();
     private ProjectPreviewState previewState = new(new(), Path.GetTempPath());
@@ -94,6 +95,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
         projectDirectory = scratchDirectory;
         styleLibrary = this.applicationContext.StyleLibrary;
         effectScriptLibrary = this.applicationContext.EffectScriptLibrary;
+        PropertyEditing = new(this);
         ViewModel = new(this);
         controller = controllerFactory?.Invoke(ApplyUpdate) ?? new(this.dispatch, ApplyUpdate,
             () => new ProjectPreviewConverter(GetPreviewState,

@@ -85,7 +85,7 @@ internal sealed partial class WorkbenchSession
             prepared = PrepareInspectorDrafts(prepared, false);
             prepared = MaskEditing.Prepare(prepared);
             prepared = ViewModel.Effects.PrepareOperationDraft(prepared);
-            prepared = ViewModel.Effects.PreparePropertyDrafts(prepared);
+            prepared = PropertyEditing.Prepare(prepared);
 
             if (!ReferenceEquals(prepared, document))
             {
@@ -112,7 +112,7 @@ internal sealed partial class WorkbenchSession
             ClearInspectorPreview();
             MaskEditing.AcceptDrafts();
             ViewModel.Effects.AcceptOperationDraft();
-            ViewModel.Effects.AcceptPropertyDrafts();
+            PropertyEditing.Accept();
             try
             {
                 if (prepared != document)

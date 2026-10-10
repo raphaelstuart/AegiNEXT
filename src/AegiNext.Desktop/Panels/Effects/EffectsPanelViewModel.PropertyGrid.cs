@@ -10,16 +10,15 @@ namespace AegiNext.Desktop.Panels.Effects;
 
 internal sealed partial class EffectsPanelViewModel
 {
-    private readonly Dictionary<(Guid LayerId, AnimationTrackTarget Target), EffectPropertyRowViewModel> propertyRows = [];
     private EffectScopeChoice[] scopes = [];
     private EffectStateChoice[] states = [];
     private EffectScopeChoice? notifiedScope;
     private EffectStateChoice? notifiedState;
     private bool refreshingScopes;
-    private EffectPropertyRowViewModel[] typographyRows = [];
-    private EffectPropertyRowViewModel[] fillRows = [];
-    private EffectPropertyRowViewModel[] strokeRows = [];
-    private EffectPropertyRowViewModel[] shadowRows = [];
+    private AnimationPropertyRowViewModel[] typographyRows = [];
+    private AnimationPropertyRowViewModel[] fillRows = [];
+    private AnimationPropertyRowViewModel[] strokeRows = [];
+    private AnimationPropertyRowViewModel[] shadowRows = [];
 
     public EffectScopeChoice[] Scopes { get => scopes; private set => SetItems(ref scopes, value, nameof(Scopes)); }
     public EffectStateChoice[] States { get => states; private set => SetItems(ref states, value, nameof(States)); }
@@ -62,10 +61,10 @@ internal sealed partial class EffectsPanelViewModel
     public bool CanCreateRange => CanEditTextScope && session.Details.TextSelectionLength > 0;
     public bool IsWholeLayerTarget => Target.TextRangeId is null && Target.State == SubtitleAnimationState.NORMAL;
     public bool CanEditTargetTransform => Target.State == SubtitleAnimationState.NORMAL;
-    public EffectPropertyRowViewModel[] TypographyRows { get => typographyRows; private set => SetItems(ref typographyRows, value, nameof(TypographyRows)); }
-    public EffectPropertyRowViewModel[] FillRows { get => fillRows; private set => SetItems(ref fillRows, value, nameof(FillRows)); }
-    public EffectPropertyRowViewModel[] StrokeRows { get => strokeRows; private set => SetItems(ref strokeRows, value, nameof(StrokeRows)); }
-    public EffectPropertyRowViewModel[] ShadowRows { get => shadowRows; private set => SetItems(ref shadowRows, value, nameof(ShadowRows)); }
+    public AnimationPropertyRowViewModel[] TypographyRows { get => typographyRows; private set => SetItems(ref typographyRows, value, nameof(TypographyRows)); }
+    public AnimationPropertyRowViewModel[] FillRows { get => fillRows; private set => SetItems(ref fillRows, value, nameof(FillRows)); }
+    public AnimationPropertyRowViewModel[] StrokeRows { get => strokeRows; private set => SetItems(ref strokeRows, value, nameof(StrokeRows)); }
+    public AnimationPropertyRowViewModel[] ShadowRows { get => shadowRows; private set => SetItems(ref shadowRows, value, nameof(ShadowRows)); }
     public ICommand CreateRangeCommand { get; private set; } = null!;
     public ICommand DeleteRangeCommand { get; private set; } = null!;
     public ICommand MoveRangeUpCommand { get; private set; } = null!;
@@ -84,7 +83,7 @@ internal sealed partial class EffectsPanelViewModel
     public bool IsOpacityAnimated => HasAnimation(AnimationProperty.OPACITY);
     public bool IsBlurAnimated => HasAnimation(AnimationProperty.BLUR);
     public ICommand TogglePropertyAnimationCommand { get; private set; } = null!;
-    internal bool HasPropertyDrafts => propertyRows.Values.Any(row => row.HasDraft);
+    internal bool HasPropertyDrafts => session.PropertyEditing.HasDrafts;
 
     public bool ClipExpanded { get => IsExpanded("clip"); set => SetExpanded("clip", value); }
     public bool TransformExpanded { get => IsExpanded("transform"); set => SetExpanded("transform", value); }
@@ -109,15 +108,7 @@ internal sealed partial class EffectsPanelViewModel
 
     internal void RefreshPropertyGrid()
     {
-        foreach (var key in propertyRows.Keys.Where(key =>
-        {
-            var layer = Document.Layers.FirstOrDefault(layer => layer.Id == key.LayerId);
-            return layer is null || key.Target.TextRangeId is { } rangeId &&
-                !Document.Subtitles.Any(line => line.Id == layer.SubtitleId && line.AnimationRanges.Any(range => range.Id == rangeId));
-        }).ToArray())
-        {
-            propertyRows.Remove(key);
-        }
+        session.PropertyEditing.Refresh();
         var line = SelectedLayer?.SubtitleId is { } id ? Document.Subtitles.FirstOrDefault(line => line.Id == id) : null;
         if (Target.TextRangeId is { } selectedRange && line?.AnimationRanges.Any(range => range.Id == selectedRange) != true)
         {
@@ -161,11 +152,6 @@ internal sealed partial class EffectsPanelViewModel
         FillRows = Rows(AnimationProperty.FILL, AnimationProperty.FILL_BLUR);
         StrokeRows = Rows(AnimationProperty.STROKE, AnimationProperty.STROKE_WIDTH, AnimationProperty.STROKE_BLUR);
         ShadowRows = line is not null ? Rows(AnimationProperty.SHADOW_COLOR, AnimationProperty.SHADOW_OFFSET, AnimationProperty.SHADOW_BLUR) : [];
-        var visibleRows = TypographyRows.Concat(FillRows).Concat(StrokeRows).Concat(ShadowRows).ToHashSet();
-        foreach (var key in propertyRows.Where(entry => !entry.Value.HasDraft && !visibleRows.Contains(entry.Value)).Select(entry => entry.Key).ToArray())
-        {
-            propertyRows.Remove(key);
-        }
         foreach (var property in new[] { nameof(CanEditTextScope), nameof(CanCreateRange),
             nameof(CanManageRange), nameof(IsWholeLayerTarget), nameof(CanEditTargetTransform),
             nameof(ClipExpanded), nameof(TransformExpanded), nameof(TypographyExpanded), nameof(FillExpanded),
@@ -177,7 +163,7 @@ internal sealed partial class EffectsPanelViewModel
         }
     }
 
-    private EffectPropertyRowViewModel[] Rows(params AnimationProperty[] properties)
+    private AnimationPropertyRowViewModel[] Rows(params AnimationProperty[] properties)
     {
         if (SelectedLayer is not { } layer)
         {
@@ -187,79 +173,15 @@ internal sealed partial class EffectsPanelViewModel
             .Select(property =>
             {
                 var target = Target with { Property = property, NodeId = null };
-                var key = (layer.Id, target);
-                if (!propertyRows.TryGetValue(key, out var row))
-                {
-                    row = new(session, layer.Id, target);
-                    propertyRows.Add(key, row);
-                }
-                var track = layer.Tracks.FirstOrDefault(track => track.Target == target);
-                var subtitle = layer.SubtitleId is { } id ? Document.Subtitles.Single(line => line.Id == id) : null;
-                row.Load(session.EffectPropertyValue(layer, target), track,
-                    !SubtitleAnimationEvaluation.IsBaseValueUniform(layer, subtitle, target));
-                return row;
+                return session.PropertyEditing.GetRow(layer.Id, target);
             }).ToArray();
     }
 
-    internal ProjectDocument PreparePropertyDrafts(ProjectDocument document)
-    {
-        foreach (var row in propertyRows.Values.Where(row => row.HasDraft))
-        {
-            document = row.Prepare(document);
-        }
-        return document;
-    }
-
-    internal ProjectDocument OverlayPropertyDrafts(ProjectDocument document)
-    {
-        foreach (var row in propertyRows.Values.Where(row => row.HasDraft))
-        {
-            var invalidPanel = session.ViewModel.InvalidPanelId;
-            var invalidField = session.ViewModel.InvalidFieldKey;
-            try
-            {
-                var candidate = row.Prepare(document);
-                ProjectValidator.Validate(candidate);
-                document = candidate;
-            }
-            catch (Exception error) when (error is InvalidOperationException or InvalidDataException or ArgumentException)
-            {
-            }
-            finally
-            {
-                session.ViewModel.InvalidPanelId = invalidPanel;
-                session.ViewModel.InvalidFieldKey = invalidField;
-            }
-        }
-        return document;
-    }
-
-    internal void AcceptPropertyDrafts()
-    {
-        foreach (var row in propertyRows.Values.Where(row => row.HasDraft))
-        {
-            row.Accept();
-        }
-        foreach (var key in propertyRows.Keys.Where(key => !session.DocumentSnapshot.Layers.Any(layer => layer.Id == key.LayerId)).ToArray())
-        {
-            propertyRows.Remove(key);
-        }
-    }
-
-    internal bool RestorePropertyField(string? key)
-    {
-        var row = propertyRows.Values.FirstOrDefault(row => row.XFieldKey == key || row.YFieldKey == key);
-        if (row is null)
-        {
-            return false;
-        }
-        row.Restore(key!);
-        return true;
-    }
+    internal bool RestorePropertyField(string? key) => session.PropertyEditing.Restore(key);
 
     internal bool ExpandPropertyField(string? field)
     {
-        var row = propertyRows.Values.FirstOrDefault(row => row.FieldKey == field || row.XFieldKey == field || row.YFieldKey == field);
+        var row = session.PropertyEditing.FindRow(field);
         if (row is null)
         {
             switch (field)

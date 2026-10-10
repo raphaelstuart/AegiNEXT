@@ -14,10 +14,12 @@ using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
+/// <summary>验证向量输入重新挂载后的原始草稿、字段身份和标题拖拽行为。</summary>
 public sealed class VectorDraftReattachmentUiTests
 {
+    /// <summary>跨窗口保留无效分量草稿，标题拖拽只修改另一分量。</summary>
     [AvaloniaFact]
-    public void DataTemplateReattachmentPreservesAuthoritativeRawAndSpinnerChangesOnlyItsComponent()
+    public void DataTemplateReattachmentPreservesAuthoritativeRawAndTitleDragChangesOnlyItsComponent()
     {
         var target = new AnimationTrackTarget(AnimationProperty.MASK_RECTANGLE_TOP_LEFT);
         var x = new MaskNumericField("X", "Workbench.MASK_RECTANGLE_TOP_LEFT", target, 0, -1000, 1000);
@@ -30,8 +32,10 @@ public sealed class VectorDraftReattachmentUiTests
             Content = model,
             ContentTemplate = new FuncDataTemplate<MaskVectorField>((field, _) => new VectorDraftInput
             {
-                XFieldKey = "X",
-                YFieldKey = "Y",
+                XFieldKey = "RectangleCorner_X",
+                YFieldKey = "RectangleCorner_Y",
+                XInputName = "X",
+                YInputName = "Y",
                 [!VectorDraftInput.XProperty] = new Binding("X.Draft.Value") { Source = field, Mode = BindingMode.TwoWay },
                 [!VectorDraftInput.YProperty] = new Binding("Y.Draft.Value") { Source = field, Mode = BindingMode.TwoWay },
                 [!VectorDraftInput.XTextProperty] = new Binding("X.Draft.RawText") { Source = field, Mode = BindingMode.TwoWay },
@@ -71,12 +75,15 @@ public sealed class VectorDraftReattachmentUiTests
             Assert.Equal("invalid X", xInput.RawText);
             Assert.Equal("20", yInput.RawText);
             Assert.Equal("invalid X", Assert.Single(xInput.GetVisualDescendants().OfType<TextBox>()).Text);
-            var spinner = Assert.Single(yInput.GetVisualDescendants().OfType<ButtonSpinner>());
-            var increase = Assert.Single(spinner.GetVisualDescendants().OfType<Button>(), button => button.Name == "PART_IncreaseButton");
-            Assert.True(increase.IsEffectivelyEnabled);
-            var point = increase.TranslatePoint(new Point(increase.Bounds.Width / 2, increase.Bounds.Height / 2), second)!.Value;
+            Assert.Equal("RectangleCorner_X", vector.XFieldKey);
+            Assert.Equal("RectangleCorner_Y", vector.YFieldKey);
+            Assert.False(yInput.ShowButtonSpinner);
+            Assert.True(vector.FocusField("RectangleCorner_Y"));
+            var label = Assert.Single(vector.GetVisualDescendants().OfType<NumericDragLabel>(), candidate => ReferenceEquals(candidate.Input, yInput));
+            var point = label.TranslatePoint(new Point(label.Bounds.Width / 2, label.Bounds.Height / 2), second)!.Value;
             second.MouseDown(point, MouseButton.Left);
-            second.MouseUp(point, MouseButton.Left);
+            second.MouseMove(new(point.X + 1, point.Y));
+            second.MouseUp(new(point.X + 1, point.Y), MouseButton.Left);
             Dispatcher.UIThread.RunJobs();
             Assert.Equal("21", y.Draft.RawText);
             Assert.Equal("invalid X", x.Draft.RawText);

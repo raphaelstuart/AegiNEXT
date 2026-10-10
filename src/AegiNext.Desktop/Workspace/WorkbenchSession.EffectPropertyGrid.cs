@@ -18,12 +18,14 @@ internal sealed partial class WorkbenchSession
 
     internal void ClearEffectPropertyDraftError(string field)
     {
-        if (ViewModel.InvalidPanelId == "effects" && ViewModel.InvalidFieldKey == field)
+        if (ViewModel.InvalidFieldKey == field)
         {
             ViewModel.InvalidPanelId = null;
             ViewModel.InvalidFieldKey = null;
             ViewModel.Effects.InvalidFieldKey = null;
             ViewModel.Effects.ValidationError = null;
+            ViewModel.Masks.InvalidFieldKey = null;
+            ViewModel.Masks.ValidationError = null;
         }
     }
 
@@ -90,9 +92,29 @@ internal sealed partial class WorkbenchSession
         return SetEffectPropertyAnimationAsync(target, enabled);
     }
 
-    internal Task SetEffectPropertyAnimationAsync(AnimationTrackTarget target, bool enabled) => RunCommandAsync(() => EditAsync(() =>
+    internal void SelectAnimationProperty(Guid layerId, AnimationTrackTarget target)
     {
-        if (SelectedLayer is not { } layer)
+        if (SelectedLayerId == layerId)
+        {
+            ViewModel.Effects.Target = target;
+        }
+    }
+
+    internal void OpenAnimationPropertyDetails(Guid layerId, AnimationTrackTarget target)
+    {
+        SelectAnimationProperty(layerId, target);
+        if (SelectedLayerId == layerId && SceneEditing.Target == target)
+        {
+            ViewModel.Effects.AnimationExpanded = true;
+        }
+    }
+
+    internal Task SetEffectPropertyAnimationAsync(AnimationTrackTarget target, bool enabled) =>
+        SelectedLayerId is { } layerId ? SetAnimationPropertyEnabledAsync(layerId, target, enabled) : Task.CompletedTask;
+
+    internal Task SetAnimationPropertyEnabledAsync(Guid layerId, AnimationTrackTarget target, bool enabled) => RunCommandAsync(() => EditAsync(() =>
+    {
+        if (SelectedLayer is not { } layer || layer.Id != layerId)
         {
             return;
         }
@@ -108,7 +130,16 @@ internal sealed partial class WorkbenchSession
         ViewModel.Effects.Target = target;
     }));
 
-    internal Task AddEffectPropertyKeyframeAsync(AnimationTrackTarget target) => RunCommandAsync(() => EditAsync(() => AddEffectPropertyKeyframe(target)));
+    internal Task AddEffectPropertyKeyframeAsync(AnimationTrackTarget target) =>
+        SelectedLayerId is { } layerId ? AddAnimationPropertyKeyframeAsync(layerId, target) : Task.CompletedTask;
+
+    internal Task AddAnimationPropertyKeyframeAsync(Guid layerId, AnimationTrackTarget target) => RunCommandAsync(() => EditAsync(() =>
+    {
+        if (SelectedLayerId == layerId)
+        {
+            AddEffectPropertyKeyframe(target);
+        }
+    }));
 
     internal bool CanAddEffectPropertyKeyframe(Guid layerId)
     {
@@ -144,9 +175,13 @@ internal sealed partial class WorkbenchSession
         });
     }));
 
-    internal Task ResetEffectPropertyAsync(AnimationTrackTarget target) => RunCommandAsync(() => EditAsync(() =>
+    internal Task ResetEffectPropertyAsync(AnimationTrackTarget target) =>
+        SelectedLayerId is { } layerId ? ResetAnimationPropertyAsync(layerId, target) : Task.CompletedTask;
+
+    internal Task ResetAnimationPropertyAsync(Guid layerId, AnimationTrackTarget target) => RunCommandAsync(() => EditAsync(() =>
     {
-        if (SelectedLayer is not { } layer || AnimationTarget is not { } edit)
+        if (SelectedLayer is not { } layer || layer.Id != layerId || AnimationTarget is not { } edit ||
+            layer.Tracks.FirstOrDefault(track => track.Target == target)?.IsOrdered == true)
         {
             return;
         }

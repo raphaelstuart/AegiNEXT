@@ -7,19 +7,6 @@
              xmlns:vm="using:AegiNext.Desktop.Panels.Effects" x:DataType="vm:EffectsPanelViewModel"
              x:Class="AegiNext.Desktop.Panels.Effects.EffectsPanelView" Classes="business-surface">
   <UserControl.Styles>
-    <Style Selector="Button.effect-property-label">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="MinWidth" Value="0" />
-    </Style>
-    <Style Selector="Button.effect-property-action, ToggleButton.effect-property-action">
-      <Setter Property="Width" Value="26" />
-      <Setter Property="Height" Value="28" />
-      <Setter Property="MinWidth" Value="26" />
-      <Setter Property="MinHeight" Value="28" />
-      <Setter Property="Padding" Value="0" />
-    </Style>
     <Style Selector="Grid.effect-row">
       <Setter Property="ColumnSpacing" Value="6" />
       <Setter Property="Margin" Value="4,3" />
@@ -65,27 +52,27 @@
             <TextBlock Text="{Loc Key=Workbench.PositionVector}" />
             <controls:VectorDraftInput Grid.Column="1" Name="PositionInput" XFieldKey="PositionXInput" YFieldKey="PositionYInput" XText="{Binding PositionXText, Mode=TwoWay}" YText="{Binding PositionYText, Mode=TwoWay}" X="{Binding PositionX, Mode=TwoWay}" Y="{Binding PositionY, Mode=TwoWay}" Minimum="-2000032768" Maximum="2000032768" IsEnabled="{Binding CanEditPosition}" />
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsPositionAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
-              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
-              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetPositionAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+              <ToggleButton Classes="animation-property-action" IsChecked="{Binding IsPositionAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="animation-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="animation-property-action" IsEnabled="{Binding CanResetPositionAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
             </StackPanel>
           </Grid>
           <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" ToolTip.Tip="{Binding ScaleEditingHint}">
             <TextBlock Text="{Loc Key=Workbench.ScaleVector}" />
             <controls:VectorDraftInput Grid.Column="1" Name="ScaleInput" Increment="0.01" XFieldKey="ScaleXInput" YFieldKey="ScaleYInput" XText="{Binding ScaleXText, Mode=TwoWay}" YText="{Binding ScaleYText, Mode=TwoWay}" X="{Binding ScaleX, Mode=TwoWay}" Y="{Binding ScaleY, Mode=TwoWay}" Minimum="{x:Static vm:EffectsPanelViewModel.ScaleMinimum}" Maximum="{x:Static vm:EffectsPanelViewModel.ScaleMaximum}" IsEnabled="{Binding CanEditScale}" />
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsScaleAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
-              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
-              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetScaleAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+              <ToggleButton Classes="animation-property-action" IsChecked="{Binding IsScaleAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="animation-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="animation-property-action" IsEnabled="{Binding CanResetScaleAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
             </StackPanel>
           </Grid>
           <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" ToolTip.Tip="{Binding RotationEditingHint}">
             <controls:NumericDragLabel Text="{Loc Key=Workbench.Rotation}" Input="{Binding #RotationInput}" VerticalAlignment="Center" TextWrapping="Wrap" />
             <controls:NumericDraftInput Grid.Column="1" Name="RotationInput" RawText="{Binding RotationText, Mode=TwoWay}" Minimum="{x:Static vm:EffectsPanelViewModel.RotationMinimum}" Maximum="{x:Static vm:EffectsPanelViewModel.RotationMaximum}" Value="{Binding Rotation, Mode=TwoWay}" IsEnabled="{Binding CanEditRotation}" />
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsRotationAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
-              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
-              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetRotationAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+              <ToggleButton Classes="animation-property-action" IsChecked="{Binding IsRotationAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="animation-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="animation-property-action" IsEnabled="{Binding CanResetRotationAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
             </StackPanel>
           </Grid>
           <Button Name="ResetPositionButton" IsVisible="{Binding IsWholeLayerTarget}" Command="{Binding ResetPositionCommand}" IsEnabled="{Binding CanResetPosition}"><controlsCommon:IconText IconKey="ResetPosition" Text="{Loc Key=Workbench.ResetPosition}" /></Button>
@@ -93,36 +80,36 @@
       </controlsCommon:PropertySection>
       <controlsCommon:PropertySection Name="TypographyCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryTypography}" IsExpanded="{Binding TypographyExpanded, Mode=TwoWay}">
         <ItemsControl ItemsSource="{Binding TypographyRows}">
-          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EffectPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="workspace:AnimationPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
         </ItemsControl>
       </controlsCommon:PropertySection>
       <controlsCommon:PropertySection Name="FillCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryFill}" IsExpanded="{Binding FillExpanded, Mode=TwoWay}">
         <ItemsControl ItemsSource="{Binding FillRows}">
-          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EffectPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="workspace:AnimationPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
         </ItemsControl>
       </controlsCommon:PropertySection>
       <controlsCommon:PropertySection Name="StrokeCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryStroke}" IsExpanded="{Binding StrokeExpanded, Mode=TwoWay}">
         <ItemsControl ItemsSource="{Binding StrokeRows}">
-          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EffectPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="workspace:AnimationPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
         </ItemsControl>
       </controlsCommon:PropertySection>
       <controlsCommon:PropertySection Name="ShadowCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryShadow}" IsExpanded="{Binding ShadowExpanded, Mode=TwoWay}">
         <ItemsControl ItemsSource="{Binding ShadowRows}">
-          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EffectPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="workspace:AnimationPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
         </ItemsControl>
       </controlsCommon:PropertySection>
       <controlsCommon:PropertySection Name="CompositeCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryComposite}" IsExpanded="{Binding CompositeExpanded, Mode=TwoWay}" IsVisible="{Binding IsWholeLayerTarget}">
         <StackPanel>
           <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" ToolTip.Tip="{Binding OpacityEditingHint}"><controls:NumericDragLabel Text="{Loc Key=Workbench.Opacity}" Input="{Binding #OpacityInput}" VerticalAlignment="Center" TextWrapping="Wrap" /><controls:NumericDraftInput Grid.Column="1" Name="OpacityInput" RawText="{Binding OpacityText, Mode=TwoWay}" Minimum="0" Maximum="1" Increment="0.05" Value="{Binding Opacity, Mode=TwoWay}" IsEnabled="{Binding CanEditOpacity}" /><StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsOpacityAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
-              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
-              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetOpacityAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+              <ToggleButton Classes="animation-property-action" IsChecked="{Binding IsOpacityAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="animation-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="animation-property-action" IsEnabled="{Binding CanResetOpacityAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
             </StackPanel></Grid>
           <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto"><TextBlock Text="{Loc Key=Workbench.Blend}" /><ComboBox Grid.Column="1" Grid.ColumnSpan="2" Name="BlendCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Blend, Mode=TwoWay}" ItemsSource="{Binding Blends}" /></Grid>
           <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto"><controls:NumericDragLabel Text="{Loc Key=Workbench.Blur}" Input="{Binding #BlurInput}" VerticalAlignment="Center" TextWrapping="Wrap" /><controls:NumericDraftInput Grid.Column="1" Name="BlurInput" RawText="{Binding BlurText, Mode=TwoWay}" Minimum="0" Maximum="512" Increment="0.5" Value="{Binding Blur, Mode=TwoWay}" /><StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsBlurAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
-              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
-              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetBlurAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+              <ToggleButton Classes="animation-property-action" IsChecked="{Binding IsBlurAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="animation-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="animation-property-action" IsEnabled="{Binding CanResetBlurAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
             </StackPanel></Grid>
         </StackPanel>
       </controlsCommon:PropertySection>

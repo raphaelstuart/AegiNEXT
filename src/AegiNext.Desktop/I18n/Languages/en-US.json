@@ -2,6 +2,7 @@
   "LanguageName": "English",
   "LanguageID": "en-US",
   "Strings": {
+    "Workbench.EditAnimationDetails": "Edit animation details",
     "Workbench.CollapseTrack": "Collapse track",
     "Workbench.ExpandTrack": "Expand track",
     "Workbench.RestoreField": "Restore invalid field (Esc)",

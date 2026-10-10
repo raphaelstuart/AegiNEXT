@@ -16,6 +16,8 @@ public sealed class VectorDraftInput : UserControl
     public static readonly StyledProperty<decimal> IncrementProperty = AvaloniaProperty.Register<VectorDraftInput, decimal>(nameof(Increment), 1m);
     public static readonly StyledProperty<string?> XFieldKeyProperty = AvaloniaProperty.Register<VectorDraftInput, string?>(nameof(XFieldKey));
     public static readonly StyledProperty<string?> YFieldKeyProperty = AvaloniaProperty.Register<VectorDraftInput, string?>(nameof(YFieldKey));
+    public static readonly StyledProperty<string?> XInputNameProperty = AvaloniaProperty.Register<VectorDraftInput, string?>(nameof(XInputName));
+    public static readonly StyledProperty<string?> YInputNameProperty = AvaloniaProperty.Register<VectorDraftInput, string?>(nameof(YInputName));
     private readonly NumericDraftInput xInput;
     private readonly NumericDraftInput yInput;
 
@@ -54,18 +56,28 @@ public sealed class VectorDraftInput : UserControl
         get => GetValue(YFieldKeyProperty);
         set => SetValue(YFieldKeyProperty, value);
     }
+    public string? XInputName
+    {
+        get => GetValue(XInputNameProperty);
+        set => SetValue(XInputNameProperty, value);
+    }
+    public string? YInputName
+    {
+        get => GetValue(YInputNameProperty);
+        set => SetValue(YInputNameProperty, value);
+    }
 
     /// <inheritdoc />
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == XFieldKeyProperty)
+        if (change.Property == XFieldKeyProperty || change.Property == XInputNameProperty)
         {
-            xInput.Name = XFieldKey;
+            xInput.Name = XInputName ?? XFieldKey;
         }
-        else if (change.Property == YFieldKeyProperty)
+        else if (change.Property == YFieldKeyProperty || change.Property == YInputNameProperty)
         {
-            yInput.Name = YFieldKey;
+            yInput.Name = YInputName ?? YFieldKey;
         }
     }
 

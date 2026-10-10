@@ -29,6 +29,7 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
+        AddHandler(GotFocusEvent, OnFieldGotFocus, RoutingStrategies.Bubble);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnCommitKeyDown, RoutingStrategies.Bubble);
         AddHandler(LostFocusEvent, OnLostFocus, RoutingStrategies.Bubble);
@@ -101,6 +102,21 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
     {
         CancelGestures();
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnFieldGotFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault() is { } input)
+        {
+            if (input.DataContext is MaskNumericField field)
+            {
+                field.Row?.BeginEdit(PanelId);
+            }
+            else if (input.DataContext is MaskVectorField vector)
+            {
+                vector.X.Row?.BeginEdit(PanelId);
+            }
+        }
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
