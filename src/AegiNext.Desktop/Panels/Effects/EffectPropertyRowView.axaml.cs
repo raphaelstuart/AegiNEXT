@@ -9,6 +9,7 @@ internal sealed partial class EffectPropertyRowView : UserControl
 {
     private readonly AnimationPropertyRowControl propertyRow;
 
+    /// <summary>Creates a panel adapter for a shared animation property row.</summary>
     public EffectPropertyRowView()
     {
         DataContext = null;

@@ -84,9 +84,9 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         }, RoutingStrategies.Tunnel);
         AddHandler(GotFocusEvent, (_, e) =>
         {
-            if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<EffectPropertyRowView>().FirstOrDefault()?.DataContext is AnimationPropertyRowViewModel row)
+            if (e.Source is Control source)
             {
-                row.BeginEdit(PanelId);
+                BeginFieldEdit(source);
             }
         }, RoutingStrategies.Bubble);
         AddHandler(NumericDragLabel.DragStartedEvent, (_, e) =>
@@ -94,9 +94,9 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
             ++focusCommitRevision;
             suppressFocusCommit = true;
             numericDragTarget = new(session);
-            if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<EffectPropertyRowView>().FirstOrDefault()?.DataContext is AnimationPropertyRowViewModel row)
+            if (e.Source is Control source)
             {
-                row.BeginEdit(PanelId);
+                BeginFieldEdit(source);
             }
         });
         AddHandler(NumericDragLabel.DragCompletedEvent, (_, e) =>
@@ -117,7 +117,7 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
             session.RefreshMaskPreview();
         });
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
-        AddHandler(KeyDownEvent, OnCommitKeyDown, RoutingStrategies.Bubble);
+        AddHandler(KeyDownEvent, OnCommitKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
         viewModel.KeyframeColorDraft.Committed += OnColorCommitted;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         AddHandler(LostFocusEvent, (_, e) =>
@@ -196,7 +196,7 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
     public void FocusInvalidField(string? fieldKey)
     {
         var propertyField = viewModel.ExpandPropertyField(fieldKey);
-        var propertyRow = this.GetVisualDescendants().OfType<EffectPropertyRowView>().FirstOrDefault(row => row.OwnsField(fieldKey));
+        var propertyRow = this.GetVisualDescendants().OfType<AnimationPropertyRowControl>().FirstOrDefault(row => row.OwnsField(fieldKey));
         if (propertyRow is not null)
         {
             foreach (var category in propertyRow.GetVisualAncestors().OfType<Expander>())
@@ -215,7 +215,7 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
             {
                 if (!disposed && revision == focusCommitRevision && ReferenceEquals(document, session.DocumentSnapshot))
                 {
-                    this.GetVisualDescendants().OfType<EffectPropertyRowView>().FirstOrDefault(row => row.OwnsField(fieldKey))?.FocusField(fieldKey);
+                    this.GetVisualDescendants().OfType<AnimationPropertyRowControl>().FirstOrDefault(row => row.OwnsField(fieldKey))?.FocusField(fieldKey);
                 }
             }, DispatcherPriority.Loaded);
             return;
@@ -262,6 +262,18 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
                 viewModel.RestoreField(name);
                 e.Handled = true;
             }
+        }
+    }
+
+    private void BeginFieldEdit(Control source)
+    {
+        if (source.GetSelfAndVisualAncestors().OfType<EffectPropertyRowView>().FirstOrDefault()?.DataContext is AnimationPropertyRowViewModel row)
+        {
+            row.BeginEdit(PanelId);
+        }
+        else if (source.GetSelfAndVisualAncestors().OfType<AnimationPropertyRowControl>().FirstOrDefault()?.FieldKey == "MaskPivot")
+        {
+            session.MaskEditing.BeginPivotEdit(PanelId);
         }
     }
 

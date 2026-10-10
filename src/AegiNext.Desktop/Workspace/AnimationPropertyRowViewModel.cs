@@ -23,7 +23,11 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
     private bool canAddKeyframe;
     private string? error;
     private string? invalidFieldKey;
+    private string activePanel = "effects";
     private string editingPanel = "effects";
+    private string xEditingPanel = "effects";
+    private string yEditingPanel = "effects";
+    private string colorEditingPanel = "effects";
 
     internal AnimationPropertyRowViewModel(WorkbenchSession session, Guid layerId, AnimationTrackTarget target)
     {
@@ -32,7 +36,7 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
         Target = target;
         X.PropertyChanged += OnNumberChanged;
         Y.PropertyChanged += OnNumberChanged;
-        Color.Changed += (_, _) => Changed();
+        Color.Changed += OnColorChanged;
         Color.Committed += (_, _) => session.TryCommitDrafts(false);
         SelectCommand = new RelayCommand(() => session.SelectAnimationProperty(LayerId, Target));
         ToggleAnimationCommand = new AsyncRelayCommand(() => session.SetAnimationPropertyEnabledAsync(LayerId, Target, !IsAnimated));
@@ -93,6 +97,7 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsOrdered));
         OnPropertyChanged(nameof(CanToggleAnimation));
         OnPropertyChanged(nameof(CanReset));
+        RefreshLabels();
         if (HasDraft)
         {
             return;
@@ -120,7 +125,6 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
         {
             loading = false;
         }
-        RefreshLabels();
     }
 
     internal void RefreshLabels()
@@ -136,7 +140,10 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
         OnPropertyChanged(nameof(ResetHint));
     }
 
-    internal void BeginEdit(string panelId) => editingPanel = panelId;
+    internal void BeginEdit(string panelId) => activePanel = panelId;
+
+    internal double GetOriginalComponent(int component) =>
+        double.Parse(component == 0 ? originalX : originalY, NumberStyles.Float, CultureInfo.CurrentCulture);
 
     internal bool OwnsField(string? field) => field == FieldKey || field == XFieldKey || field == YFieldKey;
 
@@ -155,6 +162,7 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
         AnimationValue value;
         if (IsColor)
         {
+            session.ViewModel.InvalidPanelId = colorEditingPanel;
             if (!Color.TryCommit(out var color))
             {
                 throw new InvalidDataException(Color.Error);
@@ -216,6 +224,7 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
         {
             return value;
         }
+        session.ViewModel.InvalidPanelId = component == 0 ? xEditingPanel : yEditingPanel;
         session.ViewModel.InvalidFieldKey = field;
         InvalidFieldKey = field;
         Error = Localization.Get("Workbench.InvalidValue");
@@ -224,10 +233,29 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
 
     private void OnNumberChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(NumericValueDraft.RawText))
+        if (loading || session.IsUpdating || e.PropertyName != nameof(NumericValueDraft.RawText))
         {
-            Changed();
+            return;
         }
+        if (ReferenceEquals(sender, X))
+        {
+            xEditingPanel = activePanel;
+        }
+        else
+        {
+            yEditingPanel = activePanel;
+        }
+        Changed();
+    }
+
+    private void OnColorChanged(object? sender, EventArgs e)
+    {
+        if (loading || session.IsUpdating)
+        {
+            return;
+        }
+        colorEditingPanel = activePanel;
+        Changed();
     }
 
     private void Changed()
@@ -236,6 +264,7 @@ internal sealed class AnimationPropertyRowViewModel : ObservableObject
         {
             return;
         }
+        editingPanel = activePanel;
         draftSource ??= session.DocumentSnapshot;
         draftTarget ??= session.AnimationTarget is { } current
             ? current with { LayerId = LayerId, Target = Target } : null;

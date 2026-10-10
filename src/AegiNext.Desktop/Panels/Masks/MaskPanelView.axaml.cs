@@ -5,6 +5,7 @@ using AegiNext.Desktop.Windowing;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -17,6 +18,9 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
 {
     private readonly WorkbenchSession session;
     private readonly MaskPanelViewModel viewModel;
+    private readonly ComboBox contourCombo;
+    private readonly ListBox pointList;
+    private bool synchronizingSelection;
     private bool suppressFocusCommit;
     private int focusCommitRevision;
     private bool disposed;
@@ -27,11 +31,15 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
         this.viewModel = viewModel;
         DataContext = null;
         AvaloniaXamlLoader.Load(this);
+        contourCombo = this.FindControl<ComboBox>("MaskContourCombo")!;
+        pointList = this.FindControl<ListBox>("MaskPointList")!;
         DataContext = viewModel;
+        contourCombo.SelectionChanged += OnContourSelectionChanged;
+        pointList.SelectionChanged += OnPointSelectionChanged;
         AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
         AddHandler(GotFocusEvent, OnFieldGotFocus, RoutingStrategies.Bubble);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
-        AddHandler(KeyDownEvent, OnCommitKeyDown, RoutingStrategies.Bubble);
+        AddHandler(KeyDownEvent, OnCommitKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(LostFocusEvent, OnLostFocus, RoutingStrategies.Bubble);
         BindNumericDrags();
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
@@ -101,7 +109,7 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
     {
         if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault() is { } input)
         {
-            GetSharedRow(input)?.BeginEdit(PanelId);
+            BeginFieldEdit(input);
         }
     }
 
@@ -168,6 +176,11 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(MaskPanelViewModel.SelectedContour) or nameof(MaskPanelViewModel.SelectedPoint) or
+            nameof(MaskPanelViewModel.Contours) or nameof(MaskPanelViewModel.Points))
+        {
+            SynchronizeSelection();
+        }
         if (e.PropertyName is nameof(MaskPanelViewModel.ValidationError) or nameof(MaskPanelViewModel.InvalidFieldKey))
         {
             foreach (var input in this.GetVisualDescendants().OfType<NumericDraftInput>())
@@ -183,6 +196,67 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
     }
 
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
+
+    private void OnContourSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (synchronizingSelection || session.IsUpdating || contourCombo.SelectedItem is not MaskSelectionChoice selected ||
+            selected.Id == viewModel.SelectedContour?.Id)
+        {
+            return;
+        }
+        RequestSelection(() => viewModel.SelectedContour = selected);
+    }
+
+    private void OnPointSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (synchronizingSelection || session.IsUpdating || pointList.SelectedItem is not MaskPointListItem selected ||
+            selected.Id == viewModel.SelectedPoint?.Id)
+        {
+            return;
+        }
+        RequestSelection(() => viewModel.SelectedPoint = selected);
+    }
+
+    private void RequestSelection(Action request)
+    {
+        synchronizingSelection = true;
+        try
+        {
+            request();
+        }
+        finally
+        {
+            SynchronizeSelection();
+            synchronizingSelection = false;
+        }
+    }
+
+    private void SynchronizeSelection()
+    {
+        var previousSynchronization = synchronizingSelection;
+        synchronizingSelection = true;
+        try
+        {
+            contourCombo.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, viewModel.SelectedContour);
+            pointList.SetCurrentValue(SelectingItemsControl.SelectedItemProperty, viewModel.SelectedPoint);
+        }
+        finally
+        {
+            synchronizingSelection = previousSynchronization;
+        }
+    }
+
+    private void BeginFieldEdit(Control input)
+    {
+        if (input.DataContext is MaskVectorField { Target: null })
+        {
+            session.MaskEditing.BeginPivotEdit(PanelId);
+        }
+        else
+        {
+            GetSharedRow(input)?.BeginEdit(PanelId);
+        }
+    }
 
     private static AnimationPropertyRowViewModel? GetSharedRow(Control control)
     {
@@ -214,6 +288,8 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
         }
         disposed = true;
         focusCommitRevision++;
+        contourCombo.SelectionChanged -= OnContourSelectionChanged;
+        pointList.SelectionChanged -= OnPointSelectionChanged;
         session.NumericGestureCancellationRequested -= OnNumericGestureCancellation;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
         viewModel.PropertyChanged -= OnViewModelChanged;

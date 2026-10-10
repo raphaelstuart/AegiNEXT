@@ -18,6 +18,8 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
     private ProjectDocument? lastValidPreview;
     private ProjectDocument? lastValidSource;
     private bool loading;
+    private string activePivotPanel = "masks";
+    private readonly Dictionary<string, string> pivotEditingPanels = new(StringComparer.Ordinal);
     private Guid? fieldLayerId;
     private Guid? fieldNodeId;
     internal MaskNumericField[] Fields { get; private set; } = [];
@@ -99,6 +101,8 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         var nodeId = session.SceneEditing.MaskNodeId;
         if (!force && Fields.Any(field => field.IsDirty) && fieldLayerId == layer?.Id && fieldNodeId == nodeId)
         {
+            session.ViewModel.Masks.Refresh();
+            session.ViewModel.Effects.RefreshMaskPropertyGrid();
             return;
         }
         loading = true;
@@ -127,15 +131,9 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
             var mask = layer is null ? null : SceneEvaluator.EvaluateMask(layer, session.AnimationTarget?.LocalTime ?? new(0));
             if (mask is not null)
             {
-                foreach (var field in Fields)
+                foreach (var field in Fields.Where(field => field.Target is null))
                 {
-                    var value = field.Target is { } target ? ClipMaskAnimation.GetBaseValue(mask, target).GetComponent(field.Component) :
-                        field.Component == 0 ? mask.Transform.Pivot.X : mask.Transform.Pivot.Y;
-                    field.Original = value;
-                    if (field.Target is null)
-                    {
-                        field.Draft.Load(value);
-                    }
+                    field.LoadPivot(field.Component == 0 ? mask.Transform.Pivot.X : mask.Transform.Pivot.Y);
                 }
             }
             draftSource = null;
@@ -169,13 +167,17 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         yield return new("MaskPivotY", "Workbench.MaskPivotY", null, 1, -1e9, 1e9);
     }
 
+    internal void BeginPivotEdit(string panelId) => activePivotPanel = panelId;
+
     private void OnFieldChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (loading || session.IsUpdating || e.PropertyName != nameof(AegiNext.Desktop.Editing.NumericValueDraft.RawText))
         {
             return;
         }
-        session.NotifyTaskInputChanged();
+        var changedField = Fields.First(field => ReferenceEquals(field.Draft, sender));
+        pivotEditingPanels[changedField.Key] = activePivotPanel;
+        session.NotifyEffectPropertyDraftChanged();
         draftSource ??= session.DocumentSnapshot;
         draftTarget ??= session.AnimationTarget;
         session.SceneEditing.DraftTarget ??= draftTarget;
@@ -213,7 +215,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         var number = field.Draft.Parse();
         if (number is null || number < field.Minimum || number > field.Maximum)
         {
-            session.ViewModel.InvalidPanelId = "masks";
+            session.ViewModel.InvalidPanelId = pivotEditingPanels.GetValueOrDefault(field.Key, "masks");
             session.ViewModel.InvalidFieldKey = field.Key;
             throw new InvalidDataException(field.Label);
         }
@@ -253,6 +255,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
 
     internal void AcceptDrafts()
     {
+        pivotEditingPanels.Clear();
         lastValidPreview = null;
         lastValidSource = null;
         draftSource = null;
@@ -284,6 +287,9 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         {
             loading = false;
         }
+        pivotEditingPanels.Remove(field.Key);
+        session.NotifyEffectPropertyDraftChanged();
+        session.ClearEffectPropertyDraftError(field.Key);
         session.RefreshMaskPreview();
     }
 

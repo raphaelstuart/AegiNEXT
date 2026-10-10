@@ -18,12 +18,13 @@ internal sealed partial class WorkbenchSession
             lastDraftDiagnostic = diagnostic;
             ShowError(error);
         }
-        if (ViewModel.InvalidPanelId == "effects")
+        var sharedPivot = ViewModel.InvalidFieldKey is "MaskPivotX" or "MaskPivotY";
+        if (ViewModel.InvalidPanelId == "effects" || sharedPivot)
         {
             ViewModel.Effects.InvalidFieldKey = ViewModel.InvalidFieldKey;
             ViewModel.Effects.ValidationError = error.Message;
         }
-        if (ViewModel.InvalidPanelId == "masks")
+        if (ViewModel.InvalidPanelId == "masks" || sharedPivot)
         {
             ViewModel.Masks.InvalidFieldKey = ViewModel.InvalidFieldKey;
             ViewModel.Masks.ValidationError = error.Message;

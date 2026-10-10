@@ -118,9 +118,9 @@
       </ContentControl>
       <StackPanel Name="MaskBezierData" Spacing="6" IsVisible="{Binding IsVectorMask}">
         <TextBlock Classes="field" Text="{Loc Key=Workbench.MaskContour}" />
-        <ComboBox Name="MaskContourCombo" ItemsSource="{Binding Contours}" SelectedItem="{Binding SelectedContour, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+        <ComboBox Name="MaskContourCombo" ItemsSource="{Binding Contours}" SelectedItem="{Binding SelectedContour, Mode=OneWay}" HorizontalAlignment="Stretch" />
         <TextBlock Classes="field" Text="{Loc Key=Workbench.MaskPoints}" />
-        <ListBox Name="MaskPointList" ItemsSource="{Binding Points}" SelectedItem="{Binding SelectedPoint, Mode=TwoWay}" MinHeight="72" MaxHeight="180">
+        <ListBox Name="MaskPointList" ItemsSource="{Binding Points}" SelectedItem="{Binding SelectedPoint, Mode=OneWay}" MinHeight="72" MaxHeight="180">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="masks:MaskPointListItem">
               <TextBlock Text="{Binding Label}" />

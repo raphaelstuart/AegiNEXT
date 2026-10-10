@@ -13,7 +13,7 @@ internal sealed partial class MaskPanelView
     {
         AddHandler(NumericDragLabel.DragStartedEvent, (_, args) =>
         {
-            GetSharedRow(args.Input)?.BeginEdit(PanelId);
+            BeginFieldEdit(args.Input);
             ++focusCommitRevision;
             suppressFocusCommit = true;
             numericDragSnapshot = new(session);

@@ -6,8 +6,11 @@
       <Grid>
         <controls:NumericDragLabel Text="{Binding #Row.Label}" Input="{Binding #ScalarInput}" IsVisible="{Binding #Row.IsScalar}"
             VerticalAlignment="Center" TextWrapping="Wrap" ToolTip.Tip="{Binding #Row.Label}" />
-        <Button Classes="animation-property-label" Content="{Binding #Row.Label}" Command="{Binding #Row.SelectCommand}"
-            IsVisible="{Binding !#Row.IsScalar}" HorizontalContentAlignment="Left" ToolTip.Tip="{Binding #Row.Label}" />
+        <Button Classes="animation-property-label" Command="{Binding #Row.SelectCommand}"
+            IsVisible="{Binding !#Row.IsScalar}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center"
+            ToolTip.Tip="{Binding #Row.Label}" AutomationProperties.Name="{Binding #Row.Label}">
+          <TextBlock Text="{Binding #Row.Label}" TextWrapping="Wrap" TextAlignment="Left" VerticalAlignment="Center" />
+        </Button>
       </Grid>
       <StackPanel Name="ValueEditor" Grid.Column="1" Spacing="3" VerticalAlignment="Center" ToolTip.Tip="{Binding #Row.EditingHint}">
         <controls:NumericDraftInput Name="ScalarInput" ToolTip.Tip="{Binding #Row.EditingHint}" IsVisible="{Binding #Row.IsScalar}" IsEnabled="{Binding #Row.CanEdit}"
