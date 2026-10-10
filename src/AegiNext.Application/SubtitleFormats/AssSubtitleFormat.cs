@@ -102,6 +102,11 @@ public static class AssSubtitleFormat
         var scaleX = (double)targetWidth / width;
         var scaleY = (double)targetHeight / height;
         var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
+        var colorMatrix = Get(info, "YCbCr Matrix", string.Empty).Trim().ToUpperInvariant();
+        if (colorMatrix is "TV.601" or "PC.601" or "TV.709" or "PC.709" or "TV.240M" or "PC.240M" or "TV.FCC" or "PC.FCC")
+        {
+            diagnostics.Add(new("Ass.YCbCrMatrix", $"ASS 的 YCbCr Matrix ({colorMatrix}) 色彩匹配信息未导入；项目保留 RGB 数值，源播放器若依据视频色彩空间进行匹配，颜色可能不同。"));
+        }
         var wrapStyle = AssFormatValues.Integer(Get(info, "WrapStyle", "0"));
         if (wrapStyle is < 0 or > 3)
         {
