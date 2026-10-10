@@ -33,6 +33,18 @@ Scene rendering adds basic multiline/wrapping and grapheme karaoke. Actual glyph
 
 The renderer keeps at most 256 layouts in an LRU cache and one latest animated layout per layer. Eviction releases owned text blobs without discarding font shapers; document changes and renderer disposal release all layout and font resources. Returned editing geometry snapshots do not borrow these native resources.
 
+## Text range property animation
+
+`AnimationTrackTarget` identifies a property, an optional text range ID, and a normal/active/inactive painting state. Mask nodes and text ranges are mutually exclusive. `SubtitleLine.AnimationRanges` stores grapheme-safe UTF-16 half-open ranges with local scale, Z rotation, and a pivot mode. Ranges may overlap: later ranges override the same painting property, and local matrices compose in saved order.
+
+Font size and letter spacing reshape and reflow text at each evaluated time. Fill, stroke, and shadow color/offset/blur apply after layout. Karaoke states share normal-state geometry: normal animations precede static karaoke appearance, state animations follow it, and outline-step inactive stroke hiding applies last.
+
+Local scale and rotation preserve layout occupancy. A range center uses the current untransformed layout, with one shared center across multiple lines; imported ASS ranges can use the subtitle anchor. Partial ligature selections retain the original shaping and transform only owned ink. Zero scale remains editable in the property panel, and singular matrices do not cause hit-test errors.
+
+`MeasureSubtitleTextLayout(document, evaluatedLayer)` includes transformed grapheme geometry. `GetLayerGeometry` reports visible bounds and provides `ContainsWorldPoint` for precise picking. Static subtitle editing retains the `SubtitleLine` overload. Typography changes invalidate layout; paint and local transform changes reuse shaping. Frame cache identity includes values for every complete animation target.
+
+Native color animation defaults to linear RGB interpolation. ASS-origin tracks can use `SRGB` interpolation while stored and evaluated colors remain linear; alpha is never encoded. Ordered operations retain source order and component masks for RGB, alpha, or shadow axes. Relative font size uses multiplication. Font-size operations must be provably valid throughout; conservative validation may reject combinations that rely on synchronized cancellation.
+
 ## Clip masks
 
 Render the complete subtitle and its own blur first, then clip in project coordinates before parent composition. Masks affect only their Clip. Subtitle/parent transforms do not transform the mask; the mask's own fixed-pivot transform does. Preserve contour direction/nonzero winding and inversion. Preview cache identity includes evaluated mask geometry.

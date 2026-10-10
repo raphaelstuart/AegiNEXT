@@ -46,6 +46,14 @@ The clip context menu clears all animation tracks from selected clips. Right-cli
 
 Valid numeric/color drafts preview immediately and commit on Enter or blur; invalid text remains editable. Esc restores the current field. A completed gesture or committed edit forms one undo operation.
 
+Numeric inputs use editable text without spinner buttons. Hold a numeric field's heading and drag horizontally to adjust its draft; vector fields use their X/Y headings. Release commits once. Esc, capture loss, or changing the editing target cancels the gesture and restores its original text. Invalid text does not start a drag. Collapsible property groups use the shared compact `PropertySection` control with subdued headings and a separator matching shortcut settings.
+
+The Effects panel uses collapsible property tables for clip, transform, typography, fill, stroke, shadow, composite, path, and animation categories, using existing workbench styles and draft controls. Presets stay at the bottom. Rows expose the current value, animation toggle, add-keyframe action, and reset action. Detailed keyframe editing remains in the panel; timing and curves use the main timeline.
+
+Select text in Subtitle Details, then create an animation range in Effects. The scope selector switches between the whole subtitle and text ranges; the state selector switches normal, active, and inactive appearance. Ranges can be deleted or reordered. Active/inactive states edit painting properties and share normal font-size, spacing, and transform geometry. Disabling animation clears only the complete target. Range identities follow text editing, splitting, and duplication.
+
+Category folding is a personal preference and creates no project undo entry. Folding or refreshing theme/language does not submit drafts. Invalid input keeps its raw text and opens its category when validation fails. Scope/state/property changes handle the current draft first; deferred commits retain the complete target that originally owned the draft.
+
 ## Save and recover
 
 Settings → Projects sets the workspace root, initially `Documents/AegiNext/Workspace`. Creating `Example` makes `Example/Example.aeginext` and `Example/backup/`; an existing target directory rejects creation.

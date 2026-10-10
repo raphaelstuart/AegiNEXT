@@ -28,6 +28,10 @@
 
 布局只管理空间，不拥有编辑器、Undo、播放或导出。当前布局和命名预设独立；持久化校验应用自有快照并原子写入，恢复浮窗时限制到可用显示器。关闭浮窗隐藏面板，关闭主窗口刷新布局并等待会话结束。
 
+可折叠属性分类统一使用 `Controls/Common/PropertySection`。`WorkbenchTheme.axaml` 中的类型主题提供 28 DIP 紧凑标题、透明底色、弱化文字和与快捷键设置一致的分隔线。消费者提供 Header、Content 和 IsExpanded；控件不保存折叠偏好，不提交编辑。
+
+数值字段使用无箭头的 `NumericDraftInput`，并为 `NumericDragLabel.Input` 绑定该字段；`VectorDraftInput` 内部提供 X／Y 拖动标题。DragStarted／DragCompleted／DragCanceled 向上冒泡，携带输入身份及原始／最终原文。IsTitleDragging 期间，消费者抑制失焦和即时数值提交；开始时冻结完整业务目标、源快照和时间，完成时提交一次，替换草稿或全局提交前取消尚未完成的手势。个人预设编辑继续使用原来的保存／应用事务边界。无效原文不能启动拖动，取消恢复完全相同的原始文本。
+
 字体字段共用 `FontFamilyPicker`：当前家族置顶，多变种使用二级菜单，单变种直接提交。菜单匹配忽略可选 PostScript 元数据，提交仍携带完整字体身份。弹窗输入通过视觉祖先和逻辑祖先归属业务面板。
 
 宿主从共享字体服务注入 `IFontNamePreviewProvider`。`Controls/Media/FontNamePreviewPresenter` 只请求可见名称并拥有位图；离开界面树时取消自身等待并拒绝过期结果。Rendering 打开真实字体 face 或可变字体命名实例，返回与主题无关的 Alpha8 蒙版。`DesktopApplicationContext` 拥有 `PreferencesStore.DirectoryPath/caches/fonts/v1` 中的有界缓存，缓存键包含字体内容及实例、名称、字号与 DPI；控件不访问磁盘或自行创建缓存。

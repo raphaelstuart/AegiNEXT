@@ -11,7 +11,7 @@
 
 ```sh
 dotnet test Tests/AegiNext.Rendering.Tests/AegiNext.Rendering.Tests.csproj -c Release \
-  --filter 'FullyQualifiedName~AssLibassReferenceTests'
+  --filter 'FullyQualifiedName~AssLibassReferenceTests|FullyQualifiedName~AssContinuousAnimationReferenceTests'
 ```
 
 ## 指标与实际限制
@@ -26,4 +26,6 @@ dotnet test Tests/AegiNext.Rendering.Tests/AegiNext.Rendering.Tests.csproj -c Re
 
 原始 libass 帧还确认 `t(-500,-500,...)` 是瞬变，与直接样式完全相同；`t(0,0,...)` 按整段事件时长插值，不能表达零时刻瞬变。
 
-当前 16 个用例应分别解读为：1 个运行时/字体检查、7 个计时、颜色和 alpha 指标对照、5 个明确报告的外观差异特征测试、3 个外部语义和诊断负对照。没有声称 16 个用例全部证明无损。
+当前 19 个用例已在 libass 0.17.5 上实际运行且无跳过：原有 16 项包括 1 个运行时/字体检查、7 个计时、颜色和 alpha 指标对照、5 个明确报告的外观差异特征测试、3 个外部语义和诊断负对照。新增 1 项连续 RGB／分通道 alpha 的中间时刻及导出对照，RGB 按 sRGB 编码空间比较；新增 2 项绝对／相对字号动画的墨迹增长对照。
+
+字号测试以各自零时刻墨迹尺寸归一后比较增长，容许 3 px 栅格差异。固定字体下 Skia 与 FreeType 的字号度量基线仍不同，因此这两项证明的是连续动画的相对增长，不能解释为绝对字号或逐像素等价。所有用例也没有证明每一种 ASS 组合都无损。
