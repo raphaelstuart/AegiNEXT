@@ -34,6 +34,19 @@ public static partial class ProjectEditingOperations
             return document;
         }
 
+        return GenerateSubtitleKaraokeClips(document, subtitleId);
+    }
+
+    /// <summary>按整句可见时长明确生成逐字计时，替换该句全部启用与停用的计时组，保留独立视觉范围。</summary>
+    public static ProjectDocument GenerateSubtitleKaraokeClips(ProjectDocument document, Guid subtitleId)
+    {
+        ProjectValidator.Validate(document);
+        var index = SubtitleIndex(document, subtitleId);
+        var line = document.Subtitles[index];
+        if (line.Text.Length == 0)
+        {
+            return document;
+        }
         var boundaries = StringInfo.ParseCombiningCharacters(line.Text).Append(line.Text.Length).ToArray();
         var count = boundaries.Length - 1;
         var offset = SubtitleLayer(document.Layers, subtitleId).AnimationOffset;
@@ -41,15 +54,15 @@ public static partial class ProjectEditingOperations
         var clips = ImmutableArray.CreateBuilder<KaraokeSegment>(count);
         for (var cursor = 0; cursor < count; cursor++)
         {
-            var start = offset + duration * cursor / count;
-            var end = offset + duration * (cursor + 1) / count;
+            var start = KaraokeTimingMath.Interpolate(offset, offset + duration, cursor, count);
+            var end = KaraokeTimingMath.Interpolate(offset, offset + duration, cursor + 1, count);
             if (end <= MediaTime.Zero)
             {
                 continue;
             }
             clips.Add(new(boundaries[cursor], boundaries[cursor + 1] - boundaries[cursor],
-                start < MediaTime.Zero ? MediaTime.Zero : start, end, new(1, 0.6, 0)));
+                start < MediaTime.Zero ? MediaTime.Zero : start, end, KaraokeVisualStyleResolver.DefaultHighlightColor));
         }
-        return WithSubtitleContent(document, index, line with { Karaoke = clips.ToImmutable() });
+        return WithSubtitleContent(document, index, line with { Karaoke = clips.ToImmutable(), InactiveKaraoke = [] });
     }
 }

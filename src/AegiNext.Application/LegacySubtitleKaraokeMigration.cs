@@ -1,15 +1,12 @@
 using System.Collections.Immutable;
-using System.Numerics;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 
 namespace AegiNext.Application;
 
-/// <summary>将启用与禁用的多字高亮片段规范为逐完整 Unicode 字素片段，不裁剪内容时间或修改源快照。</summary>
-public static class SubtitleKaraokeNormalization
+internal static class LegacySubtitleKaraokeMigration
 {
-    /// <summary>逐字素等分启用与禁用片段的精确时间；首字保留原标识，未改变的数组及已规范行保留原身份。</summary>
-    public static SubtitleLine Normalize(SubtitleLine line)
+    internal static SubtitleLine Upgrade(SubtitleLine line)
     {
         ArgumentNullException.ThrowIfNull(line);
         if (line.Karaoke.IsDefaultOrEmpty && line.InactiveKaraoke.IsDefaultOrEmpty)
@@ -64,7 +61,7 @@ public static class SubtitleKaraokeNormalization
             var start = clip.Start;
             for (var glyph = 0; glyph < count; glyph++)
             {
-                var end = Interpolate(clip.Start, clip.End, glyph + 1, count);
+                var end = KaraokeTimingMath.Interpolate(clip.Start, clip.End, glyph + 1, count);
                 changed.Add(clip with
                 {
                     Id = glyph == 0 ? clip.Id : NewId(ids),
@@ -80,8 +77,7 @@ public static class SubtitleKaraokeNormalization
         return changed is null ? segments : changed.ToImmutable();
     }
 
-    /// <summary>验证工程并只替换包含旧多字片段的字幕行；图层、裁剪范围及已规范行保留原身份。</summary>
-    public static ProjectDocument Normalize(ProjectDocument document)
+    internal static ProjectDocument Upgrade(ProjectDocument document)
     {
         ProjectValidator.Validate(document);
         ImmutableArray<SubtitleLine>.Builder? changed = null;
@@ -96,19 +92,6 @@ public static class SubtitleKaraokeNormalization
             }
         }
         return changed is null ? document : document with { Subtitles = changed.ToImmutable() };
-    }
-
-    private static MediaTime Interpolate(MediaTime start, MediaTime end, int index, int count)
-    {
-        if (index == count)
-        {
-            return end;
-        }
-        var numerator = (BigInteger)start.Numerator * (count - index) * end.Denominator +
-            (BigInteger)end.Numerator * index * start.Denominator;
-        var denominator = (BigInteger)start.Denominator * end.Denominator * count;
-        var divisor = BigInteger.GreatestCommonDivisor(numerator, denominator);
-        return new(checked((long)(numerator / divisor)), checked((long)(denominator / divisor)));
     }
 
     private static Guid NewId(HashSet<Guid> ids)

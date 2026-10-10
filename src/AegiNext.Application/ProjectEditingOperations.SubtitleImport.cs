@@ -35,7 +35,7 @@ public static partial class ProjectEditingOperations
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ProjectValidator.ValidateText(name);
         var imported = lines.Cast<SubtitleLine?>().Take(100001)
-            .Select(line => SubtitleKaraokeNormalization.Normalize(line ?? throw new InvalidDataException("导入字幕不能为 null。"))).ToArray();
+            .Select(line => line ?? throw new InvalidDataException("导入字幕不能为 null。")).ToArray();
         if (imported.Length == 0)
         {
             return document;

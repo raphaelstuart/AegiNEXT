@@ -17,11 +17,11 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         var details = context.Session.Details;
         Assert.True(details.SetStyleSelection(0, 1));
         details.HighlightDraft.StrokeWidthText = "7.25";
-        Assert.Equal(7.25, details.Line!.Karaoke[0].ActiveStyle!.StrokeWidth);
-        Assert.Null(details.Line.Karaoke[1].ActiveStyle);
+        Assert.Equal(7.25, ActiveStyleAt(details.Line!, 0)!.StrokeWidth);
+        Assert.Null(ActiveStyleAt(details.Line!, 1));
         Assert.Same(original, context.Editor.Snapshot);
         details.HighlightDraft.StrokeWidthText = "-";
-        Assert.Equal(7.25, details.Line!.Karaoke[0].ActiveStyle!.StrokeWidth);
+        Assert.Equal(7.25, ActiveStyleAt(details.Line!, 0)!.StrokeWidth);
         Assert.False(details.SetStyleSelection(1, 1));
         Assert.Equal("-", details.HighlightDraft.StrokeWidthText);
         Assert.True(details.CompleteInput(nameof(SubtitleKaraokeStyleDraft.StrokeWidthText), true));
@@ -42,7 +42,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         details.ApplyHighlightStyle(preset);
         var selected = context.Editor.Snapshot.Subtitles[0];
         Assert.Null(selected.KaraokeStyle);
-        Assert.Equal(new SceneColor(1, 0, 0), selected.Karaoke[0].ActiveStyle!.Fill);
+        Assert.Equal(new SceneColor(1, 0, 0), ActiveStyleAt(selected, 0)!.Fill);
         Assert.Same(line.Karaoke[1], selected.Karaoke[1]);
         Assert.True(details.SetStyleSelection(0, 0));
         details.ApplyHighlightStyle(preset with { Fill = new(0, 1, 0) });
@@ -51,7 +51,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         Assert.Equal(selected.Karaoke, changed.Karaoke);
         Assert.True(details.SetStyleSelection(0, 1));
         details.ApplyHighlightStyle(null);
-        Assert.Null(context.Editor.Snapshot.Subtitles[0].Karaoke[0].ActiveStyle);
+        Assert.Null(ActiveStyleAt(context.Editor.Snapshot.Subtitles[0], 0));
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         Assert.Equal(originalBlur, details.HighlightDraft.ShadowBlurText);
         Assert.Same(original, context.Editor.Snapshot);
         Assert.True(details.TryCommit());
-        Assert.Equal(3.25, context.Editor.Snapshot.Subtitles[0].Karaoke[0].ActiveStyle!.StrokeWidth);
+        Assert.Equal(3.25, ActiveStyleAt(context.Editor.Snapshot.Subtitles[0], 0)!.StrokeWidth);
     }
 
     [Fact]
@@ -165,8 +165,8 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         details.HighlightDraft.StrokeWidthText = "7";
         Assert.True(details.CompleteInput(nameof(SubtitleKaraokeStyleDraft.StrokeWidthText), true));
         Assert.Equal("AB", context.Editor.Snapshot.Subtitles[0].Text);
-        Assert.Equal(7, context.Editor.Snapshot.Subtitles[0].Karaoke[0].ActiveStyle!.StrokeWidth);
-        Assert.Null(context.Editor.Snapshot.Subtitles[0].Karaoke[1].ActiveStyle);
+        Assert.Equal(7, ActiveStyleAt(context.Editor.Snapshot.Subtitles[0], 0)!.StrokeWidth);
+        Assert.Null(ActiveStyleAt(context.Editor.Snapshot.Subtitles[0], 1));
         Assert.Equal("AC", details.Line!.Text);
         Assert.True(details.CompleteInput("Text", false));
         Assert.Equal("AC", context.Editor.Snapshot.Subtitles[0].Text);
@@ -177,7 +177,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         Assert.True(context.Editor.Undo());
         Assert.Equal("AB", context.Editor.Snapshot.Subtitles[0].Text);
         Assert.True(context.Editor.Undo());
-        Assert.Null(context.Editor.Snapshot.Subtitles[0].Karaoke[0].ActiveStyle);
+        Assert.Null(ActiveStyleAt(context.Editor.Snapshot.Subtitles[0], 0));
         Assert.True(context.Editor.Undo());
         Assert.Same(original, context.Editor.Snapshot);
     }
@@ -207,7 +207,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
     }
 
     [Fact]
-    public async Task HighlightReadsTheEffectiveVisualOnlyAndDetectsUntimedSelections()
+    public async Task HighlightReadsTheEffectiveVisualAndStylesUntimedSelectionsWithoutCreatingTiming()
     {
         var document = Document();
         var highlight = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "Orange", new()
@@ -219,8 +219,7 @@ public sealed class SubtitleDetailsHighlightSelectionTests
             Text = "ABX", KaraokeStyle = highlight,
             InlineSpans = [new(0, 1, new() { FontSize = 60, Fill = new(0, 1, 0), ShadowOffset = new(-7, 8) }),
                 new(1, 1, new() { FontSize = 12, ShadowOffset = new(10, 11) })],
-            Karaoke = [document.Subtitles[0].Karaoke[0] with { ActiveStyle = new() { StrokeWidth = 9 } },
-                document.Subtitles[0].Karaoke[1]]
+            KaraokeStyleSpans = [new(0, 1, new() { StrokeWidth = 9 })]
         };
         document = document with { Subtitles = [line] };
         await using var context = new WorkspaceSessionTestContext(document);
@@ -235,13 +234,16 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         Assert.Equal(highlight.ShadowOffset, details.HighlightStyle().ShadowOffset);
         details.HighlightDraft.ShadowXText = "40";
         Assert.True(details.TryCommit());
-        Assert.Equal(new ScenePoint(40, 30), context.Editor.Snapshot.Subtitles[0].Karaoke[0].ActiveStyle!.ShadowOffset);
+        Assert.Equal(new ScenePoint(40, 30), ActiveStyleAt(context.Editor.Snapshot.Subtitles[0], 0)!.ShadowOffset);
         Assert.Equal(line.InlineSpans, context.Editor.Snapshot.Subtitles[0].InlineSpans);
         Assert.True(details.SetStyleSelection(2, 1));
         Assert.False(details.SelectionHasTimedKaraoke);
         var applied = context.Editor.Snapshot;
         details.ApplyHighlightStyle(highlight);
-        Assert.Same(applied, context.Editor.Snapshot);
+        var untimed = context.Editor.Snapshot.Subtitles[0];
+        Assert.Equal(highlight.Fill, ActiveStyleAt(untimed, 2)!.Fill);
+        Assert.Equal(applied.Subtitles[0].Karaoke, untimed.Karaoke);
+        Assert.Equal(applied.Subtitles[0].InlineSpans, untimed.InlineSpans);
         Assert.True(details.SetStyleSelection(0, 0));
         Assert.True(details.SelectionHasTimedKaraoke);
         Assert.Equal(highlight, details.HighlightStyle());
@@ -295,6 +297,11 @@ public sealed class SubtitleDetailsHighlightSelectionTests
         context.Session.SelectCue(second.Id);
         Assert.Equal(second.Id, context.Session.SelectedCueId);
         Assert.Same(document, context.Editor.Snapshot);
+    }
+
+    private static KaraokeVisualStyleOverride? ActiveStyleAt(SubtitleLine line, int utf16Offset)
+    {
+        return KaraokeVisualStyleResolver.StyleAt(line.KaraokeStyleSpans, utf16Offset, KaraokeVisualState.ACTIVE);
     }
 
     private static ProjectDocument Document()

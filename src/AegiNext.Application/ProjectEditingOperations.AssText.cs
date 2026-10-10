@@ -27,7 +27,7 @@ public static partial class ProjectEditingOperations
             Mask = edited.Mask,
             Tracks = previous.Tracks.Where(track => !AnimationPropertyMetadata.IsMaskProperty(track.Property)).ToImmutableArray().AddRange(edited.MaskTracks)
         };
-        var line = SubtitleKaraokeNormalization.Normalize(edited.Line);
+        var line = edited.Line;
         if (line == document.Subtitles[index] && previous.Mask == next.Mask && previous.Tracks.SequenceEqual(next.Tracks))
         {
             return document;

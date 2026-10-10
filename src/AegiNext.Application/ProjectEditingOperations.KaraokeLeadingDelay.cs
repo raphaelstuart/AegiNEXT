@@ -11,17 +11,13 @@ public static partial class ProjectEditingOperations
         MediaTime delay, MediaTime animationOffset)
     {
         ProjectValidator.Validate(document);
-        if (delay < MediaTime.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(delay), "句前留白不能为负。");
-        }
         var index = SubtitleIndex(document, subtitleId);
         var line = document.Subtitles[index];
         if (line.Karaoke.IsEmpty)
         {
             return document;
         }
-        var change = animationOffset + delay - line.Karaoke[0].Start;
+        var change = animationOffset + delay - line.Karaoke.Min(clip => clip.Start);
         if (change == MediaTime.Zero)
         {
             return document;
@@ -31,9 +27,9 @@ public static partial class ProjectEditingOperations
             Start = clip.Start + change,
             End = clip.End + change
         }).ToImmutableArray();
-        if (clips.Any(clip => clip.Start < animationOffset || clip.Start < MediaTime.Zero))
+        if (clips.Any(clip => clip.Start < MediaTime.Zero))
         {
-            throw new ArgumentOutOfRangeException(nameof(delay), "字时间不能早于字幕当前可见起点。");
+            throw new ArgumentOutOfRangeException(nameof(delay), "字时间不能早于内容时间原点。");
         }
         return Verified(document with { Subtitles = document.Subtitles.SetItem(index, line with { Karaoke = clips }) });
     }

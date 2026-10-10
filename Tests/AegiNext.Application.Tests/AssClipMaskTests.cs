@@ -278,12 +278,12 @@ public sealed class AssClipMaskTests
         Assert.Contains("\\kt-50", written.Text, StringComparison.Ordinal);
         var reread = AssSubtitleFormat.Parse(written.Text);
         var clip = reread.Clips[2];
-        var normalized = SubtitleKaraokeNormalization.Normalize(line);
         Assert.Equal(new MediaTime(1, 2), clip.ContentOffset);
-        Assert.Equal(normalized.Karaoke.Select(segment => (segment.Utf16Start, segment.Utf16Length, segment.Start, segment.End, segment.HighlightKind)),
+        Assert.Equal(line.Karaoke.Select(segment => (segment.Utf16Start, segment.Utf16Length, segment.Start, segment.End, segment.HighlightKind)),
             clip.Line.Karaoke.Select(segment => (segment.Utf16Start, segment.Utf16Length, segment.Start, segment.End, segment.HighlightKind)));
-        Assert.Equal(clip.ContentOffset, clip.Line.Karaoke[0].End);
-        Assert.Equal(clip.ContentOffset, clip.Line.Karaoke[1].Start);
+        var group = Assert.Single(clip.Line.Karaoke);
+        Assert.Equal(MediaTime.Zero, group.Start);
+        Assert.Equal(new MediaTime(1), group.End);
         Assert.Contains(clip.Line.InlineSpans, span => span.Utf16Start == 1 && span.Style.Bold == true);
     }
 

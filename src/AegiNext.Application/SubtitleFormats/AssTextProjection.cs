@@ -36,7 +36,7 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
         var projection = Create(original, contentOrigin, canvasWidth, canvasHeight, layer);
         if (source == projection.Source)
         {
-            return new(SubtitleKaraokeNormalization.Normalize(original), [], projection.SourceMap)
+            return new(original, [], projection.SourceMap)
             { Mask = layer?.Mask, MaskTracks = MaskTracks(layer) };
         }
         var baselineResult = Parser(original, canvasWidth, canvasHeight).Parse(projection.Source);
@@ -53,15 +53,15 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
         };
         line = line with { InlineSpans = RestorePrecision(original, baseline, line) };
         var previousIndices = MatchClipSources(projection.Source, baselineResult, source, parsed);
-        var clips = line.Karaoke.Select((clip, index) => RestoreClip(original, baseline, parsed.Line, clip, previousIndices[index])).ToImmutableArray();
+        var clips = line.Karaoke.Select((clip, index) => RestoreClip(original, baseline, clip, previousIndices[index])).ToImmutableArray();
         var inactiveKaraoke = RemapInactiveKaraoke(original, line.Text, clips);
         line = line with
         {
             Karaoke = original.Karaoke.SequenceEqual(clips) ? original.Karaoke : clips,
             InactiveKaraoke = original.InactiveKaraoke.SequenceEqual(inactiveKaraoke) ? original.InactiveKaraoke : inactiveKaraoke,
+            KaraokeStyleSpans = RestoreKaraokeStylePrecision(original, baseline, parsed.Line),
             KaraokeStyle = original.KaraokeStyle
         };
-        line = SubtitleKaraokeNormalization.Normalize(line);
         AssTextParser.ValidateLine(line);
         var unchangedMask = AssOverrideTags.MaskIdentity(projection.Source) == AssOverrideTags.MaskIdentity(source);
         var mask = unchangedMask ? layer?.Mask : PreserveMaskIdentity(layer?.Mask, parsed.Mask);
@@ -265,7 +265,7 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
         return indices;
     }
 
-    private static KaraokeSegment RestoreClip(SubtitleLine original, SubtitleLine baseline, SubtitleLine edited, KaraokeSegment clip, int previousIndex)
+    private static KaraokeSegment RestoreClip(SubtitleLine original, SubtitleLine baseline, KaraokeSegment clip, int previousIndex)
     {
         if (previousIndex < 0)
         {
@@ -273,24 +273,66 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
         }
         var previous = original.Karaoke[previousIndex];
         var serialized = baseline.Karaoke[previousIndex];
-        var previousStyle = StyleAt(original, previous.Utf16Start);
-        var serializedStyle = StyleAt(baseline, serialized.Utf16Start);
-        var nextStyle = StyleAt(edited, clip.Utf16Start);
         return clip with
         {
             Id = previous.Id,
             Start = clip.Start == serialized.Start ? previous.Start : clip.Start,
             End = clip.End == serialized.End ? previous.End : clip.End,
-            HighlightColor = RestoreColor(previous.HighlightColor, serialized.HighlightColor, clip.HighlightColor),
-            ActiveStyle = RestoreVisualOverride(previous.ActiveStyle,
-                KaraokeVisualStyleResolver.ResolveActive(previousStyle, original.KaraokeStyle, previous),
-                serialized.ActiveStyle?.ApplyTo(serializedStyle) ?? serializedStyle,
-                clip.ActiveStyle?.ApplyTo(nextStyle) ?? nextStyle),
-            InactiveStyle = RestoreVisualOverride(previous.InactiveStyle,
-                KaraokeVisualStyleResolver.ResolveInactive(previousStyle, previous),
-                serialized.InactiveStyle?.ApplyTo(serializedStyle) ?? serializedStyle,
-                clip.InactiveStyle?.ApplyTo(nextStyle) ?? nextStyle)
+            HighlightColor = previous.HighlightColor
         };
+    }
+
+    private static ImmutableArray<SubtitleKaraokeStyleSpan> RestoreKaraokeStylePrecision(SubtitleLine original,
+        SubtitleLine baseline, SubtitleLine edited)
+    {
+        var spans = ImmutableArray.CreateBuilder<SubtitleKaraokeStyleSpan>();
+        var boundaries = SubtitleTextEditMap.Boundaries(edited.Text);
+        var textMap = original.Text == edited.Text ? null : MapTextChange(original.Text, edited.Text);
+        for (var index = 0; index < boundaries.Length - 1; index++)
+        {
+            var offset = boundaries[index];
+            var oldOffset = textMap?.StyleSourceOffset(offset) ?? offset;
+            var previousActive = KaraokeVisualStyleResolver.StyleAt(original.KaraokeStyleSpans, oldOffset, KaraokeVisualState.ACTIVE);
+            var previousInactive = KaraokeVisualStyleResolver.StyleAt(original.KaraokeStyleSpans, oldOffset, KaraokeVisualState.INACTIVE);
+            var active = previousActive;
+            var inactive = previousInactive;
+            if (edited.Karaoke.Any(clip => clip.Utf16Start <= offset && offset < clip.Utf16Start + clip.Utf16Length))
+            {
+                active = RestoreVisualOverride(previousActive, VisualStyleAt(original, oldOffset, KaraokeVisualState.ACTIVE),
+                    VisualStyleAt(baseline, oldOffset, KaraokeVisualState.ACTIVE), VisualStyleAt(edited, offset, KaraokeVisualState.ACTIVE));
+                inactive = RestoreVisualOverride(previousInactive, VisualStyleAt(original, oldOffset, KaraokeVisualState.INACTIVE),
+                    VisualStyleAt(baseline, oldOffset, KaraokeVisualState.INACTIVE), VisualStyleAt(edited, offset, KaraokeVisualState.INACTIVE));
+            }
+            if (active is null && inactive is null)
+            {
+                continue;
+            }
+            var length = boundaries[index + 1] - offset;
+            if (spans.Count > 0 && spans[^1].Utf16Start + spans[^1].Utf16Length == offset &&
+                spans[^1].ActiveStyle == active && spans[^1].InactiveStyle == inactive)
+            {
+                spans[^1] = spans[^1] with { Utf16Length = spans[^1].Utf16Length + length };
+            }
+            else
+            {
+                spans.Add(new(offset, length, active, inactive));
+            }
+        }
+        return original.KaraokeStyleSpans.SequenceEqual(spans) ? original.KaraokeStyleSpans : spans.ToImmutable();
+    }
+
+    private static SubtitleStyle VisualStyleAt(SubtitleLine line, int offset, KaraokeVisualState state)
+    {
+        var ordinary = StyleAt(line, offset);
+        var rangeStyle = KaraokeVisualStyleResolver.StyleAt(line.KaraokeStyleSpans, offset, state);
+        var segment = line.Karaoke.FirstOrDefault(clip => clip.Utf16Start <= offset && offset < clip.Utf16Start + clip.Utf16Length);
+        if (segment is null)
+        {
+            return rangeStyle?.ApplyTo(ordinary) ?? ordinary;
+        }
+        return state == KaraokeVisualState.ACTIVE
+            ? KaraokeVisualStyleResolver.ResolveActive(ordinary, line.KaraokeStyle, segment, rangeStyle)
+            : KaraokeVisualStyleResolver.ResolveInactive(ordinary, segment, rangeStyle);
     }
 
     private static KaraokeVisualStyleOverride? RestoreVisualOverride(KaraokeVisualStyleOverride? previous,

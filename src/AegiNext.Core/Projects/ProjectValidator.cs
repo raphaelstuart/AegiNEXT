@@ -74,14 +74,15 @@ public static class ProjectValidator
             NotNull(line, "数据项不能为 null。");
             Require(line.Id != Guid.Empty && subtitles.TryAdd(line.Id, line), "字幕标识为空或重复。");
             Require(line.Start < line.End && line.Text is not null && !line.Karaoke.IsDefault &&
-                !line.InactiveKaraoke.IsDefault &&
+                !line.InactiveKaraoke.IsDefault && !line.KaraokeStyleSpans.IsDefault &&
                 !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
             ValidateText(line.Text);
             ValidateSubtitleStyleName(line.StyleName);
             Require(line.StylePresetId is null || line.StylePresetId != Guid.Empty, "字幕样式预设标识无效。");
             Require(line.ColorTagId is null || colorTagIds.Contains(line.ColorTagId.Value), "字幕引用不存在的颜色标记。");
             Style(line.Style, assets);
-            var boundaries = line.InlineSpans.IsEmpty && line.Karaoke.IsEmpty && line.InactiveKaraoke.IsEmpty
+            var boundaries = line.InlineSpans.IsEmpty && line.Karaoke.IsEmpty && line.InactiveKaraoke.IsEmpty &&
+                line.KaraokeStyleSpans.IsEmpty
                 ? null : new SubtitleTextBoundaries(line.Text);
             var previousEnd = 0;
             foreach (var span in line.InlineSpans)
@@ -148,7 +149,8 @@ public static class ProjectValidator
         ArgumentNullException.ThrowIfNull(line);
         Require(line.Text is not null, "字幕文字不能为 null。");
         ValidateText(line.Text);
-        var boundaries = line.Karaoke.IsDefaultOrEmpty && line.InactiveKaraoke.IsDefaultOrEmpty
+        var boundaries = line.Karaoke.IsDefaultOrEmpty && line.InactiveKaraoke.IsDefaultOrEmpty &&
+            line.KaraokeStyleSpans.IsDefaultOrEmpty
             ? null : new SubtitleTextBoundaries(line.Text);
         ValidateSubtitleKaraokeCore(line, boundaries);
     }
@@ -169,7 +171,28 @@ public static class ProjectValidator
 
     private static void ValidateSubtitleKaraokeCore(SubtitleLine line, SubtitleTextBoundaries? boundaries)
     {
-        Require(!line.Karaoke.IsDefault && !line.InactiveKaraoke.IsDefault, "卡拉 OK 数组无效。");
+        Require(!line.Karaoke.IsDefault && !line.InactiveKaraoke.IsDefault && !line.KaraokeStyleSpans.IsDefault,
+            "卡拉 OK 数组无效。");
+        var previousStyleEnd = 0;
+        foreach (var span in line.KaraokeStyleSpans)
+        {
+            NotNull(span, "数据项不能为 null。");
+            Require(span.Utf16Start >= previousStyleEnd && span.Utf16Length > 0 &&
+                (long)span.Utf16Start + span.Utf16Length <= line.Text.Length, "高亮样式文本区间重叠或越界。");
+            var end = checked(span.Utf16Start + span.Utf16Length);
+            Require(boundaries!.Contains(span.Utf16Start) && boundaries.Contains(end), "高亮样式不能拆开字素。");
+            Require(span.ActiveStyle is { HasOverrides: true } || span.InactiveStyle is { HasOverrides: true },
+                "高亮样式范围必须包含视觉覆盖。");
+            if (span.ActiveStyle is { } activeStyle)
+            {
+                ValidateSubtitleStyle(activeStyle.ApplyTo(line.Style));
+            }
+            if (span.InactiveStyle is { } inactiveStyle)
+            {
+                ValidateSubtitleStyle(inactiveStyle.ApplyTo(line.Style));
+            }
+            previousStyleEnd = end;
+        }
         if (line.KaraokeStyle is { } karaokeStyle)
         {
             Require(karaokeStyle.PresetId != Guid.Empty && karaokeStyle.PresetName is { Length: > 0 and <= 1024 },
@@ -223,14 +246,6 @@ public static class ProjectValidator
             Require(boundaries!.Contains(segment.Utf16Start) && boundaries.Contains(end), "卡拉 OK 不能拆开字素。");
             Require(segment.Start >= Timing.MediaTime.Zero && segment.Start < segment.End, "卡拉 OK 时间越界。");
             Color(segment.HighlightColor);
-            if (segment.InactiveStyle is { } inactive)
-            {
-                ValidateSubtitleStyle(inactive.ApplyTo(line.Style));
-            }
-            if (segment.ActiveStyle is { } active)
-            {
-                ValidateSubtitleStyle(active.ApplyTo(line.Style));
-            }
             previousEnd = end;
         }
     }

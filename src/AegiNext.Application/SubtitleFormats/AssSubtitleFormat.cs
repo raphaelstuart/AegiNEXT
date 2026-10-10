@@ -173,9 +173,9 @@ public static class AssSubtitleFormat
             var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth,
                 canvasHeight: targetHeight, wrapStyle: wrapStyle, blurScaleX: blurScaleX, blurScaleY: blurScaleY,
                 blurUsesPlayRes: blurUsesPlayRes).Parse(Required(fields, "Text"));
-            var normalized = SubtitleKaraokeNormalization.Normalize(parsed.Line);
-            lines.Add(normalized);
-            clips.Add(new(normalized, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks).AddRange(parsed.OpacityTracks).AddRange(parsed.NumericTracks), parsed.ContentOffset)
+            var importedLine = parsed.Line;
+            lines.Add(importedLine);
+            clips.Add(new(importedLine, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks).AddRange(parsed.OpacityTracks).AddRange(parsed.NumericTracks), parsed.ContentOffset)
             {
                 Transform = parsed.Transform
             });

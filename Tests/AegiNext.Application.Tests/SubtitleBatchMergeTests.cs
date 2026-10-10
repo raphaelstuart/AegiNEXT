@@ -26,8 +26,8 @@ public sealed class SubtitleBatchMergeTests
         var firstClips = cue.Karaoke.Where(segment => originalIds.Contains(segment.Id)).ToArray();
         Assert.Equal(highlightOffsets, firstClips.Select(segment => segment.Utf16Start));
         Assert.Equal(new[] { MediaTime.Zero, new MediaTime(3), new MediaTime(6) }, firstClips.Select(segment => segment.Start));
-        Assert.Equal(16, cue.Karaoke.Length);
-        Assert.All(cue.Karaoke, segment => Assert.Equal(1, segment.Utf16Length));
+        Assert.Equal(3, cue.Karaoke.Length);
+        Assert.Equal([5, 6, 5], cue.Karaoke.Select(segment => segment.Utf16Length));
         Assert.Equal(first.Id, Assert.Single(merged.Layers).SubtitleId);
         Assert.Equal(3, document.Subtitles.Length);
         Assert.Equal(3, document.Layers.Length);
@@ -71,13 +71,13 @@ public sealed class SubtitleBatchMergeTests
             Style = new() { FontSize = 30 + index },
             Karaoke = [new(0, text.Length, MediaTime.Zero, new(2), SceneColor.White)]
         }).ToImmutableArray();
-        return SubtitleKaraokeNormalization.Normalize(new ProjectDocument
+        return new ProjectDocument
         {
             Subtitles = lines,
             Layers = lines.Select(line => new ProjectLayer
             {
                 Id = line.Id, Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End
             }).ToImmutableArray()
-        });
+        };
     }
 }

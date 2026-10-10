@@ -46,8 +46,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         var line = document.Subtitles[0] with
         {
             InlineSpans = [new(0, 1, new() { FontFamily = "Noto Sans SC", FontSize = 27 })],
-            Karaoke = [document.Subtitles[0].Karaoke[0] with { ActiveStyle = new() { Fill = SceneColor.Black } },
-                document.Subtitles[0].Karaoke[1]]
+            KaraokeStyleSpans = [new(0, 1, new() { Fill = SceneColor.Black })]
         };
         document = document with { Subtitles = [line] };
         await using var context = new WorkspaceSessionTestContext(document);
@@ -66,7 +65,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         Assert.Equal(line.InlineSpans, changed.InlineSpans);
         Assert.Equal(line.Karaoke.Select(value => (value.Id, value.Start, value.End)),
             changed.Karaoke.Select(value => (value.Id, value.Start, value.End)));
-        Assert.Equal(line.Karaoke.Select(clip => clip.ActiveStyle), changed.Karaoke.Select(clip => clip.ActiveStyle));
+        Assert.Equal(line.KaraokeStyleSpans, changed.KaraokeStyleSpans);
         Assert.True(context.Editor.Undo());
         Assert.True(context.Editor.Undo());
         Assert.Same(document, context.Editor.Snapshot);
@@ -123,6 +122,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         Assert.Empty(disabledLine.Karaoke);
         Assert.Equal(line.Karaoke.ToArray(), disabledLine.InactiveKaraoke.ToArray());
         Assert.Equal(line.KaraokeStyle, disabledLine.KaraokeStyle);
+        Assert.Equal(line.KaraokeStyleSpans, disabledLine.KaraokeStyleSpans);
         Assert.Equal(line.Style, disabledLine.Style);
         Assert.Equal(line.InlineSpans, disabledLine.InlineSpans);
         Assert.Equal(line.Text, disabledLine.Text);
@@ -135,6 +135,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         Assert.Equal(line.Karaoke.ToArray(), restored.Subtitles[0].Karaoke.ToArray());
         Assert.Empty(restored.Subtitles[0].InactiveKaraoke);
         Assert.Equal(line.KaraokeStyle, restored.Subtitles[0].KaraokeStyle);
+        Assert.Equal(line.KaraokeStyleSpans, restored.Subtitles[0].KaraokeStyleSpans);
         Assert.Equal(line.Style, restored.Subtitles[0].Style);
         Assert.Equal(line.InlineSpans, restored.Subtitles[0].InlineSpans);
         details.SetKaraokeEnabled(true);
@@ -172,6 +173,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
             Assert.Empty(loaded.Subtitles[0].Karaoke);
             Assert.Equal(expected.Karaoke.ToArray(), loaded.Subtitles[0].InactiveKaraoke.ToArray());
             Assert.Equal(expected.KaraokeStyle, loaded.Subtitles[0].KaraokeStyle);
+            Assert.Equal(expected.KaraokeStyleSpans.ToArray(), loaded.Subtitles[0].KaraokeStyleSpans.ToArray());
         }
         await using var reopened = new WorkspaceSessionTestContext(loaded);
         await reopened.InitializeAsync();
@@ -185,6 +187,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         Assert.Equal(expected.Karaoke.ToArray(), restored.Subtitles[0].Karaoke.ToArray());
         Assert.Empty(restored.Subtitles[0].InactiveKaraoke);
         Assert.Equal(expected.KaraokeStyle, restored.Subtitles[0].KaraokeStyle);
+        Assert.Equal(expected.KaraokeStyleSpans.ToArray(), restored.Subtitles[0].KaraokeStyleSpans.ToArray());
         Assert.Equal(expected.InlineSpans.ToArray(), restored.Subtitles[0].InlineSpans.ToArray());
         Assert.Equal(expected.Style, restored.Subtitles[0].Style);
         Assert.True(reopened.Editor.Undo());
@@ -223,6 +226,12 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
             Utf16Length = boundaries[index + 1] - boundaries[index]
         }).ToArray();
         Assert.Equal(expected, editedLine.InactiveKaraoke.ToArray());
+        var expectedStyles = line.KaraokeStyleSpans.Select((span, index) => span with
+        {
+            Utf16Start = boundaries[index],
+            Utf16Length = boundaries[index + 1] - boundaries[index]
+        }).ToArray();
+        Assert.Equal(expectedStyles, editedLine.KaraokeStyleSpans.ToArray());
         Assert.Equal(line.InlineSpans[0] with { Utf16Start = boundaries[1] }, Assert.Single(editedLine.InlineSpans));
         Assert.Equal(line.KaraokeStyle, editedLine.KaraokeStyle);
         details.SetKaraokeEnabled(true);
@@ -232,6 +241,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         Assert.Empty(restored.Subtitles[0].InactiveKaraoke);
         Assert.Equal(editedLine.Text, restored.Subtitles[0].Text);
         Assert.Equal(editedLine.InlineSpans, restored.Subtitles[0].InlineSpans);
+        Assert.Equal(editedLine.KaraokeStyleSpans, restored.Subtitles[0].KaraokeStyleSpans);
         Assert.True(context.Editor.Undo());
         Assert.Same(edited, context.Editor.Snapshot);
         Assert.False(details.IsKaraokeEnabled);
@@ -288,28 +298,31 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
                 ShadowOffset = new(-1.123456789012345, 2.123456789012345),
                 ShadowBlur = 1.5123456789012345
             }),
+            KaraokeStyleSpans =
+            [
+                new(0, 1, new() { Fill = new(4.75, 0.25, 0.5, 0.7), StrokeWidth = 0 },
+                    new() { Fill = new(0.25, 0.5, 2.75), ShadowOffset = new(-2.5, 1.25) }),
+                new(1, 2, new() { Stroke = new(0.25, 3.75, 0.5), ShadowBlur = 2.125 },
+                    new() { Stroke = new(1.5, 0.25, 0.5), StrokeWidth = 1.125 }),
+                new(3, 5, new() { ShadowOffset = new(-3.125, 5.75), ShadowBlur = 1.625 },
+                    new() { ShadowColor = new(0.5, 0.25, 1.75, 0.4) })
+            ],
             Karaoke =
             [
                 new(0, 1, new(1, 7), new(5, 6), new(3.123456789012345, -0.1, 0.75, 0.6))
                 {
                     Id = Guid.Parse("5ff32a44-fc9d-4657-b4b2-724810ce3b0e"),
-                    HighlightKind = KaraokeHighlightKind.STEP,
-                    InactiveStyle = new() { Fill = new(0.25, 0.5, 2.75), ShadowOffset = new(-2.5, 1.25) },
-                    ActiveStyle = new() { Fill = new(4.75, 0.25, 0.5, 0.7), StrokeWidth = 0 }
+                    HighlightKind = KaraokeHighlightKind.STEP
                 },
                 new(1, 2, new(11, 12), new(17, 9), new(0.5, 2.123456789012345, 0.25))
                 {
                     Id = Guid.Parse("a877c0e1-4a67-41d9-83df-662861f11b91"),
-                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-                    InactiveStyle = new() { Stroke = new(1.5, 0.25, 0.5), StrokeWidth = 1.125 },
-                    ActiveStyle = new() { Stroke = new(0.25, 3.75, 0.5), ShadowBlur = 2.125 }
+                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
                 },
                 new(3, 5, new(19, 9), new(31, 11), new(0.25, 0.5, 4.123456789012345))
                 {
                     Id = Guid.Parse("d9fd843a-6f9e-47de-a9e1-47db3bd6a3ec"),
-                    HighlightKind = KaraokeHighlightKind.SWEEP,
-                    InactiveStyle = new() { ShadowColor = new(0.5, 0.25, 1.75, 0.4) },
-                    ActiveStyle = new() { ShadowOffset = new(-3.125, 5.75), ShadowBlur = 1.625 }
+                    HighlightKind = KaraokeHighlightKind.SWEEP
                 }
             ]
         };

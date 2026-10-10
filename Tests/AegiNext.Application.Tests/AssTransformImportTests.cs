@@ -209,7 +209,7 @@ public sealed class AssTransformImportTests
         var local = result.Line.InlineSpans[^1].Style;
         Assert.Equal(3, local.StrokeWidth);
         AssertPoint(new(-2, 4), local.ShadowOffset!.Value);
-        var active = result.Line.Karaoke[0].ActiveStyle!;
+        var active = result.Line.KaraokeStyleSpans[0].ActiveStyle!;
         Assert.Equal(5, active.StrokeWidth);
         AssertPoint(new(-3, 6), active.ShadowOffset!.Value);
     }

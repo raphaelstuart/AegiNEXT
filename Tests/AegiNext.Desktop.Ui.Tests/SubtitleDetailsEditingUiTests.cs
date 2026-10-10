@@ -234,12 +234,12 @@ public sealed class SubtitleDetailsEditingUiTests
         rich.Focus();
         Flush(host);
         var highlight = context.Session.Editor.Snapshot.Subtitles[0];
-        Assert.Equal(4.25, Assert.IsType<KaraokeVisualStyleOverride>(highlight.Karaoke[0].ActiveStyle).StrokeWidth);
+        Assert.Equal(4.25, Assert.IsType<KaraokeVisualStyleOverride>(KaraokeVisualStyleResolver.StyleAt(highlight.KaraokeStyleSpans, 0, KaraokeVisualState.ACTIVE)).StrokeWidth);
         Assert.Equal(body.KaraokeStyle, highlight.KaraokeStyle);
         Assert.Equal(body.Style, highlight.Style);
         Assert.Equal(body.InlineSpans, highlight.InlineSpans);
-        Assert.Equal(body.Karaoke[0] with { ActiveStyle = highlight.Karaoke[0].ActiveStyle }, highlight.Karaoke[0]);
-        Assert.Equal(body.Karaoke[1], highlight.Karaoke[1]);
+        Assert.Equal(body.Karaoke, highlight.Karaoke);
+        Assert.Null(KaraokeVisualStyleResolver.StyleAt(highlight.KaraokeStyleSpans, 1, KaraokeVisualState.ACTIVE));
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(bodySnapshot, context.Session.Editor.Snapshot);
         Assert.True(context.Session.Editor.Undo());

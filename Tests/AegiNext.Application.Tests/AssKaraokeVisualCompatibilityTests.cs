@@ -14,7 +14,7 @@ public sealed class AssKaraokeVisualCompatibilityTests
             KaraokeStyle = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "highlight", new() { Fill = new(1, 0, 0), ShadowBlur = 0 })
         };
         var result = AssSubtitleFormat.Parse(AssSubtitleFormat.Write(Document(line)).Text);
-        Assert.Equal(new SceneColor(1, 0, 0), Assert.Single(result.Lines).Karaoke[0].ActiveStyle!.Fill);
+        Assert.Equal(new SceneColor(1, 0, 0), Assert.Single(result.Lines).KaraokeStyleSpans[0].ActiveStyle!.Fill);
     }
 
     [Theory]
@@ -30,12 +30,12 @@ public sealed class AssKaraokeVisualCompatibilityTests
         var parsed = AssSubtitleFormat.Parse(written.Text);
         Assert.DoesNotContain(parsed.Diagnostics, item => item.Code == "Ass.UnsupportedTag");
         var imported = Assert.Single(parsed.Lines);
-        var active = imported.Karaoke[0].ActiveStyle!;
+        var active = imported.KaraokeStyleSpans[0].ActiveStyle!;
         Assert.Equal(6, active.StrokeWidth);
         Assert.Equal(new SceneColor(0, 1, 0), active.Stroke);
         Assert.Equal(new ScenePoint(8, 9), active.ShadowOffset);
         Assert.Equal(new SceneColor(1, 0, 0), active.ShadowColor);
-        Assert.NotEqual(6, imported.Karaoke[1].ActiveStyle?.StrokeWidth);
+        Assert.NotEqual(6, KaraokeVisualStyleResolver.RangeStyleAt(imported, 1, KaraokeVisualState.ACTIVE)?.StrokeWidth);
     }
 
     [Fact]
@@ -68,7 +68,11 @@ public sealed class AssKaraokeVisualCompatibilityTests
     public void SweepReportsOnlyActualVisualDifferences(bool different)
     {
         var line = Line(KaraokeHighlightKind.SWEEP);
-        line = line with { Karaoke = [line.Karaoke[0] with { ActiveStyle = new() { StrokeWidth = different ? 6 : line.Style.StrokeWidth } }] };
+        line = line with
+        {
+            Karaoke = [line.Karaoke[0]],
+            KaraokeStyleSpans = [new(0, 1, new() { StrokeWidth = different ? 6 : line.Style.StrokeWidth })]
+        };
         var result = AssSubtitleFormat.Write(Document(line));
         Assert.Equal(different, result.Diagnostics.Any(item => item.Code == "Ass.KaraokeVisual"));
         Assert.Contains("\\kf50", result.Text, StringComparison.Ordinal);
@@ -92,17 +96,19 @@ public sealed class AssKaraokeVisualCompatibilityTests
         {
             Karaoke = [line.Karaoke[0] with
             {
-                Start = new(1, 7), End = new(6, 7), ActiveStyle = new() { Fill = preciseFill, StrokeWidth = 6 }, InactiveStyle = null
-            }]
+                Start = new(1, 7), End = new(6, 7)
+            }],
+            KaraokeStyleSpans = [new(0, 1, new() { Fill = preciseFill, StrokeWidth = 6 })]
         };
         var source = AssTextProjection.Create(line).Source.Replace("\\bord6)", "\\bord7)", StringComparison.Ordinal);
         var edited = AssTextProjection.Apply(line, source).Line;
         var clip = Assert.Single(edited.Karaoke);
-        Assert.Equal(7, clip.ActiveStyle!.StrokeWidth);
-        Assert.Equal(preciseFill, clip.ActiveStyle.Fill);
-        Assert.Null(clip.ActiveStyle.ShadowOffset);
-        Assert.Null(clip.ActiveStyle.Stroke);
-        Assert.Null(clip.InactiveStyle);
+        var style = Assert.Single(edited.KaraokeStyleSpans);
+        Assert.Equal(7, style.ActiveStyle!.StrokeWidth);
+        Assert.Equal(preciseFill, style.ActiveStyle.Fill);
+        Assert.Null(style.ActiveStyle.ShadowOffset);
+        Assert.Null(style.ActiveStyle.Stroke);
+        Assert.Null(style.InactiveStyle);
         Assert.Equal(line.Karaoke[0].Id, clip.Id);
         Assert.Equal(line.Karaoke[0].Start, clip.Start);
         Assert.Equal(line.Karaoke[0].End, clip.End);
@@ -126,11 +132,12 @@ public sealed class AssKaraokeVisualCompatibilityTests
         var line = Line(KaraokeHighlightKind.STEP);
         line = line with
         {
-            Karaoke = [line.Karaoke[0] with { ActiveStyle = new() { Fill = precise, ShadowOffset = new(8.123456789123, 9.123456789123) } }]
+            Karaoke = [line.Karaoke[0]],
+            KaraokeStyleSpans = [new(0, 1, new() { Fill = precise, ShadowOffset = new(8.123456789123, 9.123456789123) })]
         };
         var source = AssTextProjection.Create(line).Source.Replace("\\1a&H45&", "\\1a&H80&", StringComparison.Ordinal)
             .Replace("\\yshad9.123456789", "\\yshad10", StringComparison.Ordinal);
-        var active = AssTextProjection.Apply(line, source).Line.Karaoke[0].ActiveStyle!;
+        var active = AssTextProjection.Apply(line, source).Line.KaraokeStyleSpans[0].ActiveStyle!;
         Assert.Equal(precise.Red, active.Fill!.Value.Red);
         Assert.Equal(precise.Green, active.Fill.Value.Green);
         Assert.Equal(precise.Blue, active.Fill.Value.Blue);
@@ -163,12 +170,13 @@ public sealed class AssKaraokeVisualCompatibilityTests
         line = line with
         {
             Style = line.Style with { StrokeWidth = 2.123456789123, ShadowOffset = new(3.123456789123, 4.123456789123) },
-            Karaoke = [line.Karaoke[0] with { ActiveStyle = new() { StrokeWidth = 6 } }]
+            Karaoke = [line.Karaoke[0]],
+            KaraokeStyleSpans = [new(0, 1, new() { StrokeWidth = 6 })]
         };
         var projection = AssTextProjection.Create(line);
         var edited = AssTextProjection.Apply(line, projection.Source.Replace("\\b0", "\\b1", StringComparison.Ordinal)).Line;
-        Assert.Equal(line.Karaoke[0].ActiveStyle, edited.Karaoke[0].ActiveStyle);
-        Assert.Null(edited.Karaoke[0].InactiveStyle);
+        Assert.Equal(line.KaraokeStyleSpans[0].ActiveStyle, edited.KaraokeStyleSpans[0].ActiveStyle);
+        Assert.Null(edited.KaraokeStyleSpans[0].InactiveStyle);
     }
 
     private static SubtitleLine Line(KaraokeHighlightKind kind)
@@ -180,11 +188,11 @@ public sealed class AssKaraokeVisualCompatibilityTests
             [
                 new(0, 1, new(1, 4), new(3, 4), SceneColor.White)
                 {
-                    HighlightKind = kind,
-                    ActiveStyle = new() { Stroke = new(0, 1, 0), StrokeWidth = 6, ShadowOffset = new(8, 9), ShadowColor = new(1, 0, 0) }
+                    HighlightKind = kind
                 },
                 new(1, 1, new(1), new(3, 2), SceneColor.White) { HighlightKind = kind }
-            ]
+            ],
+            KaraokeStyleSpans = [new(0, 1, new() { Stroke = new(0, 1, 0), StrokeWidth = 6, ShadowOffset = new(8, 9), ShadowColor = new(1, 0, 0) })]
         };
     }
 

@@ -49,20 +49,65 @@ internal static class SubtitleContentSplitMerge
         return result.ToImmutable();
     }
 
-    internal static KaraokeVisualStyleOverride PreserveHighlight(SubtitleLine line, KaraokeSegment segment)
+    internal static ImmutableArray<SubtitleKaraokeStyleSpan> SplitKaraokeStyleSpans(
+        ImmutableArray<SubtitleKaraokeStyleSpan> spans, int offset, bool right)
     {
-        var style = line.KaraokeStyle;
-        var active = segment.ActiveStyle;
+        var result = ImmutableArray.CreateBuilder<SubtitleKaraokeStyleSpan>();
+        foreach (var span in spans)
+        {
+            var start = right ? Math.Max(offset, span.Utf16Start) : span.Utf16Start;
+            var end = right ? span.Utf16Start + span.Utf16Length : Math.Min(offset, span.Utf16Start + span.Utf16Length);
+            if (end > start)
+            {
+                SubtitleKaraokeStyleEditing.Append(result, span with
+                {
+                    Utf16Start = right ? start - offset : start, Utf16Length = end - start
+                });
+            }
+        }
+        return result.ToImmutable();
+    }
+
+    internal static ImmutableArray<SubtitleKaraokeStyleSpan> MergeKaraokeStyleSpans(SubtitleLine first,
+        SubtitleLine second, int offset, KaraokeHighlightStyle? mergedHighlight)
+    {
+        var result = ImmutableArray.CreateBuilder<SubtitleKaraokeStyleSpan>();
+        AppendKaraokeStyles(result, first, 0, mergedHighlight);
+        AppendKaraokeStyles(result, second, offset, mergedHighlight);
+        return result.ToImmutable();
+    }
+
+    private static void AppendKaraokeStyles(ImmutableArray<SubtitleKaraokeStyleSpan>.Builder result,
+        SubtitleLine line, int offset, KaraokeHighlightStyle? mergedHighlight)
+    {
+        var boundaries = SubtitleTextEditMap.Boundaries(line.Text);
+        for (var index = 0; index < boundaries.Length - 1; index++)
+        {
+            var start = boundaries[index];
+            var ordinary = SubtitleKaraokeStyleEditing.OrdinaryAt(line, start);
+            var segment = SubtitleKaraokeStyleEditing.SegmentAt(line, start);
+            var originalDefault = KaraokeVisualStyleResolver.ResolveActive(ordinary, line.KaraokeStyle, segment);
+            var mergedDefault = KaraokeVisualStyleResolver.ResolveActive(ordinary, mergedHighlight, segment);
+            var inherited = VisualDifference(originalDefault, mergedDefault);
+            var active = KaraokeVisualStyleResolver.RangeStyleAt(line, start, KaraokeVisualState.ACTIVE);
+            active = active is null ? inherited : inherited.Merge(active);
+            SubtitleKaraokeStyleEditing.Append(result, new(offset + start, boundaries[index + 1] - start,
+                active, KaraokeVisualStyleResolver.RangeStyleAt(line, start, KaraokeVisualState.INACTIVE)));
+        }
+    }
+
+    private static KaraokeVisualStyleOverride VisualDifference(SubtitleStyle source, SubtitleStyle target)
+    {
         return new()
         {
-            Fill = active?.Fill ?? style?.Fill ?? segment.HighlightColor,
-            FillBlur = active?.FillBlur ?? style?.FillBlur,
-            Stroke = active?.Stroke ?? style?.Stroke,
-            StrokeBlur = active?.StrokeBlur ?? style?.StrokeBlur,
-            StrokeWidth = active?.StrokeWidth ?? style?.StrokeWidth,
-            ShadowOffset = active?.ShadowOffset ?? style?.ShadowOffset,
-            ShadowBlur = active?.ShadowBlur ?? style?.ShadowBlur,
-            ShadowColor = active?.ShadowColor ?? style?.ShadowColor
+            Fill = source.Fill != target.Fill ? source.Fill : null,
+            Stroke = source.Stroke != target.Stroke ? source.Stroke : null,
+            StrokeWidth = source.StrokeWidth != target.StrokeWidth ? source.StrokeWidth : null,
+            FillBlur = source.FillBlur != target.FillBlur ? source.FillBlur : null,
+            StrokeBlur = source.StrokeBlur != target.StrokeBlur ? source.StrokeBlur : null,
+            ShadowOffset = source.ShadowOffset != target.ShadowOffset ? source.ShadowOffset : null,
+            ShadowBlur = source.ShadowBlur != target.ShadowBlur ? source.ShadowBlur : null,
+            ShadowColor = source.ShadowColor != target.ShadowColor ? source.ShadowColor : null
         };
     }
 

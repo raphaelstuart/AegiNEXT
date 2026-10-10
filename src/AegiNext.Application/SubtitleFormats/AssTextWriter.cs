@@ -36,11 +36,18 @@ internal static class AssTextWriter
             boundaries.Add(segment.Utf16Start);
             boundaries.Add(segment.Utf16Start + segment.Utf16Length);
         }
+        foreach (var span in line.KaraokeStyleSpans)
+        {
+            boundaries.Add(span.Utf16Start);
+            boundaries.Add(span.Utf16Start + span.Utf16Length);
+        }
         var offsets = boundaries.ToArray();
         long time = 0;
         long clipStartCount = 0;
         SubtitleStyle? previous = null;
         KaraokeSegment? previousClip = null;
+        SubtitleStyle? previousInactive = null;
+        SubtitleStyle? previousActive = null;
         var spanIndex = 0;
         var clipIndex = 0;
         var visible = line.End - line.Start;
@@ -73,6 +80,15 @@ internal static class AssTextWriter
             {
                 throw new InvalidDataException("字幕范围内的厘秒不足以保留全部卡拉 OK 正时长，无法导出。");
             }
+            var nativeInactive = clip is null ? null : KaraokeVisualStyleResolver.ResolveInactive(style, clip,
+                KaraokeVisualStyleResolver.StyleAt(line.KaraokeStyleSpans, offset, KaraokeVisualState.INACTIVE));
+            var nativeActive = clip is null ? null : KaraokeVisualStyleResolver.ResolveActive(style, line.KaraokeStyle, clip,
+                KaraokeVisualStyleResolver.StyleAt(line.KaraokeStyleSpans, offset, KaraokeVisualState.ACTIVE));
+            var karaokeStyleChanged = nativeInactive != previousInactive || nativeActive != previousActive;
+            if (!projection && clip is not null && clip == previousClip && karaokeStyleChanged)
+            {
+                diagnostics.Add(new("Ass.KaraokeStyleRuns", "ASS 同一演唱组内的样式变化可能形成独立渲染片段；已保留完整组时间和各范围标签，播放器的激活或扫色时序可能不同。", SubtitleId: line.Id));
+            }
             var endCount = time;
             if (clip != previousClip)
             {
@@ -94,7 +110,7 @@ internal static class AssTextWriter
                     }
                 }
             }
-            if (styleChanged || clip != previousClip)
+            if (styleChanged || karaokeStyleChanged || clip != previousClip)
             {
                 CheckTagBoundary(result);
                 var outputStyle = conversion?.ConvertStyle(style) ?? style;
@@ -103,8 +119,8 @@ internal static class AssTextWriter
                 previous = style;
                 if (clip is not null)
                 {
-                    var inactive = KaraokeVisualStyleResolver.ResolveInactive(style, clip);
-                    var active = KaraokeVisualStyleResolver.ResolveActive(style, line.KaraokeStyle, clip);
+                    var inactive = nativeInactive!;
+                    var active = nativeActive!;
                     inactive = conversion?.ConvertStyle(inactive) ?? inactive;
                     active = conversion?.ConvertStyle(active) ?? active;
                     AddStyleDiagnostics(inactive, line.Id, diagnostics, projection);
@@ -167,6 +183,8 @@ internal static class AssTextWriter
                 }
                 previousClip = clip;
             }
+            previousInactive = nativeInactive;
+            previousActive = nativeActive;
             result.Append(Escape(line.Text[offset..offsets[index + 1]]));
             if (OutOfGamut(style.Fill) || OutOfGamut(style.Stroke) || OutOfGamut(style.ShadowColor))
             {

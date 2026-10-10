@@ -28,7 +28,7 @@ public sealed class KaraokeHighlightStyleEditingTests
         legacy["subtitles"]![0]!.AsObject().Remove("karaokeStyle");
         restored = ProjectStore.Deserialize(System.Text.Encoding.UTF8.GetBytes(legacy.ToJsonString()));
         Assert.Null(Assert.Single(restored.Subtitles).KaraokeStyle);
-        Assert.Equal(2, Assert.Single(restored.Subtitles).Karaoke.Length);
+        Assert.Single(Assert.Single(restored.Subtitles).Karaoke);
         Assert.Equal(applied.Subtitles[0].Karaoke.ToArray(), restored.Subtitles[0].Karaoke.ToArray());
     }
 
@@ -58,8 +58,8 @@ public sealed class KaraokeHighlightStyleEditingTests
         editor.UpdateSubtitle(second, line => line with { KaraokeStyle = style with { Fill = SceneColor.Black }, Karaoke = [new(0, 1, new(0), new(1), SceneColor.White)] });
         var mixed = ProjectEditingOperations.MergeSubtitles(editor.Snapshot, first, second);
         Assert.Null(Assert.Single(mixed.Subtitles).KaraokeStyle);
-        Assert.Equal(style.Fill, mixed.Subtitles[0].Karaoke[0].ActiveStyle!.Fill);
-        Assert.Equal(SceneColor.Black, mixed.Subtitles[0].Karaoke[1].ActiveStyle!.Fill);
+        Assert.Equal(style.Fill, KaraokeVisualStyleResolver.RangeStyleAt(mixed.Subtitles[0], 0, KaraokeVisualState.ACTIVE)!.Fill);
+        Assert.Equal(SceneColor.Black, KaraokeVisualStyleResolver.RangeStyleAt(mixed.Subtitles[0], 2, KaraokeVisualState.ACTIVE)!.Fill);
         editor.UpdateSubtitle(second, line => line with { KaraokeStyle = style with { PresetId = Guid.NewGuid(), PresetName = "Copy" } });
         var merged = ProjectEditingOperations.MergeSubtitles(editor.Snapshot, first, second);
         Assert.Equal(style, Assert.Single(merged.Subtitles).KaraokeStyle);
@@ -89,11 +89,11 @@ public sealed class KaraokeHighlightStyleEditingTests
         var ids = editor.Snapshot.Subtitles[0].Karaoke.Select(clip => clip.Id).ToArray();
         editor.SetSubtitleTiming(id, new(1), new(3), TimelineEditMode.CROP);
         Assert.Equal(style, Assert.Single(editor.Snapshot.Subtitles).KaraokeStyle);
-        Assert.Equal(new MediaTime(2), editor.Snapshot.Subtitles[0].Karaoke[0].End);
+        Assert.Equal(new MediaTime(4), editor.Snapshot.Subtitles[0].Karaoke[0].End);
         Assert.Equal(new MediaTime(4), editor.Snapshot.Subtitles[0].Karaoke[^1].End);
         editor.SetSubtitleTiming(id, new(1), new(5), TimelineEditMode.STRETCH);
         Assert.Equal(style, Assert.Single(editor.Snapshot.Subtitles).KaraokeStyle);
-        Assert.Equal(new MediaTime(4), editor.Snapshot.Subtitles[0].Karaoke[0].End);
+        Assert.Equal(new MediaTime(8), Assert.Single(editor.Snapshot.Subtitles[0].Karaoke).End);
         Assert.Equal(new MediaTime(8), editor.Snapshot.Subtitles[0].Karaoke[^1].End);
         Assert.Equal(ids, editor.Snapshot.Subtitles[0].Karaoke.Select(clip => clip.Id));
         ProjectValidator.Validate(ProjectStore.Deserialize(ProjectStore.Serialize(editor.Snapshot)));

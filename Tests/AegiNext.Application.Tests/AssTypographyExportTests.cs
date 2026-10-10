@@ -152,14 +152,14 @@ public sealed class AssTypographyExportTests
             Style = Line().Style with { FillBlur = sigma },
             Karaoke = [new(0, 1, new(1, 4), new(3, 4), SceneColor.White)
             {
-                HighlightKind = KaraokeHighlightKind.STEP,
-                ActiveStyle = new() { StrokeWidth = 2, FillBlur = 0, StrokeBlur = 3 * sigma }
-            }]
+                HighlightKind = KaraokeHighlightKind.STEP
+            }],
+            KaraokeStyleSpans = [new(0, 1, new() { StrokeWidth = 2, FillBlur = 0, StrokeBlur = 3 * sigma })]
         };
         var written = AssSubtitleFormat.Write(Document(line));
         Assert.Contains("\\t(250,250,\\bord2\\blur3)", Body(written.Text), StringComparison.Ordinal);
         var imported = Assert.Single(AssSubtitleFormat.Parse(written.Text, 640, 360).Lines);
-        var active = Assert.Single(imported.Karaoke).ActiveStyle!;
+        var active = Assert.Single(imported.KaraokeStyleSpans).ActiveStyle!;
         Assert.Equal(0, active.FillBlur);
         Assert.Equal(3 * sigma, active.StrokeBlur!.Value, 8);
         Assert.DoesNotContain(written.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeVisual");
@@ -174,8 +174,9 @@ public sealed class AssTypographyExportTests
             InlineSpans = [new(0, 1, new() { LetterSpacing = -20, FillBlur = 8 })],
             Karaoke = [new(0, 1, new(1, 4), new(3, 4), SceneColor.White)
             {
-                HighlightKind = KaraokeHighlightKind.STEP, ActiveStyle = new() { FillBlur = 3 * sigma }
-            }]
+                HighlightKind = KaraokeHighlightKind.STEP
+            }],
+            KaraokeStyleSpans = [new(0, 1, new() { FillBlur = 3 * sigma })]
         };
         var layer = Layer(line) with
         {

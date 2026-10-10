@@ -53,11 +53,14 @@ public sealed class ProjectEditingOperationsTests
     }
 
     [Fact]
-    public void SplitPartitionsCanonicalKaraokeWithoutChangingExistingGlyphTimesOrIds()
+    public void SplitPartitionsExplicitlyDividedKaraokeWithoutChangingTimesOrIds()
     {
         var editor = new ProjectEditor();
         var id = editor.AddSubtitle(new(0), new(4), "abcd");
         editor.UpdateSubtitle(id, line => line with { Karaoke = [new(0, 4, new(1), new(3), new(4, 1, 0))] });
+        var grouped = editor.Snapshot;
+        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.SplitSubtitle(grouped, id, new(2), 2));
+        editor.SplitKaraokeClipIntoGraphemes(id, editor.Snapshot.Subtitles[0].Karaoke[0].Id);
         var original = editor.Snapshot.Subtitles[0].Karaoke;
         var split = ProjectEditingOperations.SplitSubtitle(editor.Snapshot, id, new(2), 2);
         Assert.Equal(original.Take(2), split.Subtitles[0].Karaoke);
@@ -78,7 +81,7 @@ public sealed class ProjectEditingOperationsTests
         });
         var split = ProjectEditingOperations.SplitSubtitle(editor.Snapshot, id, new(7), 2);
         Assert.Equal(new MediaTime(2), split.Layers[1].AnimationOffset);
-        Assert.Equal(2, split.Subtitles[1].Karaoke.Length);
+        Assert.Single(split.Subtitles[1].Karaoke);
         Assert.Equal(0, split.Subtitles[1].Karaoke[0].Utf16Start);
         Assert.Equal(new MediaTime(2), split.Subtitles[1].Karaoke[0].Start);
     }

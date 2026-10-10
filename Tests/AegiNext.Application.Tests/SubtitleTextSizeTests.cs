@@ -6,14 +6,14 @@ namespace AegiNext.Application.Tests;
 public sealed class SubtitleTextSizeTests
 {
     [Fact]
-    public void PlainDocumentNormalizationDoesNotAllocatePerTextCharacter()
+    public void PlainDocumentValidationDoesNotAllocatePerTextCharacter()
     {
         var document = Document(new string('字', 1_048_577));
-        SubtitleKaraokeNormalization.Normalize(document);
-        SubtitleKaraokeNormalization.Normalize(document);
+        ProjectValidator.Validate(document);
+        ProjectValidator.Validate(document);
         var before = GC.GetAllocatedBytesForCurrentThread();
 
-        var normalized = SubtitleKaraokeNormalization.Normalize(document);
+        var normalized = new ProjectEditor(document).Snapshot;
 
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.Same(document, normalized);
@@ -21,17 +21,17 @@ public sealed class SubtitleTextSizeTests
     }
 
     [Fact]
-    public void PlainLineNormalizationStillValidatesUnicodeAndSavedHighlightStyle()
+    public void PlainLineValidationStillChecksUnicodeAndSavedHighlightStyle()
     {
         var line = new SubtitleLine { Text = new string('字', 1_000_001) };
 
-        Assert.Same(line, SubtitleKaraokeNormalization.Normalize(line));
-        Assert.Throws<InvalidDataException>(() => SubtitleKaraokeNormalization.Normalize(line with { Text = line.Text + "\uD800" }));
-        Assert.Throws<InvalidDataException>(() => SubtitleKaraokeNormalization.Normalize(line with
+        ProjectValidator.ValidateSubtitleKaraoke(line);
+        Assert.Throws<InvalidDataException>(() => ProjectValidator.ValidateSubtitleKaraoke(line with { Text = line.Text + "\uD800" }));
+        Assert.Throws<InvalidDataException>(() => ProjectValidator.ValidateSubtitleKaraoke(line with
         {
             KaraokeStyle = KaraokeHighlightStyle.FromStyle(Guid.Empty, "Saved", new())
         }));
-        Assert.Throws<InvalidDataException>(() => SubtitleKaraokeNormalization.Normalize(line with { InactiveKaraoke = default }));
+        Assert.Throws<InvalidDataException>(() => ProjectValidator.ValidateSubtitleKaraoke(line with { InactiveKaraoke = default }));
     }
 
     [Fact]

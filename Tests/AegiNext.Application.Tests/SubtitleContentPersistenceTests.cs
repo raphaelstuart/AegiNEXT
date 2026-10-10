@@ -52,8 +52,9 @@ public sealed class SubtitleContentPersistenceTests
         {
             Karaoke = [new(0, 1, new(0), new(1, 3), SceneColor.White)
             {
-                HighlightKind = KaraokeHighlightKind.OUTLINE_STEP, ActiveStyle = new() { StrokeWidth = 0 }
-            }]
+                HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
+            }],
+            KaraokeStyleSpans = [new(0, 1, new() { StrokeWidth = 0 })]
         });
         var serialized = ProjectStore.Serialize(editor.Snapshot);
         var roundtrip = ProjectStore.Deserialize(serialized);
@@ -73,9 +74,7 @@ public sealed class SubtitleContentPersistenceTests
         var id = editor.AddSubtitle(new(3), new(5), "a😀b");
         var inactive = new KaraokeSegment(1, 2, new(7, 3), new(17, 3), new(4, -0.1, 2, 0.5))
         {
-            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-            InactiveStyle = new() { StrokeWidth = 0, Fill = SceneColor.Transparent },
-            ActiveStyle = new() { StrokeWidth = 3, ShadowOffset = new(4, -2), ShadowBlur = 5, ShadowColor = new(0, 0, 2, 0.6) }
+            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
         };
         var highlight = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "Saved HDR", new()
         {
@@ -85,6 +84,9 @@ public sealed class SubtitleContentPersistenceTests
         {
             Karaoke = mixed ? [new(0, 1, new(0), new(1, 3), SceneColor.White)] : [],
             InactiveKaraoke = [inactive],
+            KaraokeStyleSpans = [new(1, 2,
+                new() { StrokeWidth = 3, ShadowOffset = new(4, -2), ShadowBlur = 5, ShadowColor = new(0, 0, 2, 0.6) },
+                new() { StrokeWidth = 0, Fill = SceneColor.Transparent })],
             KaraokeStyle = highlight
         });
         var source = editor.Snapshot;
@@ -96,6 +98,7 @@ public sealed class SubtitleContentPersistenceTests
         Assert.Equal(source.Subtitles[0].Karaoke.ToArray(), result.Karaoke.ToArray());
         Assert.Equal(inactive, Assert.Single(result.InactiveKaraoke));
         Assert.Equal(highlight, result.KaraokeStyle);
+        Assert.Equal(source.Subtitles[0].KaraokeStyleSpans.ToArray(), result.KaraokeStyleSpans.ToArray());
         Assert.Equal(mixed ? SubtitleContentKind.KARAOKE : SubtitleContentKind.PLAIN, result.ContentKind);
         Assert.Equal(source.Layers.Select(layer => (layer.Id, layer.Start, layer.End, layer.AnimationOffset)),
             restored.Layers.Select(layer => (layer.Id, layer.Start, layer.End, layer.AnimationOffset)));
@@ -215,6 +218,7 @@ public sealed class SubtitleContentPersistenceTests
         var id = editor.AddSubtitle(new(0), new(4), "abcd");
         editor.ApplySubtitleInlineStyle(id, 1, 2, new() { Bold = true });
         editor.UpdateSubtitle(id, line => line with { Karaoke = [new(0, 4, new(0), new(4), SceneColor.White)] });
+        editor.SplitKaraokeClip(id, editor.Snapshot.Subtitles[0].Karaoke[0].Id, 2, new(2));
         var before = editor.Snapshot;
         var split = ProjectEditingOperations.SplitSubtitle(before, id, new(2), 2);
         Assert.Equal(new SubtitleInlineSpan(1, 1, new() { Bold = true }), Assert.Single(split.Subtitles[0].InlineSpans));

@@ -97,28 +97,28 @@ public sealed class KaraokeHighlightStyleRenderingTests
                 ShadowOffset = new(-3.125, 5.75),
                 ShadowBlur = 1.625
             }),
+            KaraokeStyleSpans =
+            [
+                new(0, 1, new() { StrokeWidth = 0 }, new() { Fill = new(0.25, 3.75, 0.5) }),
+                new(1, 1, new() { Fill = new(4.75, 0.25, 0.5), ShadowBlur = 0 }, new() { ShadowOffset = new(8.5, -5.25) }),
+                new(2, 1, new() { Stroke = new(4.75, 0.25, 0.5), ShadowOffset = new(-4.5, 6.25) }, new() { Stroke = new(0.25, 4.75, 0.5) })
+            ],
             InactiveKaraoke =
             [
                 new(0, 1, new(1, 7), new(5, 6), new(4.75, 0.25, 0.5))
                 {
                     Id = Guid.Parse("774ab0f0-7d97-4c1b-80a5-5b6b34e0f603"),
-                    HighlightKind = KaraokeHighlightKind.SWEEP,
-                    InactiveStyle = new() { Fill = new(0.25, 3.75, 0.5) },
-                    ActiveStyle = new() { StrokeWidth = 0 }
+                    HighlightKind = KaraokeHighlightKind.SWEEP
                 },
                 new(1, 1, new(5, 6), new(4, 3), new(2.5, 0.25, 0.5))
                 {
                     Id = Guid.Parse("5702a10d-b679-4fc4-88b1-4dcb6c892878"),
-                    HighlightKind = KaraokeHighlightKind.STEP,
-                    InactiveStyle = new() { ShadowOffset = new(8.5, -5.25) },
-                    ActiveStyle = new() { Fill = new(4.75, 0.25, 0.5), ShadowBlur = 0 }
+                    HighlightKind = KaraokeHighlightKind.STEP
                 },
                 new(2, 1, new(4, 3), new(11, 6), new(3.25, 0.25, 0.5))
                 {
                     Id = Guid.Parse("97cf230d-51e8-47bc-958d-5bf8e0af84f5"),
-                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-                    InactiveStyle = new() { Stroke = new(0.25, 4.75, 0.5) },
-                    ActiveStyle = new() { Stroke = new(4.75, 0.25, 0.5), ShadowOffset = new(-4.5, 6.25) }
+                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
                 }
             ]
         };

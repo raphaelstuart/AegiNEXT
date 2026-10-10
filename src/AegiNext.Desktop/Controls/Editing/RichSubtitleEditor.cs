@@ -166,9 +166,11 @@ public sealed class RichSubtitleEditor : Control, IDisposable
         var bounds = layout.Bounds;
         var padding = PreviewPadding(viewLine.Style);
         var clipIndex = 0;
+        var rangeIndex = 0;
         foreach (var run in layout.Runs.OrderBy(value => value.Utf16Start))
         {
             padding = Math.Max(padding, PreviewPadding(run.Style));
+            padding = Math.Max(padding, PreviewPadding(KaraokeVisualStyleResolver.ResolveActive(run.Style, viewLine.KaraokeStyle, null)));
             while (clipIndex < viewLine.Karaoke.Length &&
                 viewLine.Karaoke[clipIndex].Utf16Start + viewLine.Karaoke[clipIndex].Utf16Length <= run.Utf16Start)
             {
@@ -181,6 +183,19 @@ public sealed class RichSubtitleEditor : Control, IDisposable
                 padding = Math.Max(padding, PreviewPadding(KaraokeVisualStyleResolver.ResolveActive(
                     run.Style, viewLine.KaraokeStyle, clip)));
                 padding = Math.Max(padding, PreviewPadding(KaraokeVisualStyleResolver.ResolveInactive(run.Style, clip)));
+            }
+            while (rangeIndex < viewLine.KaraokeStyleSpans.Length &&
+                viewLine.KaraokeStyleSpans[rangeIndex].Utf16Start + viewLine.KaraokeStyleSpans[rangeIndex].Utf16Length <= run.Utf16Start)
+            {
+                rangeIndex++;
+            }
+            for (var index = rangeIndex; index < viewLine.KaraokeStyleSpans.Length &&
+                viewLine.KaraokeStyleSpans[index].Utf16Start < run.Utf16Start + run.Utf16Length; index++)
+            {
+                var range = viewLine.KaraokeStyleSpans[index];
+                padding = Math.Max(padding, PreviewPadding(KaraokeVisualStyleResolver.ResolveActive(
+                    run.Style, viewLine.KaraokeStyle, null, range.ActiveStyle)));
+                padding = Math.Max(padding, PreviewPadding(KaraokeVisualStyleResolver.ResolveInactive(run.Style, null, range.InactiveStyle)));
             }
         }
         var left = bounds.Left - padding;
@@ -205,7 +220,8 @@ public sealed class RichSubtitleEditor : Control, IDisposable
         InvalidateVisual();
     }
 
-    private static double PreviewPadding(SubtitleStyle style) => Math.Max(16, style.StrokeWidth + style.ShadowBlur * 4 +
+    private static double PreviewPadding(SubtitleStyle style) => Math.Max(16,
+        Math.Max(style.FillBlur * 4, style.StrokeWidth + style.StrokeBlur * 4) + style.ShadowBlur * 4 +
         Math.Max(Math.Abs(style.ShadowOffset.X), Math.Abs(style.ShadowOffset.Y)) + 1);
 
     private double Scale => Math.Min(1, Math.Max(0.05, (Bounds.Width - 24) / Math.Max(1, imageSource.Width)));

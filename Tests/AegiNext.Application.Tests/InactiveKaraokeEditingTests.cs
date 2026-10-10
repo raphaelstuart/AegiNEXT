@@ -42,7 +42,7 @@ public sealed class InactiveKaraokeEditingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void InsertionRemapsSavedClipsAndKeepsTheirPreciseTimesAndState(bool mixed)
+    public void BoundaryInsertionStaysUntimedAndRemapsSavedGroupsWithoutChangingTime(bool mixed)
     {
         var document = Document(mixed);
         var line = document.Subtitles[0];
@@ -51,24 +51,17 @@ public sealed class InactiveKaraokeEditingTests
         editor.ReplaceSubtitleTextRange(line.Id, 1, 0, "XY");
         var edited = editor.Snapshot.Subtitles[0];
         Assert.Equal("aXYbc", edited.Text);
-        var inserted = edited.InactiveKaraoke.Where(clip => clip.Utf16Start >= 1 && clip.Utf16Start <= 3).ToArray();
-        Assert.Equal(3, inserted.Length);
-        Assert.Equal(source.Start, inserted[0].Start);
-        Assert.Equal(source.End, inserted[^1].End);
-        Assert.All(inserted, clip =>
-        {
-            Assert.Equal((source.End - source.Start) / 3, clip.End - clip.Start);
-            Assert.Equal(source.HighlightColor, clip.HighlightColor);
-            Assert.Equal(source.HighlightKind, clip.HighlightKind);
-            Assert.Equal(source.ActiveStyle, clip.ActiveStyle);
-            Assert.Equal(source.InactiveStyle, clip.InactiveStyle);
-        });
+        var shifted = Assert.Single(edited.InactiveKaraoke, clip => clip.Id == source.Id);
+        Assert.Equal(source with { Utf16Start = 3 }, shifted);
         Assert.Equal(line.Karaoke, edited.Karaoke);
+        Assert.DoesNotContain(edited.Karaoke.Concat(edited.InactiveKaraoke), clip => clip.Utf16Start is 1 or 2);
+        Assert.Equal(KaraokeVisualStyleResolver.RangeStyleAt(line, 1, KaraokeVisualState.ACTIVE),
+            KaraokeVisualStyleResolver.RangeStyleAt(edited, 1, KaraokeVisualState.ACTIVE));
         ProjectValidator.Validate(editor.Snapshot);
         editor.SetSubtitleKaraokeEnabled(line.Id, true);
         var restored = editor.Snapshot.Subtitles[0];
         Assert.Empty(restored.InactiveKaraoke);
-        Assert.Equal(5, restored.Karaoke.Length);
+        Assert.Equal(3, restored.Karaoke.Length);
         Assert.Equal(edited.Karaoke.AddRange(edited.InactiveKaraoke).OrderBy(clip => clip.Utf16Start), restored.Karaoke);
     }
 
@@ -121,13 +114,14 @@ public sealed class InactiveKaraokeEditingTests
         var clips = Enumerable.Range(0, 3).Select(index => new KaraokeSegment(index, 1,
             new(index, 7), new(index + 1, 7), new(2.75, 0.25, 1.125, 0.731))
         {
-            HighlightKind = KaraokeHighlightKind.STEP,
-            InactiveStyle = new() { StrokeWidth = 1.125, Fill = new(0.125, 0.25, 0.5, 0.731) },
-            ActiveStyle = new() { StrokeWidth = 3.875, ShadowOffset = new(-2.25, 4.75) }
+            HighlightKind = KaraokeHighlightKind.STEP
         }).ToArray();
         var line = new SubtitleLine
         {
             Text = "abc", End = new(4),
+            KaraokeStyleSpans = [new(0, 3,
+                new() { StrokeWidth = 3.875, ShadowOffset = new(-2.25, 4.75) },
+                new() { StrokeWidth = 1.125, Fill = new(0.125, 0.25, 0.5, 0.731) })],
             Karaoke = mixed ? [clips[0]] : [],
             InactiveKaraoke = mixed ? [clips[1], clips[2]] : [.. clips],
             KaraokeStyle = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "saved highlight", new() { Fill = new(3.25, 0.75, 0.125) })

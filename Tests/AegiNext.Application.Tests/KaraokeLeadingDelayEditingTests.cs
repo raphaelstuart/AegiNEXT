@@ -73,7 +73,8 @@ public sealed class KaraokeLeadingDelayEditingTests
             Text = "ab", Start = new(5), End = new(9),
             InlineSpans = [new(0, 1, new() { Bold = true })],
             Karaoke = [new(0, 1, new(3, 4), new(7, 4), SceneColor.White),
-                new(1, 1, new(2), new(11, 4), new(1, 0, 0)) { ActiveStyle = new() { StrokeWidth = 2 } }]
+                new(1, 1, new(2), new(11, 4), new(1, 0, 0))],
+            KaraokeStyleSpans = [new(1, 1, new() { StrokeWidth = 2 })]
         };
         return new() { Subtitles = [line], Layers = [new() { Kind = LayerKind.SUBTITLE, SubtitleId = line.Id,
             Start = line.Start, End = line.End, AnimationOffset = new(1, 2) }] };

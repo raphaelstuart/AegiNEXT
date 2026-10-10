@@ -152,19 +152,19 @@ public sealed class InactiveKaraokeTimingTests
     {
         var first = new KaraokeSegment(0, 1, new(1, 3), new(2, 3), new(4.123456789123, 0.25, 1, 0.5))
         {
-            ActiveStyle = new() { StrokeWidth = 3.123456789123 },
-            InactiveStyle = new() { Fill = SceneColor.Transparent }, HighlightKind = KaraokeHighlightKind.STEP
+            HighlightKind = KaraokeHighlightKind.STEP
         };
         var second = new KaraokeSegment(1, 2, new(2, 3), new(1), new(1, 0, 4.234567891234))
         {
-            ActiveStyle = new() { ShadowOffset = new(4.234567891234, -2.123456789123), ShadowBlur = 0 },
-            InactiveStyle = new() { StrokeWidth = 0 }, HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
+            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
         };
         var line = new SubtitleLine
         {
             Text = "Ae\u0301", Start = new(5), End = new(6),
             Karaoke = mixed ? [first] : [], InactiveKaraoke = mixed ? [second] : [first, second],
             InlineSpans = [new(1, 2, new() { Bold = true })],
+            KaraokeStyleSpans = [new(0, 1, new() { StrokeWidth = 3.123456789123 }, new() { Fill = SceneColor.Transparent }),
+                new(1, 2, new() { ShadowOffset = new(4.234567891234, -2.123456789123), ShadowBlur = 0 }, new() { StrokeWidth = 0 })],
             KaraokeStyle = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "Saved HDR highlight", new()
             {
                 Fill = new(4.123456789123, 0.25, 1), ShadowOffset = new(-4, 7.123456789123)

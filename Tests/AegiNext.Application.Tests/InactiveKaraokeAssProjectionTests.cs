@@ -34,19 +34,16 @@ public sealed class InactiveKaraokeAssProjectionTests
     }
 
     [Fact]
-    public void InsertingAssTextRemapsAllSavedClipsThroughTheExistingTimingRules()
+    public void InsertingAssTextAtGroupBoundaryRemapsSavedGroupsWithoutCreatingTiming()
     {
         var line = Line();
         var source = AssTextProjection.Create(line).Source;
         var result = AssTextProjection.Apply(line, source[..^line.Text.Length] + "aXYb");
         Assert.Empty(result.Diagnostics);
         Assert.Empty(result.Line.Karaoke);
-        Assert.Equal(4, result.Line.InactiveKaraoke.Length);
+        Assert.Equal(2, result.Line.InactiveKaraoke.Length);
         Assert.Equal(line.InactiveKaraoke[0], result.Line.InactiveKaraoke[0]);
-        var divided = result.Line.InactiveKaraoke.Skip(1).ToArray();
-        Assert.Equal(line.InactiveKaraoke[1].Start, divided[0].Start);
-        Assert.Equal(line.InactiveKaraoke[1].End, divided[^1].End);
-        Assert.All(divided, clip => Assert.Equal(new MediaTime(1, 21), clip.End - clip.Start));
+        Assert.Equal(line.InactiveKaraoke[1] with { Utf16Start = 3 }, result.Line.InactiveKaraoke[1]);
         ProjectValidator.Validate(Document(result.Line));
     }
 
@@ -93,7 +90,7 @@ public sealed class InactiveKaraokeAssProjectionTests
     }
 
     [Fact]
-    public void PlainAssReplacementDoesNotSilentlyDiscardSavedWaitingGroups()
+    public void PlainAssReplacementAcrossGroupsRemovesDeletedTimingWithoutInventingNewGroups()
     {
         var line = Line();
         line = line with
@@ -101,7 +98,11 @@ public sealed class InactiveKaraokeAssProjectionTests
             InactiveKaraoke = [line.InactiveKaraoke[0] with { Start = MediaTime.Zero, End = new(1) },
                 line.InactiveKaraoke[1] with { Start = new(2), End = new(3) }]
         };
-        Assert.Throws<InvalidOperationException>(() => AssTextProjection.Apply(line, "x"));
+        var edited = AssTextProjection.Apply(line, "x").Line;
+        Assert.Equal("x", edited.Text);
+        Assert.Empty(edited.Karaoke);
+        Assert.Empty(edited.InactiveKaraoke);
+        ProjectValidator.Validate(Document(edited));
         Assert.Equal("ab", line.Text);
         Assert.Equal(2, line.InactiveKaraoke.Length);
     }
@@ -116,16 +117,17 @@ public sealed class InactiveKaraokeAssProjectionTests
             [
                 new(0, 1, MediaTime.Zero, new(1, 7), new(3.25, 0.125, 0.25, 0.731))
                 {
-                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-                    InactiveStyle = new() { StrokeWidth = 1.125 },
-                    ActiveStyle = new() { ShadowOffset = new(-2.25, 4.75) }
+                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
                 },
                 new(1, 1, new(1, 7), new(2, 7), new(2.75, 0.25, 0.5, 0.731))
                 {
-                    HighlightKind = KaraokeHighlightKind.STEP,
-                    InactiveStyle = new() { Fill = new(0.125, 0.25, 0.5) },
-                    ActiveStyle = new() { StrokeWidth = 3.875 }
+                    HighlightKind = KaraokeHighlightKind.STEP
                 }
+            ],
+            KaraokeStyleSpans =
+            [
+                new(0, 1, new() { ShadowOffset = new(-2.25, 4.75) }, new() { StrokeWidth = 1.125 }),
+                new(1, 1, new() { StrokeWidth = 3.875 }, new() { Fill = new(0.125, 0.25, 0.5) })
             ],
             KaraokeStyle = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "saved highlight", new() { Fill = new(3.125, 0.25, 0.5), ShadowBlur = 0 })
         };

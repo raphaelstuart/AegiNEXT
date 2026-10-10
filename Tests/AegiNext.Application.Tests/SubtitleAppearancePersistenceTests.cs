@@ -68,7 +68,7 @@ public sealed class SubtitleAppearancePersistenceTests
         };
         var stored = SubtitleStylePresetStore.Serialize(collection);
         Assert.Equal(stored, SubtitleStylePresetStore.Serialize(SubtitleStylePresetStore.Deserialize(stored)));
-        Assert.Equal(10, ProjectStore.Deserialize(bytes).Version);
+        Assert.Equal(ProjectDocument.CURRENT_VERSION, ProjectStore.Deserialize(bytes).Version);
         Assert.Equal(6, SubtitleStylePresetStore.Deserialize(stored).Version);
     }
 
@@ -212,10 +212,10 @@ public sealed class SubtitleAppearancePersistenceTests
             "track" => (root["tracks"] ?? root["subtitleTracks"])![0]!["defaultStyle"],
             "inline" => line["inlineSpans"]![0]!["style"],
             "highlight" => line["karaokeStyle"],
-            "karaokeInactive" => line["karaoke"]![0]!["inactiveStyle"],
-            "karaokeActive" => line["karaoke"]![0]!["activeStyle"],
-            "disabledInactive" => line["inactiveKaraoke"]![0]!["inactiveStyle"],
-            "disabledActive" => line["inactiveKaraoke"]![0]!["activeStyle"],
+            "karaokeInactive" => line["karaokeStyleSpans"] is null ? line["karaoke"]![0]!["inactiveStyle"] : line["karaokeStyleSpans"]![0]!["inactiveStyle"],
+            "karaokeActive" => line["karaokeStyleSpans"] is null ? line["karaoke"]![0]!["activeStyle"] : line["karaokeStyleSpans"]![0]!["activeStyle"],
+            "disabledInactive" => line["karaokeStyleSpans"] is null ? line["inactiveKaraoke"]![0]!["inactiveStyle"] : line["karaokeStyleSpans"]![1]!["inactiveStyle"],
+            "disabledActive" => line["karaokeStyleSpans"] is null ? line["inactiveKaraoke"]![0]!["activeStyle"] : line["karaokeStyleSpans"]![1]!["activeStyle"],
             _ => throw new ArgumentOutOfRangeException(nameof(path))
         })!.AsObject();
     }
@@ -233,7 +233,9 @@ public sealed class SubtitleAppearancePersistenceTests
                 Italic = true, LetterSpacing = newValues ? 0 : null, FillBlur = newValues ? 3 : null, StrokeBlur = newValues ? 0 : null
             })],
             KaraokeStyle = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "Glow", style),
-            Karaoke = [Segment(0, newValues)], InactiveKaraoke = [Segment(1, newValues)]
+            Karaoke = [new(0, 1, new(0), new(1), SceneColor.White)],
+            InactiveKaraoke = [new(1, 1, new(1), new(2), SceneColor.White)],
+            KaraokeStyleSpans = [Span(0, newValues), Span(1, newValues)]
         };
         return new()
         {
@@ -242,9 +244,7 @@ public sealed class SubtitleAppearancePersistenceTests
         };
     }
 
-    private static KaraokeSegment Segment(int start, bool newValues) => new(start, 1, new(start), new(start + 1), SceneColor.White)
-    {
-        InactiveStyle = new() { Fill = SceneColor.Black, FillBlur = newValues ? 0 : null, StrokeBlur = newValues ? 9 : null },
-        ActiveStyle = new() { Stroke = SceneColor.White, FillBlur = newValues ? 7 : null, StrokeBlur = newValues ? 0 : null }
-    };
+    private static SubtitleKaraokeStyleSpan Span(int start, bool newValues) => new(start, 1,
+        new() { ShadowBlur = start == 1 ? 0 : null, Stroke = SceneColor.White, FillBlur = newValues ? 7 : null, StrokeBlur = newValues ? 0 : null },
+        new() { Fill = SceneColor.Black, FillBlur = newValues ? 0 : null, StrokeBlur = newValues ? 9 : null });
 }

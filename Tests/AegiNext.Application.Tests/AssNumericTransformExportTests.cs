@@ -222,8 +222,9 @@ public sealed class AssNumericTransformExportTests
         {
             Karaoke = [new(0, 1, new(1, 4), new(3, 4), SceneColor.White)
             {
-                HighlightKind = KaraokeHighlightKind.STEP, ActiveStyle = new() { StrokeWidth = 6 }
-            }]
+                HighlightKind = KaraokeHighlightKind.STEP
+            }],
+            KaraokeStyleSpans = [new(0, 1, new() { StrokeWidth = 6 })]
         };
         var layer = Layer(line) with
         {

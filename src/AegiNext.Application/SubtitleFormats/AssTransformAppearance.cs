@@ -26,8 +26,10 @@ internal sealed class AssTransformAppearance(LayerTransform transform, Guid subt
                 FillBlur = Blur(line.Style.FillBlur), StrokeBlur = Blur(line.Style.StrokeBlur), ShadowBlur = Blur(line.Style.ShadowBlur)
             },
             InlineSpans = line.InlineSpans.Select(span => span with { Style = Inline(span.Style) }).ToImmutableArray(),
-            Karaoke = line.Karaoke.Select(Karaoke).ToImmutableArray(),
-            InactiveKaraoke = line.InactiveKaraoke.Select(Karaoke).ToImmutableArray()
+            KaraokeStyleSpans = line.KaraokeStyleSpans.Select(span => span with
+            {
+                ActiveStyle = Visual(span.ActiveStyle), InactiveStyle = Visual(span.InactiveStyle)
+            }).ToImmutableArray()
         };
     }
 
@@ -41,11 +43,6 @@ internal sealed class AssTransformAppearance(LayerTransform transform, Guid subt
             ShadowBlur = style.ShadowBlur is { } shadowBlur ? Blur(shadowBlur) : null,
             ShadowOffset = style.ShadowOffset is { } shadow ? Shadow(shadow) : null
         };
-    }
-
-    private KaraokeSegment Karaoke(KaraokeSegment segment)
-    {
-        return segment with { ActiveStyle = Visual(segment.ActiveStyle), InactiveStyle = Visual(segment.InactiveStyle) };
     }
 
     private KaraokeVisualStyleOverride? Visual(KaraokeVisualStyleOverride? style)

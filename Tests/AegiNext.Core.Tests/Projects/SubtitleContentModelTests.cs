@@ -76,13 +76,15 @@ public sealed class SubtitleContentModelTests
     {
         var segment = new KaraokeSegment(0, 1, new(0), new(4), SceneColor.White)
         {
-            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-            InactiveStyle = new() { Fill = new(4, -0.1, 2, 0.5) },
-            ActiveStyle = new() { StrokeWidth = 0 }
+            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
         };
         Assert.NotEqual(Guid.Empty, segment.Id);
         Assert.Equal(segment.Id, (segment with { End = new(5) }).Id);
-        var line = new SubtitleLine { Text = "ab", Karaoke = [segment] };
+        var line = new SubtitleLine
+        {
+            Text = "ab", Karaoke = [segment],
+            KaraokeStyleSpans = [new(0, 1, new() { StrokeWidth = 0 }, new() { Fill = new(4, -0.1, 2, 0.5) })]
+        };
         ProjectValidator.Validate(Document(line));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(Document(line with
         {
@@ -193,9 +195,13 @@ public sealed class SubtitleContentModelTests
             2 => segment with { End = segment.Start },
             3 => segment with { HighlightKind = (KaraokeHighlightKind)100 },
             4 => segment with { HighlightColor = new(double.NaN, 0, 0) },
-            _ => segment with { ActiveStyle = new() { StrokeWidth = -1 } }
+            _ => segment
         };
-        var line = new SubtitleLine { Text = "a", InactiveKaraoke = [segment] };
+        var line = new SubtitleLine
+        {
+            Text = "a", InactiveKaraoke = [segment],
+            KaraokeStyleSpans = invalidValue == 5 ? [new(0, 1, new() { StrokeWidth = -1 })] : []
+        };
         Assert.Throws<InvalidDataException>(() => ProjectValidator.Validate(Document(line)));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.ValidateSubtitleKaraoke(line));
     }
@@ -221,11 +227,16 @@ public sealed class SubtitleContentModelTests
     {
         var segment = new KaraokeSegment(0, 1, new(0), new(1), SceneColor.White)
         {
-            HighlightKind = kind, ActiveStyle = new() { Fill = SceneColor.Transparent, StrokeWidth = 0 }
+            HighlightKind = kind
         };
-        var line = new SubtitleLine { Text = "a", Style = new() { FontSize = 100, Bold = true }, Karaoke = [segment] };
+        var line = new SubtitleLine
+        {
+            Text = "a", Style = new() { FontSize = 100, Bold = true }, Karaoke = [segment],
+            KaraokeStyleSpans = [new(0, 1, new() { Fill = SceneColor.Transparent, StrokeWidth = 0 })]
+        };
         ProjectValidator.Validate(Document(line));
-        var resolved = segment.ActiveStyle.ApplyTo(line.Style);
+        var resolved = KaraokeVisualStyleResolver.ResolveActive(line.Style, null, segment,
+            KaraokeVisualStyleResolver.RangeStyleAt(line, 0, KaraokeVisualState.ACTIVE));
         Assert.Equal(100, resolved.FontSize);
         Assert.True(resolved.Bold);
         Assert.Equal(SceneColor.Transparent, resolved.Fill);

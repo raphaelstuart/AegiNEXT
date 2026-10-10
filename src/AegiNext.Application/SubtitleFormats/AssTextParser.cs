@@ -17,6 +17,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private AssNumericTransformParser numericParser = null!;
     private readonly StringBuilder text = new();
     private readonly ImmutableArray<SubtitleInlineSpan>.Builder spans = ImmutableArray.CreateBuilder<SubtitleInlineSpan>();
+    private readonly ImmutableArray<SubtitleKaraokeStyleSpan>.Builder karaokeStyles = ImmutableArray.CreateBuilder<SubtitleKaraokeStyleSpan>();
     private readonly ImmutableArray<KaraokeSegment>.Builder karaoke = ImmutableArray.CreateBuilder<KaraokeSegment>();
     private readonly ImmutableArray<AssSourceMapEntry>.Builder map = ImmutableArray.CreateBuilder<AssSourceMapEntry>();
     private readonly ImmutableArray<AssKaraokeSourceMapEntry>.Builder karaokeMap = ImmutableArray.CreateBuilder<AssKaraokeSourceMapEntry>();
@@ -32,12 +33,11 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private readonly SceneColor secondaryColor = secondary;
     private SceneColor resetSecondaryColor = secondary;
     private SceneColor? inactive;
-    private SceneColor? segmentInactive;
-    private SceneColor? segmentActive;
-    private bool segmentInactiveVaries;
-    private bool segmentActiveVaries;
-    private bool segmentVisualVaries;
-    private KaraokeVisualStyleOverride? segmentActiveVisual;
+    private SubtitleStyle? segmentRunStyle;
+    private SceneColor? segmentRunInactive;
+    private KaraokeVisualStyleOverride? segmentRunActive;
+    private SceneColor segmentHighlightColor;
+    private bool segmentRunsReported;
     private KaraokeVisualStyleOverride? instantVisual;
     private MediaTime? instantVisualTime;
     private bool instantNumericOnly;
@@ -101,27 +101,22 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 if (segmentDuration > MediaTime.Zero)
                 {
                     var inactiveColor = inactive ?? secondaryColor;
+                    var activeVisual = ResolveInstantVisual();
                     if (text.Length == segmentStart)
                     {
-                        segmentInactive = inactiveColor;
-                        segmentActive = current.Fill;
-                        segmentActiveVisual = ResolveInstantVisual();
+                        segmentHighlightColor = current.Fill;
                     }
-                    else
+                    else if (!projectSource && !segmentRunsReported &&
+                        (segmentRunStyle != current || segmentRunInactive != inactiveColor || segmentRunActive != activeVisual))
                     {
-                        segmentInactiveVaries |= segmentInactive != inactiveColor;
-                        if (!segmentActiveVaries && segmentActive != current.Fill)
-                        {
-                            Report("Ass.KaraokeActiveRuns", "同一演唱片段包含多个高亮颜色，采用该片段首个高亮颜色。", index, count);
-                            segmentActiveVaries = true;
-                        }
-                        if (!segmentVisualVaries && instantVisualTime == karaokeTime && kind != KaraokeHighlightKind.SWEEP &&
-                            segmentActiveVisual != ResolveInstantVisual())
-                        {
-                            Report("Ass.KaraokeActiveRuns", "同一演唱片段包含多个激活外观，采用该片段首个激活外观。", index, count);
-                            segmentVisualVaries = true;
-                        }
+                        Report("Ass.KaraokeStyleRuns", "ASS 同一演唱组内的样式变化可能形成独立渲染片段；已保留完整组时间和各范围外观，源播放器的激活或扫色时序可能不同。", index, count);
+                        segmentRunsReported = true;
                     }
+                    segmentRunStyle = current;
+                    segmentRunInactive = inactiveColor;
+                    segmentRunActive = activeVisual;
+                    AppendKaraokeStyle(offset, content.Length, (activeVisual ?? new()) with { Fill = current.Fill },
+                        new() { Fill = inactiveColor });
                 }
                 else if (instantVisualTime is not null)
                 {
@@ -150,7 +145,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         var line = original with
         {
-            Text = text.ToString(), Style = lineStyle, InlineSpans = spans.ToImmutable(),
+            Text = text.ToString(), Style = lineStyle, InlineSpans = spans.ToImmutable(), KaraokeStyleSpans = karaokeStyles.ToImmutable(),
             Karaoke = karaoke.ToImmutable(), InactiveKaraoke = []
         };
         var contentOffset = !projectSource && !line.Karaoke.IsEmpty && line.Karaoke[0].Start < MediaTime.Zero ? -line.Karaoke[0].Start : MediaTime.Zero;
@@ -483,11 +478,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         if (text.Length > segmentStart && duration > MediaTime.Zero)
         {
             karaokeMap.Add(new(segmentSourceStart, segmentSourceLength, karaoke.Count));
-            karaoke.Add(new(segmentStart, text.Length - segmentStart, karaokeTime, karaokeTime + duration, segmentActive ?? current.Fill)
-            {
-                HighlightKind = kind, InactiveStyle = segmentInactiveVaries ? null : new() { Fill = segmentInactive ?? secondaryColor },
-                ActiveStyle = (segmentActiveVisual ?? new()) with { Fill = segmentActive ?? current.Fill }
-            });
+            karaoke.Add(new(segmentStart, text.Length - segmentStart, karaokeTime, karaokeTime + duration, segmentHighlightColor)
+            { HighlightKind = kind });
         }
         else if (text.Length > segmentStart && !projectSource)
         {
@@ -495,12 +487,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         karaokeTime += duration;
         segmentDuration = null;
-        segmentInactive = null;
-        segmentActive = null;
-        segmentInactiveVaries = false;
-        segmentActiveVaries = false;
-        segmentVisualVaries = false;
-        segmentActiveVisual = null;
+        segmentRunStyle = null;
+        segmentRunInactive = null;
+        segmentRunActive = null;
+        segmentRunsReported = false;
     }
 
     private KaraokeVisualStyleOverride? ResolveInstantVisual()
@@ -746,6 +736,19 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
     }
 
+    private void AppendKaraokeStyle(int start, int length, KaraokeVisualStyleOverride active, KaraokeVisualStyleOverride inactiveStyle)
+    {
+        if (karaokeStyles.Count > 0 && karaokeStyles[^1].Utf16Start + karaokeStyles[^1].Utf16Length == start &&
+            karaokeStyles[^1].ActiveStyle == active && karaokeStyles[^1].InactiveStyle == inactiveStyle)
+        {
+            karaokeStyles[^1] = karaokeStyles[^1] with { Utf16Length = karaokeStyles[^1].Utf16Length + length };
+        }
+        else
+        {
+            karaokeStyles.Add(new(start, length, active, inactiveStyle));
+        }
+    }
+
     private void Report(string code, string message, int start, int length) => diagnostics.Add(new(code, message, start, length, original.Id));
 
     internal static ScenePoint Pivot(TextAlignment alignment)
@@ -756,7 +759,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
 
     internal static void ValidateLine(SubtitleLine line)
     {
-        var boundaries = line.InlineSpans.IsEmpty && line.Karaoke.IsEmpty
+        var boundaries = line.InlineSpans.IsEmpty && line.Karaoke.IsEmpty && line.KaraokeStyleSpans.IsEmpty
             ? null : new SubtitleTextBoundaries(line.Text);
         foreach (var span in line.InlineSpans)
         {
@@ -771,6 +774,21 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             if (!boundaries!.Contains(segment.Utf16Start) || !boundaries.Contains(segment.Utf16Start + segment.Utf16Length))
             {
                 throw new InvalidDataException("ASS 卡拉 OK 标签不能拆开字素。");
+            }
+        }
+        foreach (var span in line.KaraokeStyleSpans)
+        {
+            if (!boundaries!.Contains(span.Utf16Start) || !boundaries.Contains(span.Utf16Start + span.Utf16Length))
+            {
+                throw new InvalidDataException("ASS 卡拉 OK 外观不能拆开字素。");
+            }
+            if (span.ActiveStyle is { } active)
+            {
+                ProjectValidator.ValidateSubtitleStyle(active.ApplyTo(line.Style));
+            }
+            if (span.InactiveStyle is { } inactiveStyle)
+            {
+                ProjectValidator.ValidateSubtitleStyle(inactiveStyle.ApplyTo(line.Style));
             }
         }
         ProjectValidator.ValidateSubtitleStyle(line.Style);

@@ -33,24 +33,20 @@ public sealed class SubtitleColorTagUiTests
         context.Window.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
         Flush(context.Window);
         var originalRow = context.ViewModel.Subtitles.Rows[0];
-        var before = Assert.IsAssignableFrom<ISolidColorBrush>(RowSurface(context.Window, originalRow.Id).Background)
-            .Color;
+        var before = Assert.IsAssignableFrom<ISolidColorBrush>(RowSurface(context.Window, originalRow.Id).Background).Color;
 
         await context.Session.SetSubtitleColorTagAsync([originalRow.Id], document.ColorTags[1].Id);
         Flush(context.Window);
 
         Assert.Same(originalRow, context.ViewModel.Subtitles.Rows[0]);
-        var after = Assert.IsAssignableFrom<ISolidColorBrush>(RowSurface(context.Window, originalRow.Id).Background)
-            .Color;
+        var after = Assert.IsAssignableFrom<ISolidColorBrush>(RowSurface(context.Window, originalRow.Id).Background).Color;
         Assert.NotEqual(before, after);
         Assert.True(after.B > after.R);
         Assert.All(RowSurface(context.Window, originalRow.Id).GetVisualDescendants().OfType<TextBox>(),
-            input => Assert.Equal(Colors.Transparent,
-                Assert.IsAssignableFrom<ISolidColorBrush>(input.Background).Color));
+            input => Assert.Equal(Colors.Transparent, Assert.IsAssignableFrom<ISolidColorBrush>(input.Background).Color));
         Assert.True(context.Session.Editor.Undo());
         Flush(context.Window);
-        Assert.Equal(before,
-            Assert.IsAssignableFrom<ISolidColorBrush>(RowSurface(context.Window, originalRow.Id).Background).Color);
+        Assert.Equal(before, Assert.IsAssignableFrom<ISolidColorBrush>(RowSurface(context.Window, originalRow.Id).Background).Color);
     }
 
     [AvaloniaFact]
@@ -60,9 +56,7 @@ public sealed class SubtitleColorTagUiTests
         var document = Prepare(context);
         context.Session.SelectSubtitleRows(document.Subtitles[0].Id, document.Subtitles.Select(line => line.Id));
         var combo = UiTestActions.Find<ComboBox>(context.Window, "SubtitleColorTagFilterCombo");
-        combo.SelectedItem =
-            context.ViewModel.Subtitles.ColorTagFilters.Single(choice =>
-                choice.Value.TagId == document.ColorTags[0].Id);
+        combo.SelectedItem = context.ViewModel.Subtitles.ColorTagFilters.Single(choice => choice.Value.TagId == document.ColorTags[0].Id);
         Flush(context.Window);
 
         Assert.Equal(2, UiTestActions.Find<ListBox>(context.Window, "SubtitleList").ItemCount);
@@ -70,11 +64,9 @@ public sealed class SubtitleColorTagUiTests
         Assert.DoesNotContain(document.Layers[1].Id, context.ViewModel.Effects.SelectedIds);
         Localization.SetLanguage("zh-CN");
         Flush(context.Window);
-        Assert.Equal(document.ColorTags[0].Id,
-            Assert.IsType<SubtitleColorTagFilterChoice>(combo.SelectedItem).Value.TagId);
+        Assert.Equal(document.ColorTags[0].Id, Assert.IsType<SubtitleColorTagFilterChoice>(combo.SelectedItem).Value.TagId);
         Assert.Equal("外来标签", Assert.IsType<SubtitleColorTagFilterChoice>(combo.SelectedItem).Name);
-        Assert.Contains(Localization.Get("Workbench.ColorTag.Filter"), Assert.IsType<string>(ToolTip.GetTip(combo)),
-            StringComparison.Ordinal);
+        Assert.Contains(Localization.Get("Workbench.ColorTag.Filter"), Assert.IsType<string>(ToolTip.GetTip(combo)), StringComparison.Ordinal);
         Assert.Contains("外来标签", Assert.IsType<string>(ToolTip.GetTip(combo)), StringComparison.Ordinal);
         Assert.Same(document, context.Session.DocumentSnapshot);
         Assert.False(context.Session.Editor.CanUndo);
@@ -133,7 +125,6 @@ public sealed class SubtitleColorTagUiTests
         {
             Assert.True(context.Session.TrySelectSubtitleColorTagFilter(new(false, document.ColorTags[0].Id)));
         }
-
         Flush(context.Window);
         var input = RowText(context.Window, document.Subtitles[0].Id);
         Assert.True(input.Focus());
@@ -207,13 +198,11 @@ public sealed class SubtitleColorTagUiTests
         {
             document = document with
             {
-                Subtitles = document.Subtitles
-                    .SetItem(1, document.Subtitles[1] with { ColorTagId = document.ColorTags[0].Id })
+                Subtitles = document.Subtitles.SetItem(1, document.Subtitles[1] with { ColorTagId = document.ColorTags[0].Id })
                     .SetItem(2, document.Subtitles[2] with { ColorTagId = document.ColorTags[1].Id })
             };
             context.Session.Editor.Reset(document);
         }
-
         context.Session.UpdatePreferences(context.Session.Preferences with { WindowMenuOnMac = true });
         context.Session.SelectCue(document.Subtitles[0].Id);
         Assert.True(context.Session.TrySelectSubtitleColorTagFilter(new(false, document.ColorTags[0].Id)));
@@ -222,7 +211,6 @@ public sealed class SubtitleColorTagUiTests
             context.Session.SelectSubtitleRows(document.Subtitles[0].Id,
                 [document.Subtitles[0].Id, document.Subtitles[1].Id]);
         }
-
         Flush(context.Window);
         Assert.True(RowText(context.Window, document.Subtitles[0].Id).Focus());
         var command = context.Window.GetCommand(WorkbenchCommand.MERGE_SUBTITLE);
@@ -247,12 +235,10 @@ public sealed class SubtitleColorTagUiTests
                 await Task.Delay(5, TestContext.Current.CancellationToken);
                 Flush(context.Window);
             }
-
             Assert.Equal(2, context.Session.DocumentSnapshot.Subtitles.Length);
             Assert.Same(document.Subtitles[2], context.Session.DocumentSnapshot.Subtitles[1]);
             Assert.True(context.Session.Editor.Undo());
         }
-
         Assert.Same(document, context.Session.DocumentSnapshot);
         Assert.False(context.Session.Editor.CanUndo);
     }
@@ -296,9 +282,7 @@ public sealed class SubtitleColorTagUiTests
         Assert.Equal("外来标签", projectItem.Header);
         Assert.True(projectItem.IsChecked);
         Assert.NotNull(projectItem.Icon);
-        Assert.False(
-            context.Session.ApplicationContext.ColorTagLibrary.Snapshot.Tags.Any(tag =>
-                tag.Id == document.ColorTags[0].Id));
+        Assert.False(context.Session.ApplicationContext.ColorTagLibrary.Snapshot.Tags.Any(tag => tag.Id == document.ColorTags[0].Id));
         menu.Close();
     }
 
@@ -326,8 +310,7 @@ public sealed class SubtitleColorTagUiTests
         {
             Flush(settings);
             Assert.Equal(SettingsPage.SUBTITLE_COLOR_TAGS, settings.CurrentPage);
-            Assert.True(UiTestActions.Find<SubtitleColorTagsSettingsView>(settings, "ColorTagsView")
-                .IsEffectivelyVisible);
+            Assert.True(UiTestActions.Find<SubtitleColorTagsSettingsView>(settings, "ColorTagsView").IsEffectivelyVisible);
             Assert.Equal(Localization.Get("Settings.SubtitleColorTags"), settings.ViewModel.PageTitle);
             Assert.Same(document, context.Session.DocumentSnapshot);
             Assert.False(context.Session.Editor.CanUndo);
@@ -366,8 +349,7 @@ public sealed class SubtitleColorTagUiTests
     }
 
     private static Grid RowSurface(Window window, Guid id) => UiTestActions.Find<ListBox>(window, "SubtitleList")
-        .GetVisualDescendants().OfType<Grid>().Single(grid =>
-            grid.Name == "SubtitleRowSurface" && grid.DataContext is SubtitleRow row && row.Id == id);
+        .GetVisualDescendants().OfType<Grid>().Single(grid => grid.Name == "SubtitleRowSurface" && grid.DataContext is SubtitleRow row && row.Id == id);
 
     private static TextBox RowText(Window window, Guid id) => RowSurface(window, id).GetVisualDescendants()
         .OfType<TextBox>().Single(input => input.AcceptsReturn);
@@ -380,14 +362,12 @@ public sealed class SubtitleColorTagUiTests
             context.ViewModel.Timeline.IsSnapEnabled = false;
             control.ViewStart = 0;
             Flush(context.Window);
-            var point = control.TranslatePoint(control.GetClipRectangle(document.Layers[0].Id)!.Value.Center,
-                context.Window)!.Value;
+            var point = control.TranslatePoint(control.GetClipRectangle(document.Layers[0].Id)!.Value.Center, context.Window)!.Value;
             context.Window.MouseDown(point, MouseButton.Right);
             context.Window.MouseUp(point, MouseButton.Right);
             Flush(context.Window);
             return Assert.Single(control.GetVisualAncestors().OfType<TimelinePanelView>()).ClipMenu;
         }
-
         var surface = RowSurface(context.Window, document.Subtitles[0].Id);
         var location = surface.TranslatePoint(new Point(10, surface.Bounds.Height / 2), context.Window)!.Value;
         context.Window.MouseDown(location, MouseButton.Right);
@@ -409,8 +389,7 @@ public sealed class SubtitleColorTagUiTests
         return (group, group.Items.OfType<MenuItem>().Single(item => ReferenceEquals(item.Command, command)));
     }
 
-    private static RawInputModifiers CommandModifier() =>
-        OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control;
+    private static RawInputModifiers CommandModifier() => OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control;
 
     private static void Flush(Window window)
     {

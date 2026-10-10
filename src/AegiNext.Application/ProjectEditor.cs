@@ -22,7 +22,8 @@ public sealed partial class ProjectEditor
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(historyLimit, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(historyLimit, 10000);
-        snapshot = SubtitleKaraokeNormalization.Normalize(document ?? new());
+        snapshot = document ?? new();
+        ProjectValidator.Validate(snapshot);
         saved = snapshot;
         this.historyLimit = historyLimit;
     }
@@ -104,7 +105,7 @@ public sealed partial class ProjectEditor
             {
                 var next = edit(snapshot) ?? throw new InvalidOperationException("编辑不能返回空项目。");
                 ValidateMaskTopologyEdits(snapshot, next);
-                next = SubtitleKaraokeNormalization.Normalize(next);
+                ProjectValidator.Validate(next);
                 if (next == snapshot)
                 {
                     return;
@@ -245,7 +246,7 @@ public sealed partial class ProjectEditor
         {
             var index = FindSubtitle(document, id);
             var before = document.Subtitles[index];
-            var after = SubtitleKaraokeNormalization.Normalize(edit(before) ?? throw new InvalidOperationException("字幕不能为空。"));
+            var after = edit(before) ?? throw new InvalidOperationException("字幕不能为空。");
             if (after.Id != id)
             {
                 throw new InvalidOperationException("编辑不能改变字幕标识。");

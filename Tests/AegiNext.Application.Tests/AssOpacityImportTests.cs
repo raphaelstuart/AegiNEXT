@@ -14,7 +14,8 @@ public sealed class AssOpacityImportTests
         var track = Assert.Single(layer.Tracks);
         var line = Assert.Single(document.Subtitles);
         var style = Assert.Single(line.InlineSpans).Style.ApplyTo(line.Style);
-        var karaoke = Assert.Single(line.Karaoke);
+        Assert.Single(line.Karaoke);
+        var karaoke = Assert.Single(line.KaraokeStyleSpans);
 
         Assert.Equal(AnimationProperty.OPACITY, track.Property);
         Assert.False(track.IsOrdered);
@@ -181,10 +182,10 @@ public sealed class AssOpacityImportTests
         }
         if (withKaraokeAndMove)
         {
-            Assert.Equal(before.Karaoke.Select(segment => segment.ActiveStyle!.Fill!.Value.Alpha),
-                after.Karaoke.Select(segment => segment.ActiveStyle!.Fill!.Value.Alpha));
-            Assert.Equal(before.Karaoke.Select(segment => segment.InactiveStyle!.Fill!.Value.Alpha),
-                after.Karaoke.Select(segment => segment.InactiveStyle!.Fill!.Value.Alpha));
+            Assert.Equal(before.Karaoke.Select(segment => KaraokeVisualStyleResolver.RangeStyleAt(before, segment.Utf16Start, KaraokeVisualState.ACTIVE)!.Fill!.Value.Alpha),
+                after.Karaoke.Select(segment => KaraokeVisualStyleResolver.RangeStyleAt(after, segment.Utf16Start, KaraokeVisualState.ACTIVE)!.Fill!.Value.Alpha));
+            Assert.Equal(before.Karaoke.Select(segment => KaraokeVisualStyleResolver.RangeStyleAt(before, segment.Utf16Start, KaraokeVisualState.INACTIVE)!.Fill!.Value.Alpha),
+                after.Karaoke.Select(segment => KaraokeVisualStyleResolver.RangeStyleAt(after, segment.Utf16Start, KaraokeVisualState.INACTIVE)!.Fill!.Value.Alpha));
             var expected = Assert.Single(SceneEvaluator.Evaluate(original, originalLayer.Start + new MediaTime(1))).Transform.Position;
             var actual = Assert.Single(SceneEvaluator.Evaluate(restored, restoredLayer.Start + new MediaTime(1))).Transform.Position;
             Assert.Equal(expected.X, actual.X, 8);

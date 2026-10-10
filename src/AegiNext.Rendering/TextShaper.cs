@@ -177,7 +177,7 @@ public sealed class TextShaper : IDisposable
                 inkBounds = inkBounds.IsEmpty ? glyphBound : SKRect.Union(inkBounds, glyphBound);
             }
 
-            return new(blob, glyphs, clusters, advanceWidth, inkBounds, metrics);
+            return new(blob, glyphs, clusters, advanceWidth, inkBounds, metrics, font);
         }
         catch
         {

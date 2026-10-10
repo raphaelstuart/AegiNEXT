@@ -44,7 +44,7 @@ public sealed class AssSubtitleFormatTests
         Assert.Equal(new[] { KaraokeHighlightKind.STEP, KaraokeHighlightKind.SWEEP, KaraokeHighlightKind.SWEEP, KaraokeHighlightKind.OUTLINE_STEP }, line.Karaoke.Select(clip => clip.HighlightKind));
         Assert.Equal(new MediaTime(1, 10), line.Karaoke[1].Start);
         Assert.Equal(new MediaTime(1), line.Karaoke[^1].End);
-        Assert.Equal(new SceneColor(1, 0, 0), line.Karaoke[0].InactiveStyle!.Fill);
+        Assert.Equal(new SceneColor(1, 0, 0), line.KaraokeStyleSpans[0].InactiveStyle!.Fill);
         Assert.Equal(4, line.Karaoke.Select(clip => clip.Id).Distinct().Count());
     }
 
@@ -121,14 +121,14 @@ public sealed class AssSubtitleFormatTests
         var line = new SubtitleLine { Text = "ab", End = new(1),
             InlineSpans = [new(1, 1, new() { Bold = true })],
             Karaoke = [new(0, 2, MediaTime.Zero, new(1), SceneColor.White)] };
-        var imported = Assert.Single(AssSubtitleFormat.Parse(AssSubtitleFormat.Write(Document(line)).Text).Lines);
-        Assert.Equal(2, imported.Karaoke.Length);
-        Assert.Equal((0, 1), (imported.Karaoke[0].Utf16Start, imported.Karaoke[0].Utf16Length));
-        Assert.Equal((1, 1), (imported.Karaoke[1].Utf16Start, imported.Karaoke[1].Utf16Length));
-        Assert.Equal(new MediaTime(1, 2), imported.Karaoke[0].End);
-        Assert.Equal(imported.Karaoke[0].End, imported.Karaoke[1].Start);
-        Assert.Equal(new MediaTime(1), imported.Karaoke[1].End);
+        var written = AssSubtitleFormat.Write(Document(line));
+        var imported = Assert.Single(AssSubtitleFormat.Parse(written.Text).Lines);
+        var group = Assert.Single(imported.Karaoke);
+        Assert.Equal((0, 2), (group.Utf16Start, group.Utf16Length));
+        Assert.Equal(MediaTime.Zero, group.Start);
+        Assert.Equal(new MediaTime(1), group.End);
         Assert.Contains(imported.InlineSpans, span => span.Style.Bold == true);
+        Assert.Contains(written.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeStyleRuns");
     }
 
     [Theory]
@@ -145,29 +145,27 @@ public sealed class AssSubtitleFormatTests
             Karaoke = [new(0, 2, MediaTime.Zero, new(1), red) { HighlightKind = kind }] };
         var result = AssSubtitleFormat.Write(Document(line));
         var imported = Assert.Single(AssSubtitleFormat.Parse(result.Text).Lines);
-        Assert.Equal(2, imported.Karaoke.Length);
-        foreach (var clip in imported.Karaoke)
-        {
-            Assert.Equal(kind, clip.HighlightKind);
-            Assert.Equal(1, clip.Utf16Length);
-            Assert.Null(clip.InactiveStyle);
-            Assert.Equal(red, clip.ActiveStyle!.Fill);
-        }
-        Assert.Equal(new MediaTime(1, 2), imported.Karaoke[0].End);
-        Assert.Equal(new MediaTime(1), imported.Karaoke[1].End);
+        var group = Assert.Single(imported.Karaoke);
+        Assert.Equal(kind, group.HighlightKind);
+        Assert.Equal(2, group.Utf16Length);
+        Assert.All(imported.KaraokeStyleSpans, span => Assert.Equal(red, span.ActiveStyle!.Fill));
+        Assert.Equal(blue, KaraokeVisualStyleResolver.RangeStyleAt(imported, 0, KaraokeVisualState.INACTIVE)!.Fill);
+        Assert.Equal(green, KaraokeVisualStyleResolver.RangeStyleAt(imported, 1, KaraokeVisualState.INACTIVE)!.Fill);
+        Assert.Equal(new MediaTime(1), group.End);
         Assert.Equal(blue, imported.InlineSpans.FirstOrDefault(span => span.Utf16Start == 0)?.Style.Fill ?? imported.Style.Fill);
         Assert.Contains(imported.InlineSpans, span => span.Utf16Start == 1 && span.Style.Fill == green && span.Style.Bold == true);
-        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeActiveRuns");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeStyleRuns");
     }
 
     [Fact]
-    public void MultipleActiveColorsInsideSingleAssClipAreDiagnosed()
+    public void MultipleActiveColorsInsideSingleAssClipArePreservedAndRenderRunSemanticsAreDiagnosed()
     {
         var result = AssSubtitleFormat.Parse(File("{\\kf100\\1c&H0000FF&}a{\\1c&H00FF00&}b"));
-        var clips = Assert.Single(result.Lines).Karaoke;
-        Assert.Equal(2, clips.Length);
-        Assert.All(clips, clip => Assert.Equal(new SceneColor(1, 0, 0), clip.ActiveStyle!.Fill));
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeActiveRuns");
+        var line = Assert.Single(result.Lines);
+        Assert.Single(line.Karaoke);
+        Assert.Equal(new SceneColor(1, 0, 0), line.KaraokeStyleSpans[0].ActiveStyle!.Fill);
+        Assert.Equal(new SceneColor(0, 1, 0), line.KaraokeStyleSpans[1].ActiveStyle!.Fill);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeStyleRuns");
     }
 
     [Theory]
@@ -336,40 +334,29 @@ public sealed class AssSubtitleFormatTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void AssEntryPointsNormalizeCompleteUnicodeGraphemesAndPreserveTheirPreciseTimes(bool fileImport)
+    public void AssEntryPointsPreserveCompleteUnicodeGroupAndPreciseTimes(bool fileImport)
     {
         const string TEXT = "a😀e\u0301";
         var line = fileImport
             ? Assert.Single(AssSubtitleFormat.Parse(File("{\\kf100}" + TEXT)).Lines)
             : AssTextProjection.Apply(new() { Text = TEXT }, "{\\kf100}" + TEXT).Line;
-        Assert.Equal(3, line.Karaoke.Length);
-        Assert.Equal((0, 1), (line.Karaoke[0].Utf16Start, line.Karaoke[0].Utf16Length));
-        Assert.Equal((1, 2), (line.Karaoke[1].Utf16Start, line.Karaoke[1].Utf16Length));
-        Assert.Equal((3, 2), (line.Karaoke[2].Utf16Start, line.Karaoke[2].Utf16Length));
-        Assert.Equal(3, line.Karaoke.Select(clip => clip.Id).Distinct().Count());
-        for (var index = 0; index < line.Karaoke.Length; index++)
-        {
-            Assert.Equal(new MediaTime(index, 3), line.Karaoke[index].Start);
-            Assert.Equal(new MediaTime(index + 1, 3), line.Karaoke[index].End);
-        }
+        var group = Assert.Single(line.Karaoke);
+        Assert.Equal((0, 5), (group.Utf16Start, group.Utf16Length));
+        Assert.Equal(MediaTime.Zero, group.Start);
+        Assert.Equal(new MediaTime(1), group.End);
         var projection = AssTextProjection.Create(line);
         var edited = AssTextProjection.Apply(line, projection.Source.Replace("\\b0", "\\b1", StringComparison.Ordinal)).Line;
         Assert.Equal(line.Karaoke.Select(clip => (clip.Id, clip.Start, clip.End)), edited.Karaoke.Select(clip => (clip.Id, clip.Start, clip.End)));
     }
 
     [Fact]
-    public void UnchangedLegacyAdvancedSourceUsesSharedGraphemeNormalizationWithoutTimeQuantization()
+    public void UnchangedAdvancedSourcePreservesCompleteGroupWithoutTimeQuantization()
     {
         var line = new SubtitleLine { Text = "a😀", Karaoke = [new(0, 3, MediaTime.Zero, new(1, 7), SceneColor.White)] };
         var projection = AssTextProjection.Create(line);
         var result = AssTextProjection.Apply(line, projection.Source).Line;
-        Assert.Equal(2, result.Karaoke.Length);
-        Assert.Equal(line.Karaoke[0].Id, result.Karaoke[0].Id);
-        Assert.NotEqual(result.Karaoke[0].Id, result.Karaoke[1].Id);
-        Assert.Equal(new MediaTime(1, 14), result.Karaoke[0].End);
-        Assert.Equal(result.Karaoke[0].End, result.Karaoke[1].Start);
-        Assert.Equal(line.Karaoke[0].End, result.Karaoke[1].End);
-        Assert.Equal((1, 2), (result.Karaoke[1].Utf16Start, result.Karaoke[1].Utf16Length));
+        Assert.Same(line, result);
+        Assert.Equal(line.Karaoke[0], Assert.Single(result.Karaoke));
     }
 
     [Theory]
@@ -541,15 +528,11 @@ public sealed class AssSubtitleFormatTests
         var first = projection.SourceMap.First(mapping => mapping.Utf16Length == 1 && mapping.Utf16Start == 0);
         var edited = AssTextProjection.Apply(line, projection.Source.Insert(first.SourceStart, "前")).Line;
         Assert.Equal("前a😀c", edited.Text);
-        Assert.Equal(4, edited.Karaoke.Length);
-        Assert.Equal(line.Karaoke[0].Id, edited.Karaoke[0].Id);
-        Assert.NotEqual(line.Karaoke[0].Id, edited.Karaoke[1].Id);
-        Assert.Equal(new MediaTime(1, 14), edited.Karaoke[0].End);
-        Assert.Equal(edited.Karaoke[0].End, edited.Karaoke[1].Start);
-        Assert.Equal(line.Karaoke[0].End, edited.Karaoke[1].End);
-        Assert.Equal(line.Karaoke.Skip(1).Select(clip => (clip.Id, clip.Start, clip.End)), edited.Karaoke.Skip(2).Select(clip => (clip.Id, clip.Start, clip.End)));
-        Assert.Equal((2, 2), (edited.Karaoke[2].Utf16Start, edited.Karaoke[2].Utf16Length));
-        Assert.Equal((4, 1), (edited.Karaoke[3].Utf16Start, edited.Karaoke[3].Utf16Length));
+        Assert.Equal(3, edited.Karaoke.Length);
+        Assert.Equal(line.Karaoke.Select(clip => (clip.Id, clip.Start, clip.End)), edited.Karaoke.Select(clip => (clip.Id, clip.Start, clip.End)));
+        Assert.Equal((0, 2), (edited.Karaoke[0].Utf16Start, edited.Karaoke[0].Utf16Length));
+        Assert.Equal((2, 2), (edited.Karaoke[1].Utf16Start, edited.Karaoke[1].Utf16Length));
+        Assert.Equal((4, 1), (edited.Karaoke[2].Utf16Start, edited.Karaoke[2].Utf16Length));
     }
 
     internal static ProjectDocument Document(params SubtitleLine[] lines)

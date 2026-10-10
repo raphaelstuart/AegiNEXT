@@ -21,13 +21,14 @@ public sealed class SubtitlePreviewModeTests
     }
 
     [Fact]
-    public void HighlightedModeActivatesOnlyTimedTextWithPerCharacterOverridesAndKeepsGeometry()
+    public void HighlightedModeActivatesAllTextWithPerCharacterOverridesAndKeepsGeometry()
     {
         var document = Document();
         var line = document.Subtitles[0];
         using var renderer = Renderer();
         var before = renderer.MeasureSubtitleTextLayout(document, line);
-        var expected = Pixels(renderer, document, line, new(20), SubtitlePreviewMode.TIMED);
+        var fullyTimed = line with { Karaoke = line.Karaoke.Add(new(3, 1, MediaTime.Zero, new(1), SceneColor.White)) };
+        var expected = Pixels(renderer, document, fullyTimed, new(20), SubtitlePreviewMode.TIMED);
         Assert.Equal(expected, Pixels(renderer, document, line, MediaTime.Zero, SubtitlePreviewMode.HIGHLIGHTED));
         Assert.Equal(expected, Pixels(renderer, document, line, new(20), SubtitlePreviewMode.HIGHLIGHTED));
         var after = renderer.MeasureSubtitleTextLayout(document, line);
@@ -44,7 +45,7 @@ public sealed class SubtitlePreviewModeTests
         var document = Document();
         var line = document.Subtitles[0] with
         {
-            Text = "AB", InlineSpans = [], KaraokeStyle = null,
+            Text = "AB", InlineSpans = [], KaraokeStyle = null, KaraokeStyleSpans = [],
             Style = document.Subtitles[0].Style with { StrokeWidth = 0, ShadowColor = SceneColor.Transparent },
             Karaoke = [new(0, 2, new(10), new(11), new(1, 0, 0, 0.5))]
         };
@@ -55,12 +56,15 @@ public sealed class SubtitlePreviewModeTests
     }
 
     [Fact]
-    public void AHighlightSnapshotDoesNotRecolorTextWithoutCharacterTiming()
+    public void UntimedSentencePresetPreviewsItsAppearanceWithoutDrivingTimedPlayback()
     {
         var document = Document();
-        var line = document.Subtitles[0] with { Karaoke = [] };
+        var line = document.Subtitles[0] with { Text = "ABC", Karaoke = [], KaraokeStyleSpans = [], InlineSpans = [] };
         using var renderer = Renderer();
         Assert.Equal(Pixels(renderer, document, line, new(20), SubtitlePreviewMode.NORMAL),
+            Pixels(renderer, document, line, MediaTime.Zero, SubtitlePreviewMode.TIMED));
+        var expected = line with { Style = KaraokeVisualStyleResolver.ResolveActive(line.Style, line.KaraokeStyle, null) };
+        Assert.Equal(Pixels(renderer, document, expected, MediaTime.Zero, SubtitlePreviewMode.NORMAL),
             Pixels(renderer, document, line, MediaTime.Zero, SubtitlePreviewMode.HIGHLIGHTED));
     }
 
@@ -88,9 +92,10 @@ public sealed class SubtitlePreviewModeTests
             Karaoke = [new(0, 1, new(10), new(11), SceneColor.White),
                 new(1, 1, new(11), new(12), SceneColor.White)
                 {
-                    ActiveStyle = new() { Stroke = new(0, 1, 0), StrokeWidth = 5 },
-                    InactiveStyle = new() { Fill = SceneColor.Transparent }, HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
-                }]
+                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
+                }],
+            KaraokeStyleSpans = [new(1, 1, new() { Stroke = new(0, 1, 0), StrokeWidth = 5 },
+                new() { Fill = SceneColor.Transparent })]
         };
         return new() { Width = 300, Height = 200, Assets = [font], Subtitles = [line], Layers =
             [new() { Kind = LayerKind.SUBTITLE, SubtitleId = line.Id, Start = line.Start, End = line.End }] };

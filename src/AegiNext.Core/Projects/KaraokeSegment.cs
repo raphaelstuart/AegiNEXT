@@ -7,6 +7,4 @@ public sealed record KaraokeSegment(int Utf16Start, int Utf16Length, MediaTime S
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public KaraokeHighlightKind HighlightKind { get; init; } = KaraokeHighlightKind.SWEEP;
-    public KaraokeVisualStyleOverride? InactiveStyle { get; init; }
-    public KaraokeVisualStyleOverride? ActiveStyle { get; init; }
 }

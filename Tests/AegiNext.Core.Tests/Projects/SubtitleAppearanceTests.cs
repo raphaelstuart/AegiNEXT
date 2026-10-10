@@ -27,13 +27,9 @@ public sealed class SubtitleAppearanceTests
     {
         var ordinary = new SubtitleStyle { LetterSpacing = -2, FillBlur = 2, StrokeBlur = 3, WrapMode = SubtitleWrapMode.NO_WRAP };
         var snapshot = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "Glow", ordinary with { FillBlur = 9, StrokeBlur = 11 });
-        var segment = new KaraokeSegment(0, 1, new(0), new(1), SceneColor.White)
-        {
-            InactiveStyle = new() { FillBlur = 0 },
-            ActiveStyle = new() { StrokeBlur = 0 }
-        };
-        var inactive = KaraokeVisualStyleResolver.ResolveInactive(ordinary, segment);
-        var active = KaraokeVisualStyleResolver.ResolveActive(ordinary, snapshot, segment);
+        var segment = new KaraokeSegment(0, 1, new(0), new(1), SceneColor.White);
+        var inactive = KaraokeVisualStyleResolver.ResolveInactive(ordinary, segment, new() { FillBlur = 0 });
+        var active = KaraokeVisualStyleResolver.ResolveActive(ordinary, snapshot, segment, new() { StrokeBlur = 0 });
 
         Assert.Equal(0, inactive.FillBlur);
         Assert.Equal(3, inactive.StrokeBlur);
@@ -80,7 +76,7 @@ public sealed class SubtitleAppearanceTests
         }));
         Assert.Throws<InvalidDataException>(() => ProjectValidator.ValidateSubtitleKaraoke(new()
         {
-            Text = "a", Karaoke = [new(0, 1, new(0), new(1), SceneColor.White) { ActiveStyle = new() { FillBlur = value } }]
+            Text = "a", KaraokeStyleSpans = [new(0, 1, new() { FillBlur = value })]
         }));
     }
 

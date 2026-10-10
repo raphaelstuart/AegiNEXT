@@ -35,16 +35,18 @@ public sealed class SubtitleTypographyEditingTests
             Style = line.Style with { LetterSpacing = 9, FillBlur = 2, StrokeBlur = 3, WrapMode = SubtitleWrapMode.NO_WRAP },
             Karaoke =
             [
-                new(0, 1, new(0), new(1), SceneColor.White) { ActiveStyle = new() { FillBlur = 5, StrokeBlur = 6 } },
+                new(0, 1, new(0), new(1), SceneColor.White),
                 new(1, 1, new(1), new(2), SceneColor.White)
-            ]
+            ],
+            KaraokeStyleSpans = [new(0, 1, new() { FillBlur = 5, StrokeBlur = 6 })]
         });
         var before = editor.Snapshot;
 
         editor.ApplySubtitleKaraokeStyleRange(id, 0, 1, new() { FillBlur = 0 });
 
         var result = Assert.Single(editor.Snapshot.Subtitles);
-        var active = KaraokeVisualStyleResolver.ResolveActive(result.Style, result.KaraokeStyle, result.Karaoke[0]);
+        var active = KaraokeVisualStyleResolver.ResolveActive(result.Style, result.KaraokeStyle, result.Karaoke[0],
+            KaraokeVisualStyleResolver.RangeStyleAt(result, 0, KaraokeVisualState.ACTIVE));
         Assert.Equal(0, active.FillBlur);
         Assert.Equal(6, active.StrokeBlur);
         Assert.Equal(9, active.LetterSpacing);
@@ -72,9 +74,9 @@ public sealed class SubtitleTypographyEditingTests
         });
         editor.UpdateSubtitle(second, line => line with
         {
-            KaraokeStyle = secondStyle,
-            Karaoke = inactive ? [] : [new(0, 1, new(0), new(1), SceneColor.White) { ActiveStyle = new() { FillBlur = 0 } }],
-            InactiveKaraoke = inactive ? [new(0, 1, new(0), new(1), SceneColor.White) { ActiveStyle = new() { FillBlur = 0 } }] : []
+            KaraokeStyle = secondStyle, KaraokeStyleSpans = [new(0, 1, new() { FillBlur = 0 })],
+            Karaoke = inactive ? [] : [new(0, 1, new(0), new(1), SceneColor.White)],
+            InactiveKaraoke = inactive ? [new(0, 1, new(0), new(1), SceneColor.White)] : []
         });
 
         var merged = ProjectEditingOperations.MergeSubtitles(editor.Snapshot, first, second, "");
@@ -82,10 +84,10 @@ public sealed class SubtitleTypographyEditingTests
         var line = Assert.Single(merged.Subtitles);
         Assert.Null(line.KaraokeStyle);
         var segments = inactive ? line.InactiveKaraoke : line.Karaoke;
-        Assert.Equal(2, segments[0].ActiveStyle!.FillBlur);
-        Assert.Equal(4, segments[0].ActiveStyle!.StrokeBlur);
-        Assert.Equal(0, segments[1].ActiveStyle!.FillBlur);
-        Assert.Equal(7, segments[1].ActiveStyle!.StrokeBlur);
+        Assert.Equal(2, KaraokeVisualStyleResolver.RangeStyleAt(line, 0, KaraokeVisualState.ACTIVE)!.FillBlur);
+        Assert.Equal(4, KaraokeVisualStyleResolver.RangeStyleAt(line, 0, KaraokeVisualState.ACTIVE)!.StrokeBlur);
+        Assert.Equal(0, KaraokeVisualStyleResolver.RangeStyleAt(line, 1, KaraokeVisualState.ACTIVE)!.FillBlur);
+        Assert.Equal(7, KaraokeVisualStyleResolver.RangeStyleAt(line, 1, KaraokeVisualState.ACTIVE)!.StrokeBlur);
     }
 
     [Fact]
@@ -96,11 +98,10 @@ public sealed class SubtitleTypographyEditingTests
             Text = "ab", End = new(4),
             Style = new() { LetterSpacing = 0.123456789123, FillBlur = 2.123456789123, StrokeBlur = 3.123456789123, WrapMode = SubtitleWrapMode.NO_WRAP },
             InlineSpans = [new(1, 1, new() { LetterSpacing = -2.123456789123, FillBlur = 4.123456789123, StrokeBlur = 5.123456789123 })],
-            Karaoke = [new(1, 1, new(1), new(2), SceneColor.White)
-            {
-                ActiveStyle = new() { FillBlur = 6.123456789123, StrokeBlur = 7.123456789123 },
-                InactiveStyle = new() { FillBlur = 8.123456789123, StrokeBlur = 9.123456789123 }
-            }]
+            Karaoke = [new(1, 1, new(1), new(2), SceneColor.White)],
+            KaraokeStyleSpans = [new(1, 1,
+                new() { FillBlur = 6.123456789123, StrokeBlur = 7.123456789123 },
+                new() { FillBlur = 8.123456789123, StrokeBlur = 9.123456789123 })]
         };
         var projection = AssTextProjection.Create(line);
 

@@ -47,8 +47,8 @@ public sealed class AssTypographyImportTests
         Assert.Equal(191d / 255, style.Fill.Alpha, 12);
         Assert.Equal(223d / 255, style.Stroke.Alpha, 12);
         Assert.Equal(159d / 255, style.ShadowColor.Alpha, 12);
-        Assert.Equal(127d / 255, segment.ActiveStyle!.Fill!.Value.Alpha, 12);
-        Assert.Equal(191d / 255, segment.InactiveStyle!.Fill!.Value.Alpha, 12);
+        Assert.Equal(127d / 255, Assert.Single(line.KaraokeStyleSpans).ActiveStyle!.Fill!.Value.Alpha, 12);
+        Assert.Equal(191d / 255, Assert.Single(line.KaraokeStyleSpans).InactiveStyle!.Fill!.Value.Alpha, 12);
     }
 
     [Theory]
@@ -103,7 +103,8 @@ public sealed class AssTypographyImportTests
         var line = Assert.Single(parsed.Lines);
         var segment = Assert.Single(line.Karaoke);
         var ordinary = StyleAt(line, 0);
-        var active = KaraokeVisualStyleResolver.ResolveActive(ordinary, null, segment);
+        var active = KaraokeVisualStyleResolver.ResolveActive(ordinary, null, segment,
+            KaraokeVisualStyleResolver.RangeStyleAt(line, 0, KaraokeVisualState.ACTIVE));
 
         Assert.Equal(fill * AssBlurConversion.SigmaPerUnit, active.FillBlur, 12);
         Assert.Equal(stroke * AssBlurConversion.SigmaPerUnit, active.StrokeBlur, 12);
@@ -118,7 +119,11 @@ public sealed class AssTypographyImportTests
         var parsed = AssSubtitleFormat.Parse(File("{\\kt50\\k100\\t(500,500,\\blur4)}a{\\bord0}b"), 640, 360);
 
         Assert.Equal("ab", Assert.Single(parsed.Lines).Text);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeActiveRuns");
+        var line = Assert.Single(parsed.Lines);
+        Assert.Single(line.Karaoke);
+        Assert.Equal(4 * AssBlurConversion.SigmaPerUnit, line.KaraokeStyleSpans[0].ActiveStyle!.StrokeBlur!.Value, 12);
+        Assert.Equal(4 * AssBlurConversion.SigmaPerUnit, line.KaraokeStyleSpans[1].ActiveStyle!.FillBlur!.Value, 12);
+        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeStyleRuns");
     }
 
     [Fact]
@@ -129,7 +134,8 @@ public sealed class AssTypographyImportTests
 
         Assert.Equal(0, StyleAt(line, 0).StrokeBlur);
         var segment = Assert.Single(line.Karaoke);
-        var active = KaraokeVisualStyleResolver.ResolveActive(StyleAt(line, 1), null, segment);
+        var active = KaraokeVisualStyleResolver.ResolveActive(StyleAt(line, 1), null, segment,
+            KaraokeVisualStyleResolver.RangeStyleAt(line, 1, KaraokeVisualState.ACTIVE));
         Assert.Equal(0, active.FillBlur);
         Assert.Equal(0, active.StrokeBlur);
         Assert.Equal(0, active.ShadowBlur);

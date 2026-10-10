@@ -48,10 +48,11 @@ public sealed class SubtitleSystemFontFallbackTests
         var before = renderer.MeasureSubtitleTextLayout(document, line);
         line = line with { Karaoke =
         [
-            new(0, 3, MediaTime.Zero, new(1), new(0, 1, 0)) { ActiveStyle = new() { Fill = new(0, 1, 0) } },
+            new(0, 3, MediaTime.Zero, new(1), new(0, 1, 0)),
             new(3, 5, new(1), new(2), new(0, 1, 0)) { HighlightKind = KaraokeHighlightKind.STEP },
-            new(8, 4, new(2), new(3), new(0, 1, 0)) { ActiveStyle = new() { Fill = new(0, 1, 0) } }
-        ] };
+            new(8, 4, new(2), new(3), new(0, 1, 0))
+        ], KaraokeStyleSpans = [new(0, 3, new() { Fill = new(0, 1, 0) }),
+            new(8, 4, new() { Fill = new(0, 1, 0) })] };
         document = document with { Subtitles = [line] };
         var after = renderer.MeasureSubtitleTextLayout(document, line);
         Assert.Equal(before.Graphemes.ToArray(), after.Graphemes.ToArray());

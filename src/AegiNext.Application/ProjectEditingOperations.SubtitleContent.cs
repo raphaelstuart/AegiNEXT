@@ -56,7 +56,7 @@ public static partial class ProjectEditingOperations
             throw new ArgumentOutOfRangeException(nameof(duration), "卡拉 OK 片段必须具有正时长。");
         }
         var index = SubtitleIndex(document, subtitleId);
-        var line = SubtitleKaraokeNormalization.Normalize(document.Subtitles[index]);
+        var line = document.Subtitles[index];
         var clipIndex = KaraokeClipIndex(line, clipId);
         var clip = line.Karaoke[clipIndex];
         var delta = duration - (clip.End - clip.Start);
@@ -76,10 +76,6 @@ public static partial class ProjectEditingOperations
             {
                 throw new ArgumentOutOfRangeException(nameof(duration), "调整后的字时间必须具有非负起点和正时长。");
             }
-            if (cursor > 0 && next.Start < clips[cursor - 1].End)
-            {
-                throw new InvalidOperationException("重叠或逆序的旧字时间不能隐式调整为相邻片段。");
-            }
             clips[cursor] = next;
         }
         return WithSubtitleContent(document, index, line with { Karaoke = clips.ToImmutable() });
@@ -87,7 +83,6 @@ public static partial class ProjectEditingOperations
 
     private static ProjectDocument WithSubtitleContent(ProjectDocument document, int index, SubtitleLine line)
     {
-        line = SubtitleKaraokeNormalization.Normalize(line);
         return line == document.Subtitles[index] ? document : Verified(document with
         {
             Subtitles = document.Subtitles.SetItem(index, line)

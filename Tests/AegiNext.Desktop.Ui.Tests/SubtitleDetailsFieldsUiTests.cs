@@ -534,28 +534,28 @@ public sealed class SubtitleDetailsFieldsUiTests
                 StrokeWidth = 3.123456789012345,
                 ShadowOffset = new(-1.123456789012345, 2.123456789012345)
             }),
+            KaraokeStyleSpans =
+            [
+                new(0, 1, new() { StrokeWidth = 0 }, new() { Fill = new(0.25, 0.5, 2.75) }),
+                new(1, 2, new() { Stroke = new(0.25, 3.75, 0.5), ShadowBlur = 2.125 }, new() { ShadowOffset = new(-2.5, 1.25) }),
+                new(3, 5, new() { ShadowOffset = new(-3.125, 5.75), ShadowBlur = 1.625 }, new() { StrokeWidth = 1.125 })
+            ],
             Karaoke =
             [
                 new(0, 1, new(1, 7), new(5, 6), new(3.123456789012345, 0.25, 0.5, 0.6))
                 {
                     Id = Guid.Parse("325265e9-3874-4f14-bbd0-b2c86ff12f3d"),
-                    HighlightKind = KaraokeHighlightKind.STEP,
-                    InactiveStyle = new() { Fill = new(0.25, 0.5, 2.75) },
-                    ActiveStyle = new() { StrokeWidth = 0 }
+                    HighlightKind = KaraokeHighlightKind.STEP
                 },
                 new(1, 2, new(11, 12), new(17, 9), new(0.5, 2.123456789012345, 0.25))
                 {
                     Id = Guid.Parse("53bdad57-d978-4597-9677-3de68f8a4d23"),
-                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-                    InactiveStyle = new() { ShadowOffset = new(-2.5, 1.25) },
-                    ActiveStyle = new() { Stroke = new(0.25, 3.75, 0.5), ShadowBlur = 2.125 }
+                    HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
                 },
                 new(3, 5, new(19, 9), new(31, 11), new(0.25, 0.5, 4.123456789012345))
                 {
                     Id = Guid.Parse("ee3d799f-fca2-40a3-a9e0-9b5397d7cb12"),
-                    HighlightKind = KaraokeHighlightKind.SWEEP,
-                    InactiveStyle = new() { StrokeWidth = 1.125 },
-                    ActiveStyle = new() { ShadowOffset = new(-3.125, 5.75), ShadowBlur = 1.625 }
+                    HighlightKind = KaraokeHighlightKind.SWEEP
                 }
             ]
         });
@@ -583,6 +583,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         Assert.Empty(disabled.Subtitles[0].Karaoke);
         Assert.Equal(expected.Karaoke.ToArray(), disabled.Subtitles[0].InactiveKaraoke.ToArray());
         Assert.Equal(expected.KaraokeStyle, disabled.Subtitles[0].KaraokeStyle);
+        Assert.Equal(expected.KaraokeStyleSpans, disabled.Subtitles[0].KaraokeStyleSpans);
         Assert.Equal(expected.InlineSpans, disabled.Subtitles[0].InlineSpans);
         UiTestActions.Click(host, "EnableKaraokeToggle");
         Flush(host);
@@ -593,6 +594,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         Assert.Equal(expected.Karaoke.ToArray(), restored.Subtitles[0].Karaoke.ToArray());
         Assert.Empty(restored.Subtitles[0].InactiveKaraoke);
         Assert.Equal(expected.KaraokeStyle, restored.Subtitles[0].KaraokeStyle);
+        Assert.Equal(expected.KaraokeStyleSpans, restored.Subtitles[0].KaraokeStyleSpans);
         Assert.Equal(expected.Style, restored.Subtitles[0].Style);
         Assert.Equal(expected.InlineSpans, restored.Subtitles[0].InlineSpans);
         Assert.Equal(expected.Text, restored.Subtitles[0].Text);

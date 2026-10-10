@@ -212,7 +212,7 @@ public sealed class AssNumericTransformImportTests
     {
         var parsed = Parse("{\\kt50\\k100\\t(500,500,\\bord6\\blur4\\fsp10)}a");
         var clip = Assert.Single(parsed.Clips);
-        var active = Assert.Single(clip.Line.Karaoke).ActiveStyle!;
+        var active = Assert.Single(clip.Line.KaraokeStyleSpans).ActiveStyle!;
 
         Assert.Equal(6, active.StrokeWidth);
         Assert.Equal(4 * AssBlurConversion.SigmaPerUnit, active.StrokeBlur!.Value, 10);

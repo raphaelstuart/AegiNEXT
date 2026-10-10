@@ -26,9 +26,9 @@ public sealed class SubtitleContentEditingTests
     }
 
     [Theory]
-    [InlineData(1, "aXYbc", 1)]
-    [InlineData(3, "abcXY", 2)]
-    public void InsertionsDivideOnlyTheContainingClip(int offset, string expected, int affected)
+    [InlineData(1, "aXYbc")]
+    [InlineData(3, "abcXY")]
+    public void BoundaryInsertionsStayUntimedAndPreserveEveryExistingClock(int offset, string expected)
     {
         var editor = Editor("abc");
         var line = editor.Snapshot.Subtitles[0];
@@ -36,23 +36,21 @@ public sealed class SubtitleContentEditingTests
         editor.ReplaceSubtitleTextRange(line.Id, offset, 0, "XY");
         var result = editor.Snapshot.Subtitles[0];
         Assert.Equal(expected, result.Text);
-        Assert.Equal(5, result.Karaoke.Length);
-        var divided = result.Karaoke.Skip(affected).Take(3).ToArray();
-        Assert.Equal(original[affected].Start, divided[0].Start);
-        Assert.Equal(original[affected].End, divided[^1].End);
-        Assert.All(divided, clip => Assert.Equal(new MediaTime(1, 3), clip.End - clip.Start));
-        foreach (var clip in original.Where((_, index) => index != affected))
+        Assert.Equal(3, result.Karaoke.Length);
+        foreach (var clip in original)
         {
             var preserved = Assert.Single(result.Karaoke, value => value.Id == clip.Id);
             Assert.Equal((clip.Start, clip.End), (preserved.Start, preserved.End));
+            Assert.Equal(clip.Utf16Start >= offset ? clip.Utf16Start + 2 : clip.Utf16Start, preserved.Utf16Start);
         }
+        Assert.DoesNotContain(result.Karaoke, clip => clip.Utf16Start >= offset && clip.Utf16Start < offset + 2);
     }
 
     [Theory]
-    [InlineData(0, "bc", 0, 2)]
-    [InlineData(1, "ac", 1, 3)]
-    [InlineData(2, "ab", 1, 3)]
-    public void DeletedClipTransfersItsTimeToNextOrFinalPreviousNeighbor(int offset, string text, int start, int end)
+    [InlineData(0, "bc", 1, 2)]
+    [InlineData(1, "ac", 2, 3)]
+    [InlineData(2, "ab", 1, 2)]
+    public void DeletedClipLeavesItsTimeEmptyAndKeepsNeighborClocks(int offset, string text, int start, int end)
     {
         var editor = Editor("abc");
         var line = editor.Snapshot.Subtitles[0];
@@ -67,21 +65,29 @@ public sealed class SubtitleContentEditingTests
     }
 
     [Fact]
-    public void CombiningInsertionAndZwjReplacementRecalculateFinalGraphemeBoundaries()
+    public void CombiningAndZwjInsertionsRequireExplicitMergeAcrossTimingBoundaries()
     {
         var editor = Editor("eb");
         var line = editor.Snapshot.Subtitles[0];
         editor.ApplySubtitleInlineStyle(line.Id, 0, 1, new() { Italic = true });
+        var beforeCombining = editor.Snapshot;
+        Assert.Throws<InvalidOperationException>(() => editor.ReplaceSubtitleTextRange(line.Id, 1, 0, "\u0301"));
+        Assert.Same(beforeCombining, editor.Snapshot);
+        editor.MergeKaraokeClips(line.Id, line.Karaoke[0].Id, line.Karaoke[1].Id);
         editor.ReplaceSubtitleTextRange(line.Id, 1, 0, "\u0301");
         var result = editor.Snapshot.Subtitles[0];
         Assert.Equal("e\u0301b", result.Text);
-        Assert.Equal(2, result.Karaoke[0].Utf16Length);
+        Assert.Equal(3, result.Karaoke[0].Utf16Length);
         Assert.Equal(line.Karaoke[0].Id, result.Karaoke[0].Id);
         Assert.Equal(2, Assert.Single(result.InlineSpans).Utf16Length);
         ProjectValidator.Validate(editor.Snapshot);
 
         editor = Editor("👩👧x");
         line = editor.Snapshot.Subtitles[0];
+        var beforeJoin = editor.Snapshot;
+        Assert.Throws<InvalidOperationException>(() => editor.ReplaceSubtitleTextRange(line.Id, 2, 0, "\u200d"));
+        Assert.Same(beforeJoin, editor.Snapshot);
+        editor.MergeKaraokeClips(line.Id, line.Karaoke[0].Id, line.Karaoke[1].Id);
         editor.ReplaceSubtitleTextRange(line.Id, 2, 0, "\u200d");
         result = editor.Snapshot.Subtitles[0];
         Assert.Equal("👩‍👧x", result.Text);
@@ -219,7 +225,7 @@ public sealed class SubtitleContentEditingTests
     }
 
     [Fact]
-    public void UnequalReplacementRedistributesOnlyTheEditedBlockAndIsOneTransaction()
+    public void UnequalReplacementAcrossGroupsStaysUntimedAndIsOneTransaction()
     {
         var editor = Editor("abcde");
         var before = editor.Snapshot;
@@ -228,12 +234,10 @@ public sealed class SubtitleContentEditingTests
         var result = editor.Snapshot.Subtitles[0];
         Assert.Equal("aXYe", result.Text);
         Assert.Same(line.Karaoke[0], result.Karaoke[0]);
-        Assert.Equal(new MediaTime(1), result.Karaoke[1].Start);
-        Assert.Equal(new MediaTime(5, 2), result.Karaoke[1].End);
-        Assert.Equal(new MediaTime(5, 2), result.Karaoke[2].Start);
-        Assert.Equal(new MediaTime(4), result.Karaoke[2].End);
-        Assert.Equal(line.Karaoke[4].Id, result.Karaoke[3].Id);
-        Assert.Equal((line.Karaoke[4].Start, line.Karaoke[4].End), (result.Karaoke[3].Start, result.Karaoke[3].End));
+        Assert.Equal(2, result.Karaoke.Length);
+        Assert.Equal(line.Karaoke[4].Id, result.Karaoke[1].Id);
+        Assert.Equal((line.Karaoke[4].Start, line.Karaoke[4].End), (result.Karaoke[1].Start, result.Karaoke[1].End));
+        Assert.Equal(3, result.Karaoke[1].Utf16Start);
         Assert.True(editor.Undo());
         Assert.Same(before, editor.Snapshot);
         Assert.False(editor.CanUndo);
@@ -242,7 +246,7 @@ public sealed class SubtitleContentEditingTests
     }
 
     [Fact]
-    public void LegacyMultiGraphemeClipInsertionNormalizesBeforeLocalTimeRedistribution()
+    public void MultiGraphemeGroupInsertionInheritsTheWholeGroupClock()
     {
         var setup = Editor("abcd");
         var line = setup.Snapshot.Subtitles[0];
@@ -254,13 +258,10 @@ public sealed class SubtitleContentEditingTests
         editor.ReplaceSubtitleTextRange(line.Id, 2, 0, "X");
         var result = editor.Snapshot.Subtitles[0];
         Assert.Equal("abXcd", result.Text);
-        Assert.Equal(5, result.Karaoke.Length);
+        Assert.Equal(3, result.Karaoke.Length);
         Assert.Same(line.Karaoke[0], result.Karaoke[0]);
-        Assert.Equal(new MediaTime(1), result.Karaoke[1].Start);
-        Assert.Equal(new MediaTime(3), result.Karaoke[3].End);
-        Assert.Equal(line.Karaoke[2].Id, result.Karaoke[4].Id);
-        Assert.Equal(new MediaTime(2), result.Karaoke[1].End);
-        Assert.Equal(new MediaTime(1, 2), result.Karaoke[2].End - result.Karaoke[2].Start);
+        Assert.Equal(line.Karaoke[1] with { Utf16Length = 3 }, result.Karaoke[1]);
+        Assert.Equal(line.Karaoke[2] with { Utf16Start = 4 }, result.Karaoke[2]);
     }
 
     [Fact]
@@ -280,7 +281,7 @@ public sealed class SubtitleContentEditingTests
     }
 
     [Fact]
-    public void DeletionPreservesWaitingTimeWhileTransferringOnlyDeletedDuration()
+    public void DeletionKeepsBothDeletedDurationAndExistingWaitEmpty()
     {
         var setup = Editor("abc");
         var line = setup.Snapshot.Subtitles[0];
@@ -292,9 +293,9 @@ public sealed class SubtitleContentEditingTests
         editor.ReplaceSubtitleTextRange(line.Id, 1, 1, "");
         var result = editor.Snapshot.Subtitles[0];
         Assert.Same(line.Karaoke[0], result.Karaoke[0]);
-        Assert.Equal(new MediaTime(4), result.Karaoke[1].Start);
+        Assert.Equal(new MediaTime(5), result.Karaoke[1].Start);
         Assert.Equal(new MediaTime(6), result.Karaoke[1].End);
-        Assert.Equal(new MediaTime(3), result.Karaoke[1].Start - result.Karaoke[0].End);
+        Assert.Equal(new MediaTime(4), result.Karaoke[1].Start - result.Karaoke[0].End);
     }
 
     [Fact]
@@ -349,26 +350,25 @@ public sealed class SubtitleContentEditingTests
     }
 
     [Fact]
-    public void ReplacementAcrossWaitingIntervalsPreservesThemOrRejectsUnrepresentableText()
+    public void ReplacementAcrossWaitingIntervalsClearsOnlyTheTouchedGroups()
     {
         var setup = Editor("ab");
         var line = setup.Snapshot.Subtitles[0];
         line = line with { Karaoke = [line.Karaoke[0], line.Karaoke[1] with { Start = new(2), End = new(3) }] };
         var before = setup.Snapshot with { Subtitles = [line] };
         var editor = new ProjectEditor(before);
-        Assert.Throws<InvalidOperationException>(() => editor.ReplaceSubtitleTextRange(line.Id, 0, 2, "X"));
+        editor.ReplaceSubtitleTextRange(line.Id, 0, 2, "X");
+        Assert.Equal("X", editor.Snapshot.Subtitles[0].Text);
+        Assert.Empty(editor.Snapshot.Subtitles[0].Karaoke);
+        Assert.True(editor.Undo());
         Assert.Same(before, editor.Snapshot);
-        Assert.False(editor.CanUndo);
         editor.ReplaceSubtitleTextRange(line.Id, 0, 2, "XYZ");
-        var result = editor.Snapshot.Subtitles[0];
-        Assert.Equal(new MediaTime(0), result.Karaoke[0].Start);
-        Assert.Equal(new MediaTime(1), result.Karaoke[1].End);
-        Assert.Equal(new MediaTime(2), result.Karaoke[2].Start);
-        Assert.Equal(new MediaTime(3), result.Karaoke[2].End);
+        Assert.Equal("XYZ", editor.Snapshot.Subtitles[0].Text);
+        Assert.Empty(editor.Snapshot.Subtitles[0].Karaoke);
     }
 
     [Fact]
-    public void DeletingOverlappingOldClipIsRejectedWhileEqualGraphemeEditKeepsOldTimes()
+    public void DeletingOneOverlappingGroupPreservesOtherClocksAndEqualEditsKeepTiming()
     {
         var setup = Editor("abc");
         var line = setup.Snapshot.Subtitles[0];
@@ -378,7 +378,11 @@ public sealed class SubtitleContentEditingTests
         };
         var before = setup.Snapshot with { Subtitles = [line] };
         var editor = new ProjectEditor(before);
-        Assert.Throws<InvalidOperationException>(() => editor.ReplaceSubtitleTextRange(line.Id, 1, 1, ""));
+        editor.ReplaceSubtitleTextRange(line.Id, 1, 1, "");
+        Assert.Equal(2, editor.Snapshot.Subtitles[0].Karaoke.Length);
+        Assert.Equal(line.Karaoke[0], editor.Snapshot.Subtitles[0].Karaoke[0]);
+        Assert.Equal(line.Karaoke[2] with { Utf16Start = 1 }, editor.Snapshot.Subtitles[0].Karaoke[1]);
+        Assert.True(editor.Undo());
         Assert.Same(before, editor.Snapshot);
         editor.ReplaceSubtitleTextRange(line.Id, 1, 1, "X");
         Assert.Equal(line.Karaoke, editor.Snapshot.Subtitles[0].Karaoke);
@@ -396,13 +400,12 @@ public sealed class SubtitleContentEditingTests
         };
         var clip = line.Karaoke[1] with
         {
-            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-            InactiveStyle = new() { Fill = SceneColor.Transparent },
-            ActiveStyle = new() { Stroke = new(3, 2, 1, 0.5) }
+            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
         };
         line = line with
         {
             InlineSpans = [new(1, 1, local)], Karaoke = line.Karaoke.SetItem(1, clip),
+            KaraokeStyleSpans = [new(1, 1, new() { Stroke = new(3, 2, 1, 0.5) }, new() { Fill = SceneColor.Transparent })],
             KaraokeStyle = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "highlight", new() { Fill = new(4, 2, 1) })
         };
         var other = new SubtitleLine { Text = "other", Start = new(12), End = new(14) };
@@ -419,12 +422,9 @@ public sealed class SubtitleContentEditingTests
         Assert.Equal(before.Layers, after.Layers);
         Assert.Same(line.KaraokeStyle, result.KaraokeStyle);
         Assert.Equal(new SubtitleInlineSpan(1, 3, local), Assert.Single(result.InlineSpans));
-        foreach (var value in result.Karaoke.Skip(1).Take(3))
-        {
-            Assert.Equal(clip.HighlightKind, value.HighlightKind);
-            Assert.Same(clip.ActiveStyle, value.ActiveStyle);
-            Assert.Same(clip.InactiveStyle, value.InactiveStyle);
-        }
+        Assert.Equal(clip.HighlightKind, result.Karaoke[1].HighlightKind);
+        Assert.Equal(new SubtitleKaraokeStyleSpan(1, 3, line.KaraokeStyleSpans[0].ActiveStyle,
+            line.KaraokeStyleSpans[0].InactiveStyle), Assert.Single(result.KaraokeStyleSpans));
         Assert.Equal(result.Karaoke.Length, result.Karaoke.Select(value => value.Id).Distinct().Count());
         Assert.True(editor.Undo());
         Assert.Same(before, editor.Snapshot);
@@ -458,7 +458,7 @@ public sealed class SubtitleContentEditingTests
     }
 
     [Fact]
-    public void LocalAllocationReducesRationalsBeforeMultiplication()
+    public void ReplacingInsideOneGroupKeepsItsLargeRationalClockWithoutAllocation()
     {
         var setup = Editor("a", end: new(long.MaxValue));
         var line = setup.Snapshot.Subtitles[0];
@@ -467,9 +467,8 @@ public sealed class SubtitleContentEditingTests
         var editor = new ProjectEditor(setup.Snapshot with { Subtitles = [line] });
         editor.ReplaceSubtitleTextRange(line.Id, 0, 1, "abc");
         var result = editor.Snapshot.Subtitles[0];
-        Assert.Equal(new MediaTime(duration / 3), result.Karaoke[0].End);
-        Assert.Equal(new MediaTime(duration / 3 * 2), result.Karaoke[1].End);
-        Assert.Equal(new MediaTime(duration), result.Karaoke[2].End);
+        Assert.Equal(line.Karaoke[0] with { Utf16Length = 3 }, Assert.Single(result.Karaoke));
+        Assert.Equal(new MediaTime(duration), result.Karaoke[0].End);
     }
 
     [Fact]
@@ -491,7 +490,16 @@ public sealed class SubtitleContentEditingTests
                     foreach (var replacement in replacements)
                     {
                         var editor = new ProjectEditor(before);
-                        editor.ReplaceSubtitleTextRange(id, start, end - start, replacement);
+                        try
+                        {
+                            editor.ReplaceSubtitleTextRange(id, start, end - start, replacement);
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            Assert.Same(before, editor.Snapshot);
+                            Assert.False(editor.CanUndo);
+                            continue;
+                        }
                         Assert.Equal(text[..start] + replacement + text[end..], editor.Snapshot.Subtitles[0].Text);
                         ProjectValidator.Validate(editor.Snapshot);
                         Assert.Equal(before.Layers, editor.Snapshot.Layers);

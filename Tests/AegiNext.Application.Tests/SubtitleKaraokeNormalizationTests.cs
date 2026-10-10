@@ -10,16 +10,17 @@ public sealed class SubtitleKaraokeNormalizationTests
     public void NormalizationIsIdempotentAndRetainsUnchangedRecordAndArrayIdentity()
     {
         var document = LegacyDocument("abc");
-        var normalized = SubtitleKaraokeNormalization.Normalize(document);
+        var normalized = LegacySubtitleKaraokeMigration.Upgrade(document);
         var line = normalized.Subtitles[0];
-        Assert.Same(line, SubtitleKaraokeNormalization.Normalize(line));
-        Assert.Same(normalized, SubtitleKaraokeNormalization.Normalize(normalized));
+        Assert.Same(line, LegacySubtitleKaraokeMigration.Upgrade(line));
+        Assert.Same(normalized, LegacySubtitleKaraokeMigration.Upgrade(normalized));
         Assert.Same(document.Subtitles[0].InlineSpans[0], line.InlineSpans[0]);
         Assert.Equal(document.Layers, normalized.Layers);
         Assert.Single(document.Subtitles[0].Karaoke);
         var editor = new ProjectEditor(document);
         var snapshot = editor.Snapshot;
-        Assert.Equal(3, snapshot.Subtitles[0].Karaoke.Length);
+        Assert.Same(document.Subtitles[0], snapshot.Subtitles[0]);
+        Assert.Single(snapshot.Subtitles[0].Karaoke);
         Assert.False(editor.HasUnsavedChanges);
         Assert.False(editor.CanUndo);
         editor.ReplaceSubtitleTextRange(line.Id, 0, 0, "");
@@ -35,7 +36,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         var highlight = KaraokeHighlightStyle.FromStyle(Guid.NewGuid(), "Saved", new() { Fill = new(4, 0, 0) });
         source = source with { Karaoke = [], InactiveKaraoke = source.Karaoke, KaraokeStyle = highlight };
         document = document with { Subtitles = [source] };
-        var normalized = SubtitleKaraokeNormalization.Normalize(document);
+        var normalized = LegacySubtitleKaraokeMigration.Upgrade(document);
         var line = normalized.Subtitles[0];
         Assert.Empty(line.Karaoke);
         Assert.True(source.Karaoke == line.Karaoke);
@@ -48,15 +49,13 @@ public sealed class SubtitleKaraokeNormalizationTests
         {
             Assert.Equal(new MediaTime(2, 5), clip.End - clip.Start);
             Assert.Equal(source.InactiveKaraoke[0].HighlightKind, clip.HighlightKind);
-            Assert.Same(source.InactiveKaraoke[0].InactiveStyle, clip.InactiveStyle);
-            Assert.Same(source.InactiveKaraoke[0].ActiveStyle, clip.ActiveStyle);
         });
         Assert.Same(highlight, line.KaraokeStyle);
         Assert.True(source.InlineSpans == line.InlineSpans);
         Assert.True(document.Layers == normalized.Layers);
         Assert.Single(source.InactiveKaraoke);
-        Assert.Same(line, SubtitleKaraokeNormalization.Normalize(line));
-        Assert.Same(normalized, SubtitleKaraokeNormalization.Normalize(normalized));
+        Assert.Same(line, LegacySubtitleKaraokeMigration.Upgrade(line));
+        Assert.Same(normalized, LegacySubtitleKaraokeMigration.Upgrade(normalized));
     }
 
     [Theory]
@@ -72,7 +71,7 @@ public sealed class SubtitleKaraokeNormalizationTests
             Karaoke = normalizeActive ? [word] : [canonical],
             InactiveKaraoke = normalizeActive ? [canonical] : [word]
         };
-        var normalized = SubtitleKaraokeNormalization.Normalize(source);
+        var normalized = LegacySubtitleKaraokeMigration.Upgrade(source);
         var unchanged = normalizeActive ? normalized.InactiveKaraoke : normalized.Karaoke;
         var originalUnchanged = normalizeActive ? source.InactiveKaraoke : source.Karaoke;
         var changed = normalizeActive ? normalized.Karaoke : normalized.InactiveKaraoke;
@@ -84,7 +83,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         Assert.Equal(new MediaTime(4), changed[0].Start);
         Assert.Equal(new MediaTime(7), changed[^1].End);
         Assert.NotEqual(canonical.Id, changed[1].Id);
-        Assert.Same(normalized, SubtitleKaraokeNormalization.Normalize(normalized));
+        Assert.Same(normalized, LegacySubtitleKaraokeMigration.Upgrade(normalized));
     }
 
     [Fact]
@@ -95,7 +94,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         var second = first with { Id = Guid.NewGuid(), Utf16Start = 2, Start = new(3), End = new(5) };
         var third = first with { Id = Guid.NewGuid(), Utf16Start = 4, Start = new(6), End = new(8) };
         source = source with { Karaoke = [first, third], InactiveKaraoke = [second] };
-        var normalized = SubtitleKaraokeNormalization.Normalize(source);
+        var normalized = LegacySubtitleKaraokeMigration.Upgrade(source);
         Assert.Equal([0, 1, 4, 5], normalized.Karaoke.Select(clip => clip.Utf16Start));
         Assert.Equal([2, 3], normalized.InactiveKaraoke.Select(clip => clip.Utf16Start));
         Assert.Equal(first.Id, normalized.Karaoke[0].Id);
@@ -103,7 +102,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         Assert.Equal(second.Id, normalized.InactiveKaraoke[0].Id);
         Assert.Equal(6, normalized.Karaoke.Concat(normalized.InactiveKaraoke).Select(clip => clip.Id).Distinct().Count());
         ProjectValidator.ValidateSubtitleKaraoke(normalized);
-        Assert.Same(normalized, SubtitleKaraokeNormalization.Normalize(normalized));
+        Assert.Same(normalized, LegacySubtitleKaraokeMigration.Upgrade(normalized));
         Assert.Equal(2, source.Karaoke.Length);
         Assert.Single(source.InactiveKaraoke);
     }
@@ -130,9 +129,9 @@ public sealed class SubtitleKaraokeNormalizationTests
             3 => source with { InactiveKaraoke = [inactive with { Id = active.Id }] },
             4 => source with { InactiveKaraoke = [inactive with { Utf16Start = 0, Utf16Length = 1 }] },
             5 => source with { InactiveKaraoke = [inactive with { HighlightColor = new(0, 0, 0, 2) }] },
-            _ => source with { InactiveKaraoke = [inactive with { InactiveStyle = new() { ShadowBlur = -1 } }] }
+            _ => source with { KaraokeStyleSpans = [new(1, 2, null, new() { ShadowBlur = -1 })] }
         };
-        Assert.Throws<InvalidDataException>(() => SubtitleKaraokeNormalization.Normalize(invalid));
+        Assert.Throws<InvalidDataException>(() => LegacySubtitleKaraokeMigration.Upgrade(invalid));
         Assert.Same(active, Assert.Single(source.Karaoke));
         Assert.Same(inactive, Assert.Single(source.InactiveKaraoke));
     }
@@ -145,7 +144,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         var first = source.Karaoke[0] with { Utf16Length = 2, Start = new(0), End = new(1) };
         var second = first with { Id = Guid.NewGuid(), Utf16Start = 2, Utf16Length = 4, Start = new(4), End = new(7) };
         var last = first with { Id = Guid.NewGuid(), Utf16Start = 6, Utf16Length = 1, Start = new(6), End = new(8) };
-        var normalized = SubtitleKaraokeNormalization.Normalize(source with { Karaoke = [first, second, last] });
+        var normalized = LegacySubtitleKaraokeMigration.Upgrade(source with { Karaoke = [first, second, last] });
         Assert.Equal([1, 1, 2, 2, 1], normalized.Karaoke.Select(value => value.Utf16Length));
         Assert.Equal(new MediaTime(1), normalized.Karaoke[1].End);
         Assert.Equal(new MediaTime(4), normalized.Karaoke[2].Start);
@@ -154,7 +153,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         Assert.Equal(first.Id, normalized.Karaoke[0].Id);
         Assert.Equal(second.Id, normalized.Karaoke[2].Id);
 
-        var sparse = SubtitleKaraokeNormalization.Normalize(source with { Karaoke = [second] });
+        var sparse = LegacySubtitleKaraokeMigration.Upgrade(source with { Karaoke = [second] });
         Assert.Equal([2, 4], sparse.Karaoke.Select(value => value.Utf16Start));
         Assert.Equal(new MediaTime(4), sparse.Karaoke[0].Start);
         Assert.Equal(new MediaTime(7), sparse.Karaoke[^1].End);
@@ -171,7 +170,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         Assert.Equal("a字👍🏽🇨🇳z", result.Text);
         Assert.Equal(line.Karaoke.Select(clip => (clip.Id, clip.Start, clip.End)),
             result.Karaoke.Select(clip => (clip.Id, clip.Start, clip.End)));
-        Assert.Equal([1, 1, 4, 4, 1], result.Karaoke.Select(clip => clip.Utf16Length));
+        Assert.Equal([11], result.Karaoke.Select(clip => clip.Utf16Length));
         Assert.Equal(before.Layers, editor.Snapshot.Layers);
         Assert.True(editor.Undo());
         Assert.Same(before, editor.Snapshot);
@@ -189,7 +188,7 @@ public sealed class SubtitleKaraokeNormalizationTests
             Karaoke = inactive ? [] : [clip],
             InactiveKaraoke = inactive ? [clip] : []
         };
-        var normalized = SubtitleKaraokeNormalization.Normalize(rational);
+        var normalized = LegacySubtitleKaraokeMigration.Upgrade(rational);
         var segments = inactive ? normalized.InactiveKaraoke : normalized.Karaoke;
         Assert.Equal(new MediaTime(2, long.MaxValue), segments[0].End);
         Assert.Equal(segments[0].End, segments[1].Start);
@@ -199,7 +198,7 @@ public sealed class SubtitleKaraokeNormalizationTests
             Karaoke = inactive ? [] : [clip],
             InactiveKaraoke = inactive ? [clip] : []
         };
-        Assert.Throws<OverflowException>(() => SubtitleKaraokeNormalization.Normalize(impossible));
+        Assert.Throws<OverflowException>(() => LegacySubtitleKaraokeMigration.Upgrade(impossible));
         var unchanged = Assert.Single(inactive ? impossible.InactiveKaraoke : impossible.Karaoke);
         Assert.Same(clip, unchanged);
         Assert.Equal(new MediaTime(2, long.MaxValue), unchanged.End);
@@ -209,19 +208,19 @@ public sealed class SubtitleKaraokeNormalizationTests
     public void SharedNormalizationRejectsInvalidGraphemeRangesAndDuplicateIdentity()
     {
         var source = LegacyDocument("a😀b").Subtitles[0];
-        Assert.Throws<InvalidDataException>(() => SubtitleKaraokeNormalization.Normalize(source with
+        Assert.Throws<InvalidDataException>(() => LegacySubtitleKaraokeMigration.Upgrade(source with
         {
             Karaoke = [source.Karaoke[0] with { Utf16Start = 1, Utf16Length = 1 }]
         }));
-        Assert.Throws<InvalidDataException>(() => SubtitleKaraokeNormalization.Normalize(source with
+        Assert.Throws<InvalidDataException>(() => LegacySubtitleKaraokeMigration.Upgrade(source with
         {
             Karaoke = [source.Karaoke[0] with { Utf16Length = 1 }, source.Karaoke[0] with { Utf16Start = 3, Utf16Length = 1 }]
         }));
-        Assert.Throws<InvalidDataException>(() => SubtitleKaraokeNormalization.Normalize(source with { Text = "\ud800" }));
+        Assert.Throws<InvalidDataException>(() => LegacySubtitleKaraokeMigration.Upgrade(source with { Text = "\ud800" }));
     }
 
     [Fact]
-    public void BothSubtitleImportEntryPointsNormalizeWithoutReplacingVisualConfiguration()
+    public void BothSubtitleImportEntryPointsPreserveGroupsAndVisualConfiguration()
     {
         var source = LegacyDocument("a😀").Subtitles[0];
         var document = new ProjectDocument();
@@ -230,13 +229,12 @@ public sealed class SubtitleKaraokeNormalizationTests
         foreach (var imported in new[] { independent, assigned })
         {
             var line = Assert.Single(imported.Subtitles);
-            Assert.Equal([1, 2], line.Karaoke.Select(clip => clip.Utf16Length));
+            Assert.Equal([3], line.Karaoke.Select(clip => clip.Utf16Length));
+            Assert.Equal(source.KaraokeStyleSpans, line.KaraokeStyleSpans);
             Assert.Equal(source.Karaoke[0].Id, line.Karaoke[0].Id);
             foreach (var clip in line.Karaoke)
             {
                 Assert.Equal(source.Karaoke[0].HighlightKind, clip.HighlightKind);
-                Assert.Same(source.Karaoke[0].ActiveStyle, clip.ActiveStyle);
-                Assert.Same(source.Karaoke[0].InactiveStyle, clip.InactiveStyle);
             }
         }
     }
@@ -276,7 +274,10 @@ public sealed class SubtitleKaraokeNormalizationTests
         var document = LegacyDocument("a😀e\u0301👩‍💻z");
         var line = document.Subtitles[0];
         var clip = line.Karaoke[0];
-        var bytes = ProjectStore.Serialize(document);
+        var node = System.Text.Json.Nodes.JsonNode.Parse(ProjectStore.Serialize(document))!.AsObject();
+        node["version"] = 10;
+        LegacySubtitleMarginsJsonFixture.DowngradeProject(node);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(node.ToJsonString());
         var path = Path.Combine(Path.GetTempPath(), $"aeginext-karaoke-{Guid.NewGuid():N}.aeginext");
         try
         {
@@ -290,8 +291,6 @@ public sealed class SubtitleKaraokeNormalizationTests
             {
                 Assert.Equal(new MediaTime(2, 5), value.End - value.Start);
                 Assert.Equal(clip.HighlightKind, value.HighlightKind);
-                Assert.Equal(clip.ActiveStyle, value.ActiveStyle);
-                Assert.Equal(clip.InactiveStyle, value.InactiveStyle);
             });
             Assert.Equal(clip.Start, result.Karaoke[0].Start);
             Assert.Equal(clip.End, result.Karaoke[^1].End);
@@ -309,7 +308,7 @@ public sealed class SubtitleKaraokeNormalizationTests
     }
 
     [Fact]
-    public void UpdatingWordClipsNormalizesInOneUndoTransaction()
+    public void UpdatingWordClipsPreservesGroupsInOneUndoTransaction()
     {
         var editor = new ProjectEditor();
         var id = editor.AddSubtitle(new(0), new(1), "a😀e\u0301");
@@ -317,7 +316,7 @@ public sealed class SubtitleKaraokeNormalizationTests
         var clip = new KaraokeSegment(0, 5, new(1), new(4), SceneColor.White);
         editor.UpdateSubtitle(id, line => line with { Karaoke = [clip] });
         var normalized = editor.Snapshot;
-        Assert.Equal([1, 2, 2], normalized.Subtitles[0].Karaoke.Select(value => value.Utf16Length));
+        Assert.Equal([5], normalized.Subtitles[0].Karaoke.Select(value => value.Utf16Length));
         Assert.Equal(clip.Id, normalized.Subtitles[0].Karaoke[0].Id);
         Assert.True(editor.Undo());
         Assert.Same(before, editor.Snapshot);
@@ -326,20 +325,15 @@ public sealed class SubtitleKaraokeNormalizationTests
     }
 
     [Fact]
-    public void InsertingIntoLegacyWordRedistributesOnlyItsContainingGrapheme()
+    public void InsertingIntoNativeWordExtendsItsTextWithoutRedistributingTime()
     {
         var document = LegacyDocument("abcd");
         var line = document.Subtitles[0];
         var result = ProjectEditingOperations.ReplaceSubtitleTextRange(document, line.Id, 1, 0, "XY").Subtitles[0];
         Assert.Equal("aXYbcd", result.Text);
-        Assert.Equal(6, result.Karaoke.Length);
-        Assert.Equal(new MediaTime(1, 3), result.Karaoke[0].Start);
-        Assert.Equal(new MediaTime(5, 6), result.Karaoke[0].End);
-        Assert.All(result.Karaoke.Skip(1).Take(3), value => Assert.Equal(new MediaTime(1, 6), value.End - value.Start));
-        Assert.Equal(new MediaTime(4, 3), result.Karaoke[4].Start);
-        Assert.Equal(new MediaTime(11, 6), result.Karaoke[5].Start);
-        Assert.Equal(new MediaTime(7, 3), result.Karaoke[^1].End);
-        Assert.All(result.Karaoke, value => Assert.Single(StringInfo.ParseCombiningCharacters(result.Text.Substring(value.Utf16Start, value.Utf16Length))));
+        var group = Assert.Single(result.Karaoke);
+        Assert.Equal(line.Karaoke[0] with { Utf16Length = 6 }, group);
+
     }
 
     [Fact]
@@ -383,10 +377,9 @@ public sealed class SubtitleKaraokeNormalizationTests
             InlineSpans = [new(0, text.Length, new() { Bold = true })],
             Karaoke = [new(0, text.Length, new(1, 3), new(7, 3), new(1, 0, 0))
             {
-                HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-                InactiveStyle = new() { StrokeWidth = 0 },
-                ActiveStyle = new() { Fill = new(0, 1, 0), StrokeWidth = 4 }
-            }]
+                HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
+            }],
+            KaraokeStyleSpans = [new(0, text.Length, new() { Fill = new(0, 1, 0), StrokeWidth = 4 }, new() { StrokeWidth = 0 })]
         };
         return editor.Snapshot with { Subtitles = [line with { Id = id }] };
     }

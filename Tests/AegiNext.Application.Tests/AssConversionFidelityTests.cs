@@ -83,8 +83,10 @@ public sealed class AssConversionFidelityTests
             var body = line.InlineSpans.FirstOrDefault(span => span.Utf16Start <= segment.Utf16Start &&
                 span.Utf16Start + span.Utf16Length > segment.Utf16Start)?.Style.ApplyTo(line.Style) ?? line.Style;
             var expected = index == 0 ? 0 : 4 * 2 / Math.Sqrt(Math.Log(256));
-            foreach (var style in new[] { body, KaraokeVisualStyleResolver.ResolveInactive(body, segment),
-                KaraokeVisualStyleResolver.ResolveActive(body, line.KaraokeStyle, segment) })
+            foreach (var style in new[] { body, KaraokeVisualStyleResolver.ResolveInactive(body, segment,
+                KaraokeVisualStyleResolver.RangeStyleAt(line, segment.Utf16Start, KaraokeVisualState.INACTIVE)),
+                KaraokeVisualStyleResolver.ResolveActive(body, line.KaraokeStyle, segment,
+                    KaraokeVisualStyleResolver.RangeStyleAt(line, segment.Utf16Start, KaraokeVisualState.ACTIVE)) })
             {
                 Assert.Equal(0, style.FillBlur);
                 Assert.Equal(expected, style.StrokeBlur, 10);
@@ -99,7 +101,8 @@ public sealed class AssConversionFidelityTests
         var imported = AssSubtitleFormat.Parse(Source("{\\k50}a{\\t(500,500,\\blur8\\bord6)\\k50}b"));
         var line = Assert.Single(imported.Lines);
         var segment = line.Karaoke[^1];
-        var active = KaraokeVisualStyleResolver.ResolveActive(line.Style, line.KaraokeStyle, segment);
+        var active = KaraokeVisualStyleResolver.ResolveActive(line.Style, line.KaraokeStyle, segment,
+            KaraokeVisualStyleResolver.RangeStyleAt(line, segment.Utf16Start, KaraokeVisualState.ACTIVE));
 
         Assert.Equal("ab", line.Text);
         Assert.Equal(new MediaTime(1, 2), segment.Start);
@@ -144,11 +147,10 @@ public sealed class AssConversionFidelityTests
             [
                 new(0, 1, new(1, 2), new(1), SceneColor.White)
                 {
-                    HighlightKind = KaraokeHighlightKind.STEP,
-                    InactiveStyle = new() { ShadowBlur = 5 },
-                    ActiveStyle = new() { ShadowBlur = 7 }
+                    HighlightKind = KaraokeHighlightKind.STEP
                 }
-            ]
+            ],
+            KaraokeStyleSpans = [new(0, 1, new() { ShadowBlur = 7 }, new() { ShadowBlur = 5 })]
         };
         var document = Document(line);
         var written = AssSubtitleFormat.Write(document);
@@ -158,8 +160,8 @@ public sealed class AssConversionFidelityTests
         Assert.Same(line, document.Subtitles[0]);
         Assert.Equal(3, line.Style.ShadowBlur);
         Assert.Equal(4, line.InlineSpans[0].Style.ShadowBlur);
-        Assert.Equal(5, line.Karaoke[0].InactiveStyle!.ShadowBlur);
-        Assert.Equal(7, line.Karaoke[0].ActiveStyle!.ShadowBlur);
+        Assert.Equal(5, line.KaraokeStyleSpans[0].InactiveStyle!.ShadowBlur);
+        Assert.Equal(7, line.KaraokeStyleSpans[0].ActiveStyle!.ShadowBlur);
         Assert.Equal("abc", Assert.Single(AssSubtitleFormat.Parse(written.Text).Lines).Text);
     }
 

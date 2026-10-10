@@ -16,12 +16,12 @@ public sealed class InactiveKaraokeSplitMergeTests
             Clip(1, 2, new(3, 7), new(5, 7)),
             Clip(3, 5, new(8, 7), new(13, 7)),
             Clip(8, 1, new(17, 7), new(20, 7)));
-        var line = new SubtitleLine
+        var line = WithStyles(new SubtitleLine
         {
             Text = "Ae\u0301👩‍💻Z", Start = new(5), End = new(9), KaraokeStyle = Highlight(),
             Karaoke = mixed ? [clips[0], clips[2]] : [],
             InactiveKaraoke = mixed ? [clips[1], clips[3]] : clips
-        };
+        });
         var original = Document(line, new(1, 3));
 
         var split = ProjectEditingOperations.SplitSubtitle(original, line.Id, new(7), 3);
@@ -49,11 +49,11 @@ public sealed class InactiveKaraokeSplitMergeTests
     [Fact]
     public void SplitRetainsTheHighlightSnapshotOnlyOnThePieceWithSavedSegments()
     {
-        var line = new SubtitleLine
+        var line = WithStyles(new SubtitleLine
         {
             Text = "ab", End = new(4), KaraokeStyle = Highlight(),
             InactiveKaraoke = [Clip(0, 1, new(1, 7), new(2, 7))]
-        };
+        });
 
         var split = ProjectEditingOperations.SplitSubtitle(Document(line), line.Id, new(2), 1);
 
@@ -66,18 +66,24 @@ public sealed class InactiveKaraokeSplitMergeTests
     }
 
     [Fact]
-    public void SplitPartitionsAnUnnormalizedSavedWordUsingTheExistingContentClockRule()
+    public void SavedWordMustBeExplicitlySplitBeforePartitioningTheSubtitle()
     {
         var clip = Clip(0, 4, new(1, 7), new(29, 7));
-        var line = new SubtitleLine
+        var line = WithStyles(new SubtitleLine
         {
             Text = "abcd", Start = new(5), End = new(9), KaraokeStyle = Highlight(), InactiveKaraoke = [clip]
-        };
+        });
 
-        var split = ProjectEditingOperations.SplitSubtitle(Document(line, new(1, 3)), line.Id, new(7), 2);
+        var document = Document(line, new(1, 3));
+        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.SplitSubtitle(document, line.Id, new(7), 2));
+        var editor = new ProjectEditor(document);
+        editor.SetSubtitleKaraokeEnabled(line.Id, true);
+        editor.SplitKaraokeClip(line.Id, clip.Id, 2, new(7, 3));
+        editor.SetSubtitleKaraokeEnabled(line.Id, false);
+        var split = ProjectEditingOperations.SplitSubtitle(editor.Snapshot, line.Id, new(7), 2);
 
-        Assert.Equal(2, split.Subtitles[0].InactiveKaraoke.Length);
-        Assert.Equal(2, split.Subtitles[1].InactiveKaraoke.Length);
+        Assert.Single(split.Subtitles[0].InactiveKaraoke);
+        Assert.Single(split.Subtitles[1].InactiveKaraoke);
         Assert.Equal(clip.Id, split.Subtitles[0].InactiveKaraoke[0].Id);
         Assert.NotEqual(clip.Id, split.Subtitles[1].InactiveKaraoke[0].Id);
         Assert.Equal(clip.Start, split.Subtitles[0].InactiveKaraoke[0].Start);
@@ -90,8 +96,10 @@ public sealed class InactiveKaraokeSplitMergeTests
             Assert.Equal(line.KaraokeStyle, piece.KaraokeStyle);
             foreach (var saved in piece.InactiveKaraoke)
             {
-                Assert.Equal(clip.ActiveStyle, saved.ActiveStyle);
-                Assert.Equal(clip.InactiveStyle, saved.InactiveStyle);
+                Assert.Equal(KaraokeVisualStyleResolver.RangeStyleAt(line, 0, KaraokeVisualState.ACTIVE),
+                    KaraokeVisualStyleResolver.RangeStyleAt(piece, saved.Utf16Start, KaraokeVisualState.ACTIVE));
+                Assert.Equal(KaraokeVisualStyleResolver.RangeStyleAt(line, 0, KaraokeVisualState.INACTIVE),
+                    KaraokeVisualStyleResolver.RangeStyleAt(piece, saved.Utf16Start, KaraokeVisualState.INACTIVE));
                 Assert.Equal(clip.HighlightColor, saved.HighlightColor);
                 Assert.Equal(clip.HighlightKind, saved.HighlightKind);
             }
@@ -101,10 +109,10 @@ public sealed class InactiveKaraokeSplitMergeTests
     [Fact]
     public void SplitRejectsSavedWordCrossingsOutsideTheirClockWithoutMutatingTheDocument()
     {
-        var line = new SubtitleLine
+        var line = WithStyles(new SubtitleLine
         {
             Text = "abcd", Start = new(5), End = new(9), InactiveKaraoke = [Clip(0, 4, new(3), new(4))]
-        };
+        });
         var document = Document(line);
 
         Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.SplitSubtitle(document, line.Id, new(7), 2));
@@ -123,17 +131,17 @@ public sealed class InactiveKaraokeSplitMergeTests
         var style = Highlight();
         var firstClip = Clip(0, 1, new(1, 7), new(2, 7));
         var secondClip = Clip(0, 1, new(2, 7), new(5, 7));
-        var first = new SubtitleLine
+        var first = WithStyles(new SubtitleLine
         {
             Text = "a", Start = new(1), End = new(2), KaraokeStyle = style,
             Karaoke = firstEnabled ? [firstClip] : [], InactiveKaraoke = firstEnabled ? [] : [firstClip]
-        };
-        var second = new SubtitleLine
+        });
+        var second = WithStyles(new SubtitleLine
         {
             Text = "b", Start = new(3), End = new(4),
             KaraokeStyle = style with { PresetId = Guid.NewGuid(), PresetName = "Copy" },
             Karaoke = secondEnabled ? [secondClip] : [], InactiveKaraoke = secondEnabled ? [] : [secondClip]
-        };
+        });
         var document = PairDocument(first, second, new(1, 3), new(2, 5));
 
         var merged = ProjectEditingOperations.MergeSubtitles(document, first.Id, second.Id);
@@ -162,12 +170,12 @@ public sealed class InactiveKaraokeSplitMergeTests
     [Fact]
     public void MergeInheritsTheOnlySavedHighlightSnapshotWhenTheFirstLineHasNoSegments()
     {
-        var first = new SubtitleLine { Text = "a", End = new(2) };
-        var second = new SubtitleLine
+        var first = WithStyles(new SubtitleLine { Text = "a", End = new(2) });
+        var second = WithStyles(new SubtitleLine
         {
             Text = "b", Start = new(2), End = new(4), KaraokeStyle = Highlight(),
             InactiveKaraoke = [Clip(0, 1, new(1, 7), new(2, 7))]
-        };
+        });
 
         var merged = ProjectEditingOperations.MergeSubtitles(PairDocument(first, second), first.Id, second.Id, "");
 
@@ -181,19 +189,19 @@ public sealed class InactiveKaraokeSplitMergeTests
     [Fact]
     public void MergeBakesConflictingLineHighlightsIntoBothActiveAndSavedSegments()
     {
-        var first = new SubtitleLine
+        var first = WithStyles(new SubtitleLine
         {
             Text = "ab", End = new(2), KaraokeStyle = Highlight(),
             Karaoke = [Clip(0, 1, new(1, 7), new(2, 7))],
             InactiveKaraoke = [Clip(1, 1, new(3, 7), new(5, 7))]
-        };
-        var second = new SubtitleLine
+        });
+        var second = WithStyles(new SubtitleLine
         {
             Text = "cd", Start = new(2), End = new(4),
             KaraokeStyle = Highlight() with { Fill = SceneColor.Black, StrokeWidth = 9.123456789123 },
             Karaoke = [Clip(0, 1, new(1, 7), new(2, 7))],
             InactiveKaraoke = [Clip(1, 1, new(3, 7), new(5, 7))]
-        };
+        });
 
         var merged = ProjectEditingOperations.MergeSubtitles(PairDocument(first, second), first.Id, second.Id, "");
 
@@ -206,9 +214,12 @@ public sealed class InactiveKaraokeSplitMergeTests
             foreach (var segment in source.Karaoke.Concat(source.InactiveKaraoke))
             {
                 var changed = result.Karaoke.Concat(result.InactiveKaraoke).Single(clip => clip.Id == segment.Id);
-                Assert.Equal(KaraokeVisualStyleResolver.ResolveActive(source.Style, source.KaraokeStyle, segment),
-                    KaraokeVisualStyleResolver.ResolveActive(result.Style, result.KaraokeStyle, changed));
-                Assert.Equal(segment.InactiveStyle, changed.InactiveStyle);
+                Assert.Equal(KaraokeVisualStyleResolver.ResolveActive(source.Style, source.KaraokeStyle, segment,
+                        KaraokeVisualStyleResolver.RangeStyleAt(source, segment.Utf16Start, KaraokeVisualState.ACTIVE)),
+                    KaraokeVisualStyleResolver.ResolveActive(result.Style, result.KaraokeStyle, changed,
+                        KaraokeVisualStyleResolver.RangeStyleAt(result, changed.Utf16Start, KaraokeVisualState.ACTIVE)));
+                Assert.Equal(KaraokeVisualStyleResolver.RangeStyleAt(source, segment.Utf16Start, KaraokeVisualState.INACTIVE),
+                    KaraokeVisualStyleResolver.RangeStyleAt(result, changed.Utf16Start, KaraokeVisualState.INACTIVE));
                 Assert.Equal(segment.HighlightKind, changed.HighlightKind);
                 Assert.Equal(segment.HighlightColor, changed.HighlightColor);
                 var offset = source == first ? MediaTime.Zero : new MediaTime(2);
@@ -224,16 +235,16 @@ public sealed class InactiveKaraokeSplitMergeTests
     {
         var firstActive = Clip(0, 1, new(0), new(1));
         var firstSaved = Clip(1, 1, new(1), new(2));
-        var first = new SubtitleLine
+        var first = WithStyles(new SubtitleLine
         {
             Text = "ab", End = new(2), Karaoke = [firstActive], InactiveKaraoke = [firstSaved]
-        };
-        var second = new SubtitleLine
+        });
+        var second = WithStyles(new SubtitleLine
         {
             Text = "cd", Start = new(2), End = new(4),
             Karaoke = [Clip(0, 1, new(0), new(1)) with { Id = firstSaved.Id }],
             InactiveKaraoke = [Clip(1, 1, new(1), new(2)) with { Id = firstActive.Id }]
-        };
+        });
 
         var merged = ProjectEditingOperations.MergeSubtitles(PairDocument(first, second), first.Id, second.Id, "");
 
@@ -248,13 +259,19 @@ public sealed class InactiveKaraokeSplitMergeTests
         ProjectValidator.Validate(merged);
     }
 
+    private static SubtitleLine WithStyles(SubtitleLine line)
+    {
+        return line with { KaraokeStyleSpans = line.Karaoke.Concat(line.InactiveKaraoke)
+            .OrderBy(clip => clip.Utf16Start).Select(clip => new SubtitleKaraokeStyleSpan(clip.Utf16Start, clip.Utf16Length,
+                new() { ShadowOffset = new(3.123456789123, -2.234567891234) },
+                new() { Fill = SceneColor.Transparent, StrokeWidth = 0 })).ToImmutableArray() };
+    }
+
     private static KaraokeSegment Clip(int start, int length, MediaTime begin, MediaTime end)
     {
         return new(start, length, begin, end, new(4.123456789123, -0.2, 3.234567891234, 0.5))
         {
-            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-            ActiveStyle = new() { ShadowOffset = new(3.123456789123, -2.234567891234) },
-            InactiveStyle = new() { Fill = SceneColor.Transparent, StrokeWidth = 0 }
+            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
         };
     }
 

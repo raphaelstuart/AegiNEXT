@@ -330,8 +330,9 @@ internal sealed class AssEventConversionContext
         {
             return true;
         }
-        return line.Karaoke.Any(segment => segment.HighlightKind == KaraokeHighlightKind.OUTLINE_STEP ||
-            Overrides(segment.ActiveStyle) || Overrides(segment.InactiveStyle));
+        return line.Karaoke.Any(segment => segment.HighlightKind == KaraokeHighlightKind.OUTLINE_STEP) ||
+            line.KaraokeStyleSpans.Any(span => line.Karaoke.Any(segment => span.Utf16Start < segment.Utf16Start + segment.Utf16Length &&
+                segment.Utf16Start < span.Utf16Start + span.Utf16Length) && (Overrides(span.ActiveStyle) || Overrides(span.InactiveStyle)));
 
         bool Overrides(KaraokeVisualStyleOverride? visual)
         {

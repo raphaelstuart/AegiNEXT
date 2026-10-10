@@ -126,11 +126,9 @@ public sealed class RichSubtitlePreviewUiTests
         var initialWidth = Bitmap(editor).PixelSize.Width;
         var wider = line with
         {
-            Karaoke = [line.Karaoke[0] with
-            {
-                ActiveStyle = new() { ShadowOffset = new(80, 0), ShadowBlur = 10, ShadowColor = SceneColor.White },
-                InactiveStyle = new() { ShadowOffset = new(-120, 0), ShadowColor = SceneColor.White }
-            }, line.Karaoke[1]]
+            KaraokeStyleSpans = [new(line.Karaoke[0].Utf16Start, line.Karaoke[0].Utf16Length,
+                new() { ShadowOffset = new(80, 0), ShadowBlur = 10, ShadowColor = SceneColor.White },
+                new() { ShadowOffset = new(-120, 0), ShadowColor = SceneColor.White })]
         };
         editor.SetContent(document, wider, AppContext.BaseDirectory, MediaTime.Zero, SubtitlePreviewMode.HIGHLIGHTED);
         Assert.True(Bitmap(editor).PixelSize.Width >= initialWidth + 200);

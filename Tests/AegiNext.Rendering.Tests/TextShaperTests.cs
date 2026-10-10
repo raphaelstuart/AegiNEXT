@@ -145,6 +145,24 @@ public class TextShaperTests
     }
 
     [Fact]
+    public void ClusterBlobsKeepTheOriginalGlyphsAfterShaperDisposalAndReleaseWithTheRun()
+    {
+        var shaper = new TextShaper(ReadFont("NotoSans.ttf"));
+        var run = shaper.Shape("ffiB", 32, TextDirection.LEFT_TO_RIGHT, "en");
+        shaper.Dispose();
+        var ligature = run.GetClusterBlob(0);
+        Assert.Same(ligature, run.GetClusterBlob(0));
+        using var surface = new LinearRenderSurface(new(128, 64, 203));
+        using var paint = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.White };
+        surface.Canvas.DrawText(ligature, 4, 44, paint);
+        Assert.Contains(surface.CopySrgbBgra().Where((_, index) => index % 4 == 3), alpha => alpha > 0);
+        Assert.Throws<ArgumentOutOfRangeException>(() => run.GetClusterBlob(1));
+        run.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => run.GetClusterBlob(0));
+        Assert.Throws<ObjectDisposedException>(() => run.GetBlob());
+    }
+
+    [Fact]
     public void MissingGlyphIsExplicitInsteadOfSystemFallback()
     {
         using var shaper = new TextShaper(ReadFont("NotoSans.ttf"));

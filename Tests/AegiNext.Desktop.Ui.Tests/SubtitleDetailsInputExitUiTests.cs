@@ -146,13 +146,7 @@ public sealed class SubtitleDetailsInputExitUiTests
         var id = context.Session.Editor.Snapshot.Subtitles[0].Id;
         context.Session.Editor.UpdateSubtitle(id, line => line with
         {
-            Karaoke = line.Karaoke.SetItem(0, line.Karaoke[0] with
-            {
-                ActiveStyle = new() { Fill = new(1, 0, 0) }
-            }).SetItem(1, line.Karaoke[1] with
-            {
-                ActiveStyle = new() { StrokeWidth = 7 }
-            })
+            KaraokeStyleSpans = [new(0, 1, new() { Fill = new(1, 0, 0) }), new(1, 1, new() { StrokeWidth = 7 })]
         });
         var original = context.Session.Editor.Snapshot;
         context.Session.Editor.Reset(original);
@@ -163,9 +157,10 @@ public sealed class SubtitleDetailsInputExitUiTests
         Assert.NotEqual(Guid.Empty, Assert.IsType<StylePresetListItem>(presets.SelectedItem).Id);
         presets.SelectedItem = presets.Items.OfType<StylePresetListItem>().Single(item => item.Id == Guid.Empty);
         Flush(host);
-        var clips = context.Session.Editor.Snapshot.Subtitles[0].Karaoke;
-        Assert.Null(clips[0].ActiveStyle);
-        Assert.Equal(original.Subtitles[0].Karaoke[1], clips[1]);
+        var changed = context.Session.Editor.Snapshot.Subtitles[0];
+        Assert.Null(KaraokeVisualStyleResolver.StyleAt(changed.KaraokeStyleSpans, 0, KaraokeVisualState.ACTIVE));
+        Assert.Equal(original.Subtitles[0].KaraokeStyleSpans[1], Assert.Single(changed.KaraokeStyleSpans));
+        Assert.Equal(original.Subtitles[0].Karaoke, changed.Karaoke);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.Editor.Snapshot);
         Assert.False(context.Session.Editor.CanUndo);

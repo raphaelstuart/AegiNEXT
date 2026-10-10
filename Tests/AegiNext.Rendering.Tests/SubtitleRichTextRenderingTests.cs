@@ -166,11 +166,10 @@ public sealed class SubtitleRichTextRenderingTests
         var line = document.Subtitles[0];
         var segment = new KaraokeSegment(0, 3, new(1), new(2), new(1, 0, 0))
         {
-            HighlightKind = kind,
-            InactiveStyle = new() { Fill = new(0, 1, 0) },
-            ActiveStyle = new() { Fill = new(1, 0, 0) }
+            HighlightKind = kind
         };
-        document = document with { Subtitles = [line with { Karaoke = [segment] }] };
+        document = document with { Subtitles = [line with { Karaoke = [segment], KaraokeStyleSpans =
+            [new(0, 3, new() { Fill = new(1, 0, 0) }, new() { Fill = new(0, 1, 0) })] }] };
         using var renderer = Renderer();
         var before = Pixels(renderer, document, MediaTime.Zero);
         Assert.True(HasColor(before, 1));
@@ -203,10 +202,8 @@ public sealed class SubtitleRichTextRenderingTests
         var line = document.Subtitles[0] with
         {
             InlineSpans = [new(2, 2, new() { FontSize = 44 })],
-            Karaoke = [new(0, 4, new(1), new(2), new(1, 0, 0))
-            {
-                ActiveStyle = new() { Fill = new(1, 0, 0) }
-            }]
+            Karaoke = [new(0, 4, new(1), new(2), new(1, 0, 0))],
+            KaraokeStyleSpans = [new(0, 4, new() { Fill = new(1, 0, 0) })]
         };
         document = document with { Subtitles = [line], Layers = [document.Layers[0] with
         {
@@ -295,9 +292,10 @@ public sealed class SubtitleRichTextRenderingTests
         var highlight = new KaraokeVisualStyleOverride { Fill = new(1, 0, 0) };
         document = document with { Subtitles = [line with
         {
-            Karaoke = [new(0, 1, MediaTime.Zero, new(1), new(1, 0, 0)) { ActiveStyle = highlight },
-                new(1, 1, MediaTime.Zero, new(1), new(1, 0, 0)) { ActiveStyle = highlight },
-                new(2, 3, MediaTime.Zero, new(1), new(1, 0, 0)) { ActiveStyle = highlight }]
+            Karaoke = [new(0, 1, MediaTime.Zero, new(1), new(1, 0, 0)),
+                new(1, 1, MediaTime.Zero, new(1), new(1, 0, 0)),
+                new(2, 3, MediaTime.Zero, new(1), new(1, 0, 0))],
+            KaraokeStyleSpans = [new(0, 1, highlight), new(1, 1, highlight), new(2, 3, highlight)]
         }] };
         using var renderer = Renderer();
         var expected = document with { Subtitles = [line with { Style = line.Style with { Fill = new(1, 0, 0) } }] };
@@ -341,7 +339,8 @@ public sealed class SubtitleRichTextRenderingTests
         var font = document.Assets[0] with { RelativePath = "Fixtures/NotoSansArabic.ttf" };
         var line = document.Subtitles[0] with
         {
-            Karaoke = [new(0, 4, MediaTime.Zero, new(2), new(1, 0, 0)) { ActiveStyle = new() { Fill = new(1, 0, 0) } }]
+            Karaoke = [new(0, 4, MediaTime.Zero, new(2), new(1, 0, 0))],
+            KaraokeStyleSpans = [new(0, 4, new() { Fill = new(1, 0, 0) })]
         };
         document = document with { Assets = [font], Subtitles = [line] };
         using var renderer = Renderer();

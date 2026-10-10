@@ -628,9 +628,10 @@ internal sealed class SubtitleDetailsCoordinator : IDisposable
         var visual = line?.Style ?? new();
         if (clip is not null)
         {
-            var inline = line!.InlineSpans.FirstOrDefault(span => span.Utf16Start <= clip.Utf16Start &&
-                span.Utf16Start + span.Utf16Length > clip.Utf16Start);
-            visual = KaraokeVisualStyleResolver.ResolveActive(inline?.Style.ApplyTo(visual) ?? visual, line.KaraokeStyle, clip);
+            var inline = line!.InlineSpans.FirstOrDefault(span => span.Utf16Start <= styleSelectionStart &&
+                span.Utf16Start + span.Utf16Length > styleSelectionStart);
+            visual = KaraokeVisualStyleResolver.ResolveActive(inline?.Style.ApplyTo(visual) ?? visual, line.KaraokeStyle, clip,
+                KaraokeVisualStyleResolver.RangeStyleAt(line, styleSelectionStart, KaraokeVisualState.ACTIVE));
         }
         else
         {

@@ -144,12 +144,13 @@ public static partial class ProjectEditingOperations
             }
         }
 
-        var merged = SubtitleKaraokeNormalization.Normalize(document with
+        var merged = document with
         {
             Assets = assets.ToImmutable(), Tracks = tracks.ToImmutable(), Subtitles = subtitles.ToImmutable(),
             Layers = layers.ToImmutable(), Presets = presets.ToImmutable(),
             ColorTags = colorTags.Count == document.ColorTags.Length ? document.ColorTags : colorTags.ToImmutable()
-        });
+        };
+        ProjectValidator.Validate(merged);
         return new(merged, importedTrackIds.ToImmutable(), importedLayerIds.ToImmutable(), importedSubtitleIds.ToImmutable());
     }
 

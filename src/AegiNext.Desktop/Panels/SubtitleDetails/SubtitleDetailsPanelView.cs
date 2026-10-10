@@ -632,8 +632,8 @@ internal sealed class SubtitleDetailsPanelView : UserControl, IWorkbenchPanelVie
         options.AddRange(session.ViewModel.Styles.Presets);
         var start = Math.Min(selectionStart, selectionEnd);
         var end = Math.Max(selectionStart, selectionEnd);
-        if (start != end && line?.Karaoke.Any(clip => clip.Utf16Start < end &&
-            clip.Utf16Start + clip.Utf16Length > start && clip.ActiveStyle is { HasOverrides: true }) == true)
+        if (start != end && line?.KaraokeStyleSpans.Any(span => span.Utf16Start < end &&
+            span.Utf16Start + span.Utf16Length > start && span.ActiveStyle is { HasOverrides: true }) == true)
         {
             options.Add(new(selectionOverridePresetId, Localization.Get("Workbench.CustomKaraokeStyle")));
             id = selectionOverridePresetId;

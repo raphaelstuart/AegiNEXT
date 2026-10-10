@@ -57,12 +57,12 @@ public static partial class ProjectEditingOperations
         var track = document.Tracks[TrackIndex(document, trackId)];
         var style = track.AutoApplyStyle && track.DefaultStyle is { } defaultStyle
             ? defaultStyle : fallbackStyle ?? new SubtitleStyle();
-        var imported = lines.Select(line => SubtitleKaraokeNormalization.Normalize(line with
+        var imported = lines.Select(line => line with
         {
             Style = style,
             StyleName = track.AutoApplyStyle && track.DefaultStyle is not null ? track.StylePresetName! : line.StyleName,
             StylePresetId = track.AutoApplyStyle && track.DefaultStyle is not null ? track.StylePresetId : line.StylePresetId
-        })).ToImmutableArray();
+        }).ToImmutableArray();
         if (imported.IsEmpty)
         {
             return document;

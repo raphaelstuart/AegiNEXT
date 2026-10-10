@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using AegiNext.Core.Projects;
-using AegiNext.Core.Timing;
 
 namespace AegiNext.Application;
 
@@ -10,7 +9,6 @@ internal static class SubtitleContentEditing
 
     internal static SubtitleLine ReplaceText(SubtitleLine line, int start, int length, string replacement)
     {
-        line = SubtitleKaraokeNormalization.Normalize(line);
         var map = new SubtitleTextEditMap(line.Text, start, length, replacement);
         if (map.Text == line.Text)
         {
@@ -33,6 +31,7 @@ internal static class SubtitleContentEditing
         {
             Text = map.Text,
             InlineSpans = inlineSpans,
+            KaraokeStyleSpans = SubtitleKaraokeStyleEditing.Remap(line.KaraokeStyleSpans, map),
             Karaoke = karaoke,
             InactiveKaraoke = inactiveKaraoke
         };
@@ -67,179 +66,159 @@ internal static class SubtitleContentEditing
     {
         if (line.InactiveKaraoke.IsEmpty)
         {
-            return (RemapKaraoke(line.Karaoke, line.Text.Length, map), line.InactiveKaraoke);
+            return (RemapKaraoke(line.Karaoke, map), line.InactiveKaraoke);
         }
         if (line.Karaoke.IsEmpty)
         {
-            return (line.Karaoke, RemapKaraoke(line.InactiveKaraoke, line.Text.Length, map));
+            return (line.Karaoke, RemapKaraoke(line.InactiveKaraoke, map));
         }
         var inactiveIds = line.InactiveKaraoke.Select(clip => clip.Id).ToHashSet();
         var clips = line.Karaoke.AddRange(line.InactiveKaraoke).OrderBy(clip => clip.Utf16Start).ToImmutableArray();
-        var remapped = RemapKaraoke(clips, line.Text.Length, map, inactiveIds);
+        var remapped = RemapKaraoke(clips, map);
         return (
             Reuse(line.Karaoke, remapped.Where(clip => !inactiveIds.Contains(clip.Id)).ToImmutableArray()),
             Reuse(line.InactiveKaraoke, remapped.Where(clip => inactiveIds.Contains(clip.Id)).ToImmutableArray()));
     }
 
     private static ImmutableArray<KaraokeSegment> RemapKaraoke(ImmutableArray<KaraokeSegment> clips,
-        int textLength, SubtitleTextEditMap map, HashSet<Guid>? inactiveIds = null)
+        SubtitleTextEditMap map)
     {
         if (clips.IsEmpty || map.Text.Length == 0)
         {
             return [];
         }
-        if (map.OldCount == map.NewCount)
-        {
-            return Reuse(clips, clips.Select(segment => MapSegment(segment, map)).ToImmutableArray());
-        }
-        var first = -1;
-        var last = -1;
+        var replacementOwner = -1;
         for (var index = 0; index < clips.Length; index++)
         {
-            var segment = clips[index];
-            var segmentEnd = segment.Utf16Start + segment.Utf16Length;
-            var touches = map.OldStart == map.OldEnd
-                ? segment.Utf16Start <= map.OldStart && (map.OldStart < segmentEnd ||
-                    map.OldStart == textLength && segmentEnd == map.OldStart)
-                : segment.Utf16Start < map.OldEnd && segmentEnd > map.OldStart;
-            if (touches)
+            var clip = clips[index];
+            var end = clip.Utf16Start + clip.Utf16Length;
+            var contains = map.OriginalStart == map.OriginalEnd
+                ? clip.Utf16Start < map.OriginalStart && map.OriginalStart < end
+                : clip.Utf16Start <= map.OriginalStart && map.OriginalEnd <= end;
+            if (contains)
             {
-                first = first < 0 ? index : first;
-                last = index;
+                replacementOwner = index;
+                break;
             }
         }
-        if (first < 0)
-        {
-            return Reuse(clips, clips.Select(segment => MapSegment(segment, map)).ToImmutableArray());
-        }
-        for (var index = Math.Max(first, 1); index <= Math.Min(last + 1, clips.Length - 1); index++)
-        {
-            if (clips[index].Start < clips[index - 1].End)
-            {
-                throw new InvalidOperationException("重叠或逆序的旧字时间必须先明确调整，不能自动重分配。");
-            }
-        }
-
-        var left = clips[first];
-        var right = clips[last];
-        var regionStart = map.MapBoundary(Math.Min(left.Utf16Start, map.OldStart));
-        var regionEnd = Math.Max(right.Utf16Start + right.Utf16Length, map.OldEnd) + map.Delta;
-        var firstGlyph = map.NewBoundaries.IndexOf(regionStart);
-        var glyphCount = map.NewBoundaries.IndexOf(regionEnd) - firstGlyph;
         var result = ImmutableArray.CreateBuilder<KaraokeSegment>();
-        for (var index = 0; index < first; index++)
+        var completed = new HashSet<Guid>();
+        for (var index = 0; index < map.NewBoundaries.Length - 1; index++)
         {
-            result.Add(MapSegment(clips[index], map));
-        }
-        if (glyphCount > 0)
-        {
-            var groups = TimingGroups(clips, map.OldBoundaries, first, last);
-            var counts = AllocateGlyphs(groups, glyphCount);
-            var usedIds = new HashSet<Guid>();
-            var glyph = 0;
-            for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
+            var start = map.NewBoundaries[index];
+            var end = map.NewBoundaries[index + 1];
+            int? owner = null;
+            if (start < map.OriginalStart)
             {
-                var group = groups[groupIndex];
-                var groupStart = clips[group.First].Start;
-                var duration = clips[group.Last].End - groupStart;
-                var count = counts[groupIndex];
-                for (var index = 0; index < count; index++, glyph++)
+                CollectOwners(clips, start, Math.Min(end, map.OriginalStart), ref owner);
+            }
+            if (start < map.OriginalNewEnd && end > map.OriginalStart)
+            {
+                var mappedOwner = replacementOwner;
+                if (mappedOwner < 0 && map.OriginalStart != map.OriginalEnd && map.OldCount == map.NewCount)
                 {
-                    var offset = map.NewBoundaries[firstGlyph + glyph];
-                    var source = map.StyleSourceOffset(offset);
-                    var templateIndex = SegmentAt(clips, source);
-                    var template = clips[Math.Clamp(templateIndex, group.First, group.Last)];
-                    var id = usedIds.Add(template.Id) ? template.Id : Guid.NewGuid();
-                    if (inactiveIds?.Contains(template.Id) == true)
-                    {
-                        inactiveIds.Add(id);
-                    }
-                    result.Add(template with
-                    {
-                        Id = id,
-                        Utf16Start = offset,
-                        Utf16Length = map.NewBoundaries[firstGlyph + glyph + 1] - offset,
-                        Start = groupStart + duration / count * index,
-                        End = groupStart + duration / count * (index + 1)
-                    });
+                    mappedOwner = OwnerAt(clips, map.StyleSourceOffset(start));
                 }
+                IncludeOwner(mappedOwner, ref owner);
             }
-        }
-        for (var index = last + 1; index < clips.Length; index++)
-        {
-            result.Add(MapSegment(clips[index], map));
-        }
-        if (glyphCount == 0 && result.Count > 0)
-        {
-            var released = MediaTime.Zero;
-            for (var index = first; index <= last; index++)
+            if (end > map.OriginalNewEnd)
             {
-                released += clips[index].End - clips[index].Start;
+                CollectOwners(clips, Math.Max(start, map.OriginalNewEnd) - map.Delta,
+                    end - map.Delta, ref owner);
             }
-            if (first < result.Count)
+            if (owner is not >= 0)
             {
-                result[first] = result[first] with { Start = result[first].Start - released };
+                continue;
+            }
+            var template = clips[owner.Value];
+            if (result.Count > 0 && result[^1].Id == template.Id &&
+                result[^1].Utf16Start + result[^1].Utf16Length == start)
+            {
+                var groupStart = result[^1].Utf16Start;
+                result[^1] = template.Utf16Start == groupStart && template.Utf16Length == end - groupStart
+                    ? template : result[^1] with { Utf16Length = end - groupStart };
             }
             else
             {
-                result[^1] = result[^1] with { End = result[^1].End + released };
+                if (!completed.Add(template.Id))
+                {
+                    throw new InvalidOperationException("编辑会拆开同一计时组，请先显式拆分计时组。");
+                }
+                result.Add(template.Utf16Start == start && template.Utf16Length == end - start
+                    ? template : template with { Utf16Start = start, Utf16Length = end - start });
             }
         }
         return Reuse(clips, result.ToImmutable());
     }
 
-    private static List<(int First, int Last, int Weight)> TimingGroups(ImmutableArray<KaraokeSegment> segments,
-        SubtitleTextBoundaries boundaries, int first, int last)
+    private static void CollectOwners(ImmutableArray<KaraokeSegment> clips, int start, int end, ref int? owner)
     {
-        List<(int First, int Last, int Weight)> groups = [];
-        for (var index = first; index <= last; index++)
+        var cursor = start;
+        while (cursor < end)
         {
-            var segment = segments[index];
-            var count = boundaries.IndexOf(segment.Utf16Start + segment.Utf16Length) -
-                boundaries.IndexOf(segment.Utf16Start);
-            if (groups.Count > 0 && segment.Start == segments[index - 1].End)
+            var index = OwnerAt(clips, cursor);
+            IncludeOwner(index, ref owner);
+            if (index >= 0)
             {
-                var previous = groups[^1];
-                groups[^1] = (previous.First, index, previous.Weight + count);
+                cursor = Math.Min(end, clips[index].Utf16Start + clips[index].Utf16Length);
             }
             else
             {
-                groups.Add((index, index, count));
+                cursor = Math.Min(end, NextClipStart(clips, cursor, end));
             }
         }
-        return groups;
     }
 
-    private static int[] AllocateGlyphs(List<(int First, int Last, int Weight)> groups, int count)
+    private static void IncludeOwner(int candidate, ref int? owner)
     {
-        if (count < groups.Count)
+        if (owner.HasValue && owner.Value != candidate)
         {
-            throw new InvalidOperationException("替换后的字数不足以保留原有等待区间，请先明确调整字时间。");
+            throw new InvalidOperationException("编辑会合并不同计时归属的字素，请先调整文字或分组。");
         }
-        var counts = new int[groups.Count];
-        var remaining = count - groups.Count;
-        var totalWeight = groups.Sum(group => group.Weight);
-        List<(int Index, long Remainder)> remainders = [];
-        for (var index = 0; index < groups.Count; index++)
-        {
-            var weighted = (long)remaining * groups[index].Weight;
-            counts[index] = 1 + (int)(weighted / totalWeight);
-            remainders.Add((index, weighted % totalWeight));
-        }
-        var extra = count - counts.Sum();
-        foreach (var remainder in remainders.OrderByDescending(value => value.Remainder).ThenBy(value => value.Index).Take(extra))
-        {
-            counts[remainder.Index]++;
-        }
-        return counts;
+        owner = candidate;
     }
 
-    private static KaraokeSegment MapSegment(KaraokeSegment segment, SubtitleTextEditMap map)
+    private static int OwnerAt(ImmutableArray<KaraokeSegment> clips, int offset)
     {
-        var start = map.MapBoundary(segment.Utf16Start);
-        var end = map.MapBoundary(segment.Utf16Start + segment.Utf16Length);
-        return start == segment.Utf16Start && end - start == segment.Utf16Length
-            ? segment : segment with { Utf16Start = start, Utf16Length = end - start };
+        var low = 0;
+        var high = clips.Length - 1;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            var clip = clips[middle];
+            if (offset < clip.Utf16Start)
+            {
+                high = middle - 1;
+            }
+            else if (offset >= clip.Utf16Start + clip.Utf16Length)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                return middle;
+            }
+        }
+        return -1;
+    }
+
+    private static int NextClipStart(ImmutableArray<KaraokeSegment> clips, int offset, int fallback)
+    {
+        var low = 0;
+        var high = clips.Length;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (clips[middle].Utf16Start <= offset)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle;
+            }
+        }
+        return low < clips.Length ? clips[low].Utf16Start : fallback;
     }
 
     private static SubtitleInlineStyleOverride StyleAt(ImmutableArray<SubtitleInlineSpan> spans, int offset)
@@ -264,30 +243,6 @@ internal static class SubtitleContentEditing
             }
         }
         return emptyStyle;
-    }
-
-    private static int SegmentAt(ImmutableArray<KaraokeSegment> segments, int offset)
-    {
-        var low = 0;
-        var high = segments.Length - 1;
-        while (low <= high)
-        {
-            var middle = low + (high - low) / 2;
-            var segment = segments[middle];
-            if (offset < segment.Utf16Start)
-            {
-                high = middle - 1;
-            }
-            else if (offset >= segment.Utf16Start + segment.Utf16Length)
-            {
-                low = middle + 1;
-            }
-            else
-            {
-                return middle;
-            }
-        }
-        return low;
     }
 
     private static void AppendSpan(ImmutableArray<SubtitleInlineSpan>.Builder spans, int start, int length,

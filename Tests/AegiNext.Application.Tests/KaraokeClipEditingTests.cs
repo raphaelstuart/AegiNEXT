@@ -13,13 +13,14 @@ public sealed class KaraokeClipEditingTests
         setup.ApplySubtitleInlineStyle(id, 1, 2, new() { Bold = true });
         var original = new KaraokeSegment(0, setup.Snapshot.Subtitles[0].Text.Length, new(1, 3), new(7, 3), new(1, 0, 0))
         {
-            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP, ActiveStyle = new() { StrokeWidth = 4 }
+            HighlightKind = KaraokeHighlightKind.OUTLINE_STEP
         };
         var before = setup.Snapshot;
         var editor = new ProjectEditor(before);
         editor.Apply("Normalize legacy clip", document => ProjectEditingOperations.SplitKaraokeClipIntoGraphemes(document with
         {
-            Subtitles = [document.Subtitles[0] with { Karaoke = [original] }]
+            Subtitles = [document.Subtitles[0] with { Karaoke = [original],
+                KaraokeStyleSpans = [new(0, original.Utf16Length, new() { StrokeWidth = 4 })] }]
         }, id, original.Id));
         var result = editor.Snapshot.Subtitles[0];
         Assert.Equal([1, 2, 2, 5], result.Karaoke.Select(clip => clip.Utf16Length));
@@ -29,7 +30,7 @@ public sealed class KaraokeClipEditingTests
         {
             Assert.Equal(new MediaTime(1, 2), clip.End - clip.Start);
             Assert.Equal(original.HighlightKind, clip.HighlightKind);
-            Assert.Equal(original.ActiveStyle, clip.ActiveStyle);
+            Assert.Equal(4, KaraokeVisualStyleResolver.RangeStyleAt(result, clip.Utf16Start, KaraokeVisualState.ACTIVE)!.StrokeWidth);
         });
         Assert.Equal(original.Start, result.Karaoke[0].Start);
         Assert.Equal(original.End, result.Karaoke[^1].End);
@@ -43,7 +44,7 @@ public sealed class KaraokeClipEditingTests
     }
 
     [Fact]
-    public void CompatibilitySplitAndMergeReturnPerGraphemeClipsWithExactEnvelope()
+    public void ExplicitSplitAndMergeRetainGroupedTextWithExactEnvelope()
     {
         var editor = new ProjectEditor();
         var id = editor.AddSubtitle(new(0), new(5), "a😀b");
@@ -54,18 +55,18 @@ public sealed class KaraokeClipEditingTests
         var clip = before.Subtitles[0].Karaoke[0];
         var split = ProjectEditingOperations.SplitKaraokeClip(before, id, clip.Id, 3);
         var divided = split.Subtitles[0].Karaoke;
-        Assert.Equal([1, 2, 1], divided.Select(value => value.Utf16Length));
-        Assert.Equal(new MediaTime(3), divided[1].End);
-        Assert.Equal(new MediaTime(3), divided[2].Start);
+        Assert.Equal([3, 1], divided.Select(value => value.Utf16Length));
+        Assert.Equal(new MediaTime(3), divided[0].End);
+        Assert.Equal(new MediaTime(3), divided[1].Start);
         var merged = ProjectEditingOperations.MergeKaraokeClips(split, id, divided[0].Id, divided[1].Id).Subtitles[0].Karaoke;
-        Assert.Equal([1, 2, 1], merged.Select(value => value.Utf16Length));
+        Assert.Equal([4], merged.Select(value => value.Utf16Length));
         Assert.Equal(clip.Id, merged[0].Id);
         Assert.Equal(clip.Start, merged[0].Start);
         Assert.Equal(clip.End, merged[^1].End);
         var explicitSplit = ProjectEditingOperations.SplitKaraokeClip(before, id, clip.Id, 1, new(3, 2));
         Assert.Equal(new MediaTime(3, 2), explicitSplit.Subtitles[0].Karaoke[0].End);
         Assert.Equal(new MediaTime(3, 2), explicitSplit.Subtitles[0].Karaoke[1].Start);
-        Assert.Equal(new MediaTime(11, 4), explicitSplit.Subtitles[0].Karaoke[1].End);
+        Assert.Equal(new MediaTime(4), explicitSplit.Subtitles[0].Karaoke[1].End);
     }
 
     [Theory]
@@ -91,7 +92,7 @@ public sealed class KaraokeClipEditingTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void MergeRejectsWaitsAndDifferentHighlightConfigurations(bool waiting)
+    public void MergeRejectsWaitsAndPreservesDifferentDefaultFills(bool waiting)
     {
         var setup = new ProjectEditor();
         var id = setup.AddSubtitle(new(0), new(4), "ab");
@@ -106,9 +107,19 @@ public sealed class KaraokeClipEditingTests
         var before = setup.Snapshot;
         var editor = new ProjectEditor(before);
         var clips = before.Subtitles[0].Karaoke;
-        Assert.Throws<InvalidOperationException>(() => editor.MergeKaraokeClips(id, clips[0].Id, clips[1].Id));
-        Assert.Same(before, editor.Snapshot);
-        Assert.False(editor.CanUndo);
+        if (waiting)
+        {
+            Assert.Throws<InvalidOperationException>(() => editor.MergeKaraokeClips(id, clips[0].Id, clips[1].Id));
+            Assert.Same(before, editor.Snapshot);
+            Assert.False(editor.CanUndo);
+        }
+        else
+        {
+            editor.MergeKaraokeClips(id, clips[0].Id, clips[1].Id);
+            var line = editor.Snapshot.Subtitles[0];
+            Assert.Single(line.Karaoke);
+            Assert.Equal(SceneColor.Black, KaraokeVisualStyleResolver.RangeStyleAt(line, 1, KaraokeVisualState.ACTIVE)!.Fill);
+        }
     }
 
     [Fact]

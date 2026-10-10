@@ -21,6 +21,7 @@ internal sealed class SubtitleTextEditMap
         NewBoundaries = Boundaries(Text);
         Delta = replacement.Length - length;
         OriginalStart = start;
+        OriginalEnd = start + length;
         OriginalNewEnd = start + replacement.Length;
         var oldStart = start;
         var oldEnd = start + length;
@@ -52,8 +53,9 @@ internal sealed class SubtitleTextEditMap
     internal int NewEnd { get; }
     internal int OldCount { get; }
     internal int NewCount { get; }
-    private int OriginalStart { get; }
-    private int OriginalNewEnd { get; }
+    internal int OriginalStart { get; }
+    internal int OriginalEnd { get; }
+    internal int OriginalNewEnd { get; }
     private int OldStartIndex { get; }
     private int NewStartIndex { get; }
 
