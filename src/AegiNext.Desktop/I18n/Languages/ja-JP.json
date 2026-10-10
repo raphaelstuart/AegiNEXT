@@ -619,6 +619,7 @@
     "Workbench.InvalidValue": "無効な値",
     "Workbench.ClipMask": "クリップのマスク",
     "Workbench.MaskRectangle": "長方形",
+    "Workbench.MaskEdit": "マスクを編集",
     "Workbench.MaskVectorGesture": "クリックでノードを追加し、ドラッグでハンドルを作成します。最初のノードをクリックするか Enter を押すと閉じます。Alt を押しながらノードをドラッグすると出側ハンドル、Alt+Shift では入側ハンドルを編集します。",
     "Workbench.MaskVector": "ベジェ",
     "Workbench.MaskAddContour": "輪郭を追加",

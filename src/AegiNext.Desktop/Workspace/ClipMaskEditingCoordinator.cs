@@ -22,6 +22,8 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
     private Guid? fieldNodeId;
     internal MaskNumericField[] Fields { get; private set; } = [];
     internal bool CanEdit => session.SelectedLayer is { Kind: LayerKind.SUBTITLE, SubtitleId: not null };
+    internal bool CanCreate => CanEdit && session.SelectedLayer?.Mask is null;
+    internal bool IsEditing => session.SceneEditing.Mode is CanvasEditMode.MASK_RECTANGLE or CanvasEditMode.MASK_VECTOR or CanvasEditMode.MASK_DRAW_VECTOR;
     internal bool IsTopologyLocked => session.SelectedLayer is { } layer && ClipMaskAnimation.IsTopologyLocked(layer);
     internal bool CanDeleteSelectedNode => !IsTopologyLocked && session.SelectedLayer?.Mask is VectorClipMask vector &&
         vector.Contours.SelectMany(contour => contour.Nodes).Any(node => node.Id == session.SceneEditing.MaskNodeId);
@@ -292,16 +294,12 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         session.RefreshMaskPreview();
     }
 
-    internal void EditRectangle()
+    internal void CreateRectangle()
     {
-        if (!CanEdit || !session.TryCommitDrafts())
+        if (CanCreate)
         {
-            return;
+            EnterEditing(CanvasEditMode.MASK_RECTANGLE);
         }
-        session.ViewModel.CancelGestures();
-        session.ViewModel.Effects.EditMode = CanvasEditMode.MASK_RECTANGLE;
-        session.ViewModel.Masks.Refresh();
-        session.RefreshMaskPreview();
     }
 
     internal void AddContour()
@@ -315,14 +313,45 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         }
     }
 
-    internal void EditVector()
+    internal void CreateVector()
     {
-        if (!CanEdit || !session.TryCommitDrafts() || IsTopologyLocked && session.SelectedLayer?.Mask is not VectorClipMask)
+        if (CanCreate)
+        {
+            EnterEditing(CanvasEditMode.MASK_VECTOR);
+        }
+    }
+
+    internal void ToggleEditing()
+    {
+        if (!CanEdit || session.SelectedLayer?.Mask is null)
         {
             return;
         }
+        if (IsEditing)
+        {
+            ExitEditing();
+            return;
+        }
+        switch (session.SelectedLayer.Mask)
+        {
+            case RectangleClipMask:
+                EnterEditing(CanvasEditMode.MASK_RECTANGLE);
+                break;
+            case VectorClipMask:
+                EnterEditing(CanvasEditMode.MASK_VECTOR);
+                break;
+        }
+    }
+
+    private void EnterEditing(CanvasEditMode mode)
+    {
+        if (!session.TryCommitDrafts())
+        {
+            session.ViewModel.Masks.Refresh();
+            return;
+        }
         session.ViewModel.CancelGestures();
-        session.ViewModel.Effects.EditMode = CanvasEditMode.MASK_VECTOR;
+        session.ViewModel.Effects.EditMode = mode;
         session.ViewModel.Masks.Refresh();
         session.RefreshMaskPreview();
     }
@@ -340,6 +369,10 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         if (session.SelectedLayer is { } layer)
         {
             session.ViewModel.CancelGestures();
+            if (IsEditing)
+            {
+                session.ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
+            }
             session.Editor.ClearClipMask(layer.Id);
             session.SceneEditing.MaskNodeId = null;
             Refresh(true);

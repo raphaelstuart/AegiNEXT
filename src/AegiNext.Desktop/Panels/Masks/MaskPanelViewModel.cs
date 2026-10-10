@@ -20,8 +20,9 @@ internal sealed class MaskPanelViewModel : ObservableObject
     internal MaskPanelViewModel(WorkbenchSession session)
     {
         this.session = session;
-        EditRectangleMaskCommand = new RelayCommand(() => session.MaskEditing.EditRectangle());
-        EditVectorMaskCommand = new RelayCommand(() => session.MaskEditing.EditVector());
+        CreateRectangleMaskCommand = new RelayCommand(() => session.MaskEditing.CreateRectangle(), () => CanCreateMask);
+        CreateVectorMaskCommand = new RelayCommand(() => session.MaskEditing.CreateVector(), () => CanCreateMask);
+        ToggleMaskEditingCommand = new RelayCommand(() => session.MaskEditing.ToggleEditing(), () => CanEditExistingMask);
         AddMaskContourCommand = new RelayCommand(() => session.MaskEditing.AddContour());
         ClearMaskCommand = EditCommand(() => session.MaskEditing.Clear());
         InvertMaskCommand = EditCommand(() => session.MaskEditing.Invert());
@@ -32,21 +33,20 @@ internal sealed class MaskPanelViewModel : ObservableObject
     }
 
     public bool CanEditMask => session.MaskEditing.CanEdit;
+    public bool CanCreateMask => session.MaskEditing.CanCreate;
+    public bool CanEditExistingMask => CanEditMask && HasClipMask;
+    public bool IsMaskEditing => session.MaskEditing.IsEditing;
     public bool IsRectangleTool => session.SceneEditing.Mode == CanvasEditMode.MASK_RECTANGLE;
     public bool IsVectorTool => session.SceneEditing.Mode is CanvasEditMode.MASK_VECTOR or CanvasEditMode.MASK_DRAW_VECTOR;
-    public bool CanEditVector => CanEditMask && (!session.MaskEditing.IsTopologyLocked || IsVectorMask);
     public bool CanClearNodeAnimation => session.SelectedLayer?.Tracks.Any(track => AnimationPropertyMetadata.IsNodeProperty(track.Property)) == true;
     public bool CanSubdivide => session.MaskEditing.CanSubdivideSelectedNode;
     public bool HasClipMask => session.SelectedLayer?.Mask is not null;
     public bool IsVectorMask => session.SelectedLayer?.Mask is VectorClipMask;
-    public bool CanCreateRectangleMask => CanEditMask && (!session.MaskEditing.IsTopologyLocked || session.SelectedLayer?.Mask is RectangleClipMask);
     public bool CanEditMaskTopology => IsVectorMask && !session.MaskEditing.IsTopologyLocked;
     public bool CanDeleteContour => session.MaskEditing.CanDeleteSelectedContour;
     public bool CanDeleteNode => session.MaskEditing.CanDeleteSelectedNode;
     public bool HasSelectedPoint => SelectedPoint is not null;
     public bool MaskInverted => session.SelectedLayer?.Mask?.Inverted == true;
-    public string RectangleToolTip => session.MaskEditing.IsTopologyLocked && session.SelectedLayer?.Mask is VectorClipMask
-        ? Localization.Get("Workbench.MaskTopologyLocked") : Localization.Get("Workbench.MaskRectangle");
     public string ContourToolTip => MaskTopologyReason ?? Localization.Get("Workbench.MaskAddContour");
     public string DeleteContourToolTip => MaskTopologyReason ?? Localization.Get("Workbench.MaskDeleteContour");
     public string DeleteNodeToolTip => MaskTopologyReason ?? Localization.Get("Workbench.MaskDeleteNode");
@@ -98,8 +98,9 @@ internal sealed class MaskPanelViewModel : ObservableObject
             }
         }
     }
-    public ICommand EditRectangleMaskCommand { get; }
-    public ICommand EditVectorMaskCommand { get; }
+    public IRelayCommand CreateRectangleMaskCommand { get; }
+    public IRelayCommand CreateVectorMaskCommand { get; }
+    public IRelayCommand ToggleMaskEditingCommand { get; }
     public ICommand AddMaskContourCommand { get; }
     public ICommand ClearMaskCommand { get; }
     public ICommand InvertMaskCommand { get; }
@@ -167,13 +168,16 @@ internal sealed class MaskPanelViewModel : ObservableObject
                     OnPropertyChanged(nameof(Points));
                 }
             }
-            foreach (var name in new[] { nameof(CanEditMask), nameof(IsRectangleTool), nameof(IsVectorTool), nameof(CanEditVector), nameof(CanClearNodeAnimation), nameof(CanSubdivide), nameof(HasClipMask), nameof(IsVectorMask), nameof(CanCreateRectangleMask), nameof(CanEditMaskTopology),
+            foreach (var name in new[] { nameof(CanEditMask), nameof(CanCreateMask), nameof(CanEditExistingMask), nameof(IsMaskEditing), nameof(IsRectangleTool), nameof(IsVectorTool), nameof(CanClearNodeAnimation), nameof(CanSubdivide), nameof(HasClipMask), nameof(IsVectorMask), nameof(CanEditMaskTopology),
                 nameof(CanDeleteContour), nameof(CanDeleteNode), nameof(HasSelectedPoint), nameof(MaskInverted), nameof(MaskTopologyReason),
-                nameof(SelectedContour), nameof(SelectedPoint), nameof(RectangleToolTip), nameof(ContourToolTip), nameof(DeleteContourToolTip),
+                nameof(SelectedContour), nameof(SelectedPoint), nameof(ContourToolTip), nameof(DeleteContourToolTip),
                 nameof(DeleteNodeToolTip), nameof(SubdivideToolTip) })
             {
                 OnPropertyChanged(name);
             }
+            CreateRectangleMaskCommand.NotifyCanExecuteChanged();
+            CreateVectorMaskCommand.NotifyCanExecuteChanged();
+            ToggleMaskEditingCommand.NotifyCanExecuteChanged();
         }
         finally
         {

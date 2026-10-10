@@ -14,11 +14,168 @@ using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class MaskPanelUiTests
 {
+    [AvaloniaTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ExistingMaskReplacesCreationToolsWithAnEditingToggleWithoutWritingTheProject(bool vectorMask, bool animatedNode)
+    {
+        await using var context = new MainWindowTestContext();
+        await context.OpenMediaAsync();
+        var cueId = await UiTestActions.CreateSubtitleAsync(context);
+        var session = context.Session;
+        var mask = CreateMask(vectorMask);
+        session.Editor.SetClipMask(session.SelectedLayer!.Id, mask);
+        if (animatedNode)
+        {
+            var node = Assert.IsType<VectorClipMask>(mask).Contours[0].Nodes[0];
+            session.Editor.SetKeyframe(session.SelectedLayer!.Id, new AnimationTrackTarget(AnimationProperty.MASK_NODE_POSITION, node.Id), new(new(0), node.Position));
+        }
+        session.SelectCue(cueId);
+        await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_MASKS);
+        var original = session.DocumentSnapshot;
+        var rectangle = UiTestActions.Find<ToolbarToggleButton>(context.Window, "RectangleMaskButton");
+        var vector = UiTestActions.Find<ToolbarToggleButton>(context.Window, "VectorMaskButton");
+        Assert.False(rectangle.IsEffectivelyEnabled);
+        Assert.False(vector.IsEffectivelyEnabled);
+        Assert.False(rectangle.IsEffectivelyVisible);
+        Assert.False(vector.IsEffectivelyVisible);
+        Assert.False(rectangle.Command!.CanExecute(null));
+        Assert.False(vector.Command!.CanExecute(null));
+        var edit = UiTestActions.Find<ToolbarToggleButton>(context.Window, "EditMaskButton");
+        Assert.True(edit.IsEffectivelyVisible);
+        Assert.True(edit.IsEffectivelyEnabled);
+        Assert.False(edit.IsChecked);
+        Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        UiTestActions.Click(context.Window, "EditMaskButton");
+        Assert.True(edit.IsChecked);
+        Assert.Equal(vectorMask ? CanvasEditMode.MASK_VECTOR : CanvasEditMode.MASK_RECTANGLE, session.SceneEditing.Mode);
+        Assert.Same(original, session.DocumentSnapshot);
+        UiTestActions.Click(context.Window, "EditMaskButton");
+        Assert.False(edit.IsChecked);
+        Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        Assert.Same(original, session.DocumentSnapshot);
+        UiTestActions.Click(context.Window, "EditMaskButton");
+        UiTestActions.Press(context.Window, Key.Escape);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(edit.IsChecked);
+        Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        Assert.Same(original, session.DocumentSnapshot);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MaskToolsFollowCreationClearUndoRedoAndSubtitleSelection(bool vectorMask)
+    {
+        await using var context = new MainWindowTestContext();
+        await context.OpenMediaAsync();
+        var maskedCueId = await UiTestActions.CreateSubtitleAsync(context);
+        await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_MASKS);
+        var session = context.Session;
+        var rectangle = UiTestActions.Find<ToolbarToggleButton>(context.Window, "RectangleMaskButton");
+        var vector = UiTestActions.Find<ToolbarToggleButton>(context.Window, "VectorMaskButton");
+        var edit = UiTestActions.Find<ToolbarToggleButton>(context.Window, "EditMaskButton");
+        Assert.True(rectangle.IsEffectivelyVisible && rectangle.IsEffectivelyEnabled);
+        Assert.True(vector.IsEffectivelyVisible && vector.IsEffectivelyEnabled);
+        Assert.False(edit.IsEffectivelyVisible);
+        Assert.False(edit.Command!.CanExecute(null));
+        UiTestActions.Click(context.Window, vectorMask ? "VectorMaskButton" : "RectangleMaskButton");
+        session.Editor.SetClipMask(session.SelectedLayer!.Id, CreateMask(vectorMask));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(edit.IsEffectivelyVisible && edit.IsEffectivelyEnabled);
+        Assert.True(edit.IsChecked);
+        Assert.False(rectangle.IsEffectivelyVisible || rectangle.IsEffectivelyEnabled);
+        Assert.False(vector.IsEffectivelyVisible || vector.IsEffectivelyEnabled);
+        var masked = session.DocumentSnapshot;
+        UiTestActions.Click(context.Window, "ClearClipMaskButton");
+        await Assert.IsType<AsyncRelayCommand>(context.ViewModel.Masks.ClearMaskCommand).ExecutionTask!;
+        Assert.Null(session.SelectedLayer!.Mask);
+        Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        Assert.True(rectangle.IsEffectivelyVisible && rectangle.IsEffectivelyEnabled);
+        Assert.True(vector.IsEffectivelyVisible && vector.IsEffectivelyEnabled);
+        Assert.False(edit.IsEffectivelyVisible);
+        Assert.False(edit.Command.CanExecute(null));
+        Assert.True(session.Editor.Undo());
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(masked, session.DocumentSnapshot);
+        Assert.True(edit.IsEffectivelyVisible && edit.IsEffectivelyEnabled);
+        Assert.False(edit.IsChecked);
+        Assert.False(rectangle.Command!.CanExecute(null));
+        Assert.False(vector.Command!.CanExecute(null));
+        Assert.True(session.Editor.Redo());
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(edit.IsEffectivelyVisible);
+        Assert.True(rectangle.IsEffectivelyVisible && rectangle.IsEffectivelyEnabled);
+        Assert.True(vector.IsEffectivelyVisible && vector.IsEffectivelyEnabled);
+        Assert.True(session.Editor.Undo());
+        var unmaskedCueId = session.Editor.AddSubtitle(new(6), new(10), "Unmasked subtitle");
+        session.SelectCue(maskedCueId);
+        Dispatcher.UIThread.RunJobs();
+        var selected = session.DocumentSnapshot;
+        UiTestActions.Click(context.Window, "EditMaskButton");
+        Assert.True(edit.IsChecked);
+        session.SelectCue(unmaskedCueId);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(edit.IsEffectivelyVisible);
+        Assert.False(edit.IsChecked);
+        Assert.True(rectangle.IsEffectivelyVisible && rectangle.IsEffectivelyEnabled);
+        Assert.True(vector.IsEffectivelyVisible && vector.IsEffectivelyEnabled);
+        Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        session.SelectCue(maskedCueId);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(edit.IsEffectivelyVisible && edit.IsEffectivelyEnabled);
+        Assert.False(edit.IsChecked);
+        Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        Assert.Same(selected, session.DocumentSnapshot);
+    }
+
+    [AvaloniaFact]
+    public async Task InvalidDraftKeepsTheEditingToggleUncheckedAndLanguageSwitchOnlyUpdatesItsLabel()
+    {
+        await using var context = new MainWindowTestContext();
+        var originalLanguage = Localization.SelectedLanguageID;
+        try
+        {
+            await context.OpenMediaAsync();
+            await UiTestActions.CreateSubtitleAsync(context);
+            var session = context.Session;
+            session.Editor.SetClipMask(session.SelectedLayer!.Id, CreateMask(false));
+            await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_MASKS);
+            var original = session.DocumentSnapshot;
+            var field = Assert.Single(session.MaskEditing.Fields, field => field.Target?.Property == AnimationProperty.MASK_RECTANGLE_TOP_LEFT && field.Component == 0);
+            field.Draft.RawText = "unfinished";
+            UiTestActions.Click(context.Window, "EditMaskButton");
+            var edit = UiTestActions.Find<ToolbarToggleButton>(context.Window, "EditMaskButton");
+            Assert.False(edit.IsChecked);
+            Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+            foreach (var language in new[] { "en-US", "zh-CN", "ja-JP" })
+            {
+                Localization.SetLanguage(language);
+                Dispatcher.UIThread.RunJobs();
+                Assert.Equal(Localization.Get("Workbench.MaskEdit"), ToolTip.GetTip(edit));
+                Assert.Equal(Localization.Get("Workbench.MaskEdit"), Avalonia.Automation.AutomationProperties.GetName(edit));
+                Assert.Equal("unfinished", field.Draft.RawText);
+                Assert.False(edit.IsChecked);
+                Assert.Same(original, session.DocumentSnapshot);
+            }
+        }
+        finally
+        {
+            foreach (var field in context.Session.MaskEditing.Fields.ToArray())
+            {
+                context.ViewModel.Masks.RestoreField(field.Key);
+            }
+            Localization.SetLanguage(originalLanguage);
+        }
+    }
+
     [AvaloniaTheory]
     [InlineData("en-US", false)]
     [InlineData("en-US", true)]
@@ -43,8 +200,8 @@ public sealed class MaskPanelUiTests
             Assert.Same(context.ViewModel.Masks, panel.DataContext);
             Assert.DoesNotContain(panel.GetVisualDescendants(), control => control is Expander);
             var toolbar = UiTestActions.Find<WrapPanel>(context.Window, "MaskToolbar");
-            var buttons = toolbar.GetVisualDescendants().OfType<Button>().ToArray();
-            Assert.Equal(9, buttons.Length);
+            var buttons = toolbar.GetVisualDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible).ToArray();
+            Assert.Equal(8, buttons.Length);
             Assert.All(buttons, button =>
             {
                 Assert.Equal(button.Bounds.Width, button.Bounds.Height, 6);
@@ -53,6 +210,7 @@ public sealed class MaskPanelUiTests
                 Assert.DoesNotContain(button.GetVisualDescendants(), child => child is TextBlock { Text.Length: > 0 });
             });
             AssertToolbarLayout(toolbar);
+            Assert.Equal(Localization.Get("Workbench.MaskEdit"), ToolTip.GetTip(UiTestActions.Find<Button>(context.Window, "EditMaskButton")));
             Assert.IsType<ToolbarToggleButton>(UiTestActions.Find<Button>(context.Window, "InvertClipMaskButton"));
             Assert.False(UiTestActions.Find<Button>(context.Window, "AddMaskContourButton").IsEffectivelyEnabled);
             Assert.False(UiTestActions.Find<Button>(context.Window, "DeleteMaskContourButton").IsEffectivelyEnabled);
@@ -189,7 +347,6 @@ public sealed class MaskPanelUiTests
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_MASKS);
         var original = context.Session.DocumentSnapshot;
         UiTestActions.Click(context.Window, "RectangleMaskButton");
-        var rectangle = UiTestActions.Find<ToolbarToggleButton>(context.Window, "RectangleMaskButton");
         var canvas = UiTestActions.Find<EffectCanvasControl>(context.Window, "EffectCanvas");
         Assert.Equal("Cross", canvas.Cursor?.ToString());
         var board = canvas.ProjectRectangle;
@@ -210,15 +367,16 @@ public sealed class MaskPanelUiTests
         var committed = context.Session.DocumentSnapshot;
         Assert.IsType<RectangleClipMask>(context.Session.SelectedLayer!.Mask);
         Assert.NotSame(original, committed);
-        Assert.True(canvasFocus ? canvas.Focus() : rectangle.Focus());
+        var edit = UiTestActions.Find<ToolbarToggleButton>(context.Window, "EditMaskButton");
+        Assert.True(canvasFocus ? canvas.Focus() : edit.Focus());
         UiTestActions.Press(context.Window, Key.Escape);
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(CanvasEditMode.MASK_RECTANGLE, context.Session.SceneEditing.Mode);
-        Assert.True(rectangle.IsChecked);
+        Assert.True(edit.IsChecked);
         UiTestActions.Press(context.Window, Key.F6);
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(CanvasEditMode.POSITION, context.Session.SceneEditing.Mode);
-        Assert.False(rectangle.IsChecked);
+        Assert.False(edit.IsChecked);
         Assert.Null(canvas.Cursor);
         Assert.Same(committed, context.Session.DocumentSnapshot);
         Assert.True(context.Session.Editor.Undo());
@@ -247,7 +405,7 @@ public sealed class MaskPanelUiTests
             var contour = new MaskContour { Nodes = [first, second] };
             session.Editor.SetClipMask(session.SelectedLayer!.Id, new VectorClipMask { Contours = [contour, new() { Nodes = [hidden] }] });
             await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_MASKS);
-            UiTestActions.Click(context.Window, "VectorMaskButton");
+            UiTestActions.Click(context.Window, "EditMaskButton");
             var list = UiTestActions.Find<ListBox>(context.Window, "MaskPointList");
             Assert.Equal(new[] { first.Id, second.Id }, list.Items.OfType<MaskPointListItem>().Select(point => point.Id));
             list.BringIntoView();
@@ -288,6 +446,42 @@ public sealed class MaskPanelUiTests
             Localization.SetLanguage(originalLanguage);
         }
     }
+    private static ClipMask CreateMask(bool vectorMask)
+    {
+        if (!vectorMask)
+        {
+            return new RectangleClipMask
+            {
+                TopLeft = new(10, 20),
+                BottomRight = new(400, 300)
+            };
+        }
+        return new VectorClipMask
+        {
+            Contours =
+            [
+                new()
+                {
+                    Nodes =
+                    [
+                        new()
+                        {
+                            Position = new(100, 100)
+                        },
+                        new()
+                        {
+                            Position = new(300, 100)
+                        },
+                        new()
+                        {
+                            Position = new(200, 300)
+                        }
+                    ]
+                }
+            ]
+        };
+    }
+
     private static void AssertToolbarLayout(WrapPanel toolbar)
     {
         var groups = toolbar.Children.OfType<StackPanel>().ToArray();
@@ -296,8 +490,8 @@ public sealed class MaskPanelUiTests
         foreach (var group in groups)
         {
             Assert.Equal(Avalonia.Layout.Orientation.Horizontal, group.Orientation);
-            var buttons = group.Children.OfType<Button>().ToArray();
-            Assert.InRange(buttons.Length, 2, 3);
+            var buttons = group.Children.OfType<Button>().Where(button => button.IsEffectivelyVisible).ToArray();
+            Assert.InRange(buttons.Length, 1, 3);
             var center = buttons[0].Bounds.Center.Y;
             Assert.All(buttons, button => Assert.Equal(center, button.Bounds.Center.Y, 6));
             for (var i = 1; i < buttons.Length; i++)

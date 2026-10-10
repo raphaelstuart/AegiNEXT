@@ -389,7 +389,7 @@ public sealed class ClipMaskBezierAffordanceUiTests
         };
         var mask = new VectorClipMask { Contours = [contour] };
         session.Editor.SetClipMask(session.SelectedLayer!.Id, mask);
-        session.MaskEditing.EditVector();
+        session.MaskEditing.ToggleEditing();
         var canvas = UiTestActions.Find<EffectCanvasControl>(context.Window, "EffectCanvas");
         Dispatcher.UIThread.RunJobs();
         context.Window.UpdateLayout();

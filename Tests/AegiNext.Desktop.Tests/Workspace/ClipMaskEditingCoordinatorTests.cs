@@ -238,13 +238,74 @@ public sealed class ClipMaskEditingCoordinatorTests
         await context.InitializeAsync();
         var session = context.Session;
         session.SelectCue(document.Subtitles[0].Id);
-        session.MaskEditing.EditRectangle();
+        session.MaskEditing.CreateRectangle();
         Assert.Same(document, context.Editor.Snapshot);
         Assert.Null(context.Editor.Snapshot.Layers[0].Mask);
         Assert.Equal(CanvasEditMode.MASK_RECTANGLE, session.SceneEditing.Mode);
-        session.MaskEditing.EditRectangle();
+        session.MaskEditing.CreateRectangle();
         session.MaskEditing.ExitEditing();
         Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        Assert.Same(document, context.Editor.Snapshot);
+        Assert.False(context.Editor.CanUndo);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreationCommandsRejectExistingMasksAndEditingTogglePreservesTheirType(bool vectorMask)
+    {
+        var document = CreateDocument();
+        if (vectorMask)
+        {
+            document = document with
+            {
+                Layers =
+                [
+                    document.Layers[0] with
+                    {
+                        Mask = new VectorClipMask
+                        {
+                            Contours =
+                            [
+                                new()
+                                {
+                                    Nodes =
+                                    [
+                                        new()
+                                        {
+                                            Position = new(10, 20)
+                                        },
+                                        new()
+                                        {
+                                            Position = new(40, 50)
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            };
+        }
+        await using var context = new WorkspaceSessionTestContext(document);
+        await context.InitializeAsync();
+        var session = context.Session;
+        session.SelectCue(document.Subtitles[0].Id);
+        var masks = session.ViewModel.Masks;
+        Assert.False(masks.CanCreateMask);
+        Assert.False(masks.CreateRectangleMaskCommand.CanExecute(null));
+        Assert.False(masks.CreateVectorMaskCommand.CanExecute(null));
+        Assert.True(masks.ToggleMaskEditingCommand.CanExecute(null));
+        masks.CreateRectangleMaskCommand.Execute(null);
+        masks.CreateVectorMaskCommand.Execute(null);
+        Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        Assert.Same(document, context.Editor.Snapshot);
+        masks.ToggleMaskEditingCommand.Execute(null);
+        Assert.Equal(vectorMask ? CanvasEditMode.MASK_VECTOR : CanvasEditMode.MASK_RECTANGLE, session.SceneEditing.Mode);
+        Assert.True(masks.IsMaskEditing);
+        masks.ToggleMaskEditingCommand.Execute(null);
+        Assert.Equal(CanvasEditMode.POSITION, session.SceneEditing.Mode);
+        Assert.False(masks.IsMaskEditing);
         Assert.Same(document, context.Editor.Snapshot);
         Assert.False(context.Editor.CanUndo);
     }

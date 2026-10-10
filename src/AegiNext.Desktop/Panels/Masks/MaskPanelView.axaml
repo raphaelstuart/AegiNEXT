@@ -26,13 +26,19 @@
     <StackPanel Name="ClipMaskSection" Margin="10" Spacing="8" IsEnabled="{Binding CanEditMask}">
       <WrapPanel Name="MaskToolbar" Orientation="Horizontal">
         <StackPanel Name="MaskCreationTools" Orientation="Horizontal" Spacing="4" Margin="0,0,4,4" VerticalAlignment="Center">
-          <common:ToolbarToggleButton Name="RectangleMaskButton" IsChecked="{Binding IsRectangleTool, Mode=OneWay}" Command="{Binding EditRectangleMaskCommand}"
-                  IsEnabled="{Binding CanCreateRectangleMask}" ToolTip.Tip="{Binding RectangleToolTip}" AutomationProperties.Name="{Loc Key=Workbench.MaskRectangle}">
+          <common:ToolbarToggleButton Name="RectangleMaskButton" IsChecked="{Binding IsRectangleTool, Mode=OneWay}" Command="{Binding CreateRectangleMaskCommand}"
+                  IsVisible="{Binding !HasClipMask}" IsEnabled="{Binding CanCreateMask}" ToolTip.Tip="{Loc Key=Workbench.MaskRectangle}" AutomationProperties.Name="{Loc Key=Workbench.MaskRectangle}">
             <icons:MaterialIcon Kind="VectorRectangle" Width="16" Height="16" />
           </common:ToolbarToggleButton>
-          <common:ToolbarToggleButton Name="VectorMaskButton" IsChecked="{Binding IsVectorTool, Mode=OneWay}" Command="{Binding EditVectorMaskCommand}" IsEnabled="{Binding CanEditVector}"
+          <common:ToolbarToggleButton Name="VectorMaskButton" IsChecked="{Binding IsVectorTool, Mode=OneWay}" Command="{Binding CreateVectorMaskCommand}"
+                  IsVisible="{Binding !HasClipMask}" IsEnabled="{Binding CanCreateMask}"
                   ToolTip.Tip="{Loc Key=Workbench.MaskVectorGesture}" AutomationProperties.Name="{Loc Key=Workbench.MaskVector}">
             <icons:MaterialIcon Kind="VectorBezier" Width="16" Height="16" />
+          </common:ToolbarToggleButton>
+          <common:ToolbarToggleButton Name="EditMaskButton" IsChecked="{Binding IsMaskEditing, Mode=OneWay}" Command="{Binding ToggleMaskEditingCommand}"
+                  IsVisible="{Binding HasClipMask}" IsEnabled="{Binding CanEditExistingMask}"
+                  ToolTip.Tip="{Loc Key=Workbench.MaskEdit}" AutomationProperties.Name="{Loc Key=Workbench.MaskEdit}">
+            <icons:MaterialIcon Kind="VectorSquareEdit" Width="16" Height="16" />
           </common:ToolbarToggleButton>
         </StackPanel>
         <StackPanel Name="MaskContourTools" Orientation="Horizontal" Spacing="4" Margin="0,0,4,4" VerticalAlignment="Center">

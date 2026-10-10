@@ -42,7 +42,7 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
     /// <inheritdoc />
     public bool CanExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
     {
-        return command == WorkbenchCommand.END_TEXT_INPUT && (viewModel.IsRectangleTool || viewModel.IsVectorTool) &&
+        return command == WorkbenchCommand.END_TEXT_INPUT && viewModel.IsMaskEditing &&
             focusedElement is Control control && !control.GetSelfAndVisualAncestors().Any(ancestor => ancestor is TextBox or NumericUpDown);
     }
 
