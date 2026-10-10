@@ -2,6 +2,11 @@
   "LanguageName": "日本語",
   "LanguageID": "ja-JP",
   "Strings": {
+    "Workbench.EffectCategoryMask": "マスク",
+    "Workbench.MaskWholeSubtitleHint": "マスクのプロパティは字幕全体に適用されます。",
+    "Workbench.MaskNotCreated": "この字幕にはマスクがありません。",
+    "Workbench.MaskChooseNodeHint": "マスクパネルまたはプレビューでノードを選択すると、そのプロパティを編集できます。",
+    "Workbench.OpenMaskPanel": "マスクパネルを開く",
     "Workbench.EditAnimationDetails": "アニメーションの詳細を編集",
     "Workbench.CollapseTrack": "トラックを折りたたむ",
     "Workbench.ExpandTrack": "トラックを展開",

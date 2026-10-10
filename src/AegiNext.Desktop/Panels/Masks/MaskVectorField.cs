@@ -9,6 +9,7 @@ internal sealed class MaskVectorField(MaskNumericField x, MaskNumericField y) : 
 {
     public MaskNumericField X { get; } = x;
     public MaskNumericField Y { get; } = y;
+    public AnimationPropertyRowViewModel? Row => X.Row;
     public AnimationTrackTarget? Target => X.Target;
     public string Label => Localization.Get(Target is { } target ? "Workbench." + target.Property : "Workbench.MaskPivot");
     public bool CanEdit => X.CanEdit && Y.CanEdit;

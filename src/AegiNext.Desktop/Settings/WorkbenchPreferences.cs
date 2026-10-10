@@ -50,7 +50,7 @@ public sealed record WorkbenchPreferences
         }
 
         if (CollapsedEffectCategories.IsDefault || CollapsedEffectCategories.Distinct().Count() != CollapsedEffectCategories.Length ||
-            CollapsedEffectCategories.Any(category => category is not ("clip" or "transform" or "typography" or "fill" or "stroke" or "shadow" or "composite" or "path" or "animation")))
+            CollapsedEffectCategories.Any(category => category is not ("clip" or "transform" or "typography" or "fill" or "stroke" or "shadow" or "composite" or "mask" or "path" or "animation")))
         {
             throw new InvalidDataException("特效面板分类偏好无效。");
         }

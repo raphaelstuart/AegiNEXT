@@ -99,6 +99,7 @@ public sealed partial class AnimationPropertyRowControl : UserControl
         values = this.FindControl<StackPanel>("ValueEditor")!;
         actions = this.FindControl<StackPanel>("RowActions")!;
         SizeChanged += (_, _) => RefreshLayout();
+        RefreshEditor();
         RefreshErrors();
     }
 
@@ -358,8 +359,9 @@ public sealed partial class AnimationPropertyRowControl : UserControl
         {
             RefreshErrors();
         }
-        if (change.Property == IsVectorProperty)
+        if (change.Property == IsScalarProperty || change.Property == IsVectorProperty || change.Property == IsColorProperty)
         {
+            RefreshEditor();
             RefreshLayout();
         }
         if (change.Property == ScalarInputNameProperty && scalar is not null)
@@ -399,5 +401,23 @@ public sealed partial class AnimationPropertyRowControl : UserControl
         Grid.SetRow(values, narrow ? 1 : 0);
         Grid.SetColumnSpan(values, narrow ? 2 : 1);
         Grid.SetColumn(actions, narrow ? 1 : 2);
+    }
+
+    private void RefreshEditor()
+    {
+        if (values is null)
+        {
+            return;
+        }
+        Control? editor = IsColor ? color : IsVector ? vector : IsScalar ? scalar : null;
+        if (editor is null && values.Children.Count == 0 || editor is not null && values.Children.Count == 1 && ReferenceEquals(values.Children[0], editor))
+        {
+            return;
+        }
+        values.Children.Clear();
+        if (editor is not null)
+        {
+            values.Children.Add(editor);
+        }
     }
 }

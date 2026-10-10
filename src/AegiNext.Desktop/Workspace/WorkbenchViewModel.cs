@@ -48,6 +48,7 @@ internal sealed class WorkbenchViewModel : ObservableObject
     internal Func<WorkbenchCommand, bool>? TryExecuteContextCommand { get; set; }
     public event EventHandler? GesturesCancelled;
     public event EventHandler? DraftErrorFocusRequested;
+    internal event Action<string>? PanelActivationRequested;
     public PreviewPanelViewModel Preview { get; }
     public TimelinePanelViewModel Timeline { get; }
     public SubtitlesPanelViewModel Subtitles { get; }
@@ -109,6 +110,8 @@ internal sealed class WorkbenchViewModel : ObservableObject
             HostCommandRequested?.Invoke(this, request);
         }
     }
+
+    internal void ActivatePanel(string panelId) => PanelActivationRequested?.Invoke(panelId);
 
     internal void FocusDraftError() => DraftErrorFocusRequested?.Invoke(this, EventArgs.Empty);
     internal void RefreshCommands()

@@ -116,6 +116,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.PropertyChanged += OnViewModelChanged;
         ViewModel.Log.PropertyChanged += OnLogChanged;
         ViewModel.DraftErrorFocusRequested += OnDraftErrorFocusRequested;
+        ViewModel.PanelActivationRequested += OnPanelActivationRequested;
         Session.PreferencesChanged += OnPreferencesChanged;
         clockTimer.Tick += (_, _) => Session.Tick();
         Opened += (_, _) => clockTimer.Start();
@@ -259,6 +260,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             }
             ViewModel.PropertyChanged -= OnViewModelChanged;
             ViewModel.DraftErrorFocusRequested -= OnDraftErrorFocusRequested;
+            ViewModel.PanelActivationRequested -= OnPanelActivationRequested;
             Session.PreferencesChanged -= OnPreferencesChanged;
             layouts.Changed -= OnLayoutChanged;
             layouts.Error -= OnLayoutError;
@@ -428,6 +430,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             }
         }
     }
+    private void OnPanelActivationRequested(string panelId) => layouts.Activate(panelId);
+
     private void OnDraftErrorFocusRequested(object? sender, EventArgs e)
     {
         var id = ViewModel.InvalidPanelId ?? "subtitles";

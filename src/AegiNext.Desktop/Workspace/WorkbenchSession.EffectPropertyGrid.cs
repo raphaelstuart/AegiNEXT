@@ -106,6 +106,7 @@ internal sealed partial class WorkbenchSession
         if (SelectedLayerId == layerId && SceneEditing.Target == target)
         {
             ViewModel.Effects.AnimationExpanded = true;
+            ViewModel.ActivatePanel("effects");
         }
     }
 

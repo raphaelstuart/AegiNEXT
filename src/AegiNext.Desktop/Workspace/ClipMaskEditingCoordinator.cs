@@ -142,6 +142,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
             draftTarget = null;
             session.ViewModel.Effects.RefreshMaskState();
             session.ViewModel.Masks.Refresh();
+            session.ViewModel.Effects.RefreshMaskPropertyGrid();
         }
         finally
         {
@@ -155,22 +156,9 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         {
             yield break;
         }
-        var properties = new List<AnimationTrackTarget>();
-        if (layer.Mask is RectangleClipMask)
+        foreach (var row in session.PropertyEditing.GetMaskRows(layer.Id, session.SceneEditing.MaskNodeId))
         {
-            properties.Add(new(AnimationProperty.MASK_RECTANGLE_TOP_LEFT));
-            properties.Add(new(AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT));
-        }
-        properties.AddRange(new[] { AnimationProperty.MASK_POSITION, AnimationProperty.MASK_SCALE, AnimationProperty.MASK_ROTATION }
-            .Select(property => new AnimationTrackTarget(property)));
-        if (layer.Mask is VectorClipMask vector && vector.Contours.SelectMany(contour => contour.Nodes).Any(node => node.Id == session.SceneEditing.MaskNodeId))
-        {
-            properties.AddRange(new[] { AnimationProperty.MASK_NODE_POSITION, AnimationProperty.MASK_NODE_IN_HANDLE, AnimationProperty.MASK_NODE_OUT_HANDLE }
-                .Select(property => new AnimationTrackTarget(property, session.SceneEditing.MaskNodeId)));
-        }
-        foreach (var target in properties)
-        {
-            var row = session.PropertyEditing.GetRow(layer.Id, target);
+            var target = row.Target;
             for (var component = 0; component < AnimationPropertyMetadata.GetComponentCount(target.Property); component++)
             {
                 yield return new($"{target.Property}.{component}", "Workbench." + target.Property, target, component,
@@ -314,6 +302,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
             session.ViewModel.CancelGestures();
             session.ViewModel.Effects.EditMode = CanvasEditMode.MASK_DRAW_VECTOR;
             session.ViewModel.Masks.Refresh();
+            session.ViewModel.Effects.RefreshMaskPropertyGrid();
             session.RefreshMaskPreview();
         }
     }
@@ -353,6 +342,7 @@ internal sealed class ClipMaskEditingCoordinator(WorkbenchSession session)
         if (!session.TryCommitDrafts())
         {
             session.ViewModel.Masks.Refresh();
+            session.ViewModel.Effects.RefreshMaskPropertyGrid();
             return;
         }
         session.ViewModel.CancelGestures();

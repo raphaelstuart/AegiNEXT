@@ -248,7 +248,7 @@ public sealed class MaskPanelUiTests
             Capture(floating, $"mask-floating-narrow-{language}-{(dark ? "dark" : "light")}.png");
             Assert.Same(panel, context.Window.Panels["masks"]);
             Assert.True(panel.IsAttachedToVisualTree());
-            corner = Assert.Single(panel.GetVisualDescendants().OfType<VectorDraftInput>(), vector => vector.XFieldKey == "MASK_RECTANGLE_TOP_LEFT.0");
+            corner = Assert.Single(panel.GetVisualDescendants().OfType<VectorDraftInput>(), vector => vector.DataContext is MaskVectorField field && field.Target?.Property == AnimationProperty.MASK_RECTANGLE_TOP_LEFT);
             Assert.Same(draft, Assert.IsType<MaskVectorField>(corner.DataContext).X.Draft);
             Assert.Equal("invalid 123", draft.RawText);
             x = Assert.Single(corner.GetVisualDescendants().OfType<NumericDraftInput>(), input => input.Name == "MASK_RECTANGLE_TOP_LEFT.0");
@@ -259,7 +259,7 @@ public sealed class MaskPanelUiTests
             context.Window.Layouts.Hide("masks");
             context.Window.Layouts.Activate("masks");
             Dispatcher.UIThread.RunJobs();
-            corner = Assert.Single(panel.GetVisualDescendants().OfType<VectorDraftInput>(), vector => vector.XFieldKey == "MASK_RECTANGLE_TOP_LEFT.0");
+            corner = Assert.Single(panel.GetVisualDescendants().OfType<VectorDraftInput>(), vector => vector.DataContext is MaskVectorField field && field.Target?.Property == AnimationProperty.MASK_RECTANGLE_TOP_LEFT);
             Assert.Same(draft, Assert.IsType<MaskVectorField>(corner.DataContext).X.Draft);
             Assert.Equal("invalid 123", draft.RawText);
             x = Assert.Single(corner.GetVisualDescendants().OfType<NumericDraftInput>(), input => input.Name == "MASK_RECTANGLE_TOP_LEFT.0");

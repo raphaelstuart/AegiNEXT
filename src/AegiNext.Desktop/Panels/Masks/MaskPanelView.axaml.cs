@@ -81,19 +81,12 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
             Focus();
             return;
         }
-        foreach (var vector in this.GetVisualDescendants().OfType<VectorDraftInput>())
+        foreach (var row in this.GetVisualDescendants().OfType<AnimationPropertyRowControl>())
         {
-            if (vector.FocusField(fieldKey))
+            if (row.FocusField(ResolveFieldKey(row, fieldKey)))
             {
                 return;
             }
-        }
-        var scalar = this.GetVisualDescendants().OfType<NumericDraftInput>()
-            .FirstOrDefault(input => input.DataContext is MaskNumericField field && field.Key == fieldKey);
-        if (scalar is not null)
-        {
-            scalar.BringIntoView();
-            scalar.Focus();
         }
     }
 
@@ -108,14 +101,7 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
     {
         if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault() is { } input)
         {
-            if (input.DataContext is MaskNumericField field)
-            {
-                field.Row?.BeginEdit(PanelId);
-            }
-            else if (input.DataContext is MaskVectorField vector)
-            {
-                vector.X.Row?.BeginEdit(PanelId);
-            }
+            GetSharedRow(input)?.BeginEdit(PanelId);
         }
     }
 
@@ -125,7 +111,16 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
         if (e.Key == Key.Escape && e.Source is Control source &&
             source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault() is { } input)
         {
-            viewModel.RestoreField(input.DataContext is MaskNumericField field ? field.Key : input.Name);
+            var row = source.GetSelfAndVisualAncestors().OfType<AnimationPropertyRowControl>().FirstOrDefault();
+            var fieldKey = row?.GetInputField(source);
+            if (fieldKey is not null && GetSharedRow(input) is { } sharedRow)
+            {
+                sharedRow.Restore(fieldKey);
+            }
+            else
+            {
+                viewModel.RestoreField(fieldKey ?? input.Name);
+            }
             e.Handled = true;
         }
     }
@@ -156,9 +151,13 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
         var revision = focusCommitRevision;
         var document = session.DocumentSnapshot;
         var layerId = session.SelectedLayerId;
+        var nodeId = session.SceneEditing.MaskNodeId;
+        var contourId = session.SceneEditing.MaskContourId;
+        var target = session.SceneEditing.Target;
         Dispatcher.UIThread.Post(() =>
         {
             if (!disposed && !suppressed && revision == focusCommitRevision && layerId == session.SelectedLayerId &&
+                nodeId == session.SceneEditing.MaskNodeId && contourId == session.SceneEditing.MaskContourId && target == session.SceneEditing.Target &&
                 ReferenceEquals(document, session.DocumentSnapshot) && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
                 this.IsAttachedToVisualTree())
             {
@@ -173,6 +172,10 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
         {
             foreach (var input in this.GetVisualDescendants().OfType<NumericDraftInput>())
             {
+                if (GetSharedRow(input) is not null)
+                {
+                    continue;
+                }
                 var key = input.DataContext is MaskNumericField field ? field.Key : input.Name;
                 DataValidationErrors.SetErrors(input, key == viewModel.InvalidFieldKey && viewModel.ValidationError is { } error ? new[] { error } : null);
             }
@@ -180,6 +183,27 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
     }
 
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
+
+    private static AnimationPropertyRowViewModel? GetSharedRow(Control control)
+    {
+        return control.DataContext switch
+        {
+            MaskNumericField field => field.Row,
+            MaskVectorField field => field.Row,
+            _ => null
+        };
+    }
+
+    private static string? ResolveFieldKey(AnimationPropertyRowControl row, string fieldKey)
+    {
+        return row.DataContext switch
+        {
+            MaskNumericField field when field.Key == fieldKey => field.FieldKey,
+            MaskVectorField field when field.X.Key == fieldKey => field.X.FieldKey,
+            MaskVectorField field when field.Y.Key == fieldKey => field.Y.FieldKey,
+            _ => fieldKey
+        };
+    }
 
     /// <inheritdoc />
     public void Dispose()

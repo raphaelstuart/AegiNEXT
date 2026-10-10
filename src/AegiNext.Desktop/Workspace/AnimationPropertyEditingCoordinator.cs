@@ -25,6 +25,32 @@ internal sealed class AnimationPropertyEditingCoordinator(WorkbenchSession sessi
 
     internal AnimationPropertyRowViewModel? FindRow(string? field) => rows.Values.FirstOrDefault(row => row.OwnsField(field));
 
+    internal AnimationPropertyRowViewModel[] GetMaskRows(Guid layerId, Guid? nodeId)
+    {
+        var layer = session.DocumentSnapshot.Layers.Single(layer => layer.Id == layerId);
+        if (layer.Mask is null)
+        {
+            return [];
+        }
+        var targets = new List<AnimationTrackTarget>();
+        if (layer.Mask is RectangleClipMask)
+        {
+            targets.Add(new(AnimationProperty.MASK_RECTANGLE_TOP_LEFT));
+            targets.Add(new(AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT));
+        }
+        targets.Add(new(AnimationProperty.MASK_POSITION));
+        targets.Add(new(AnimationProperty.MASK_SCALE));
+        targets.Add(new(AnimationProperty.MASK_ROTATION));
+        if (layer.Mask is VectorClipMask vector && nodeId is { } selected &&
+            vector.Contours.SelectMany(contour => contour.Nodes).Any(node => node.Id == selected))
+        {
+            targets.Add(new(AnimationProperty.MASK_NODE_POSITION, selected));
+            targets.Add(new(AnimationProperty.MASK_NODE_IN_HANDLE, selected));
+            targets.Add(new(AnimationProperty.MASK_NODE_OUT_HANDLE, selected));
+        }
+        return targets.Select(target => GetRow(layerId, target)).ToArray();
+    }
+
     internal void Refresh()
     {
         foreach (var key in rows.Keys.Where(key =>
@@ -33,6 +59,7 @@ internal sealed class AnimationPropertyEditingCoordinator(WorkbenchSession sessi
             return layer is null || key.Target.TextRangeId is { } rangeId &&
                 !session.DocumentSnapshot.Subtitles.Any(line => line.Id == layer.SubtitleId && line.AnimationRanges.Any(range => range.Id == rangeId)) ||
                 AnimationPropertyMetadata.IsMaskProperty(key.Target.Property) && (layer.Mask is null ||
+                    key.Target.Property is (AnimationProperty.MASK_RECTANGLE_TOP_LEFT or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT) && layer.Mask is not RectangleClipMask ||
                     key.Target.NodeId is { } nodeId && (layer.Mask is not VectorClipMask vector ||
                         !vector.Contours.SelectMany(contour => contour.Nodes).Any(node => node.Id == nodeId)));
         }).ToArray())

@@ -22,6 +22,25 @@
       </Setter>
     </Style>
   </UserControl.Styles>
+  <UserControl.Resources>
+    <DataTemplate x:Key="MaskVectorPropertyTemplate" x:DataType="masks:MaskVectorField">
+      <controls:AnimationPropertyRowControl Label="{Binding Label}" IsVector="True"
+          X="{Binding X.Draft}" Y="{Binding Y.Draft}"
+          FieldKey="{Binding Row.FieldKey}" XFieldKey="{Binding X.FieldKey}" YFieldKey="{Binding Y.FieldKey}"
+          XInputName="{Binding X.Key}" YInputName="{Binding Y.Key}"
+          CanEdit="{Binding Row.IsEnabled, FallbackValue=True}"
+          Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" Increment="{Binding Row.Increment, FallbackValue=1}"
+          ShowAnimationActions="{Binding Row, Converter={x:Static converters:ObjectConverters.IsNotNull}}"
+          IsAnimated="{Binding Row.IsAnimated, FallbackValue=False}" IsOrdered="{Binding Row.IsOrdered, FallbackValue=False}"
+          CanToggleAnimation="{Binding Row.CanToggleAnimation, FallbackValue=False}"
+          CanAddKeyframe="{Binding Row.CanAddKeyframe, FallbackValue=False}" CanReset="{Binding Row.CanReset, FallbackValue=False}"
+          SelectCommand="{Binding Row.SelectCommand}" ToggleAnimationCommand="{Binding Row.ToggleAnimationCommand}"
+          AddKeyframeCommand="{Binding Row.AddKeyframeCommand}" ResetCommand="{Binding Row.ResetCommand}" DetailsCommand="{Binding Row.DetailsCommand}"
+          EditingHint="{Binding Row.EditingHint}" AnimationHint="{Binding Row.AnimationHint}" KeyframeHint="{Binding Row.KeyframeHint}"
+          ResetHint="{Binding Row.ResetHint}" DetailsHint="{Binding Row.DetailsHint}"
+          Error="{Binding Row.Error}" InvalidFieldKey="{Binding Row.InvalidFieldKey}" />
+    </DataTemplate>
+  </UserControl.Resources>
   <ScrollViewer>
     <StackPanel Name="ClipMaskSection" Margin="10" Spacing="8" IsEnabled="{Binding CanEditMask}">
       <WrapPanel Name="MaskToolbar" Orientation="Horizontal">
@@ -80,26 +99,20 @@
           </Button>
         </StackPanel>
       </WrapPanel>
-      <ItemsControl Name="MaskGeometryFields" ItemsSource="{Binding GeometryFields}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="masks:MaskVectorField">
-            <StackPanel Spacing="4" Margin="0,2">
-              <TextBlock Classes="field" Text="{Binding Label}" />
-              <controls:VectorDraftInput IsEnabled="{Binding CanEdit}" X="{Binding X.Draft.Value, Mode=TwoWay}" Y="{Binding Y.Draft.Value, Mode=TwoWay}"
-                  XText="{Binding X.Draft.RawText, Mode=TwoWay}" YText="{Binding Y.Draft.RawText, Mode=TwoWay}"
-                  XFieldKey="{Binding X.Key}" YFieldKey="{Binding Y.Key}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" />
-            </StackPanel>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <ItemsControl Name="MaskGeometryFields" ItemsSource="{Binding GeometryFields}" ItemTemplate="{StaticResource MaskVectorPropertyTemplate}" />
       <ContentControl Name="MaskRotationField" Content="{Binding RotationField}">
         <ContentControl.ContentTemplate>
           <DataTemplate x:DataType="workspace:MaskNumericField">
-            <Grid ColumnDefinitions="*,120" ColumnSpacing="6">
-              <controls:NumericDragLabel Input="{Binding ElementName=MaskRotationInput}" Classes="field" Text="{Loc Key=Workbench.MASK_ROTATION}" VerticalAlignment="Center" />
-              <controls:NumericDraftInput x:Name="MaskRotationInput" Grid.Column="1" IsEnabled="{Binding CanEdit}" RawText="{Binding Draft.RawText, Mode=TwoWay}"
-                  Value="{Binding Draft.Value, Mode=TwoWay}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" />
-            </Grid>
+            <controls:AnimationPropertyRowControl Label="{Loc Key=Workbench.MASK_ROTATION}" IsScalar="True" ScalarInputName="MaskRotationInput"
+                X="{Binding Draft}" FieldKey="{Binding Row.FieldKey}" XFieldKey="{Binding FieldKey}" YFieldKey="{Binding Row.YFieldKey}"
+                CanEdit="{Binding Row.IsEnabled}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" Increment="{Binding Row.Increment}"
+                IsAnimated="{Binding Row.IsAnimated}" IsOrdered="{Binding Row.IsOrdered}"
+                CanToggleAnimation="{Binding Row.CanToggleAnimation}" CanAddKeyframe="{Binding Row.CanAddKeyframe}" CanReset="{Binding Row.CanReset}"
+                SelectCommand="{Binding Row.SelectCommand}" ToggleAnimationCommand="{Binding Row.ToggleAnimationCommand}"
+                AddKeyframeCommand="{Binding Row.AddKeyframeCommand}" ResetCommand="{Binding Row.ResetCommand}" DetailsCommand="{Binding Row.DetailsCommand}"
+                EditingHint="{Binding Row.EditingHint}" AnimationHint="{Binding Row.AnimationHint}" KeyframeHint="{Binding Row.KeyframeHint}"
+                ResetHint="{Binding Row.ResetHint}" DetailsHint="{Binding Row.DetailsHint}"
+                Error="{Binding Row.Error}" InvalidFieldKey="{Binding Row.InvalidFieldKey}" />
           </DataTemplate>
         </ContentControl.ContentTemplate>
       </ContentControl>
@@ -114,18 +127,7 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <ItemsControl Name="MaskNodeFields" ItemsSource="{Binding NodeFields}" IsVisible="{Binding HasSelectedPoint}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="masks:MaskVectorField">
-              <StackPanel Spacing="4" Margin="0,2">
-                <TextBlock Classes="field" Text="{Binding Label}" />
-                <controls:VectorDraftInput IsEnabled="{Binding CanEdit}" X="{Binding X.Draft.Value, Mode=TwoWay}" Y="{Binding Y.Draft.Value, Mode=TwoWay}"
-                    XText="{Binding X.Draft.RawText, Mode=TwoWay}" YText="{Binding Y.Draft.RawText, Mode=TwoWay}"
-                    XFieldKey="{Binding X.Key}" YFieldKey="{Binding Y.Key}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" />
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <ItemsControl Name="MaskNodeFields" ItemsSource="{Binding NodeFields}" IsVisible="{Binding HasSelectedPoint}" ItemTemplate="{StaticResource MaskVectorPropertyTemplate}" />
       </StackPanel>
       <TextBlock Text="{Binding MaskTopologyReason}" TextWrapping="Wrap" IsVisible="{Binding MaskTopologyReason, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}" />
       <TextBlock Classes="error" Text="{Binding ValidationError}" TextWrapping="Wrap" />

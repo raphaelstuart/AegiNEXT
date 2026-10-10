@@ -2,6 +2,11 @@
   "LanguageName": "English",
   "LanguageID": "en-US",
   "Strings": {
+    "Workbench.EffectCategoryMask": "Mask",
+    "Workbench.MaskWholeSubtitleHint": "Mask properties apply to the whole subtitle.",
+    "Workbench.MaskNotCreated": "This subtitle has no mask.",
+    "Workbench.MaskChooseNodeHint": "Select a node in the mask panel or preview to edit its properties.",
+    "Workbench.OpenMaskPanel": "Open mask panel",
     "Workbench.EditAnimationDetails": "Edit animation details",
     "Workbench.CollapseTrack": "Collapse track",
     "Workbench.ExpandTrack": "Expand track",

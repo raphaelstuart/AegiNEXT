@@ -97,6 +97,7 @@ internal sealed partial class EffectsPanelViewModel
 
     private void InitializePropertyGrid()
     {
+        InitializeMaskPropertyGrid();
         CreateRangeCommand = new AsyncRelayCommand(session.CreateSelectedTextAnimationRangeAsync);
         DeleteRangeCommand = new AsyncRelayCommand(session.DeleteSelectedTextAnimationRangeAsync);
         MoveRangeUpCommand = new AsyncRelayCommand(() => session.MoveSelectedTextAnimationRangeAsync(-1));
@@ -109,6 +110,7 @@ internal sealed partial class EffectsPanelViewModel
     internal void RefreshPropertyGrid()
     {
         session.PropertyEditing.Refresh();
+        RefreshMaskPropertyGrid();
         var line = SelectedLayer?.SubtitleId is { } id ? Document.Subtitles.FirstOrDefault(line => line.Id == id) : null;
         if (Target.TextRangeId is { } selectedRange && line?.AnimationRanges.Any(range => range.Id == selectedRange) != true)
         {
@@ -177,7 +179,19 @@ internal sealed partial class EffectsPanelViewModel
             }).ToArray();
     }
 
-    internal bool RestorePropertyField(string? key) => session.PropertyEditing.Restore(key);
+    internal bool RestorePropertyField(string? key)
+    {
+        if (session.PropertyEditing.Restore(key))
+        {
+            return true;
+        }
+        if (session.MaskEditing.Fields.FirstOrDefault(field => field.Key == key) is not { } maskField)
+        {
+            return false;
+        }
+        session.MaskEditing.Restore(maskField);
+        return true;
+    }
 
     internal bool ExpandPropertyField(string? field)
     {
@@ -186,6 +200,9 @@ internal sealed partial class EffectsPanelViewModel
         {
             switch (field)
             {
+                case "MaskPivot" or "MaskPivotX" or "MaskPivotY":
+                    MaskExpanded = true;
+                    break;
                 case "LayerStartInput" or "LayerEndInput" or "LayerWidthInput" or "LayerHeightInput":
                     ClipExpanded = true;
                     break;
@@ -200,6 +217,11 @@ internal sealed partial class EffectsPanelViewModel
                     break;
             }
             return false;
+        }
+        if (AnimationPropertyMetadata.IsMaskProperty(row.Target.Property))
+        {
+            MaskExpanded = true;
+            return true;
         }
         switch (row.Target.Property)
         {

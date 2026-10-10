@@ -2,6 +2,11 @@
   "LanguageName": "简体中文",
   "LanguageID": "zh-CN",
   "Strings": {
+    "Workbench.EffectCategoryMask": "蒙版",
+    "Workbench.MaskWholeSubtitleHint": "蒙版属性作用于整个字幕。",
+    "Workbench.MaskNotCreated": "当前字幕尚未创建蒙版。",
+    "Workbench.MaskChooseNodeHint": "在蒙版面板或预览中选择节点后，可编辑节点属性。",
+    "Workbench.OpenMaskPanel": "打开蒙版面板",
     "Workbench.EditAnimationDetails": "编辑动画详情",
     "Workbench.CollapseTrack": "折叠轨道",
     "Workbench.ExpandTrack": "展开轨道",
