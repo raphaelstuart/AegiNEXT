@@ -94,7 +94,7 @@ public sealed partial class ProjectSceneRenderer
         var result = new Dictionary<Guid, SKMatrix>();
         foreach (var range in layer.AnimationRanges)
         {
-            if (range.Scale == new ScenePoint(1, 1) && range.Rotation == 0)
+            if (range.Offset == default && range.Scale == new ScenePoint(1, 1) && range.Rotation == 0)
             {
                 continue;
             }
@@ -103,7 +103,7 @@ public sealed partial class ProjectSceneRenderer
                 : layout.GetSelectionRects(range.Utf16Start, range.Utf16Length).Aggregate(SKRect.Empty,
                     (current, next) => current.IsEmpty ? next : SKRect.Union(current, next));
             var pivot = range.Pivot == SubtitleAnimationPivot.SUBTITLE_ANCHOR ? layout.Pivot : new SKPoint(bounds.MidX, bounds.MidY);
-            var matrix = SKMatrix.CreateTranslation(pivot.X, pivot.Y);
+            var matrix = SKMatrix.CreateTranslation(pivot.X + (float)range.Offset.X, pivot.Y + (float)range.Offset.Y);
             matrix = SKMatrix.Concat(matrix, SKMatrix.CreateRotationDegrees((float)range.Rotation));
             matrix = SKMatrix.Concat(matrix, SKMatrix.CreateScale((float)range.Scale.X, (float)range.Scale.Y));
             matrix = SKMatrix.Concat(matrix, SKMatrix.CreateTranslation(-pivot.X, -pivot.Y));
@@ -127,7 +127,7 @@ public sealed partial class ProjectSceneRenderer
 
     private static SubtitleTextLayout VisibleLayout(EvaluatedLayer layer, SubtitleTextLayout layout)
     {
-        if (layer.AnimationRanges.IsEmpty || layer.AnimationRanges.All(range => range.Scale == new ScenePoint(1, 1) && range.Rotation == 0))
+        if (layer.AnimationRanges.IsEmpty || layer.AnimationRanges.All(range => range.Offset == default && range.Scale == new ScenePoint(1, 1) && range.Rotation == 0))
         {
             return layout;
         }

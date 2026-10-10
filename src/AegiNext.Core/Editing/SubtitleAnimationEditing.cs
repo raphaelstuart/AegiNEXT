@@ -22,9 +22,14 @@ public static class SubtitleAnimationEditing
         if (target.TextRangeId is { } rangeId)
         {
             var range = subtitle!.AnimationRanges.Single(range => range.Id == rangeId);
-            if (target.Property is AnimationProperty.SCALE or AnimationProperty.ROTATION)
+            if (target.Property is AnimationProperty.POSITION or AnimationProperty.SCALE or AnimationProperty.ROTATION)
             {
-                var changed = target.Property == AnimationProperty.SCALE ? range with { Scale = value.Vector } : range with { Rotation = value.Scalar };
+                var changed = target.Property switch
+                {
+                    AnimationProperty.POSITION => range with { Offset = value.Vector },
+                    AnimationProperty.SCALE => range with { Scale = value.Vector },
+                    _ => range with { Rotation = value.Scalar }
+                };
                 return ReplaceSubtitle(document, subtitle, subtitle with
                 {
                     AnimationRanges = subtitle.AnimationRanges.SetItem(subtitle.AnimationRanges.IndexOf(range), changed)

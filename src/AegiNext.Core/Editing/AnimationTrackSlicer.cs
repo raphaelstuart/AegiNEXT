@@ -71,6 +71,7 @@ internal static class AnimationTrackSlicer
                     {
                         Interpolation = first.Interpolation,
                         Exponent = first.Exponent,
+                        Reverse = first.Reverse,
                         CurveStart = Math.Clamp(first.CurveStart + range * Seconds(time - first.Time) / duration, first.CurveStart, first.CurveEnd),
                         CurveEnd = Math.Clamp(first.CurveStart + range * Seconds(end - first.Time) / duration, first.CurveStart, first.CurveEnd),
                         ComponentCurves = first.ComponentCurves.Select(curve => curve is null ? null : curve with
@@ -84,7 +85,7 @@ internal static class AnimationTrackSlicer
                 }
                 else
                 {
-                    key = key with { Interpolation = KeyframeInterpolation.HOLD, CurveStart = 0, CurveEnd = 1, Exponent = 1, ComponentCurves = [] };
+                    key = key with { Interpolation = KeyframeInterpolation.HOLD, CurveStart = 0, CurveEnd = 1, Exponent = 1, Reverse = false, ComponentCurves = [] };
                 }
             }
 

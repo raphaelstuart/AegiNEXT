@@ -99,8 +99,8 @@ public static class SceneEvaluator
         {
             var curve = component > 0 && !first.ComponentCurves.IsDefaultOrEmpty ? first.ComponentCurves[component - 1] : null;
             var componentFraction = curve is null
-                ? CurveFraction(first.Interpolation, first.CurveStart, first.CurveEnd, fraction, first.Exponent)
-                : CurveFraction(curve.Interpolation, curve.CurveStart, curve.CurveEnd, fraction, curve.Exponent);
+                ? CurveFraction(first.Interpolation, first.CurveStart, first.CurveEnd, fraction, first.Exponent, first.Reverse)
+                : CurveFraction(curve.Interpolation, curve.CurveStart, curve.CurveEnd, fraction, curve.Exponent, curve.Reverse);
             var start = first.Value.GetComponent(component);
             var end = second.Value.GetComponent(component);
             value = value.WithComponent(component, first.Value.IsColor
@@ -120,8 +120,15 @@ public static class SceneEvaluator
     /// <summary>读取完整线性 RGBA 轨道值，拒绝其他维度。</summary>
     public static SceneColor EvaluateColorTrack(AnimationTrack track, MediaTime time) => EvaluateTrack(track, time).Color;
 
-    private static double CurveFraction(KeyframeInterpolation interpolation, double start, double end, double fraction, double exponent)
+    private static double CurveFraction(KeyframeInterpolation interpolation, double start, double end, double fraction,
+        double exponent, bool reverse)
     {
+        if (reverse)
+        {
+            return interpolation == KeyframeInterpolation.HOLD
+                ? fraction == 0 ? 0 : 1
+                : 1 - CurveFraction(interpolation, 1 - end, 1 - start, 1 - fraction, exponent, false);
+        }
         var range = end - start;
         var offset = range * fraction;
         return interpolation switch
@@ -325,6 +332,7 @@ public static class SceneEvaluator
             AnimationValues = values.ToImmutableDictionary(),
             AnimationRanges = subtitle is null ? [] : subtitle.AnimationRanges.Select(range => range with
             {
+                Offset = values.TryGetValue(new(AnimationProperty.POSITION, TextRangeId: range.Id), out var offset) ? offset.Vector : range.Offset,
                 Scale = values.TryGetValue(new(AnimationProperty.SCALE, TextRangeId: range.Id), out var scale) ? scale.Vector : range.Scale,
                 Rotation = values.TryGetValue(new(AnimationProperty.ROTATION, TextRangeId: range.Id), out var rotation) ? rotation.Scalar : range.Rotation
             }).ToImmutableArray()

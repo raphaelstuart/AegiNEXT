@@ -113,7 +113,9 @@ public static class ProjectValidator
                 Number(range.Scale.X, -10000, 10000, "范围 Scale X");
                 Number(range.Scale.Y, -10000, 10000, "范围 Scale Y");
                 Number(range.Rotation, -1e9, 1e9, "范围 Rotation");
+                Point(range.Offset);
             }
+            ValidateGeneratedRangeOrigins(line.AnimationRanges);
         }
 
         var ids = new HashSet<Guid>();
@@ -510,7 +512,7 @@ public static class ProjectValidator
                 NotNull(frame, "数据项不能为 null。");
                 Require(allowNegativeKeyTimes || frame.Time >= Timing.MediaTime.Zero, "预设关键帧时间必须非负。");
                 Require(!previous.HasValue || frame.Time > previous.Value, "关键帧时间必须严格递增。");
-                Curve(new(frame.Interpolation, frame.CurveStart, frame.CurveEnd) { Exponent = frame.Exponent });
+                Curve(new(frame.Interpolation, frame.CurveStart, frame.CurveEnd) { Exponent = frame.Exponent, Reverse = frame.Reverse });
                 AnimationValue(track.Property, frame.Value);
                 Require(!frame.ComponentCurves.IsDefault && (frame.ComponentCurves.IsEmpty || frame.ComponentCurves.Length == dimension - 1),
                     "分量曲线数量与动画属性不一致。");
@@ -616,6 +618,35 @@ public static class ProjectValidator
             curve.CurveStart >= 0 && curve.CurveStart < curve.CurveEnd && curve.CurveEnd <= 1 &&
             double.IsFinite(curve.Exponent) && curve.Exponent > 0,
             "关键帧插值及裁剪相位必须有效且位于零到一之间。");
+    }
+
+    private static void ValidateGeneratedRangeOrigins(ImmutableArray<SubtitleAnimationRange> ranges)
+    {
+        var byId = ranges.ToDictionary(range => range.Id);
+        foreach (var range in ranges)
+        {
+            if (range.GeneratedOrigin is not { } origin)
+            {
+                continue;
+            }
+            Require(IsEffectIdentifier(origin.EffectId) && IsEffectIdentifier(origin.ScopeName), "范围生成来源的脚本或作用域标识无效。");
+            Require(!string.IsNullOrWhiteSpace(origin.UnitDefinition) && origin.UnitDefinition.Length <= 262144,
+                "范围生成来源的分组定义为空或过大。");
+            ValidateText(origin.UnitDefinition);
+            var visited = new HashSet<Guid> { range.Id };
+            var parentId = origin.ParentRangeId;
+            while (parentId is { } id)
+            {
+                Require(byId.TryGetValue(id, out var parent) && visited.Add(id), "范围生成来源引用不存在的父范围或形成循环。");
+                parentId = parent.GeneratedOrigin?.ParentRangeId;
+            }
+        }
+    }
+
+    private static bool IsEffectIdentifier(string value)
+    {
+        return value is { Length: > 0 and <= 64 } && value[0] is >= 'a' and <= 'z' &&
+            value.All(character => character is >= 'a' and <= 'z' or >= '0' and <= '9' or '.' or '-');
     }
 
     private static void Motion(MotionPath? motion)

@@ -59,6 +59,7 @@ public static class LegacyAnimationTrackMigration
                 CurveStart = curves[0].CurveStart,
                 CurveEnd = curves[0].CurveEnd,
                 Exponent = curves[0].Exponent,
+                Reverse = curves[0].Reverse,
                 ComponentCurves = curves.Skip(1).All(curve => curve == curves[0]) ? [] :
                     curves.Skip(1).Select(curve => curve == curves[0] ? null : curve).ToImmutableArray()
             });
@@ -120,7 +121,8 @@ public static class LegacyAnimationTrackMigration
                 Math.Clamp(first.CurveStart + range * Seconds(time - first.Time) / duration, first.CurveStart, first.CurveEnd),
                 Math.Clamp(first.CurveStart + range * Seconds(end - first.Time) / duration, first.CurveStart, first.CurveEnd))
             {
-                Exponent = first.Exponent
+                Exponent = first.Exponent,
+                Reverse = first.Reverse
             };
         }
 

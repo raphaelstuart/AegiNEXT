@@ -108,12 +108,12 @@ public static class AnimationPropertyMetadata
         AnimationProperty.LETTER_SPACING or AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR or
         AnimationProperty.FONT_SIZE or AnimationProperty.SHADOW_OFFSET or AnimationProperty.SHADOW_BLUR or AnimationProperty.SHADOW_COLOR;
 
-    /// <summary>判断是否可作用于独立文本范围，局部变换不包括整层定位或合成模糊。</summary>
+    /// <summary>判断是否可作用于独立文本范围；位置表示排版后的局部偏移，合成模糊仍属于整层。</summary>
     public static bool IsTextRangeProperty(AnimationProperty property) => property is
         AnimationProperty.FONT_SIZE or AnimationProperty.LETTER_SPACING or AnimationProperty.FILL or AnimationProperty.STROKE or
         AnimationProperty.STROKE_WIDTH or AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR or
         AnimationProperty.SHADOW_OFFSET or AnimationProperty.SHADOW_BLUR or AnimationProperty.SHADOW_COLOR or
-        AnimationProperty.SCALE or AnimationProperty.ROTATION;
+        AnimationProperty.POSITION or AnimationProperty.SCALE or AnimationProperty.ROTATION;
 
     /// <summary>判断是否为可独立作用于演唱前及高亮状态的绘制属性。</summary>
     public static bool IsSubtitleVisualProperty(AnimationProperty property) => property is

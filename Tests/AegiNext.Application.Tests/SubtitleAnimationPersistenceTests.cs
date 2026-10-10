@@ -55,6 +55,7 @@ public sealed class SubtitleAnimationPersistenceTests
     [Theory]
     [InlineData(10)]
     [InlineData(11)]
+    [InlineData(12)]
     public void LegacyProjectsUpgradeToTextAnimationVersion(int version)
     {
         var root = JsonNode.Parse(ProjectStore.Serialize(new ProjectDocument()))!.AsObject();
@@ -62,7 +63,7 @@ public sealed class SubtitleAnimationPersistenceTests
 
         var document = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(root.ToJsonString()));
 
-        Assert.Equal(12, document.Version);
+        Assert.Equal(ProjectDocument.CURRENT_VERSION, document.Version);
         Assert.Equal(version, root["version"]!.GetValue<int>());
     }
 

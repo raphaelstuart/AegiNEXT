@@ -33,21 +33,22 @@ internal sealed record AssNumericAnimation(AnimationProperty Property, int Compo
                     continue;
                 }
                 var curve = first.GetCurve(component);
-                if (curve.Interpolation == KeyframeInterpolation.HOLD)
+                var reversedNonlinear = AssCurveCompatibility.IsReversedNonlinear(curve);
+                if (curve.Interpolation == KeyframeInterpolation.HOLD && !reversedNonlinear)
                 {
                     operations.Add(new(next.Time, next.Time, value, 1));
                     continue;
                 }
                 var exponent = 1d;
-                if (curve.Interpolation == KeyframeInterpolation.POWER && curve.CurveStart == 0)
+                if (!reversedNonlinear && curve.Interpolation == KeyframeInterpolation.POWER && curve.CurveStart == 0)
                 {
                     exponent = curve.Exponent;
                 }
-                else if (curve.Interpolation == KeyframeInterpolation.EASE_IN && curve.CurveStart == 0)
+                else if (!reversedNonlinear && curve.Interpolation == KeyframeInterpolation.EASE_IN && curve.CurveStart == 0)
                 {
                     exponent = 2;
                 }
-                else if (curve.Interpolation != KeyframeInterpolation.LINEAR &&
+                else if (reversedNonlinear || curve.Interpolation != KeyframeInterpolation.LINEAR &&
                     !(curve.Interpolation == KeyframeInterpolation.POWER && curve.Exponent.Equals(1d)))
                 {
                     approximate = true;

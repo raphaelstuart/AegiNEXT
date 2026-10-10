@@ -18,6 +18,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(10)]
     [InlineData(11)]
     [InlineData(12)]
+    [InlineData(13)]
     public async Task EscapedDuplicateKeysInsideNestedObjectsAreRejectedByAllEntriesBeforeMigration(int version)
     {
         using var directory = new TemporaryProjectDirectory();
@@ -51,7 +52,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData("vectorCurve")]
     public void CurrentVersionsRejectIgnoredLegacyAliasesInFlatClips(string field)
     {
-        foreach (var version in new[] { 5, 6, 7, 8, 9, 10, 11, 12 })
+        foreach (var version in new[] { 5, 6, 7, 8, 9, 10, 11, 12, 13 })
         {
             var root = JsonNode.Parse(ProjectStore.Serialize(CreateAnimatedDocument()))!.AsObject();
             root["version"] = version;
@@ -106,6 +107,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(10)]
     [InlineData(11)]
     [InlineData(12)]
+    [InlineData(13)]
     public void CurrentVersionsRejectIgnoredLegacyAliasesInPresets(int version)
     {
         var document = CreateAnimatedDocument() with
@@ -132,6 +134,7 @@ public sealed class ProjectStoreStrictParsingTests
     [InlineData(10)]
     [InlineData(11)]
     [InlineData(12)]
+    [InlineData(13)]
     public async Task PlaybackOriginMigrationAndRequiredFieldsRemainStrictForFileAndElementEntries(int version)
     {
         using var directory = new TemporaryProjectDirectory();

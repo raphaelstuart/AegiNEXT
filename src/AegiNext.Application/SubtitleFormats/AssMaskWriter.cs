@@ -157,6 +157,10 @@ internal static class AssMaskWriter
         for (var component = 0; component < key.Value.ComponentCount; component++)
         {
             var curve = key.GetCurve(component);
+            if (AssCurveCompatibility.IsReversedNonlinear(curve))
+            {
+                return null;
+            }
             (bool Instant, double Acceleration)? native = curve.Interpolation switch
             {
                 KeyframeInterpolation.HOLD => (true, 1),

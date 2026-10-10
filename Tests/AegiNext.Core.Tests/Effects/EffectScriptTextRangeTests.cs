@@ -81,7 +81,7 @@ public sealed class EffectScriptTextRangeTests
 
     [Theory]
     [InlineData("opacity", "1", SubtitleAnimationState.NORMAL)]
-    [InlineData("position", "(1, 2)", SubtitleAnimationState.NORMAL)]
+    [InlineData("position", "(1, 2)", SubtitleAnimationState.ACTIVE)]
     [InlineData("font-size", "40", SubtitleAnimationState.ACTIVE)]
     [InlineData("scale", "(1, 1)", SubtitleAnimationState.INACTIVE)]
     public void ScopePropertiesAreValidatedAtTheirSourceLocation(string property, string value, SubtitleAnimationState state)

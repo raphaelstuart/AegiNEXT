@@ -49,6 +49,10 @@ internal static class AssOpacityConversion
             {
                 continue;
             }
+            if (first.Reverse && first.Interpolation == KeyframeInterpolation.HOLD)
+            {
+                return null;
+            }
             var instant = first.Interpolation == KeyframeInterpolation.HOLD;
             var linear = first.Interpolation == KeyframeInterpolation.LINEAR ||
                 first.Interpolation == KeyframeInterpolation.POWER && first.Exponent.Equals(1d);

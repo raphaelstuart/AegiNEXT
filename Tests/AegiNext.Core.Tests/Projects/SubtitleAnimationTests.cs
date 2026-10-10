@@ -9,6 +9,41 @@ namespace AegiNext.Core.Tests.Projects;
 public sealed class SubtitleAnimationTests
 {
     [Fact]
+    public void LocalPositionReadsAndEditsRangeOffsetWithoutChangingTheWholeLayerTransform()
+    {
+        var range = new SubtitleAnimationRange(Guid.NewGuid(), 0, 2) { Offset = new(5, -7) };
+        var line = new SubtitleLine { Text = "AB", End = new(2), AnimationRanges = [range] };
+        var layer = new ProjectLayer { SubtitleId = line.Id, End = line.End, Transform = new() { Position = new(100, 200) } };
+        var target = new AnimationTrackTarget(AnimationProperty.POSITION, TextRangeId: range.Id);
+        var document = new ProjectDocument { Subtitles = [line], Layers = [layer] };
+
+        Assert.Equal(range.Offset, SubtitleAnimationEvaluation.GetBaseValue(layer, line, target).Vector);
+        var changed = SubtitleAnimationEditing.SetBaseValue(document, layer.Id, target, new ScenePoint(8, 9));
+
+        Assert.Equal(new ScenePoint(8, 9), changed.Subtitles[0].AnimationRanges[0].Offset);
+        Assert.Equal(layer.Transform, changed.Layers[0].Transform);
+        Assert.Empty(changed.Subtitles[0].InlineSpans);
+        Assert.Equal(range.Id, changed.Subtitles[0].AnimationRanges[0].Id);
+    }
+
+    [Fact]
+    public void RangePositionAndWholeLayerPositionEvaluateIndependentlyAtTheSameContentTime()
+    {
+        var range = new SubtitleAnimationRange(Guid.NewGuid(), 0, 2) { Offset = new(5, -7) };
+        var line = new SubtitleLine { Text = "AB", AnimationRanges = [range] };
+        var document = Document(line,
+            Track(new(AnimationProperty.POSITION), new ScenePoint(100, 200), new ScenePoint(200, 400)),
+            Track(new(AnimationProperty.POSITION, TextRangeId: range.Id), new ScenePoint(5, -7), new ScenePoint(15, 13)));
+
+        var evaluated = Assert.Single(SceneEvaluator.Evaluate(document, new(1)));
+
+        Assert.Equal(new ScenePoint(150, 300), evaluated.Transform.Position);
+        Assert.Equal(new ScenePoint(10, 3), evaluated.AnimationRanges[0].Offset);
+        Assert.Equal(range.Scale, evaluated.AnimationRanges[0].Scale);
+        Assert.Equal(range.Pivot, evaluated.AnimationRanges[0].Pivot);
+    }
+
+    [Fact]
     public void OrderedOverlappingRangesResolveStylesAndTransformsAtTheSameContentTime()
     {
         var first = new SubtitleAnimationRange(Guid.NewGuid(), 0, 3) { Scale = new(2, 3), Rotation = 10 };
@@ -151,7 +186,7 @@ public sealed class SubtitleAnimationTests
     [InlineData(AnimationProperty.LETTER_SPACING, SubtitleAnimationState.INACTIVE)]
     [InlineData(AnimationProperty.SCALE, SubtitleAnimationState.ACTIVE)]
     [InlineData(AnimationProperty.ROTATION, SubtitleAnimationState.INACTIVE)]
-    [InlineData(AnimationProperty.POSITION, SubtitleAnimationState.NORMAL)]
+    [InlineData(AnimationProperty.POSITION, SubtitleAnimationState.ACTIVE)]
     [InlineData(AnimationProperty.BLUR, SubtitleAnimationState.NORMAL)]
     [InlineData(AnimationProperty.PATH_PROGRESS, SubtitleAnimationState.NORMAL)]
     public void RangeTargetsRejectUnsupportedGeometryAndCompositingProperties(AnimationProperty property, SubtitleAnimationState state)

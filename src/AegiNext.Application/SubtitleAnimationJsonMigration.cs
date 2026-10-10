@@ -6,6 +6,35 @@ namespace AegiNext.Application;
 
 internal static class SubtitleAnimationJsonMigration
 {
+    internal static void RejectScopedTransformFields(JsonNode? node, string? context = null)
+    {
+        if (node is JsonObject value)
+        {
+            if (context == "animationRanges" && (value.ContainsKey("offset") || value.ContainsKey("generatedOrigin")) ||
+                context is "keyframes" or "componentCurves" && value.ContainsKey("reverse"))
+            {
+                throw new JsonException("旧工程不能包含未声明版本的范围位移、生成来源或反向曲线。");
+            }
+            if (context == "target" && value["textRangeId"] is not null &&
+                value["property"] is JsonValue property && property.TryGetValue<string>(out var name) &&
+                Enum.TryParse<AnimationProperty>(name, true, out var parsed) && parsed == AnimationProperty.POSITION)
+            {
+                throw new JsonException("旧工程不能包含未声明版本的文字范围位移动画。");
+            }
+            foreach (var item in value)
+            {
+                RejectScopedTransformFields(item.Value, item.Key);
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                RejectScopedTransformFields(item, context);
+            }
+        }
+    }
+
     internal static void RejectUndeclaredFields(JsonNode? node)
     {
         if (node is JsonObject value)

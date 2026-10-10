@@ -155,7 +155,7 @@ public static class EffectScriptComposer
             var a = first[index];
             var b = second[index];
             if (a.Time != b.Time || a.Value != b.Value || a.Interpolation != b.Interpolation ||
-                a.CurveStart != b.CurveStart || a.CurveEnd != b.CurveEnd || a.Exponent != b.Exponent ||
+                a.CurveStart != b.CurveStart || a.CurveEnd != b.CurveEnd || a.Exponent != b.Exponent || a.Reverse != b.Reverse ||
                 !a.ComponentCurves.SequenceEqual(b.ComponentCurves))
             {
                 return false;

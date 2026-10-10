@@ -185,14 +185,16 @@ internal sealed partial class WorkbenchSession
             {
                 var property = target.Target ?? SceneEditing.Target;
                 var frame = selected.Tracks.FirstOrDefault(track => track.Target == property)?.Keyframes.FirstOrDefault(key => key.Time == target.LocalTime) ?? new Keyframe(target.LocalTime, keyframeValue);
+                var preservesCurve = vm.Interpolation == (int)frame.Interpolation && vm.ReadPowerExponent() == frame.Exponent;
                 prepared = WorkspaceDraftOperations.SetKeyframe(prepared, selected.Id, property, frame with
                 {
                     Value = keyframeChanged ? keyframeValue : frame.Value,
                     Interpolation = (KeyframeInterpolation)vm.Interpolation,
                     Exponent = vm.ReadPowerExponent(),
-                    CurveStart = vm.Interpolation == (int)frame.Interpolation && vm.ReadPowerExponent() == frame.Exponent ? frame.CurveStart : 0,
-                    CurveEnd = vm.Interpolation == (int)frame.Interpolation && vm.ReadPowerExponent() == frame.Exponent ? frame.CurveEnd : 1,
-                    ComponentCurves = vm.Interpolation == (int)frame.Interpolation && vm.ReadPowerExponent() == frame.Exponent ? frame.ComponentCurves : []
+                    Reverse = preservesCurve && frame.Reverse,
+                    CurveStart = preservesCurve ? frame.CurveStart : 0,
+                    CurveEnd = preservesCurve ? frame.CurveEnd : 1,
+                    ComponentCurves = preservesCurve ? frame.ComponentCurves : []
                 });
             }
         }

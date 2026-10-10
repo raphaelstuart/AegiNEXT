@@ -250,6 +250,8 @@ public sealed class SubtitleAnimationRangeEditingTests
 
         var transformed = document with { Subtitles = document.Subtitles.SetItem(0, first with { AnimationRanges = [range with { Rotation = 10 }] }) };
         Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.MergeSubtitles(transformed, first.Id, second.Id));
+        var translated = document with { Subtitles = document.Subtitles.SetItem(0, first with { AnimationRanges = [range with { Offset = new(0, -12) }] }) };
+        Assert.Throws<InvalidOperationException>(() => ProjectEditingOperations.MergeSubtitles(translated, first.Id, second.Id));
         var animation = Track(range.Id) with
         {
             Keyframes = [new(new(0), SceneColor.Black), new(new(2), SceneColor.White)]

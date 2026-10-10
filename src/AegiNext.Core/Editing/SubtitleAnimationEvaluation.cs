@@ -57,6 +57,10 @@ public static class SubtitleAnimationEvaluation
         if (target.TextRangeId is { } rangeId)
         {
             var range = subtitle!.AnimationRanges.Single(range => range.Id == rangeId);
+            if (target.Property == AnimationProperty.POSITION)
+            {
+                return range.Offset;
+            }
             if (target.Property == AnimationProperty.SCALE)
             {
                 return range.Scale;

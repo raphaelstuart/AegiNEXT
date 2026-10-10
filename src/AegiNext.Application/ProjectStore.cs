@@ -152,9 +152,9 @@ public static class ProjectStore
         if (root.ValueKind != JsonValueKind.Object ||
             !root.TryGetProperty("version", out var version) ||
             version.ValueKind != JsonValueKind.Number ||
-            !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 or 11 or ProjectDocument.CURRENT_VERSION))
+            !version.TryGetInt32(out var number) || number is not (3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 or 11 or 12 or ProjectDocument.CURRENT_VERSION))
         {
-            throw new InvalidDataException($"只支持项目版本 3、4、5、6、7、8、9、10、11 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
+            throw new InvalidDataException($"只支持项目版本 3、4、5、6、7、8、9、10、11、12 和 {ProjectDocument.CURRENT_VERSION}，更旧项目需要使用对应版本打开。");
         }
 
         if (number >= 5)
@@ -170,7 +170,11 @@ public static class ProjectStore
         }
 
         var content = JsonNode.Parse(root.GetRawText(), documentOptions: documentOptions)!.AsObject();
-        SubtitleAnimationJsonMigration.RejectUndeclaredFields(content);
+        SubtitleAnimationJsonMigration.RejectScopedTransformFields(content);
+        if (number < 12)
+        {
+            SubtitleAnimationJsonMigration.RejectUndeclaredFields(content);
+        }
         SubtitleAppearanceJsonMigration.UpgradeProject(content, number);
         SubtitleMarginsJsonMigration.UpgradeProject(content, number);
         if (number is 3 or 4)
@@ -219,13 +223,13 @@ public static class ProjectStore
                         !(info.Type == typeof(SubtitleStyle) && property.Name is "fontVariant" or "textAlign") &&
                         !(info.Type == typeof(SubtitleFontVariant) && property.Name == "postScriptName") &&
                         !(info.Type == typeof(SubtitleInlineStyleOverride) && property.Name is "fontVariant" or "clearFontVariant") &&
-                        !(info.Type == typeof(Keyframe) && property.Name is "componentCurves" or "exponent") &&
-                        !(info.Type == typeof(AnimationCurve) && property.Name == "exponent") &&
+                        !(info.Type == typeof(Keyframe) && property.Name is "componentCurves" or "exponent" or "reverse") &&
+                        !(info.Type == typeof(AnimationCurve) && property.Name is "exponent" or "reverse") &&
                         !(info.Type == typeof(AnimationTrack) && property.Name is "initialValue" or "transforms" or "colorSpace") &&
                         !(info.Type == typeof(AnimationTrackTarget) && property.Name is "textRangeId" or "state") &&
                         !(info.Type == typeof(TimelineAnimationRowId) && property.Name is "textRangeId" or "state") &&
                         !(info.Type == typeof(AnimationTransformOperation) && property.Name is "componentMask" or "mode") &&
-                        !(info.Type == typeof(SubtitleAnimationRange) && property.Name is "rotation" or "pivot") &&
+                        !(info.Type == typeof(SubtitleAnimationRange) && property.Name is "rotation" or "pivot" or "offset" or "generatedOrigin") &&
                         !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "karaokeStyleSpans" or "inactiveKaraoke" or "styleName" or "stylePresetId" or "colorTagId" or "animationRanges") &&
                         !(info.Type == typeof(SubtitleKaraokeStyleSpan) && property.Name is "activeStyle" or "inactiveStyle") &&
                         !(info.Type == typeof(ProjectTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName" or "autoApplyStyle");

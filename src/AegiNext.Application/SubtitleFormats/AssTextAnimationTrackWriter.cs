@@ -75,7 +75,7 @@ internal static class AssTextAnimationTrackWriter
         return track.Keyframes.All(frame => Enumerable.Range(0, frame.Value.ComponentCount).All(component =>
         {
             var curve = frame.GetCurve(component);
-            return curve.CurveStart == 0 && curve.CurveEnd == 1 && curve.Interpolation is
+            return !AssCurveCompatibility.IsReversedNonlinear(curve) && curve.CurveStart == 0 && curve.CurveEnd == 1 && curve.Interpolation is
                 KeyframeInterpolation.LINEAR or KeyframeInterpolation.HOLD or KeyframeInterpolation.POWER or KeyframeInterpolation.EASE_IN;
         }));
     }

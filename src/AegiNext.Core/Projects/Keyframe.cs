@@ -10,6 +10,8 @@ public sealed record Keyframe(MediaTime Time, AnimationValue Value, KeyframeInte
     public double CurveStart { get; init; }
     public double CurveEnd { get; init; } = 1;
     public double Exponent { get; init; } = 1;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Reverse { get; init; }
     public ImmutableArray<AnimationCurve?> ComponentCurves { get; init; } = [];
 
     [JsonIgnore]
@@ -25,6 +27,6 @@ public sealed record Keyframe(MediaTime Time, AnimationValue Value, KeyframeInte
         ArgumentOutOfRangeException.ThrowIfNegative(component);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(component, Value.ComponentCount);
         return component > 0 && !ComponentCurves.IsDefaultOrEmpty && ComponentCurves[component - 1] is { } curve
-            ? curve : new(Interpolation, CurveStart, CurveEnd) { Exponent = Exponent };
+            ? curve : new(Interpolation, CurveStart, CurveEnd) { Exponent = Exponent, Reverse = Reverse };
     }
 }

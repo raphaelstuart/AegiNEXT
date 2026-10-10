@@ -35,6 +35,11 @@ internal sealed class AssTextAnimationExport(SubtitleLine line, ProjectLayer lay
             selected[(track.Property, track.Target.State)] = track;
         }
         var matching = line.AnimationRanges.Where(range => range.Utf16Start <= offset && offset < range.Utf16Start + range.Utf16Length).ToArray();
+        if (matching.Any(range => range.Offset != default || layer.Tracks.Any(track =>
+            track.Target.TextRangeId == range.Id && track.Property == AnimationProperty.POSITION)))
+        {
+            Report("Ass.RangeTranslation", "ASS 无法表达独立文字范围的排版后位移，已省略范围位移；原生范围与位移动画保留在工程中。");
+        }
         foreach (var range in matching)
         {
             foreach (var track in layer.Tracks.Where(track => track.Target.TextRangeId == range.Id))
@@ -82,6 +87,10 @@ internal sealed class AssTextAnimationExport(SubtitleLine line, ProjectLayer lay
         foreach (var pair in selected)
         {
             var track = pair.Value;
+            if (track.Target.TextRangeId is not null && track.Property == AnimationProperty.POSITION)
+            {
+                continue;
+            }
             var values = track.Keyframes.Select(frame => frame.Value).Concat(track.Transforms.Select(operation => operation.Value));
             if (track.InitialValue is { } initial)
             {

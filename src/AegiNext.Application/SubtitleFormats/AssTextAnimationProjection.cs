@@ -24,7 +24,12 @@ internal static class AssTextAnimationProjection
                 candidate.Utf16Length == range.Utf16Length);
             var id = previous?.Id ?? range.Id;
             identities.Add(range.Id, id);
-            return range with { Id = id, Pivot = previous?.Pivot ?? range.Pivot };
+            return range with
+            {
+                Id = id, Pivot = previous?.Pivot ?? range.Pivot,
+                Offset = previous?.Offset ?? range.Offset,
+                GeneratedOrigin = previous?.GeneratedOrigin ?? range.GeneratedOrigin
+            };
         }).ToImmutableArray();
         ranges = ranges.AddRange(originalRanges.Where(range => !ranges.Any(candidate => candidate.Id == range.Id) &&
             !expected.Any(candidate => candidate.Utf16Start == range.Utf16Start && candidate.Utf16Length == range.Utf16Length)));
@@ -39,10 +44,8 @@ internal static class AssTextAnimationProjection
         var preserved = layer is null ? ImmutableArray<AnimationTrack>.Empty : layer.Tracks
             .Where(track => !IsTextTrack(track) || !Representable(track, representableShadows) ||
                 preserveFill && track.Property == AnimationProperty.FILL).ToImmutableArray();
-        var independentShadowTargets = preserved.Where(track => track.Property == AnimationProperty.SHADOW_BLUR)
-            .Select(track => track.Target).ToHashSet();
-        var represented = tracks.Where(track => !(preserveFill && track.Property == AnimationProperty.FILL) &&
-            (track.Property != AnimationProperty.SHADOW_BLUR || !independentShadowTargets.Contains(track.Target)));
+        var preservedTargets = preserved.Select(track => track.Target).ToHashSet();
+        var represented = tracks.Where(track => !preservedTargets.Contains(track.Target));
         ranges = RestorePreservedRanges(ranges, originalRanges, preserved, expected);
         return (restored with { AnimationRanges = ranges }, preserved.AddRange(represented));
     }
@@ -54,6 +57,11 @@ internal static class AssTextAnimationProjection
 
     private static bool Representable(AnimationTrack track, HashSet<AnimationTrackTarget> representableShadows)
     {
+        if (track.Target.TextRangeId is not null && track.Property == AnimationProperty.POSITION ||
+            AssCurveCompatibility.HasReversedNonlinearCurve(track))
+        {
+            return false;
+        }
         return track.Property == AnimationProperty.SHADOW_BLUR ? representableShadows.Contains(track.Target) :
             track.Target.State == SubtitleAnimationState.NORMAL || track.Property == AnimationProperty.FILL;
     }
@@ -62,8 +70,20 @@ internal static class AssTextAnimationProjection
         ImmutableArray<SubtitleAnimationRange> originalRanges, ImmutableArray<AnimationTrack> preserved,
         ImmutableArray<SubtitleAnimationRange> expected)
     {
-        var referencedIds = preserved.Where(track => track.Property is AnimationProperty.SHADOW_BLUR or AnimationProperty.FILL)
+        var referencedIds = preserved
             .Select(track => track.Target.TextRangeId).ToHashSet();
+        referencedIds.UnionWith(originalRanges.Where(range => range.Offset != default || range.GeneratedOrigin is not null)
+            .Select(range => (Guid?)range.Id));
+        var byId = originalRanges.ToDictionary(range => range.Id);
+        var pending = new Queue<Guid>(referencedIds.OfType<Guid>());
+        while (pending.TryDequeue(out var id))
+        {
+            if (byId.TryGetValue(id, out var range) && range.GeneratedOrigin?.ParentRangeId is { } parentId &&
+                referencedIds.Add(parentId))
+            {
+                pending.Enqueue(parentId);
+            }
+        }
         var protectedRanges = originalRanges.Where(range => referencedIds.Contains(range.Id)).ToDictionary(range => range.Id);
         var shadowRangeIds = preserved.Where(track => track.Property == AnimationProperty.SHADOW_BLUR)
             .Select(track => track.Target.TextRangeId).ToHashSet();
