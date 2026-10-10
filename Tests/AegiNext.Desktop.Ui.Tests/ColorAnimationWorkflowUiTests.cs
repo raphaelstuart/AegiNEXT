@@ -21,7 +21,7 @@ public sealed class ColorAnimationWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = UiTestActions.CreateSubtitle(context, duration: new(8));
+        var id = await UiTestActions.CreateSubtitleAsync(context, duration: new(8));
         var property = color ? AnimationProperty.FILL : AnimationProperty.POSITION;
         var original = color
             ? AnimationValue.FromColor(new(0.5, 0.5, 0.5, 0.7))
@@ -59,7 +59,7 @@ public sealed class ColorAnimationWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = UiTestActions.CreateSubtitle(context);
+        var id = await UiTestActions.CreateSubtitleAsync(context);
         context.Session.Editor.SetKeyframe(id, AnimationProperty.FILL, new(new(1), new SceneColor(1, 0, 0)));
         context.Session.Editor.SetKeyframe(id, AnimationProperty.FILL, new(new(2), new SceneColor(0, 0, 1)));
         Assert.True(context.Session.SelectKeyframe(new(id, AnimationProperty.FILL, new(1), new(1))));
@@ -97,7 +97,7 @@ public sealed class ColorAnimationWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = UiTestActions.CreateSubtitle(context);
+        var id = await UiTestActions.CreateSubtitleAsync(context);
         context.Session.Editor.SetKeyframe(id, AnimationProperty.FILL, new(new(1), SceneColor.White));
         context.Session.Editor.SetKeyframe(id, AnimationProperty.FILL, new(new(2), SceneColor.Black));
         Assert.True(context.Session.SelectKeyframe(new(id, AnimationProperty.FILL, new(1), new(1))));
@@ -133,7 +133,7 @@ public sealed class ColorAnimationWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = UiTestActions.CreateSubtitle(context);
+        var id = await UiTestActions.CreateSubtitleAsync(context);
         var hdr = new SceneColor(2.5, -0.1, 0.123456789, 0.7);
         context.Session.Editor.UpdateSubtitle(id, cue => cue with { Style = cue.Style with { Fill = hdr } });
         Assert.Equal(hdr, context.ViewModel.Styles.FillDraft.Value);
@@ -153,7 +153,7 @@ public sealed class ColorAnimationWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = UiTestActions.CreateSubtitle(context);
+        var id = await UiTestActions.CreateSubtitleAsync(context);
         var curves = new AnimationCurve?[] { new(KeyframeInterpolation.EASE_IN), null, new(KeyframeInterpolation.HOLD) };
         var first = new Keyframe(new(1), new SceneColor(1, 0.5, 0.2, 0.7)) { ComponentCurves = [.. curves] };
         context.Session.Editor.SetKeyframe(id, AnimationProperty.FILL, first);

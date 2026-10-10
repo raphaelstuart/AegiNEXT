@@ -63,7 +63,7 @@ internal sealed class SceneEditingState
     internal AnimationProperty Property
     {
         get => Target.Property;
-        set => Target = new(value);
+        set => Target = Target with { Property = value };
     }
     private Guid? maskNodeId;
     internal Guid? MaskNodeId

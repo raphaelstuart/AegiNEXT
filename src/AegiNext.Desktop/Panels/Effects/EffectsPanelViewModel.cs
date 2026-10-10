@@ -67,6 +67,7 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
         this.session = session;
         PowerExponent.Load(1);
         InitializeOperationDrafts();
+        InitializePropertyGrid();
         KeyframeColorDraft.Changed += (_, _) => OnPropertyChanged(nameof(KeyframeColorDraft));
         ResetPositionCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.ResetPositionEffects)));
         AddPathPointCommand = new AsyncRelayCommand(() => session.RunCommandAsync(() => session.EditAsync(session.AddPathPoint)));
@@ -125,12 +126,12 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
 
     public bool CanResetPosition => SelectedLayer?.SubtitleId is not null;
     public bool CanEditOpacity => SelectedLayer?.Tracks.Any(track =>
-        track.Property == AnimationProperty.OPACITY && !track.Transforms.IsEmpty) != true;
+        track.Target == Target with { Property = AnimationProperty.OPACITY, NodeId = null } && !track.Transforms.IsEmpty) != true;
     public string? OpacityEditingHint => CanEditOpacity ? null : Localization.Get("Workbench.OpacityOrderedTransformHint");
     public bool CanEditScale => SelectedLayer?.Tracks.Any(track =>
-        track.Property == AnimationProperty.SCALE && !track.Transforms.IsEmpty) != true;
+        track.Target == Target with { Property = AnimationProperty.SCALE, NodeId = null } && !track.Transforms.IsEmpty) != true;
     public bool CanEditRotation => SelectedLayer?.Tracks.Any(track =>
-        track.Property == AnimationProperty.ROTATION && !track.Transforms.IsEmpty) != true;
+        track.Target == Target with { Property = AnimationProperty.ROTATION, NodeId = null } && !track.Transforms.IsEmpty) != true;
     public string? ScaleEditingHint => CanEditScale ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
     public string? RotationEditingHint => CanEditRotation ? null : Localization.Get("Workbench.StyleOrderedTransformHint");
     public static decimal ScaleMinimum => (decimal)AnimationPropertyMetadata.GetMinimum(AnimationProperty.SCALE);
@@ -283,7 +284,9 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
     public AnimationProperty Property
     {
         get => Target.Property;
-        set => Target = session.MaskEditing.ResolveAnimationTarget(value);
+        set => Target = AnimationPropertyMetadata.IsMaskProperty(value)
+            ? session.MaskEditing.ResolveAnimationTarget(value)
+            : Target with { Property = value, NodeId = null };
     }
 
     public AnimationTrackTarget Target
@@ -298,6 +301,8 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
             if (!session.IsUpdating && !session.TryCommitDrafts())
             {
                 OnPropertyChanged(nameof(SelectedProperty));
+                OnPropertyChanged(nameof(SelectedScope));
+                OnPropertyChanged(nameof(SelectedState));
                 return;
             }
             var nodeChanged = value.NodeId is { } nodeId && session.SceneEditing.MaskNodeId != nodeId;
@@ -317,7 +322,15 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
             OnPropertyChanged(nameof(IsVectorProperty));
             OnPropertyChanged(nameof(IsColorProperty));
             OnPropertyChanged(nameof(IsScalarProperty));
-            session.RefreshKeyframeInspector();
+            OnPropertyChanged(nameof(OperationComponents));
+            OnPropertyChanged(nameof(SelectedOperationComponents));
+            OnPropertyChanged(nameof(CanUseRelativeOperation));
+            OnPropertyChanged(nameof(ColorSpace));
+            OnPropertyChanged(nameof(ColorSpaces));
+            OnPropertyChanged(nameof(CanEditScale));
+            OnPropertyChanged(nameof(CanEditRotation));
+            OnPropertyChanged(nameof(CanEditOpacity));
+            session.RefreshEffectsInspectorTarget();
             if (nodeChanged)
             {
                 session.MaskEditing.Refresh();
@@ -545,6 +558,9 @@ internal sealed partial class EffectsPanelViewModel : ObservableObject
 
     internal void RefreshChoices(string[] blendOptions, AnimationPropertyChoice[] propertyOptions, string[] interpolationOptions)
     {
+        ColorSpaces = [Localization.Get("Workbench.ColorLinearRgb"), Localization.Get("Workbench.ColorSrgb")];
+        OnPropertyChanged(nameof(ColorSpaces));
+        RefreshPropertyGrid();
         OnPropertyChanged(nameof(OpacityEditingHint));
         OnPropertyChanged(nameof(ScaleEditingHint));
         OnPropertyChanged(nameof(RotationEditingHint));

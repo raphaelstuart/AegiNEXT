@@ -20,7 +20,7 @@ internal sealed partial class WorkbenchSession
                 inspectorPreviewLayerId == SelectedLayerId ? preview : DocumentSnapshot;
             document = Details?.OverlayPreview(document) ?? document;
             document = MaskEditing?.Overlay(document) ?? document;
-            return OverlayTimingPreview(ViewModel.Effects.OverlayOperationDraft(document));
+            return OverlayTimingPreview(ViewModel.Effects.OverlayPropertyDrafts(ViewModel.Effects.OverlayOperationDraft(document)));
         }
     }
 

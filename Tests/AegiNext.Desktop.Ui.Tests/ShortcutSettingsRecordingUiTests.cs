@@ -144,6 +144,8 @@ public sealed class ShortcutSettingsRecordingUiTests
         main.Activate();
         Assert.True(UiTestActions.Find<Button>(main, "PlayButton").Focus());
         UiTestActions.Press(main, Key.K, modifiers);
+        await context.Session.ApplicationContext.Completion.WaitAsync(TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
         Assert.Single(context.Session.DocumentSnapshot.Subtitles);
 
         main.GetCommand(WorkbenchCommand.OPEN_SETTINGS).Execute(null);

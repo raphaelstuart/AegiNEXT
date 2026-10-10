@@ -32,7 +32,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
     private Dictionary<Guid, TimelineRow> rowsByLayer = [];
     private Dictionary<(Guid LayerId, AnimationTrackTarget Target), TimelineAnimationRow> animationRowsByTarget = [];
     private readonly Dictionary<Guid, Dictionary<AnimationTrackTarget, AnimationTrack>> trackIndexes = [];
-    private readonly Dictionary<(Guid LayerId, AnimationProperty Property), (double Minimum, double Maximum)> valueRanges = [];
+    private readonly Dictionary<(Guid LayerId, AnimationTrackTarget Target), (double Minimum, double Maximum)> valueRanges = [];
     private SpectrogramData? spectrum;
     private WriteableBitmap? spectrumBitmap;
     private SpectrogramData? spectrumOverview;
@@ -959,7 +959,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                 }
                 DrawExpander(context, animation.ExpanderRectangle(RowY(row), HeaderWidth), animation.IsCollapsed);
                 titleLayout.Draw(context, new(HeaderWidth + 25, top + 2));
-                if (!animation.IsCollapsed && animation.Property is AnimationProperty.FILL or AnimationProperty.STROKE)
+                if (!animation.IsCollapsed && AnimationPropertyMetadata.GetValueKind(animation.Property) == AnimationValueKind.COLOR)
                 {
                     var componentsLeft = HeaderWidth + Math.Max(125, titleLayout.Width + 33);
                     DrawText(context, "R", new(componentsLeft, top + 2), drawingPalette.ColorComponents[0], 10);
@@ -1271,7 +1271,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
     private (double Minimum, double Maximum) CachedValueRange(ProjectLayer layer, AnimationTrack track)
     {
-        var key = (layer.Id, track.Property);
+        var key = (layer.Id, track.Target with { NodeId = null });
         if (!valueRanges.TryGetValue(key, out var range))
         {
             if (AnimationPropertyMetadata.IsNodeProperty(track.Property))
@@ -1544,7 +1544,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
 
     private TimelineAnimationRow[] CreateAnimationRows(IEnumerable<ProjectLayer> clips, Guid trackId)
     {
-        var bindings = new Dictionary<AnimationProperty, Dictionary<Guid, List<AnimationTrackTarget>>>();
+        var bindings = new Dictionary<AnimationTrackTarget, Dictionary<Guid, List<AnimationTrackTarget>>>();
         foreach (var layer in clips)
         {
             var locations = layer.Mask is VectorClipMask vector
@@ -1558,10 +1558,11 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
                 {
                     continue;
                 }
-                if (!bindings.TryGetValue(track.Property, out var clipsById))
+                var rowTarget = track.Target with { NodeId = null };
+                if (!bindings.TryGetValue(rowTarget, out var clipsById))
                 {
                     clipsById = [];
-                    bindings.Add(track.Property, clipsById);
+                    bindings.Add(rowTarget, clipsById);
                 }
                 if (!clipsById.TryGetValue(layer.Id, out var targets))
                 {
@@ -1575,15 +1576,19 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
         var top = 0d;
         foreach (var binding in bindings.OrderBy(binding =>
                      {
-                         var index = AnimationPropertyMetadata.CurrentProperties.IndexOf(binding.Key);
-                         return index >= 0 ? index : AnimationPropertyMetadata.CurrentProperties.Length + (int)binding.Key;
+                         var index = AnimationPropertyMetadata.CurrentProperties.IndexOf(binding.Key.Property);
+                         return index >= 0 ? index : AnimationPropertyMetadata.CurrentProperties.Length + (int)binding.Key.Property;
                      }))
         {
-            var id = new TimelineAnimationRowId(TimelineRowScope.TRACK, trackId, binding.Key);
+            var id = new TimelineAnimationRowId(TimelineRowScope.TRACK, trackId, binding.Key.Property, binding.Key.TextRangeId, binding.Key.State);
             var collapsed = collapsedAnimationRows.Contains(id);
             var height = collapsed ? COLLAPSED_ANIMATION_ROW_HEIGHT :
-                binding.Key is AnimationProperty.FILL or AnimationProperty.STROKE ? 112 : 76;
-            result.Add(new(id, binding.Value.ToImmutableDictionary(pair => pair.Key, pair => pair.Value.ToImmutableArray()), collapsed, top, height));
+                AnimationPropertyMetadata.GetValueKind(binding.Key.Property) == AnimationValueKind.COLOR ? 112 : 76;
+            var owner = layersById.GetValueOrDefault(binding.Value.Keys.First());
+            var textRange = owner?.SubtitleId is { } subtitleId && cuesById.TryGetValue(subtitleId, out var subtitle)
+                ? subtitle.AnimationRanges.FirstOrDefault(range => range.Id == id.TextRangeId) : null;
+            var rangeLabel = textRange is not null ? $"{textRange.Utf16Start + 1}–{textRange.Utf16Start + textRange.Utf16Length}" : null;
+            result.Add(new(id, binding.Value.ToImmutableDictionary(pair => pair.Key, pair => pair.Value.ToImmutableArray()), collapsed, top, height, rangeLabel));
             top += height;
         }
         return result.ToArray();

@@ -33,6 +33,7 @@ public sealed record WorkbenchPreferences
     public bool TimelineStepEnabled { get; init; }
     public bool TimelineSpectrumVisible { get; init; } = true;
     public bool TimelineWaveformVisible { get; init; } = true;
+    public ImmutableArray<string> CollapsedEffectCategories { get; init; } = ["clip", "fill", "stroke", "shadow", "composite", "path", "animation"];
     public ProjectPreferences Projects { get; init; } = new();
     public TimingPostProcessorPreferences TimingPostProcessor { get; init; } = new();
     public ImmutableArray<AudioDeviceCalibration> AudioCalibrations { get; init; } = [];
@@ -48,6 +49,11 @@ public sealed record WorkbenchPreferences
             throw new InvalidDataException("桌面偏好无效或版本不受支持。");
         }
 
+        if (CollapsedEffectCategories.IsDefault || CollapsedEffectCategories.Distinct().Count() != CollapsedEffectCategories.Length ||
+            CollapsedEffectCategories.Any(category => category is not ("clip" or "transform" or "typography" or "fill" or "stroke" or "shadow" or "composite" or "path" or "animation")))
+        {
+            throw new InvalidDataException("特效面板分类偏好无效。");
+        }
         AudioGraph.Validate();
         AudioAnalysis.Validate();
         TimelineClips.Validate();
@@ -99,6 +105,7 @@ public sealed record WorkbenchPreferences
                SubtitleAuditionMilliseconds == other.SubtitleAuditionMilliseconds && MaximumConcurrentTasks == other.MaximumConcurrentTasks && TimelineClassicTimingEnabled == other.TimelineClassicTimingEnabled &&
                TimelineSnapEnabled == other.TimelineSnapEnabled && TimelineStepEnabled == other.TimelineStepEnabled &&
                TimelineSpectrumVisible == other.TimelineSpectrumVisible && TimelineWaveformVisible == other.TimelineWaveformVisible &&
+               CollapsedEffectCategories.AsSpan().SequenceEqual(other.CollapsedEffectCategories.AsSpan()) &&
                Projects == other.Projects && TimingPostProcessor == other.TimingPostProcessor &&
                AudioCalibrations.AsSpan().SequenceEqual(other.AudioCalibrations.AsSpan()) &&
                ShortcutBindings.AsSpan().SequenceEqual(other.ShortcutBindings.AsSpan());
@@ -126,6 +133,10 @@ public sealed record WorkbenchPreferences
         hash.Add(TimelineStepEnabled);
         hash.Add(TimelineSpectrumVisible);
         hash.Add(TimelineWaveformVisible);
+        foreach (var category in CollapsedEffectCategories)
+        {
+            hash.Add(category);
+        }
         hash.Add(Projects);
         hash.Add(TimingPostProcessor);
         foreach (var calibration in AudioCalibrations)

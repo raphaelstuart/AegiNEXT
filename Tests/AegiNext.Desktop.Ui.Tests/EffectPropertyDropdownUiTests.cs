@@ -25,7 +25,7 @@ public sealed class EffectPropertyDropdownUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         context.Session.Editor.SetClipMask(context.Session.SelectedLayerId!.Value, new RectangleClipMask { BottomRight = new(400, 300) });
         context.Session.UpdatePreferences(context.Session.Preferences with { Language = language });
         using var view = new EffectsPanelView(context.ViewModel.Effects, context.Session);
@@ -34,11 +34,19 @@ public sealed class EffectPropertyDropdownUiTests
         try
         {
             Flush(window);
+            UiTestActions.ExpandEffectsCategory(window, "CompositeCategory");
+            UiTestActions.ExpandEffectsCategory(window, "AnimationCategory");
             var choice = UiTestActions.Find<ComboBox>(view, "PropertyCombo");
             choice.BringIntoView();
             Flush(window);
             var input = UiTestActions.Find<NumericUpDown>(view, "OpacityInput");
+            input.BringIntoView();
+            Flush(window);
             Assert.True(input.GetVisualDescendants().OfType<TextBox>().Single().Focus());
+            choice.BringIntoView();
+            Flush(window);
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            using var frame = window.CaptureRenderedFrame();
             var items = choice.ItemsSource;
             var selection = choice.SelectedItem;
             var point = choice.TranslatePoint(new Point(choice.Bounds.Width / 2, choice.Bounds.Height / 2), window)!.Value;
@@ -87,7 +95,7 @@ public sealed class EffectPropertyDropdownUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var id = context.Session.SelectedLayerId!.Value;
         var choice = UiTestActions.Find<ComboBox>(context.Window, "PropertyCombo");
         var plain = choice.ItemsSource;

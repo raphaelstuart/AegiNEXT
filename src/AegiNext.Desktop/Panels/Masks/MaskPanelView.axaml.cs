@@ -32,6 +32,7 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnCommitKeyDown, RoutingStrategies.Bubble);
         AddHandler(LostFocusEvent, OnLostFocus, RoutingStrategies.Bubble);
+        BindNumericDrags();
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
         viewModel.PropertyChanged += OnViewModelChanged;
     }
@@ -59,6 +60,7 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
     /// <inheritdoc />
     public void CancelGestures()
     {
+        CancelNumericDrags();
         suppressFocusCommit = true;
         var revision = ++focusCommitRevision;
         Dispatcher.UIThread.Post(() =>
@@ -124,6 +126,11 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
 
     private void OnLostFocus(object? sender, FocusChangedEventArgs e)
     {
+        if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>()
+            .Any(input => input.IsTitleDragging))
+        {
+            return;
+        }
         if (e.Source is not (TextBox or NumericUpDown))
         {
             return;
@@ -167,6 +174,7 @@ internal sealed partial class MaskPanelView : UserControl, IWorkbenchPanelView, 
         }
         disposed = true;
         focusCommitRevision++;
+        session.NumericGestureCancellationRequested -= OnNumericGestureCancellation;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
         viewModel.PropertyChanged -= OnViewModelChanged;
     }

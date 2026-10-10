@@ -4,6 +4,7 @@ using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Settings.AudioAnalysis;
@@ -30,11 +31,47 @@ public sealed partial class AudioAnalysisSettingsView : UserControl
                  })
         {
             var input = this.FindControl<NumericDraftInput>(name)!;
+            var title = this.FindControl<NumericDragLabel>(name + "Title")!;
+            var focusRevision = 0L;
+            AudioAnalysisSettingsViewModel? dragModel = null;
+            title.DragStarted += (_, _) =>
+            {
+                focusRevision++;
+                dragModel = DataContext as AudioAnalysisSettingsViewModel;
+            };
+            title.DragCompleted += (_, args) =>
+            {
+                focusRevision++;
+                var frozenModel = dragModel;
+                dragModel = null;
+                if (args.Changed && input.IsEffectivelyVisible && ReferenceEquals(DataContext, frozenModel))
+                {
+                    frozenModel?.Commit(field);
+                }
+            };
+            title.DragCanceled += (_, _) =>
+            {
+                focusRevision++;
+                dragModel = null;
+            };
+            DataContextChanged += (_, _) =>
+            {
+                focusRevision++;
+                title.CancelDrag();
+            };
+            PropertyChanged += (_, args) =>
+            {
+                if (args.Property == IsVisibleProperty && !IsVisible)
+                {
+                    title.CancelDrag();
+                }
+            };
             input.AddHandler(KeyDownEvent, (_, args) =>
             {
                 if (DataContext is AudioAnalysisSettingsViewModel model && args.Key is Key.Enter or Key.Escape &&
                     !HasComposition(input))
                 {
+                    focusRevision++;
                     if (args.Key == Key.Escape)
                     {
                         model.Restore(field);
@@ -48,10 +85,16 @@ public sealed partial class AudioAnalysisSettingsView : UserControl
             }, RoutingStrategies.Tunnel);
             input.LostFocus += (_, _) =>
             {
-                if (input.IsEffectivelyVisible && DataContext is AudioAnalysisSettingsViewModel model && !HasComposition(input))
+                var revision = ++focusRevision;
+                var currentModel = DataContext as AudioAnalysisSettingsViewModel;
+                Dispatcher.UIThread.Post(() =>
                 {
-                    model.Commit(field);
-                }
+                    if (revision == focusRevision && !input.IsTitleDragging && !input.IsKeyboardFocusWithin && input.IsEffectivelyVisible &&
+                        currentModel is not null && ReferenceEquals(DataContext, currentModel) && !HasComposition(input))
+                    {
+                        currentModel.Commit(field);
+                    }
+                }, DispatcherPriority.Background);
             };
         }
     }

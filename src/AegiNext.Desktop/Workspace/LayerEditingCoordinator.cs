@@ -262,6 +262,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             valueProperty = ActiveTarget;
             if (frame is not null)
             {
+                input.AnimationExpanded = true;
                 session.ViewModel.Effects.Interpolation = (int)frame.Interpolation;
                 session.ViewModel.Effects.LoadPowerExponent(frame.Exponent);
             }
@@ -277,28 +278,9 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     private AnimationValue BaseValue(ProjectLayer layer, AnimationTrackTarget target)
     {
-        var property = target.Property;
-        if (AnimationPropertyMetadata.IsMaskProperty(property) && layer.Mask is { } mask)
-        {
-            return ClipMaskAnimation.GetBaseValue(mask, target);
-        }
-        var style = layer.SubtitleId is { } id
-            ? session.DocumentSnapshot.Subtitles.Single(value => value.Id == id).Style : null;
-        return property switch
-        {
-            AnimationProperty.POSITION => layer.Transform.Position,
-            AnimationProperty.SCALE => layer.Transform.Scale,
-            AnimationProperty.ROTATION => layer.Transform.Rotation,
-            AnimationProperty.OPACITY => layer.Opacity,
-            AnimationProperty.BLUR => layer.Blur,
-            AnimationProperty.STROKE_WIDTH => style?.StrokeWidth ?? layer.StrokeWidth,
-            AnimationProperty.LETTER_SPACING => style?.LetterSpacing ?? 0,
-            AnimationProperty.FILL_BLUR => style?.FillBlur ?? 0,
-            AnimationProperty.STROKE_BLUR => style?.StrokeBlur ?? 0,
-            AnimationProperty.FILL => style?.Fill ?? layer.Fill,
-            AnimationProperty.STROKE => style?.Stroke ?? layer.Stroke,
-            _ => 0
-        };
+        var subtitle = layer.SubtitleId is { } id
+            ? session.DocumentSnapshot.Subtitles.Single(value => value.Id == id) : null;
+        return SubtitleAnimationEvaluation.GetBaseValue(layer, subtitle, target);
     }
 
     internal void UpdateSelectedKeyframe(Func<Keyframe, Keyframe> change)
@@ -318,7 +300,7 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
             return;
         }
 
-        var value = ActiveProperty is AnimationProperty.FILL or AnimationProperty.STROKE
+        var value = AnimationPropertyMetadata.GetValueKind(ActiveProperty) == AnimationValueKind.COLOR
             ? AnimationValue.FromColor(session.ViewModel.Effects.KeyframeColorDraft.Value)
             : AnimationPropertyMetadata.GetValueKind(ActiveProperty) == AnimationValueKind.VECTOR
             ? AnimationValue.FromVector(new((double)(session.ViewModel.Effects.KeyframeValue ?? 0), (double)(session.ViewModel.Effects.KeyframeValueY ?? 0)))

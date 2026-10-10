@@ -15,7 +15,7 @@ internal sealed partial class WorkbenchSession
     internal SceneEditingState SceneEditing { get; } = new();
 
     internal AnimationEditTarget? AnimationTarget => SelectedLayer is { } layer
-        ? SceneEditing.GestureTarget ?? SceneEditing.DraftTarget ?? new(layer.Id, SelectedKeyTime ?? LayerAnimationTiming.ClampTime(layer, ProjectPosition - layer.Start + layer.AnimationOffset), SelectedKeyTime is not null)
+        ? SceneEditing.GestureTarget ?? SceneEditing.DraftTarget ?? new(layer.Id, SelectedKeyTime ?? LayerAnimationTiming.ClampTime(layer, ProjectPosition - layer.Start + layer.AnimationOffset), SelectedKeyTime is not null, SceneEditing.Target)
         : null;
 
     internal MediaTime EditingPosition => SelectedLayer is { } layer && (SceneEditing.GestureTarget?.LocalTime ?? SelectedKeyTime) is { } time
@@ -50,7 +50,7 @@ internal sealed partial class WorkbenchSession
         {
             return false;
         }
-        SceneEditing.GestureTarget = target;
+        SceneEditing.GestureTarget = target with { Target = new AnimationTrackTarget(AnimationProperty.POSITION) };
         _ = RunCommandAsync(PauseForSceneEditAsync);
         return true;
     }
@@ -125,11 +125,29 @@ internal sealed partial class WorkbenchSession
         Volatile.Write(ref previewState, CreatePreviewState(document));
     }
 
-    private double InspectorValue(ProjectLayer layer, AnimationProperty property, double fallback) =>
-        AnimationTarget is { } target ? AnimationEditOperations.Value(layer, property, target, fallback) : fallback;
+    private double InspectorValue(ProjectLayer layer, AnimationProperty property, double fallback)
+    {
+        var identity = SceneEditing.Target with { Property = property, NodeId = null,
+            State = AnimationPropertyMetadata.IsSubtitleVisualProperty(property) ? SceneEditing.Target.State : SubtitleAnimationState.NORMAL };
+        if ((identity.TextRangeId is not null && Panels.Effects.EffectsPanelViewModel.IsRangeProperty(property) ||
+             identity.State != SubtitleAnimationState.NORMAL && Panels.Effects.EffectsPanelViewModel.IsAppearanceProperty(property)) &&
+            layer.SubtitleId is { } id)
+        {
+            fallback = SubtitleAnimationEvaluation.GetBaseValue(layer, DocumentSnapshot.Subtitles.Single(line => line.Id == id), identity).Scalar;
+        }
+        return AnimationTarget is { } target ? AnimationEditOperations.Value(layer, property, target, fallback) : fallback;
+    }
 
-    private ScenePoint InspectorVector(ProjectLayer layer, AnimationProperty property, ScenePoint fallback) =>
-        AnimationTarget is { } target ? AnimationEditOperations.Value(layer, property, target, fallback) : fallback;
+    private ScenePoint InspectorVector(ProjectLayer layer, AnimationProperty property, ScenePoint fallback)
+    {
+        var identity = SceneEditing.Target with { Property = property, NodeId = null,
+            State = AnimationPropertyMetadata.IsSubtitleVisualProperty(property) ? SceneEditing.Target.State : SubtitleAnimationState.NORMAL };
+        if (identity.TextRangeId is not null && Panels.Effects.EffectsPanelViewModel.IsRangeProperty(property) && layer.SubtitleId is { } id)
+        {
+            fallback = SubtitleAnimationEvaluation.GetBaseValue(layer, DocumentSnapshot.Subtitles.Single(line => line.Id == id), identity).Vector;
+        }
+        return AnimationTarget is { } target ? AnimationEditOperations.Value(layer, property, target, fallback) : fallback;
+    }
 
     private SceneColor InspectorColor(ProjectLayer layer, SceneColor color, bool stroke) =>
         AnimationTarget is { } target

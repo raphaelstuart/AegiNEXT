@@ -39,8 +39,8 @@ public sealed class SubtitlePositionDiagramUiTests
             var offset = Assert.Single(inputs, input => input.Name == "OffsetXInput");
             Assert.Equal(0, anchor.Minimum);
             Assert.Equal(1, anchor.Maximum);
-            Assert.Equal(0.1m, anchor.Increment);
-            Assert.Equal(0.1m, pivot.Increment);
+            Assert.Equal(0.01m, anchor.Increment);
+            Assert.Equal(0.01m, pivot.Increment);
             Assert.Equal(1, offset.Increment);
             draft.OffsetY.RawText = "17";
             var text = Assert.Single(anchor.GetVisualDescendants().OfType<TextBox>());

@@ -19,6 +19,55 @@
     <CornerRadius x:Key="WorkbenchPanelCornerRadius">10</CornerRadius>
     <SolidColorBrush x:Key="WorkbenchDockActiveForeground" Color="{DynamicResource SystemAccentColor}"/>
     <SolidColorBrush x:Key="WorkbenchDockTabSelectedBackground" Color="{DynamicResource SystemAccentColor}" Opacity="0.14"/>
+    <SolidColorBrush x:Key="WorkbenchSectionHover" Color="{DynamicResource SystemAccentColor}" Opacity="0.06"/>
+    <ControlTheme x:Key="WorkbenchPropertySectionHeaderTheme" TargetType="ToggleButton">
+      <Setter Property="MinHeight" Value="28"/>
+      <Setter Property="Padding" Value="4,3"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource PreviewBorder}"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="Foreground" Value="{DynamicResource PreviewMuted}"/>
+      <Setter Property="FontFamily" Value="{StaticResource WorkbenchBodyFontFamily}"/>
+      <Setter Property="FontSize" Value="{StaticResource WorkbenchBodyFontSize}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+            <Grid ColumnDefinitions="16,*" ColumnSpacing="4">
+              <PathIcon Name="SectionChevron" Width="8" Height="8" HorizontalAlignment="Center"
+                        VerticalAlignment="Center" Data="M 2,0 L 6,4 L 2,8" RenderTransformOrigin="50%,50%"/>
+              <ContentPresenter Name="PART_ContentPresenter" Grid.Column="1" Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" VerticalContentAlignment="Center"
+                                HorizontalContentAlignment="Stretch"/>
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WorkbenchSectionHover}"/>
+      </Style>
+      <Style Selector="^:checked /template/ PathIcon#SectionChevron">
+        <Setter Property="RenderTransform"><RotateTransform Angle="90"/></Setter>
+      </Style>
+      <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.5"/></Style>
+    </ControlTheme>
+    <ControlTheme x:Key="{x:Type common:PropertySection}" TargetType="common:PropertySection">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Grid RowDefinitions="Auto,Auto">
+            <ToggleButton Name="PART_HeaderSite" Theme="{StaticResource WorkbenchPropertySectionHeaderTheme}"
+                          Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"/>
+            <ContentPresenter Name="PART_ContentPresenter" Grid.Row="1" IsVisible="{TemplateBinding IsExpanded}"
+                              Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
     <ControlTheme x:Key="WorkbenchTransportSliderTheme" TargetType="Slider"
                   BasedOn="{StaticResource {x:Type Slider}}">
       <Setter Property="Height" Value="24"/>

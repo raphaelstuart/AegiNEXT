@@ -6,21 +6,21 @@
                ToolTip.Tip="{Loc Key=Workbench.SubtitleMarginsHint}" />
     <Grid ColumnDefinitions="*,6,*,6,*">
       <StackPanel Spacing="3">
-        <TextBlock Name="MarginLeftLabel" Classes="field" Text="{Loc Key=Workbench.MarginLeft}" />
+        <controls:NumericDragLabel Input="{Binding #MarginLeftInput}" Name="MarginLeftLabel" Classes="field" Text="{Loc Key=Workbench.MarginLeft}" />
         <controls:NumericDraftInput Name="MarginLeftInput" RawText="{Binding Left.RawText, Mode=TwoWay}"
                                    Value="{Binding Left.Value, Mode=TwoWay}" Minimum="0" Maximum="32768" Increment="1"
                                    PreserveDoublePrecision="True" MinWidth="64"
                                    AutomationProperties.Name="{Loc Key=Workbench.MarginLeft}" />
       </StackPanel>
       <StackPanel Grid.Column="2" Spacing="3">
-        <TextBlock Name="MarginRightLabel" Classes="field" Text="{Loc Key=Workbench.MarginRight}" />
+        <controls:NumericDragLabel Input="{Binding #MarginRightInput}" Name="MarginRightLabel" Classes="field" Text="{Loc Key=Workbench.MarginRight}" />
         <controls:NumericDraftInput Name="MarginRightInput" RawText="{Binding Right.RawText, Mode=TwoWay}"
                                    Value="{Binding Right.Value, Mode=TwoWay}" Minimum="0" Maximum="32768" Increment="1"
                                    PreserveDoublePrecision="True" MinWidth="64"
                                    AutomationProperties.Name="{Loc Key=Workbench.MarginRight}" />
       </StackPanel>
       <StackPanel Grid.Column="4" Spacing="3">
-        <TextBlock Name="MarginVerticalLabel" Classes="field" Text="{Loc Key=Workbench.MarginVertical}" />
+        <controls:NumericDragLabel Input="{Binding #MarginVerticalInput}" Name="MarginVerticalLabel" Classes="field" Text="{Loc Key=Workbench.MarginVertical}" />
         <controls:NumericDraftInput Name="MarginVerticalInput" RawText="{Binding Vertical.RawText, Mode=TwoWay}"
                                    Value="{Binding Vertical.Value, Mode=TwoWay}" Minimum="0" Maximum="32768" Increment="1"
                                    PreserveDoublePrecision="True" MinWidth="64"

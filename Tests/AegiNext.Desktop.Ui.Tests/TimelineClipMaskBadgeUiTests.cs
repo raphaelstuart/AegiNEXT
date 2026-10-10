@@ -171,7 +171,7 @@ public sealed class TimelineClipMaskBadgeUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var layer = context.Session.SelectedLayer!;
         var timeline = UiTestActions.Find<SubtitleTimelineControl>(context.Window, "Timeline");
         Assert.Null(timeline.GetClipMaskBadgeRectangle(layer.Id));

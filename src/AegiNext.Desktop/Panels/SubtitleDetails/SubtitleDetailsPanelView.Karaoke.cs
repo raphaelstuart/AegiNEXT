@@ -65,6 +65,10 @@ internal sealed partial class SubtitleDetailsPanelView
             };
             input.LostFocus += (_, _) =>
             {
+                if (input.IsTitleDragging)
+                {
+                    return;
+                }
                 if (!completingInput)
                 {
                     if (formattingPointerActive)

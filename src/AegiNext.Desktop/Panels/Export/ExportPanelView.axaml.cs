@@ -1,7 +1,9 @@
 using AegiNext.Desktop.Workspace;
+using AegiNext.Desktop.Controls;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Markup.Xaml;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Panels.Export;
 
@@ -27,6 +29,10 @@ internal sealed partial class ExportPanelView : UserControl, IWorkbenchPanelView
     /// <inheritdoc />
     public void CancelGestures()
     {
+        foreach (var label in this.GetVisualDescendants().OfType<NumericDragLabel>())
+        {
+            label.CancelDrag();
+        }
     }
     /// <inheritdoc />
     public void FocusInvalidField(string? fieldKey) => this.FindControl<Control>(fieldKey ?? "CodecCombo")?.Focus();

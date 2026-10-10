@@ -572,7 +572,7 @@ internal sealed partial class TimelinePanelViewModel : ObservableObject
         session.ClearTimelineClipAnimationTracksAsync(clipContextIds, clipContextDocument);
     private Task ClearContextAnimationPropertyTracksAsync() => animationContext is { } row && animationContextDocument is { } source
         ? animationContextClipId is { } id
-            ? session.ClearTimelineClipAnimationPropertyTracksAsync(id, row.Property, source)
+            ? session.ClearTimelineClipAnimationRowAsync(id, row, source)
             : session.ClearTimelineAnimationRowAsync(row, source, animationContextIds)
         : Task.CompletedTask;
     private Task MoveContextClipsAsync() => session.MoveTimelineClipsAsync(clipContextIds, clipContextDocument);

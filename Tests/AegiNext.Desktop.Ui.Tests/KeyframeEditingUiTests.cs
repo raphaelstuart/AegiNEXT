@@ -117,7 +117,7 @@ public sealed class KeyframeEditingUiTests
     {
         await context.OpenMediaAsync();
         context.Window.GetCommand(AegiNext.Desktop.Shortcuts.WorkbenchCommand.VIEW_EFFECTS).Execute(null);
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         UiTestActions.SelectAnimationProperty(context.Window, AnimationProperty.OPACITY);
         context.Window.UpdateLayout();
     }

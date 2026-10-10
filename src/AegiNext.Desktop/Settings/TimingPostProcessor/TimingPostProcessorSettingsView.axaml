@@ -52,12 +52,18 @@
               <TextBlock Text="{Loc Key=Settings.TimingLead}" FontWeight="SemiBold" />
               <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                 <StackPanel Spacing="4">
-                  <CheckBox Content="{Loc Key=Settings.TimingLeadIn}" IsChecked="{Binding LeadInEnabled, Mode=TwoWay}" />
+                  <CheckBox IsChecked="{Binding LeadInEnabled, Mode=TwoWay}" AutomationProperties.Name="{Loc Key=Settings.TimingLeadIn}">
+                    <inputs:NumericDragLabel Name="LeadInMillisecondsInputTitle" Text="{Loc Key=Settings.TimingLeadIn}"
+                                             Input="{Binding #LeadInMillisecondsInput}" />
+                  </CheckBox>
                   <inputs:NumericDraftInput Name="LeadInMillisecondsInput" RawText="{Binding LeadInMillisecondsText, Mode=TwoWay}"
                       IsEnabled="{Binding LeadInEnabled}" Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Spacing="4">
-                  <CheckBox Content="{Loc Key=Settings.TimingLeadOut}" IsChecked="{Binding LeadOutEnabled, Mode=TwoWay}" />
+                  <CheckBox IsChecked="{Binding LeadOutEnabled, Mode=TwoWay}" AutomationProperties.Name="{Loc Key=Settings.TimingLeadOut}">
+                    <inputs:NumericDragLabel Name="LeadOutMillisecondsInputTitle" Text="{Loc Key=Settings.TimingLeadOut}"
+                                             Input="{Binding #LeadOutMillisecondsInput}" />
+                  </CheckBox>
                   <inputs:NumericDraftInput Name="LeadOutMillisecondsInput" RawText="{Binding LeadOutMillisecondsText, Mode=TwoWay}"
                       IsEnabled="{Binding LeadOutEnabled}" Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
                 </StackPanel>
@@ -70,12 +76,12 @@
               <StackPanel Spacing="6" IsEnabled="{Binding AdjacencyEnabled}">
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                   <StackPanel Spacing="4">
-                    <TextBlock Text="{Loc Key=Settings.TimingMaximumGap}" TextWrapping="Wrap" />
+                    <inputs:NumericDragLabel Name="MaximumGapMillisecondsInputTitle" Text="{Loc Key=Settings.TimingMaximumGap}" TextWrapping="Wrap" Input="{Binding #MaximumGapMillisecondsInput}" />
                     <inputs:NumericDraftInput Name="MaximumGapMillisecondsInput" RawText="{Binding MaximumGapMillisecondsText, Mode=TwoWay}"
                         Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
                   </StackPanel>
                   <StackPanel Grid.Column="1" Spacing="4">
-                    <TextBlock Text="{Loc Key=Settings.TimingMaximumOverlap}" TextWrapping="Wrap" />
+                    <inputs:NumericDragLabel Name="MaximumOverlapMillisecondsInputTitle" Text="{Loc Key=Settings.TimingMaximumOverlap}" TextWrapping="Wrap" Input="{Binding #MaximumOverlapMillisecondsInput}" />
                     <inputs:NumericDraftInput Name="MaximumOverlapMillisecondsInput" RawText="{Binding MaximumOverlapMillisecondsText, Mode=TwoWay}"
                         Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
                   </StackPanel>
@@ -95,22 +101,22 @@
                         IsChecked="{Binding KeyframeSnapEnabled, Mode=TwoWay}" FontWeight="SemiBold" />
               <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="6" IsEnabled="{Binding KeyframeSnapEnabled}">
                 <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
-                  <TextBlock Text="{Loc Key=Settings.TimingStartBefore}" TextWrapping="Wrap" />
+                  <inputs:NumericDragLabel Name="StartBeforeMillisecondsInputTitle" Text="{Loc Key=Settings.TimingStartBefore}" TextWrapping="Wrap" Input="{Binding #StartBeforeMillisecondsInput}" />
                   <inputs:NumericDraftInput Name="StartBeforeMillisecondsInput" RawText="{Binding StartBeforeMillisecondsText, Mode=TwoWay}"
                       Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
                 </StackPanel>
                 <StackPanel Grid.Row="0" Grid.Column="1" Spacing="4">
-                  <TextBlock Text="{Loc Key=Settings.TimingStartAfter}" TextWrapping="Wrap" />
+                  <inputs:NumericDragLabel Name="StartAfterMillisecondsInputTitle" Text="{Loc Key=Settings.TimingStartAfter}" TextWrapping="Wrap" Input="{Binding #StartAfterMillisecondsInput}" />
                   <inputs:NumericDraftInput Name="StartAfterMillisecondsInput" RawText="{Binding StartAfterMillisecondsText, Mode=TwoWay}"
                       Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
                 </StackPanel>
                 <StackPanel Grid.Row="1" Grid.Column="0" Spacing="4">
-                  <TextBlock Text="{Loc Key=Settings.TimingEndBefore}" TextWrapping="Wrap" />
+                  <inputs:NumericDragLabel Name="EndBeforeMillisecondsInputTitle" Text="{Loc Key=Settings.TimingEndBefore}" TextWrapping="Wrap" Input="{Binding #EndBeforeMillisecondsInput}" />
                   <inputs:NumericDraftInput Name="EndBeforeMillisecondsInput" RawText="{Binding EndBeforeMillisecondsText, Mode=TwoWay}"
                       Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
                 </StackPanel>
                 <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
-                  <TextBlock Text="{Loc Key=Settings.TimingEndAfter}" TextWrapping="Wrap" />
+                  <inputs:NumericDragLabel Name="EndAfterMillisecondsInputTitle" Text="{Loc Key=Settings.TimingEndAfter}" TextWrapping="Wrap" Input="{Binding #EndAfterMillisecondsInput}" />
                   <inputs:NumericDraftInput Name="EndAfterMillisecondsInput" RawText="{Binding EndAfterMillisecondsText, Mode=TwoWay}"
                       Minimum="0" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
                 </StackPanel>

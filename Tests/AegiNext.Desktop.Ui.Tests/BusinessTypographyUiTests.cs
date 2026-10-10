@@ -68,7 +68,9 @@ public sealed class BusinessTypographyUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
+        UiTestActions.ExpandEffectsCategory(context.Window, "ClipCategory");
+        UiTestActions.ExpandEffectsCategory(context.Window, "CompositeCategory");
         var names = new[] { "LayerStartInput", "LayerEndInput" };
         foreach (var name in names)
         {
@@ -76,8 +78,20 @@ public sealed class BusinessTypographyUiTests
         }
         foreach (var name in new[] { "RotationInput", "OpacityInput", "BlurInput", "CrfInput", "AudioBitrateInput" })
         {
+            if (name == "AudioBitrateInput")
+            {
+                UiTestActions.Find<ComboBox>(context.Window, "AudioModeCombo").SelectedIndex = 1;
+                Dispatcher.UIThread.RunJobs();
+                context.Window.UpdateLayout();
+            }
             var numeric = UiTestActions.Find<NumericDraftInput>(context.Window, name);
-            AssertInput(Assert.Single(numeric.GetVisualDescendants().OfType<TextBox>()));
+            numeric.BringIntoView();
+            context.Window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+            context.Window.UpdateLayout();
+            var boxes = numeric.GetVisualDescendants().OfType<TextBox>().ToArray();
+            Assert.True(boxes.Length == 1, $"Field={name}; Visible={numeric.IsEffectivelyVisible}; Enabled={numeric.IsEffectivelyEnabled}; Boxes={boxes.Length}");
+            AssertInput(boxes[0]);
         }
         var font = UiTestActions.Find<FontFamilyPicker>(context.Window, "FontCombo");
         AssertInput(Assert.Single(font.GetVisualDescendants().OfType<TextBox>()));

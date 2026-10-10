@@ -243,18 +243,20 @@ public sealed class MainWorkspaceIntegrationUiTests
         var settings = Assert.Single(main.OwnedWindows.OfType<SettingsWindow>());
         settings.SelectPage(SettingsPage.STYLES);
         UiTestActions.Click(settings, "AddStyleButton");
+        await settings.ViewModel.Styles.SelectionCompletion.WaitAsync(TimeSpan.FromSeconds(5));
         UiTestActions.SetText(UiTestActions.Find<TextBox>(settings, "StyleNameInput"), "Saved from actual settings");
         UiTestActions.Click(settings, "SaveStyleButton");
-        await main.Session.Styles.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await settings.ViewModel.Styles.SelectionCompletion.WaitAsync(TimeSpan.FromSeconds(5));
         Flush(settings);
 
         Assert.Equal("Saved from actual settings", Assert.Single(main.Session.StyleLibrary.Snapshot.Presets).Name);
         Assert.False(settings.ViewModel.Styles.IsBusy);
         Assert.True(UiTestActions.Find<Button>(settings, "DuplicateStyleButton").IsEffectivelyEnabled);
         UiTestActions.Click(settings, "DuplicateStyleButton");
+        await settings.ViewModel.Styles.SelectionCompletion.WaitAsync(TimeSpan.FromSeconds(5));
         UiTestActions.SetText(UiTestActions.Find<TextBox>(settings, "StyleNameInput"), "Second saved style");
         UiTestActions.Click(settings, "SaveStyleButton");
-        await main.Session.Styles.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await settings.ViewModel.Styles.SelectionCompletion.WaitAsync(TimeSpan.FromSeconds(5));
         Flush(settings);
 
         Assert.Equal(2, main.Session.StyleLibrary.Snapshot.Presets.Length);

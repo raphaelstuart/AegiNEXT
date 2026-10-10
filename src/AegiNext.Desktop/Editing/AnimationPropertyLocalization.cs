@@ -19,6 +19,8 @@ internal static class AnimationPropertyLocalization
             AnimationProperty.STROKE_WIDTH => "StrokeWidth", AnimationProperty.BLUR => "Blur", AnimationProperty.PATH_PROGRESS => "PathProgress",
             AnimationProperty.LETTER_SPACING => "LetterSpacing", AnimationProperty.FILL_BLUR => "FillBlur",
             AnimationProperty.STROKE_BLUR => "StrokeBlur",
+            AnimationProperty.FONT_SIZE => "Size", AnimationProperty.SHADOW_OFFSET => "ShadowOffset",
+            AnimationProperty.SHADOW_BLUR => "ShadowBlur", AnimationProperty.SHADOW_COLOR => "ShadowColor",
             _ when AnimationPropertyMetadata.IsMaskProperty(value) => value.ToString(),
             _ => throw new ArgumentOutOfRangeException(nameof(value))
         };

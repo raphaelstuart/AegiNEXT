@@ -52,7 +52,7 @@ public sealed class PreviewVideoDropUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context, text: "Keep this subtitle");
+        await UiTestActions.CreateSubtitleAsync(context, text: "Keep this subtitle");
         var previous = context.Session.DocumentSnapshot;
         var previousPath = context.Controller.Snapshot.FilePath!;
         var path = await CreateFileAsync(context, "replacement.mov");

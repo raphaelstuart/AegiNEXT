@@ -11,14 +11,14 @@
           <CheckBox Name="AutomaticWorkersCheckBox" Content="{Loc Key=Settings.AudioWorkersAutomatic}"
                     IsChecked="{Binding UseAutomaticWorkers, Mode=TwoWay}" />
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioMaximumWorkers}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="MaximumWorkersInputTitle" Text="{Loc Key=Settings.AudioMaximumWorkers}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #MaximumWorkersInput}" />
             <inputs:NumericDraftInput Name="MaximumWorkersInput" Grid.Column="1" RawText="{Binding MaximumWorkersText, Mode=TwoWay}"
                 Minimum="1" Maximum="{Binding MaximumWorkersLimit}" Increment="1" FormatString="0.###" PreserveDoublePrecision="True" IsEnabled="{Binding CanEditMaximumWorkers}"
                 AutomationProperties.Name="{Loc Key=Settings.AudioMaximumWorkers}" />
           </Grid>
           <TextBlock Text="{Binding WorkersDescription}" Classes="field" TextWrapping="Wrap" />
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioMemoryBudget}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="MemoryBudgetInputTitle" Text="{Loc Key=Settings.AudioMemoryBudget}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #MemoryBudgetInput}" />
             <inputs:NumericDraftInput Name="MemoryBudgetInput" Grid.Column="1" RawText="{Binding MemoryBudgetText, Mode=TwoWay}"
                 Minimum="32" Maximum="512" Increment="16" FormatString="0.###" PreserveDoublePrecision="True"
                 AutomationProperties.Name="{Loc Key=Settings.AudioMemoryBudget}" />
@@ -29,19 +29,19 @@
         <StackPanel Spacing="12">
           <TextBlock Classes="heading" Text="{Loc Key=Settings.AudioDisplay}" />
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioWaveformGain}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="WaveformGainInputTitle" Text="{Loc Key=Settings.AudioWaveformGain}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #WaveformGainInput}" />
             <inputs:NumericDraftInput Name="WaveformGainInput" Grid.Column="1" RawText="{Binding WaveformGainText, Mode=TwoWay}"
                 Minimum="0.25" Maximum="8" Increment="0.25" FormatString="0.###" PreserveDoublePrecision="True"
                 AutomationProperties.Name="{Loc Key=Settings.AudioWaveformGain}" />
           </Grid>
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioSpectrumBrightness}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="SpectrumBrightnessInputTitle" Text="{Loc Key=Settings.AudioSpectrumBrightness}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #SpectrumBrightnessInput}" />
             <inputs:NumericDraftInput Name="SpectrumBrightnessInput" Grid.Column="1" RawText="{Binding SpectrumBrightnessText, Mode=TwoWay}"
                 Minimum="0.25" Maximum="4" Increment="0.25" FormatString="0.###" PreserveDoublePrecision="True"
                 AutomationProperties.Name="{Loc Key=Settings.AudioSpectrumBrightness}" />
           </Grid>
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioSpectrumContrast}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="SpectrumContrastInputTitle" Text="{Loc Key=Settings.AudioSpectrumContrast}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #SpectrumContrastInput}" />
             <inputs:NumericDraftInput Name="SpectrumContrastInput" Grid.Column="1" RawText="{Binding SpectrumContrastText, Mode=TwoWay}"
                 Minimum="0.25" Maximum="4" Increment="0.25" FormatString="0.###" PreserveDoublePrecision="True"
                 AutomationProperties.Name="{Loc Key=Settings.AudioSpectrumContrast}" />
@@ -91,25 +91,25 @@
                       AutomationProperties.Name="{Loc Key=Settings.AudioWaveformBaseSamples}" />
           </Grid>
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioMinimumFrequency}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="MinimumFrequencyInputTitle" Text="{Loc Key=Settings.AudioMinimumFrequency}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #MinimumFrequencyInput}" />
             <inputs:NumericDraftInput Name="MinimumFrequencyInput" Grid.Column="1" RawText="{Binding MinimumFrequencyText, Mode=TwoWay}"
                 Minimum="10" Maximum="{Binding MaximumFrequencyLimit}" Increment="1" FormatString="0.###" PreserveDoublePrecision="True"
                 AutomationProperties.Name="{Loc Key=Settings.AudioMinimumFrequency}" />
           </Grid>
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioMaximumFrequency}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="MaximumFrequencyInputTitle" Text="{Loc Key=Settings.AudioMaximumFrequency}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #MaximumFrequencyInput}" />
             <inputs:NumericDraftInput Name="MaximumFrequencyInput" Grid.Column="1" RawText="{Binding MaximumFrequencyText, Mode=TwoWay}"
                 Minimum="10" Maximum="{Binding MaximumFrequencyLimit}" Increment="1" FormatString="0.###" PreserveDoublePrecision="True"
                 AutomationProperties.Name="{Loc Key=Settings.AudioMaximumFrequency}" />
           </Grid>
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioMinimumDecibels}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="MinimumDecibelsInputTitle" Text="{Loc Key=Settings.AudioMinimumDecibels}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #MinimumDecibelsInput}" />
             <inputs:NumericDraftInput Name="MinimumDecibelsInput" Grid.Column="1" RawText="{Binding MinimumDecibelsText, Mode=TwoWay}"
                 Minimum="-160" Maximum="-10" Increment="1" FormatString="0.###" PreserveDoublePrecision="True"
                 AutomationProperties.Name="{Loc Key=Settings.AudioMinimumDecibels}" />
           </Grid>
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioMaximumDecibels}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="MaximumDecibelsInputTitle" Text="{Loc Key=Settings.AudioMaximumDecibels}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #MaximumDecibelsInput}" />
             <inputs:NumericDraftInput Name="MaximumDecibelsInput" Grid.Column="1" RawText="{Binding MaximumDecibelsText, Mode=TwoWay}"
                 Minimum="-40" Maximum="20" Increment="1" FormatString="0.###" PreserveDoublePrecision="True"
                 AutomationProperties.Name="{Loc Key=Settings.AudioMaximumDecibels}" />

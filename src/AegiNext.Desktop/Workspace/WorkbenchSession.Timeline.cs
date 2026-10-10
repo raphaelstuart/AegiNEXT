@@ -123,8 +123,26 @@ internal sealed partial class WorkbenchSession
                 return Task.CompletedTask;
             }
             var targets = selection ?? TimelineAnimationRowLayerIds(expected, row).ToArray();
-            return EditAsync(() => ClearTimelineAnimationTracks(targets, row.Property));
+            return EditAsync(() => ClearTimelineAnimationTargetRows(targets, row));
         });
+    }
+
+    internal Task ClearTimelineClipAnimationRowAsync(Guid layerId, TimelineAnimationRowId row,
+        ProjectDocument expected) => RunCommandAsync(() => TimelineContextIsCurrent(expected)
+        ? EditAsync(() => ClearTimelineAnimationTargetRows([layerId], row)) : Task.CompletedTask);
+
+    private void ClearTimelineAnimationTargetRows(IReadOnlyCollection<Guid> layerIds, TimelineAnimationRowId row)
+    {
+        ViewModel.CancelGestures();
+        if (AnimationPropertyMetadata.IsNodeProperty(row.Property))
+        {
+            editor.ClearAnimationTracks(layerIds, row.Property);
+        }
+        else
+        {
+            editor.ClearAnimationTracks(layerIds, new AnimationTrackTarget(row.Property, TextRangeId: row.TextRangeId, State: row.State));
+        }
+        ClearKeyframeSelection();
     }
 
     internal Task ClearTimelineClipAnimationPropertyTracksAsync(Guid layerId, AnimationProperty property,

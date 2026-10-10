@@ -45,13 +45,13 @@
         </Grid>
         <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
           <StackPanel Spacing="4">
-            <TextBlock Classes="field" Text="{Loc Key=Workbench.Size}" />
+            <controls:NumericDragLabel Input="{Binding #FontSizeInput}" Classes="field" Text="{Loc Key=Workbench.Size}" />
             <controls:NumericDraftInput Name="FontSizeInput" ShowButtonSpinner="False"
                                        RawText="{Binding FontSizeText, Mode=TwoWay}" Value="{Binding FontSize, Mode=TwoWay}"
                                        Minimum="0.01" Maximum="4096" Increment="1" />
           </StackPanel>
           <StackPanel Name="StyleLineHeightField" Grid.Column="1" Spacing="4">
-            <TextBlock Classes="field" Text="{Loc Key=Workbench.LineHeight}" />
+            <controls:NumericDragLabel Input="{Binding #LineHeightInput}" Classes="field" Text="{Loc Key=Workbench.LineHeight}" />
             <controls:NumericDraftInput Name="LineHeightInput" ShowButtonSpinner="False"
                                        RawText="{Binding LineHeightText, Mode=TwoWay}" Value="{Binding LineHeight, Mode=TwoWay}"
                                        Minimum="0.1" Maximum="10" Increment="0.1" />
@@ -60,7 +60,7 @@
       </StackPanel>
       <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding HasCue}">
         <StackPanel Spacing="4" ToolTip.Tip="{Binding LetterSpacingEditingHint}">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.LetterSpacing}" />
+          <controls:NumericDragLabel Input="{Binding #LetterSpacingInput}" Classes="field" Text="{Loc Key=Workbench.LetterSpacing}" />
           <controls:NumericDraftInput Name="LetterSpacingInput" RawText="{Binding LetterSpacingText, Mode=TwoWay}"
                                      Value="{Binding LetterSpacing, Mode=TwoWay}" IsEnabled="{Binding CanEditLetterSpacing}"
                                      Minimum="-4096" Maximum="4096" Increment="0.5" ShowButtonSpinner="False" />
@@ -88,7 +88,7 @@
           <controls:ColorDraftInput Name="StrokePicker" Draft="{Binding StrokeDraft}" />
         </StackPanel>
         <StackPanel Spacing="4" ToolTip.Tip="{Binding StrokeWidthEditingHint}">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.StrokeWidth}" />
+          <controls:NumericDragLabel Input="{Binding #StrokeWidthInput}" Classes="field" Text="{Loc Key=Workbench.StrokeWidth}" />
           <controls:NumericDraftInput Name="StrokeWidthInput" ShowButtonSpinner="False"
                                      RawText="{Binding StrokeWidthText, Mode=TwoWay}" Value="{Binding StrokeWidth, Mode=TwoWay}"
                                      Minimum="{x:Static vm:StylesPanelViewModel.StrokeWidthMinimum}" Maximum="{x:Static vm:StylesPanelViewModel.StrokeWidthMaximum}" Increment="0.5" IsEnabled="{Binding CanEditStrokeWidth}" />
@@ -96,13 +96,13 @@
       </StackPanel>
       <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding HasCue}">
         <StackPanel Grid.Column="0" Spacing="4" ToolTip.Tip="{Binding FillBlurEditingHint}">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.FillBlur}" />
+          <controls:NumericDragLabel Input="{Binding #FillBlurInput}" Classes="field" Text="{Loc Key=Workbench.FillBlur}" />
           <controls:NumericDraftInput Name="FillBlurInput" RawText="{Binding FillBlurText, Mode=TwoWay}"
                                      Value="{Binding FillBlur, Mode=TwoWay}" IsEnabled="{Binding CanEditFillBlur}"
                                      Minimum="0" Maximum="512" Increment="0.5" ShowButtonSpinner="False" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="4" ToolTip.Tip="{Binding StrokeBlurEditingHint}">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.StrokeBlur}" />
+          <controls:NumericDragLabel Input="{Binding #StrokeBlurInput}" Classes="field" Text="{Loc Key=Workbench.StrokeBlur}" />
           <controls:NumericDraftInput Name="StrokeBlurInput" RawText="{Binding StrokeBlurText, Mode=TwoWay}"
                                      Value="{Binding StrokeBlur, Mode=TwoWay}" IsEnabled="{Binding CanEditStrokeBlur}"
                                      Minimum="0" Maximum="512" Increment="0.5" ShowButtonSpinner="False" />
@@ -125,7 +125,7 @@
                                      XFieldKey="ShadowXInput" YFieldKey="ShadowYInput" />
         </StackPanel>
         <StackPanel Spacing="4">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.ShadowBlur}" />
+          <controls:NumericDragLabel Input="{Binding #ShadowBlurInput}" Classes="field" Text="{Loc Key=Workbench.ShadowBlur}" />
           <controls:NumericDraftInput Name="ShadowBlurInput" ShowButtonSpinner="False"
                                       RawText="{Binding ShadowBlurText, Mode=TwoWay}" Value="{Binding ShadowBlur, Mode=TwoWay}"
                                       Minimum="0" Maximum="512" Increment="0.5" />

@@ -4,6 +4,7 @@ using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Settings.Preview;
@@ -17,11 +18,47 @@ public sealed partial class PreviewSettingsView : UserControl
         DataContext = null;
         AvaloniaXamlLoader.Load(this);
         var input = this.FindControl<NumericDraftInput>("SubtitleAuditionMillisecondsInput")!;
+        var title = this.FindControl<NumericDragLabel>("SubtitleAuditionMillisecondsInputTitle")!;
+        var focusRevision = 0L;
+        PreviewSettingsViewModel? dragModel = null;
+        title.DragStarted += (_, _) =>
+        {
+            focusRevision++;
+            dragModel = DataContext as PreviewSettingsViewModel;
+        };
+        title.DragCompleted += (_, args) =>
+        {
+            focusRevision++;
+            var frozenModel = dragModel;
+            dragModel = null;
+            if (args.Changed && IsEffectivelyVisible && ReferenceEquals(DataContext, frozenModel))
+            {
+                frozenModel?.CommitSubtitleAuditionMilliseconds();
+            }
+        };
+        title.DragCanceled += (_, _) =>
+        {
+            focusRevision++;
+            dragModel = null;
+        };
+        DataContextChanged += (_, _) =>
+        {
+            focusRevision++;
+            title.CancelDrag();
+        };
+        PropertyChanged += (_, args) =>
+        {
+            if (args.Property == IsVisibleProperty && !IsVisible)
+            {
+                title.CancelDrag();
+            }
+        };
         input.AddHandler(KeyDownEvent, (_, args) =>
         {
             if (DataContext is PreviewSettingsViewModel model && args.Key is Key.Enter or Key.Escape &&
                 !HasComposition(input))
             {
+                focusRevision++;
                 if (args.Key == Key.Escape)
                 {
                     model.RestoreSubtitleAuditionMilliseconds();
@@ -36,10 +73,16 @@ public sealed partial class PreviewSettingsView : UserControl
         }, RoutingStrategies.Tunnel);
         input.LostFocus += (_, _) =>
         {
-            if (IsEffectivelyVisible && DataContext is PreviewSettingsViewModel model && !HasComposition(input))
+            var revision = ++focusRevision;
+            var currentModel = DataContext as PreviewSettingsViewModel;
+            Dispatcher.UIThread.Post(() =>
             {
-                model.CommitSubtitleAuditionMilliseconds();
-            }
+                if (revision == focusRevision && !input.IsTitleDragging && !input.IsKeyboardFocusWithin && IsEffectivelyVisible &&
+                    currentModel is not null && ReferenceEquals(DataContext, currentModel) && !HasComposition(input))
+                {
+                    currentModel.CommitSubtitleAuditionMilliseconds();
+                }
+            }, DispatcherPriority.Background);
         };
     }
 

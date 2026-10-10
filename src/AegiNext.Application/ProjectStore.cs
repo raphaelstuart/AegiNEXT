@@ -215,6 +215,7 @@ public static class ProjectStore
                         !(info.Type == typeof(AnimationCurve) && property.Name == "exponent") &&
                         !(info.Type == typeof(AnimationTrack) && property.Name is "initialValue" or "transforms" or "colorSpace") &&
                         !(info.Type == typeof(AnimationTrackTarget) && property.Name is "textRangeId" or "state") &&
+                        !(info.Type == typeof(TimelineAnimationRowId) && property.Name is "textRangeId" or "state") &&
                         !(info.Type == typeof(AnimationTransformOperation) && property.Name is "componentMask" or "mode") &&
                         !(info.Type == typeof(SubtitleAnimationRange) && property.Name is "rotation" or "pivot") &&
                         !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "karaokeStyleSpans" or "inactiveKaraoke" or "styleName" or "stylePresetId" or "colorTagId" or "animationRanges") &&

@@ -14,7 +14,7 @@ public sealed class SettingsStyleCaptureUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.Session.Styles.Completion;
-        var cueId = UiTestActions.CreateSubtitle(context);
+        var cueId = await UiTestActions.CreateSubtitleAsync(context);
         var document = context.Session.DocumentSnapshot;
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SETTINGS);
         var settings = Assert.Single(context.Window.OwnedWindows.OfType<SettingsWindow>());

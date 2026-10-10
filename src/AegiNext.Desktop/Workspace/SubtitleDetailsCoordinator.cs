@@ -40,6 +40,8 @@ internal sealed partial class SubtitleDetailsCoordinator : IDisposable
 
     internal event EventHandler? Changed;
     internal SubtitleLine? Line => draft is null ? null : PreviewDocument.Subtitles.FirstOrDefault(line => line.Id == draft.Id);
+    internal int TextSelectionStart => styleSelectionStart;
+    internal int TextSelectionLength => styleSelectionLength;
     internal SubtitleDetailsStyleDraft StyleDraft { get; }
     internal SubtitleKaraokeStyleDraft HighlightDraft { get; } = new();
     internal KaraokeVisualState? VisualState { get; private set; }
@@ -601,6 +603,7 @@ internal sealed partial class SubtitleDetailsCoordinator : IDisposable
 
     internal bool TryCommit()
     {
+        session.CancelNumericGestures();
         if (committing || draft is null || original is null)
         {
             return true;
@@ -683,6 +686,7 @@ internal sealed partial class SubtitleDetailsCoordinator : IDisposable
         }
         styleSelectionStart = start;
         styleSelectionLength = length;
+        session.ViewModel.Effects.RefreshTextSelection();
         LoadSelectionStyle();
         LoadHighlightStyle();
         previewRevision++;

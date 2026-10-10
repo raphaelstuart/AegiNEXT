@@ -1,3 +1,4 @@
+using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.I18n;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -5,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Settings.Projects;
@@ -26,12 +28,51 @@ public sealed partial class ProjectSettingsView : UserControl
                  })
         {
             var input = this.FindControl<Control>(name)!;
+            var focusRevision = 0L;
+            if (input is NumericDraftInput numeric)
+            {
+                var title = this.FindControl<NumericDragLabel>(name + "Title")!;
+                ProjectSettingsViewModel? dragModel = null;
+                title.DragStarted += (_, _) =>
+                {
+                    focusRevision++;
+                    dragModel = DataContext as ProjectSettingsViewModel;
+                };
+                title.DragCompleted += (_, args) =>
+                {
+                    focusRevision++;
+                    var frozenModel = dragModel;
+                    dragModel = null;
+                    if (args.Changed && numeric.IsEffectivelyVisible && ReferenceEquals(DataContext, frozenModel))
+                    {
+                        frozenModel?.Commit(field);
+                    }
+                };
+                title.DragCanceled += (_, _) =>
+                {
+                    focusRevision++;
+                    dragModel = null;
+                };
+                DataContextChanged += (_, _) =>
+                {
+                    focusRevision++;
+                    title.CancelDrag();
+                };
+                PropertyChanged += (_, args) =>
+                {
+                    if (args.Property == IsVisibleProperty && !IsVisible)
+                    {
+                        title.CancelDrag();
+                    }
+                };
+            }
             input.AddHandler(KeyDownEvent, (_, args) =>
             {
                 if (DataContext is ProjectSettingsViewModel model && args.Key is Key.Enter or Key.Escape &&
                     !input.GetVisualDescendants().OfType<TextPresenter>()
                         .Any(presenter => !string.IsNullOrEmpty(presenter.PreeditText)))
                 {
+                    focusRevision++;
                     if (args.Key == Key.Escape)
                     {
                         model.Restore(field);
@@ -45,10 +86,17 @@ public sealed partial class ProjectSettingsView : UserControl
             }, RoutingStrategies.Tunnel);
             input.LostFocus += (_, _) =>
             {
-                if (IsEffectivelyVisible && DataContext is ProjectSettingsViewModel model)
+                var revision = ++focusRevision;
+                var currentModel = DataContext as ProjectSettingsViewModel;
+                Dispatcher.UIThread.Post(() =>
                 {
-                    model.Commit(field);
-                }
+                    if (revision == focusRevision && input is not NumericDraftInput { IsTitleDragging: true } &&
+                        !input.IsKeyboardFocusWithin && input.IsEffectivelyVisible && currentModel is not null &&
+                        ReferenceEquals(DataContext, currentModel))
+                    {
+                        currentModel.Commit(field);
+                    }
+                }, DispatcherPriority.Background);
             };
         }
 

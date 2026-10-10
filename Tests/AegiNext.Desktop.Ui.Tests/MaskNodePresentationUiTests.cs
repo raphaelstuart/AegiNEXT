@@ -23,11 +23,12 @@ public sealed class MaskNodePresentationUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var first = new MaskNode { Position = new(10, 20) };
         var second = new MaskNode { Position = new(30, 40) };
         context.Session.Editor.SetClipMask(context.Session.SelectedLayerId!.Value,
             new VectorClipMask { Contours = [new() { Nodes = [first] }, new() { Nodes = [second] }] });
+        UiTestActions.ExpandEffectsCategory(context.Window, "AnimationCategory");
         var choice = UiTestActions.Find<ComboBox>(context.Window, "PropertyCombo");
         var nodeProperties = choice.Items.OfType<AnimationPropertyChoice>().Where(item => AnimationPropertyMetadata.IsNodeProperty(item.Property)).ToArray();
         Assert.Equal(new[] { AnimationProperty.MASK_NODE_POSITION, AnimationProperty.MASK_NODE_IN_HANDLE, AnimationProperty.MASK_NODE_OUT_HANDLE },
@@ -89,7 +90,7 @@ public sealed class MaskNodePresentationUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         context.Session.UpdatePreferences(context.Session.Preferences with { Language = language });
         var nodes = Enumerable.Range(0, 12).Select(index => new MaskNode { Position = new(index * 10, index * 20) }).ToImmutableArray();
         var layerId = context.Session.SelectedLayerId!.Value;

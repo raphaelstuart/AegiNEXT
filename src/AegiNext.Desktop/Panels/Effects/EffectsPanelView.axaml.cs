@@ -20,8 +20,10 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
     private readonly ComboBox blend;
     private readonly ComboBox property;
     private readonly ComboBox interpolation;
+    private readonly (Grid Grid, Control Editor, Control? Actions, int Span)[] propertyGridRows;
     private bool suppressFocusCommit;
     private int focusCommitRevision;
+    private NumericDragEditSnapshot? numericDragTarget;
     private bool disposed;
     internal EffectsPanelView(EffectsPanelViewModel viewModel, WorkbenchSession session)
     {
@@ -29,6 +31,11 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         this.viewModel = viewModel;
         AvaloniaXamlLoader.Load(this);
         DataContext = viewModel;
+        propertyGridRows = this.GetLogicalDescendants().OfType<Grid>().Where(grid => grid.Classes.Contains("effect-row"))
+            .Select(grid => (Grid: grid, Editor: grid.Children.First(control => Grid.GetColumn(control) == 1),
+                Actions: grid.Children.FirstOrDefault(control => Grid.GetColumn(control) == 2),
+                Span: Grid.GetColumnSpan(grid.Children.First(control => Grid.GetColumn(control) == 1)))).ToArray();
+        SizeChanged += (_, _) => UpdatePropertyRowLayout();
         blend = this.FindControl<ComboBox>("BlendCombo")!;
         blend.SelectionChanged += (_, _) =>
         {
@@ -50,7 +57,54 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         viewModel.ChoicesRefreshed += OnChoicesRefreshed;
         var orientPath = this.FindControl<CheckBox>("OrientPathCheck")!;
         orientPath.IsCheckedChanged += (_, _) => viewModel.CommitOrientPath(orientPath.IsChecked == true);
-        AddHandler(PointerPressedEvent, (_, _) => suppressFocusCommit = false, RoutingStrategies.Tunnel);
+        AddHandler(Control.RequestBringIntoViewEvent, (_, e) =>
+        {
+            if (e.Source is Control source)
+            {
+                foreach (var category in source.GetVisualAncestors().OfType<Expander>())
+                {
+                    if (source.Name == "PART_HeaderSite" || source.GetVisualAncestors().OfType<Control>().Any(control =>
+                            control.Name == "PART_HeaderSite" && ReferenceEquals(control.TemplatedParent, category)))
+                    {
+                        continue;
+                    }
+                    category.IsExpanded = true;
+                }
+            }
+        });
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<Control>().Any(control =>
+                    control.Name == "PART_HeaderSite" && control.TemplatedParent is Expander))
+            {
+                CancelGestures();
+                return;
+            }
+            suppressFocusCommit = false;
+        }, RoutingStrategies.Tunnel);
+        AddHandler(NumericDragLabel.DragStartedEvent, (_, _) =>
+        {
+            ++focusCommitRevision;
+            suppressFocusCommit = true;
+            numericDragTarget = new(session);
+        });
+        AddHandler(NumericDragLabel.DragCompletedEvent, (_, e) =>
+        {
+            ++focusCommitRevision;
+            var target = numericDragTarget;
+            numericDragTarget = null;
+            if (e.Changed && target?.Matches(session) == true)
+            {
+                viewModel.CommitDrafts();
+            }
+            suppressFocusCommit = false;
+        });
+        AddHandler(NumericDragLabel.DragCanceledEvent, (_, _) =>
+        {
+            ++focusCommitRevision;
+            numericDragTarget = null;
+            session.RefreshMaskPreview();
+        });
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnCommitKeyDown, RoutingStrategies.Bubble);
         viewModel.KeyframeColorDraft.Committed += OnColorCommitted;
@@ -59,14 +113,19 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         {
             if (e.Source is TextBox or NumericUpDown)
             {
+                if (this.GetVisualDescendants().OfType<NumericDraftInput>().Any(input => input.IsTitleDragging))
+                {
+                    return;
+                }
                 var root = TopLevel.GetTopLevel(this);
                 var suppressed = suppressFocusCommit;
                 var revision = focusCommitRevision;
                 var document = session.DocumentSnapshot;
                 var layerId = session.SelectedLayerId;
+                var target = session.SceneEditing.Target;
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (!disposed && revision == focusCommitRevision && layerId == session.SelectedLayerId &&
+                    if (!disposed && revision == focusCommitRevision && layerId == session.SelectedLayerId && target == session.SceneEditing.Target &&
                         ReferenceEquals(document, session.DocumentSnapshot) && !suppressed && root is not null && ReferenceEquals(root, TopLevel.GetTopLevel(this)) &&
                         this.IsAttachedToVisualTree())
                     {
@@ -75,12 +134,45 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
                 }, DispatcherPriority.Background);
             }
         }, RoutingStrategies.Bubble);
+        foreach (var category in this.GetLogicalDescendants().OfType<Expander>())
+        {
+            category.PropertyChanged += (_, change) =>
+            {
+                if (change.Property == Expander.IsExpandedProperty)
+                {
+                    CancelGestures();
+                }
+            };
+        }
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
+        session.NumericGestureCancellationRequested += OnNumericGestureCancellationRequested;
     }
+    private void UpdatePropertyRowLayout()
+    {
+        foreach (var row in propertyGridRows)
+        {
+            var narrow = Bounds.Width < 350 || row.Editor is VectorDraftInput && Bounds.Width < 520;
+            row.Grid.ColumnDefinitions = new(narrow ? "*,Auto" : "108,*,Auto");
+            row.Grid.RowDefinitions = new("Auto,Auto");
+            row.Grid.RowSpacing = 3;
+            Grid.SetColumn(row.Editor, narrow ? 0 : 1);
+            Grid.SetRow(row.Editor, narrow ? 1 : 0);
+            Grid.SetColumnSpan(row.Editor, narrow ? 2 : row.Span);
+            if (row.Actions is { } actions)
+            {
+                Grid.SetColumn(actions, narrow ? 1 : 2);
+            }
+        }
+    }
+
     public string PanelId => "effects";
     public void CancelGestures()
     {
         suppressFocusCommit = true;
+        foreach (var label in this.GetVisualDescendants().OfType<NumericDragLabel>())
+        {
+            label.CancelDrag();
+        }
         var revision = ++focusCommitRevision;
         Dispatcher.UIThread.Post(() =>
         {
@@ -92,9 +184,42 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
     }
     public void FocusInvalidField(string? fieldKey)
     {
+        var propertyField = viewModel.ExpandPropertyField(fieldKey);
+        var propertyRow = this.GetVisualDescendants().OfType<EffectPropertyRowView>().FirstOrDefault(row => row.OwnsField(fieldKey));
+        if (propertyRow is not null)
+        {
+            foreach (var category in propertyRow.GetVisualAncestors().OfType<Expander>())
+            {
+                category.IsExpanded = true;
+            }
+            propertyRow.BringIntoView();
+            propertyRow.FocusField(fieldKey);
+            return;
+        }
+        if (propertyField)
+        {
+            var revision = focusCommitRevision;
+            var document = session.DocumentSnapshot;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!disposed && revision == focusCommitRevision && ReferenceEquals(document, session.DocumentSnapshot))
+                {
+                    this.GetVisualDescendants().OfType<EffectPropertyRowView>().FirstOrDefault(row => row.OwnsField(fieldKey))?.FocusField(fieldKey);
+                }
+            }, DispatcherPriority.Loaded);
+            return;
+        }
         var control = fieldKey is { } key
             ? this.FindControl<Control>(key) ?? this.GetLogicalDescendants().OfType<Control>().FirstOrDefault(control => control.Name == key)
             : null;
+        if (control is not null)
+        {
+            foreach (var category in control.GetVisualAncestors().OfType<Expander>())
+            {
+                category.IsExpanded = true;
+            }
+            control.BringIntoView();
+        }
         if (control is ColorDraftInput color && color.TryFocusInvalidField())
         {
             return;
@@ -107,8 +232,14 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
         if (e.Key == Key.Escape && e.Source is Control source &&
             !source.GetSelfAndVisualAncestors().OfType<ColorDraftInput>().Any())
         {
+            var propertyRow = source.GetSelfAndVisualAncestors().OfType<EffectPropertyRowView>().FirstOrDefault();
+            if (propertyRow?.RestoreInput(source) == true)
+            {
+                e.Handled = true;
+                return;
+            }
             var maskInput = source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>().FirstOrDefault();
-            if (viewModel.RestoreOperationField(maskInput?.Name))
+            if (viewModel.RestorePropertyField(maskInput?.Name) || viewModel.RestoreOperationField(maskInput?.Name))
             {
                 e.Handled = true;
                 return;
@@ -137,10 +268,18 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(EffectsPanelViewModel.Target))
+        {
+            CancelGestures();
+        }
         if (e.PropertyName is nameof(EffectsPanelViewModel.ValidationError) or nameof(EffectsPanelViewModel.InvalidFieldKey))
         {
             foreach (var input in this.GetVisualDescendants().OfType<NumericDraftInput>())
             {
+                if (input.GetVisualAncestors().OfType<EffectPropertyRowView>().Any())
+                {
+                    continue;
+                }
                 DataValidationErrors.SetErrors(input, input.Name == viewModel.InvalidFieldKey && viewModel.ValidationError is { } message ? new[] { message } : null);
             }
         }
@@ -148,8 +287,18 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
 
     private void OnGesturesCancelled(object? sender, EventArgs e) => CancelGestures();
 
+    private void OnNumericGestureCancellationRequested(object? sender, EventArgs e)
+    {
+        ++focusCommitRevision;
+        foreach (var label in this.GetVisualDescendants().OfType<NumericDragLabel>())
+        {
+            label.CancelDrag();
+        }
+    }
+
     private void OnChoicesRefreshing(object? sender, EventArgs e)
     {
+        CancelGestures();
         BeginChoiceRefresh(blend);
         BeginChoiceRefresh(property);
         BeginChoiceRefresh(interpolation);
@@ -180,6 +329,7 @@ internal sealed partial class EffectsPanelView : UserControl, IWorkbenchPanelVie
             viewModel.KeyframeColorDraft.Committed -= OnColorCommitted;
             viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
+            session.NumericGestureCancellationRequested -= OnNumericGestureCancellationRequested;
         }
     }
 }

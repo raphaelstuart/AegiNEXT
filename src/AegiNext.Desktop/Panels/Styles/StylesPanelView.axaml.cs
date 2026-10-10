@@ -112,6 +112,11 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         }, RoutingStrategies.Bubble);
         AddHandler(LostFocusEvent, (_, e) =>
         {
+            if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>()
+                .Any(input => input.IsTitleDragging))
+            {
+                return;
+            }
             if (e.Source is TextBox or NumericUpDown or FontFamilyPicker)
             {
                 if (formattingPointerActive)
@@ -122,6 +127,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
                 QueueFocusCommit();
             }
         }, RoutingStrategies.Bubble);
+        BindNumericDrags();
         session.ViewModel.GesturesCancelled += OnGesturesCancelled;
         session.Fonts.Changed += OnFontsChanged;
     }
@@ -164,6 +170,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
     }
     public void CancelGestures()
     {
+        CancelNumericDrags();
         formattingPointerActive = formattingFocusPending = false;
         suppressFocusCommit = true;
         var revision = ++focusCommitRevision;
@@ -283,6 +290,7 @@ internal sealed partial class StylesPanelView : UserControl, IWorkbenchPanelView
         disposed = true;
         focusCommitRevision++;
         viewModel.ShadowDraft.Committed -= OnShadowCommitted;
+        session.NumericGestureCancellationRequested -= OnNumericGestureCancellation;
         session.ViewModel.GesturesCancelled -= OnGesturesCancelled;
         session.Fonts.Changed -= OnFontsChanged;
         fonts.PropertyChanged -= OnFontPickerChanged;

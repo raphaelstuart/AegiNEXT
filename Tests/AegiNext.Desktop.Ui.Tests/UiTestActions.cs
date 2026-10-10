@@ -16,15 +16,18 @@ using AegiNext.Desktop.Shortcuts;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Shortcuts;
+using Avalonia.Controls.Primitives;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
 internal static class UiTestActions
 {
-    internal static Guid CreateSubtitle(MainWindowTestContext context, MediaTime? duration = null, string text = "Subtitle ABC 中文 123")
+    internal static async Task<Guid> CreateSubtitleAsync(MainWindowTestContext context, MediaTime? duration = null, string text = "Subtitle ABC 中文 123")
     {
         var before = context.Session.DocumentSnapshot.Subtitles.Select(line => line.Id).ToHashSet();
         Click(context.Window, "AddCueButton");
+        await Assert.IsType<AsyncRelayCommand>(context.Window.GetCommand(WorkbenchCommand.ADD_SUBTITLE)).ExecutionTask!;
         var cue = Assert.Single(context.Session.DocumentSnapshot.Subtitles, line => !before.Contains(line.Id));
         context.Session.Editor.SetSubtitleTiming(cue.Id, cue.Start, cue.Start + (duration ?? new MediaTime(5)), TimelineEditMode.CROP);
         context.Session.Editor.UpdateSubtitle(cue.Id, line => line with { Text = text });
@@ -107,9 +110,38 @@ internal static class UiTestActions
 
     internal static void SelectAnimationProperty(Window window, AnimationProperty property)
     {
+        ExpandEffectsCategory(window, "AnimationCategory");
         var selector = Find<ComboBox>(window, "PropertyCombo");
         selector.SelectedItem = selector.Items.OfType<AnimationPropertyChoice>().Single(value => value.Property == property);
         Dispatcher.UIThread.RunJobs();
+    }
+
+    internal static void ExpandEffectsCategory(Window window, string name)
+    {
+        var category = Find<Expander>(window, name);
+        if (category.IsExpanded)
+        {
+            return;
+        }
+        var header = category.GetVisualDescendants().OfType<ToggleButton>().Single(button => button.Name == "PART_HeaderSite");
+        header.BringIntoView();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+        using var frame = window.CaptureRenderedFrame();
+        var point = header.TranslatePoint(new(header.Bounds.Width / 2, header.Bounds.Height / 2), window)!.Value;
+        Assert.True(window.InputHitTest(point) is Visual visual && (ReferenceEquals(visual, header) || visual.GetVisualAncestors().Contains(header)),
+            $"Category={name}; Bounds={header.Bounds}; Point={point}; Hit={window.InputHitTest(point)?.GetType().Name}");
+        window.MouseDown(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+        using var pressedFrame = window.CaptureRenderedFrame();
+        window.MouseUp(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        Assert.True(category.IsExpanded);
     }
 
     internal static void Click(Window window, string name)

@@ -190,6 +190,7 @@ public sealed class InspectorLivePreviewUiTests
     {
         await using var context = new MainWindowTestContext();
         await PrepareAsync(context);
+        UiTestActions.ExpandEffectsCategory(context.Window, "ClipCategory");
         var box = UiTestActions.Find<TextBox>(context.Window, field);
         box.BringIntoView();
         context.Window.UpdateLayout();
@@ -226,6 +227,10 @@ public sealed class InspectorLivePreviewUiTests
 
     private static TextBox FocusInput(MainWindowTestContext context, string name)
     {
+        if (name is "BlurInput" or "OpacityInput")
+        {
+            UiTestActions.ExpandEffectsCategory(context.Window, "CompositeCategory");
+        }
         var input = UiTestActions.Find<NumericDraftInput>(context.Window, name);
         input.BringIntoView();
         context.Window.UpdateLayout();

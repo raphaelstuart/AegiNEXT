@@ -378,7 +378,7 @@ public sealed class ClipMaskBezierAffordanceUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         var document = session.DocumentSnapshot;
         var contour = new MaskContour

@@ -17,7 +17,7 @@ public sealed class NumericDraftPrecisionUiTests
     [AvaloniaTheory]
     [InlineData("1e-100")]
     [InlineData("1e100")]
-    public void NonDecimalFiniteDraftDisablesMouseAndKeyboardSpinAndRestoresSpinAfterAnExactValue(string rawText)
+    public void NonDecimalFiniteDraftIgnoresSpinAndPreservesRawText(string rawText)
     {
         var draft = new NumericValueDraft { PreserveDoublePrecision = true };
         draft.Load(1);
@@ -49,14 +49,12 @@ public sealed class NumericDraftPrecisionUiTests
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(rawText, draft.RawText);
             Assert.Equal(rawText, input.RawText);
-            Assert.Equal(0, input.Increment);
-            Assert.False(increase.IsEffectivelyEnabled);
-            Assert.False(decrease.IsEffectivelyEnabled);
+            Assert.Equal(1, input.Increment);
+            Assert.False(input.ShowButtonSpinner);
+            Assert.False(increase.IsEffectivelyVisible);
+            Assert.False(decrease.IsEffectivelyVisible);
             UiTestActions.Press(window, Key.Up);
             UiTestActions.Press(window, Key.Down);
-            var point = increase.TranslatePoint(new Point(increase.Bounds.Width / 2, increase.Bounds.Height / 2), window)!.Value;
-            window.MouseDown(point, MouseButton.Left);
-            window.MouseUp(point, MouseButton.Left);
             Assert.True(other.Focus());
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(rawText, draft.RawText);
@@ -68,15 +66,55 @@ public sealed class NumericDraftPrecisionUiTests
             window.KeyTextInput("1");
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(1, input.Increment);
-            Assert.True(increase.IsEffectivelyEnabled);
-            Assert.True(decrease.IsEffectivelyEnabled);
-            window.MouseDown(point, MouseButton.Left);
-            window.MouseUp(point, MouseButton.Left);
+            Assert.False(input.ShowButtonSpinner);
+            UiTestActions.Press(window, Key.Up);
+            UiTestActions.Press(window, Key.Down);
             Dispatcher.UIThread.RunJobs();
-            Assert.Equal(2, decimal.Parse(draft.RawText, CultureInfo.CurrentCulture));
+            Assert.Equal(1, decimal.Parse(draft.RawText, CultureInfo.CurrentCulture));
             Assert.Equal(draft.RawText, input.RawText);
             Assert.Equal(input.RawText, text.Text);
-            Assert.Equal(2, input.Value);
+            Assert.Equal(1, input.Value);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(0.01, 0.12)]
+    [InlineData(0.5, 6)]
+    public void NonDecimalFiniteTitleDragUsesConfiguredStepAndEscapeRestoresRawText(double increment, double expected)
+    {
+        var input = new NumericDraftInput
+        {
+            PreserveDoublePrecision = true,
+            RawText = "1e-100",
+            Increment = (decimal)increment
+        };
+        var title = new NumericDragLabel { Input = input, Text = "Value" };
+        var window = new Window
+        {
+            Width = 420,
+            Height = 180,
+            Content = new StackPanel { Margin = new(12), Spacing = 12, Children = { title, input } }
+        };
+        window.Show();
+        try
+        {
+            window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            var point = title.TranslatePoint(new(20, title.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseMove(point + new Vector(12, 0));
+            Assert.True(input.IsTitleDragging);
+            Assert.Equal(expected, double.Parse(input.RawText, CultureInfo.CurrentCulture));
+            UiTestActions.Press(window, Key.Escape);
+            Assert.False(input.IsTitleDragging);
+            Assert.Equal("1e-100", input.RawText);
+            Assert.Equal((decimal)increment, input.Increment);
         }
         finally
         {

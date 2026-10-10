@@ -8,7 +8,7 @@
       <Border Classes="card">
         <StackPanel Spacing="12">
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.MaximumConcurrentTasks}" VerticalAlignment="Center" />
+            <inputs:NumericDragLabel Name="MaximumConcurrentTasksInputTitle" Text="{Loc Key=Settings.MaximumConcurrentTasks}" VerticalAlignment="Center" Input="{Binding #MaximumConcurrentTasksInput}" />
             <inputs:NumericDraftInput Name="MaximumConcurrentTasksInput" Grid.Column="1"
                 RawText="{Binding MaximumConcurrentTasksText, Mode=TwoWay}"
                 Minimum="1" Maximum="32" Increment="1" FormatString="0" PreserveDoublePrecision="True"

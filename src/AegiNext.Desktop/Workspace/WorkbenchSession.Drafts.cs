@@ -42,6 +42,7 @@ internal sealed partial class WorkbenchSession
 
     private bool TryCommitDraftsCore(bool focusInvalid, bool allowClosing)
     {
+        NumericGestureCancellationRequested?.Invoke(this, EventArgs.Empty);
         if (IsUpdating || closing && !allowClosing)
         {
             return !closing || allowClosing;
@@ -84,6 +85,7 @@ internal sealed partial class WorkbenchSession
             prepared = PrepareInspectorDrafts(prepared, false);
             prepared = MaskEditing.Prepare(prepared);
             prepared = ViewModel.Effects.PrepareOperationDraft(prepared);
+            prepared = ViewModel.Effects.PreparePropertyDrafts(prepared);
 
             if (!ReferenceEquals(prepared, document))
             {
@@ -110,6 +112,7 @@ internal sealed partial class WorkbenchSession
             ClearInspectorPreview();
             MaskEditing.AcceptDrafts();
             ViewModel.Effects.AcceptOperationDraft();
+            ViewModel.Effects.AcceptPropertyDrafts();
             try
             {
                 if (prepared != document)
@@ -205,7 +208,7 @@ internal sealed partial class WorkbenchSession
         var target = SceneEditing.DraftTarget?.Target ?? SceneEditing.Target;
         var property = target.Property;
         var vector = AnimationPropertyMetadata.GetValueKind(property) == AnimationValueKind.VECTOR;
-        if (property is AnimationProperty.FILL or AnimationProperty.STROKE)
+        if (AnimationPropertyMetadata.GetValueKind(property) == AnimationValueKind.COLOR)
         {
             return ReadColorDraft(vm.KeyframeColorDraft, "KeyframeColorInput");
         }
@@ -449,6 +452,7 @@ internal sealed partial class WorkbenchSession
             ViewModel.Timeline.SelectedLayerIds = selectedIds;
             ViewModel.Effects.Document = document;
             ViewModel.Effects.SelectedLayer = SelectedLayer;
+            ViewModel.Effects.RefreshPropertyGrid();
             MaskEditing.Refresh(!preserveDrafts);
             RefreshInspector();
             ViewModel.Styles.CanApplyPreset = SelectedCue is not null && !IsProjectBusy && !closing && ViewModel.Styles.SelectedPreset is not null;
@@ -524,6 +528,7 @@ internal sealed partial class WorkbenchSession
             RefreshKeyframeInspector();
         }
 
+        effects.RefreshPropertyGrid();
         RefreshEditingTargetLabel();
         effectScripts?.RefreshChoices();
     }

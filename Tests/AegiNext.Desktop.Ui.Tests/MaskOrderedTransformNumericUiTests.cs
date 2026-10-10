@@ -20,7 +20,7 @@ public sealed class MaskOrderedTransformNumericUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         var id = session.SelectedLayer!.Id;
         var target = new AnimationTrackTarget(ordered ? AnimationProperty.MASK_RECTANGLE_TOP_LEFT : AnimationProperty.OPACITY);
@@ -37,6 +37,7 @@ public sealed class MaskOrderedTransformNumericUiTests
             Assert.True(session.SelectKeyframe(new(id, target, new(0), new(0))));
         }
         Dispatcher.UIThread.RunJobs();
+        UiTestActions.ExpandEffectsCategory(context.Window, "AnimationCategory");
         var original = session.DocumentSnapshot;
         var input = UiTestActions.Find<NumericDraftInput>(context.Window, ordered ? "OperationAccelerationInput" : "PowerExponentInput");
         input.BringIntoView();
@@ -66,7 +67,7 @@ public sealed class MaskOrderedTransformNumericUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         var id = session.SelectedLayer!.Id;
         var target = new AnimationTrackTarget(AnimationProperty.MASK_RECTANGLE_TOP_LEFT);
@@ -74,6 +75,7 @@ public sealed class MaskOrderedTransformNumericUiTests
         var operation = new AnimationTransformOperation(Guid.NewGuid(), new(-1), new(2), new ScenePoint(50, 60), 2);
         session.Editor.SetAnimationTransform(id, target, new ScenePoint(0, 0), operation);
         context.ViewModel.Effects.Target = target;
+        UiTestActions.ExpandEffectsCategory(context.Window, "AnimationCategory");
         var original = session.DocumentSnapshot;
         var input = UiTestActions.Find<NumericDraftInput>(context.Window, "OperationStartInput");
         input.BringIntoView();

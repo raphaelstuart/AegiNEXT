@@ -22,7 +22,7 @@
           <CheckBox Name="AutoSaveToggle" Content="{Loc Key=Settings.ProjectAutoSave}"
                     IsChecked="{Binding AutoSaveEnabled, Mode=TwoWay}" />
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.ProjectIntervalMinutes}" VerticalAlignment="Center" />
+            <inputs:NumericDragLabel Name="AutoSaveIntervalInputTitle" Text="{Loc Key=Settings.ProjectIntervalMinutes}" VerticalAlignment="Center" Input="{Binding #AutoSaveIntervalInput}" />
             <inputs:NumericDraftInput Name="AutoSaveIntervalInput" Grid.Column="1"
                 RawText="{Binding AutoSaveIntervalText, Mode=TwoWay}" Minimum="1" Maximum="1440" Increment="1"
                 FormatString="0" IsEnabled="{Binding AutoSaveEnabled}" />
@@ -34,11 +34,11 @@
           <CheckBox Name="BackupToggle" Content="{Loc Key=Settings.ProjectBackup}"
                     IsChecked="{Binding BackupEnabled, Mode=TwoWay}" />
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16" RowDefinitions="Auto,Auto" RowSpacing="12">
-            <TextBlock Text="{Loc Key=Settings.ProjectIntervalMinutes}" VerticalAlignment="Center" />
+            <inputs:NumericDragLabel Name="BackupIntervalInputTitle" Text="{Loc Key=Settings.ProjectIntervalMinutes}" VerticalAlignment="Center" Input="{Binding #BackupIntervalInput}" />
             <inputs:NumericDraftInput Name="BackupIntervalInput" Grid.Column="1"
                 RawText="{Binding BackupIntervalText, Mode=TwoWay}" Minimum="1" Maximum="1440" Increment="1"
                 FormatString="0" IsEnabled="{Binding BackupEnabled}" />
-            <TextBlock Grid.Row="1" Text="{Loc Key=Settings.ProjectMaximumBackups}" VerticalAlignment="Center" />
+            <inputs:NumericDragLabel Name="MaximumBackupCountInputTitle" Grid.Row="1" Text="{Loc Key=Settings.ProjectMaximumBackups}" VerticalAlignment="Center" Input="{Binding #MaximumBackupCountInput}" />
             <inputs:NumericDraftInput Name="MaximumBackupCountInput" Grid.Column="1" Grid.Row="1"
                 RawText="{Binding MaximumBackupCountText, Mode=TwoWay}" Minimum="1" Maximum="1000" Increment="1"
                 FormatString="0" IsEnabled="{Binding BackupEnabled}" />

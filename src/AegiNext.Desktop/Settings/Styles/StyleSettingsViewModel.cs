@@ -16,6 +16,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
 {
     private ImmutableArray<SubtitleStylePreset> styles = [];
     private SettingsStyleDraft? draft;
+    internal event EventHandler? DraftChanging;
     private SubtitleStylePreset? selectedStyle;
     private string name = string.Empty;
     private string? error;
@@ -536,6 +537,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
     public void UpdateStyles(IEnumerable<SubtitleStylePreset> presets, Guid? selectedId = null)
     {
         ArgumentNullException.ThrowIfNull(presets);
+        DraftChanging?.Invoke(this, EventArgs.Empty);
         var pending = draft;
         var dirty = IsDirty;
         var wasNew = pending is not null && styles.All(value => value.Id != pending.Preset.Id);
@@ -644,6 +646,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
     /// <summary>有未保存修改时，等待保存、恢复或取消的决定。</summary>
     public async Task<bool> PrepareToLeaveAsync()
     {
+        DraftChanging?.Invoke(this, EventArgs.Empty);
         if (!IsDirty)
         {
             return true;
@@ -703,6 +706,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
         {
             return;
         }
+        DraftChanging?.Invoke(this, EventArgs.Empty);
         switching = true;
         RefreshActions();
         try
@@ -909,6 +913,7 @@ public sealed class StyleSettingsViewModel : ObservableObject
 
     private void LoadDraft(SettingsStyleDraft? next)
     {
+        DraftChanging?.Invoke(this, EventArgs.Empty);
         draft = next;
         loading = true;
         try
@@ -916,12 +921,18 @@ public sealed class StyleSettingsViewModel : ObservableObject
             var style = draft?.Preset.Style ?? new();
             appearanceOriginal = style;
             Name = draft?.Preset.Name ?? string.Empty;
+            LetterSpacingText = FormatNumber((decimal)style.LetterSpacing);
+            FillBlurText = FormatNumber((decimal)style.FillBlur);
+            StrokeBlurText = FormatNumber((decimal)style.StrokeBlur);
+            FontSizeText = FormatNumber((decimal)style.FontSize);
+            StrokeWidthText = FormatNumber((decimal)style.StrokeWidth);
+            LineHeightText = FormatNumber((decimal)style.LineHeight);
+            ShadowBlurText = FormatNumber((decimal)style.ShadowBlur);
+            ShadowXText = FormatNumber((decimal)style.ShadowOffset.X);
+            ShadowYText = FormatNumber((decimal)style.ShadowOffset.Y);
             LetterSpacing = (decimal)style.LetterSpacing;
-            LetterSpacingText = FormatNumber(LetterSpacing);
             FillBlur = (decimal)style.FillBlur;
-            FillBlurText = FormatNumber(FillBlur);
             StrokeBlur = (decimal)style.StrokeBlur;
-            StrokeBlurText = FormatNumber(StrokeBlur);
             FontSize = (decimal)style.FontSize;
             StrokeWidth = (decimal)style.StrokeWidth;
             Margins.Load(style.Margins, CultureInfo.CurrentCulture);
@@ -929,12 +940,6 @@ public sealed class StyleSettingsViewModel : ObservableObject
             ShadowBlur = (decimal)style.ShadowBlur;
             ShadowX = (decimal)style.ShadowOffset.X;
             ShadowY = (decimal)style.ShadowOffset.Y;
-            FontSizeText = FormatNumber(FontSize);
-            StrokeWidthText = FormatNumber(StrokeWidth);
-            LineHeightText = FormatNumber(LineHeight);
-            ShadowBlurText = FormatNumber(ShadowBlur);
-            ShadowXText = FormatNumber(ShadowX);
-            ShadowYText = FormatNumber(ShadowY);
             FillDraft.Load(style.Fill);
             StrokeDraft.Load(style.Stroke);
             ShadowDraft.Load(style.ShadowColor);

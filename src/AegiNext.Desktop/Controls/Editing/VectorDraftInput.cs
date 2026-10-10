@@ -23,14 +23,15 @@ public sealed class VectorDraftInput : UserControl
     public VectorDraftInput()
     {
         var grid = new Grid { ColumnDefinitions = new("Auto,*,Auto,*"), ColumnSpacing = 6 };
-        grid.Children.Add(new TextBlock { Text = "X", VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
         xInput = CreateInput(nameof(X), nameof(XText));
+        grid.Children.Add(new NumericDragLabel { Text = "X", Input = xInput, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
         Grid.SetColumn(xInput, 1);
         grid.Children.Add(xInput);
-        var yLabel = new TextBlock { Text = "Y", VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        var yLabel = new NumericDragLabel { Text = "Y", VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
         Grid.SetColumn(yLabel, 2);
         grid.Children.Add(yLabel);
         yInput = CreateInput(nameof(Y), nameof(YText));
+        yLabel.Input = yInput;
         Grid.SetColumn(yInput, 3);
         grid.Children.Add(yInput);
         Content = grid;
@@ -78,6 +79,15 @@ public sealed class VectorDraftInput : UserControl
         }
 
         return input.FocusInput();
+    }
+
+    internal void SetFieldError(string fieldKey, string? error)
+    {
+        var input = fieldKey == XFieldKey ? xInput : fieldKey == YFieldKey ? yInput : null;
+        if (input is not null)
+        {
+            DataValidationErrors.SetErrors(input, error is null ? null : new[] { error });
+        }
     }
 
     private NumericDraftInput CreateInput(string valueProperty, string textProperty)

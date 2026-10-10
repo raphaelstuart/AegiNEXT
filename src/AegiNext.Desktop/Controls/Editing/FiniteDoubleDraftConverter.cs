@@ -31,7 +31,7 @@ internal sealed class FiniteDoubleDraftConverter(NumericDraftInput input) : IVal
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         var text = input.RawText;
-        if (!input.IsSpinning && double.TryParse(text, NumberStyles.Float, input.NumberFormat ?? culture.NumberFormat, out var number) &&
+        if (double.TryParse(text, NumberStyles.Float, input.NumberFormat ?? culture.NumberFormat, out var number) &&
             double.IsFinite(number) && number >= (double)input.Minimum)
         {
             return text;

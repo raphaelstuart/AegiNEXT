@@ -376,7 +376,7 @@ public sealed class EffectScriptSettingsUiTests
             var expected = range ? new[] { first.Id, second.Id, third.Id } : [first.Id, third.Id];
             Assert.Equal(expected, window.ViewModel.Effects.SelectedIds.ToArray());
             Assert.False(UiTestActions.Find<Button>(window, "SaveEffectScriptButton").IsEffectivelyEnabled);
-            Assert.False(UiTestActions.Find<Button>(window, "DeleteEffectScriptButton").IsEffectivelyEnabled);
+            Assert.True(UiTestActions.Find<Button>(window, "DeleteEffectScriptButton").IsEffectivelyEnabled);
             Assert.False(UiTestActions.Find<Button>(window, "ValidateEffectScriptButton").IsEffectivelyEnabled);
             Assert.True(UiTestActions.Find<TextBox>(window, "ScriptTextInput").IsReadOnly);
 
@@ -455,27 +455,35 @@ public sealed class EffectScriptSettingsUiTests
     }
 
     [AvaloniaFact]
-    public void DeletingAnInvalidIndependentDraftClearsTheEditorWithoutSaving()
+    public void DeletingAnInvalidIndependentDraftRequestsDiscardBeforeClearingWithoutSaving()
     {
         using var environment = new UiTestEnvironment();
         var window = new SettingsWindow(new WorkbenchPreferences());
         var saves = 0;
-        var deletes = 0;
+        SettingsEffectDeleteEventArgs? deletion = null;
         window.UpsertEffectRequested += (_, _) => saves++;
-        window.DeleteEffectRequested += (_, _) => deletes++;
+        window.DeleteEffectRequested += (_, args) => deletion = args;
         try
         {
             window.Show();
             window.SelectPage(SettingsPage.EFFECTS);
             UiTestActions.Click(window, "AddEffectScriptButton");
             UiTestActions.Find<TextBox>(window, "ScriptTextInput").Text = "effect broken";
+            var draft = Assert.IsType<EffectScriptPreset>(window.ViewModel.Effects.Draft);
             UiTestActions.Click(window, "DeleteEffectScriptButton");
+
+            Assert.NotNull(deletion);
+            Assert.True(deletion.IsDraftOnly);
+            Assert.Empty(deletion.Ids);
+            Assert.Equal(draft.Id, deletion.DraftId);
+            Assert.Equal(draft.Id, window.ViewModel.Effects.Draft?.Id);
+            Assert.Equal("effect broken", UiTestActions.Find<TextBox>(window, "ScriptTextInput").Text);
+            window.ViewModel.Effects.DiscardDraft();
 
             Assert.Null(window.ViewModel.Effects.Draft);
             Assert.Equal(7, window.ViewModel.Effects.Effects.Length);
             Assert.Empty(UiTestActions.Find<TextBox>(window, "ScriptTextInput").Text!);
             Assert.Equal(0, saves);
-            Assert.Equal(0, deletes);
         }
         finally
         {

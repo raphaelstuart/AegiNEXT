@@ -17,14 +17,15 @@ public sealed class NumericDraftInput : NumericUpDown
         AvaloniaProperty.Register<NumericDraftInput, bool>(nameof(PreserveDoublePrecision));
     private bool synchronizing;
     private bool preservingDraft;
-    private bool spinning;
     private bool initializingDraft;
 
-    internal bool IsSpinning => spinning;
+    /// <summary>取得标题拖动是否正在更新草稿，供消费者抑制即时事务。</summary>
+    public bool IsTitleDragging { get; private set; }
 
     /// <summary>在基础数值控件初始化格式化期间保持原文为权威输入。</summary>
     public NumericDraftInput()
     {
+        SetCurrentValue(ShowButtonSpinnerProperty, false);
         Initialized += (_, _) =>
         {
             try
@@ -94,13 +95,13 @@ public sealed class NumericDraftInput : NumericUpDown
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == ShowButtonSpinnerProperty && ShowButtonSpinner)
+        {
+            SetCurrentValue(ShowButtonSpinnerProperty, false);
+        }
         if (change.Property == PreserveDoublePrecisionProperty)
         {
             SetCurrentValue(TextConverterProperty, PreserveDoublePrecision ? new FiniteDoubleDraftConverter(this) : null);
-        }
-        if (change.Property == RawTextProperty || change.Property == PreserveDoublePrecisionProperty)
-        {
-            CoerceValue(IncrementProperty);
         }
         if (change.Property == RawTextProperty && !synchronizing && !preservingDraft)
         {
@@ -138,7 +139,7 @@ public sealed class NumericDraftInput : NumericUpDown
     protected override void OnValueChanged(decimal? oldValue, decimal? newValue)
     {
         var text = RawText;
-        if (spinning || text.Length == 0)
+        if (text.Length == 0)
         {
             base.OnValueChanged(oldValue, newValue);
             return;
@@ -160,34 +161,12 @@ public sealed class NumericDraftInput : NumericUpDown
     /// <inheritdoc />
     protected override void OnSpin(SpinEventArgs e)
     {
-        if (PreserveDoublePrecision && !HasExactDecimalProjection())
-        {
-            return;
-        }
-        spinning = true;
-        try
-        {
-            base.OnSpin(e);
-        }
-        finally
-        {
-            spinning = false;
-        }
+        e.Handled = true;
     }
 
-    /// <inheritdoc />
-    protected override decimal OnCoerceIncrement(decimal baseValue)
-    {
-        return PreserveDoublePrecision && !HasExactDecimalProjection() ? 0 : base.OnCoerceIncrement(baseValue);
-    }
+    internal void BeginTitleDrag() => IsTitleDragging = true;
 
-    private bool HasExactDecimalProjection()
-    {
-        var numberFormat = NumberFormat ?? CultureInfo.CurrentCulture.NumberFormat;
-        return decimal.TryParse(RawText, NumberStyles.Float, numberFormat, out var projection) &&
-            double.TryParse(RawText, NumberStyles.Float, numberFormat, out var number) && double.IsFinite(number) &&
-            number == (double)projection;
-    }
+    internal void EndTitleDrag() => IsTitleDragging = false;
 
     /// <inheritdoc />
     protected override void OnLostFocus(FocusChangedEventArgs e)

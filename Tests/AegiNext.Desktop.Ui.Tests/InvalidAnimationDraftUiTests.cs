@@ -19,7 +19,7 @@ public sealed class InvalidAnimationDraftUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         UiTestActions.SelectAnimationProperty(context.Window, AnimationProperty.OPACITY);
         try
         {
@@ -64,7 +64,7 @@ public sealed class InvalidAnimationDraftUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         var id = session.SelectedLayer!.Id;
         session.Editor.SetKeyframe(id, AnimationProperty.OPACITY, new(new(1), 0.25));

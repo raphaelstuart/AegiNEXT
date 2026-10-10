@@ -82,6 +82,21 @@ public sealed class ProjectStoreTests
     }
 
     [Fact]
+    public void CollapsedWholeLineAnimationRowRoundTripPreservesDefaultTargetFields()
+    {
+        var editor = new ProjectEditor();
+        var subtitleId = editor.AddSubtitle(new(0), new(4), "Collapsed animation");
+        editor.SetKeyframe(subtitleId, AnimationProperty.OPACITY, new(new(0), 0.25));
+        var row = new TimelineAnimationRowId(TimelineRowScope.TRACK, editor.Snapshot.Tracks[0].Id, AnimationProperty.OPACITY);
+        var document = editor.Snapshot with { TimelineViewState = new() { CollapsedAnimationRows = [row] } };
+
+        var loaded = ProjectStore.Deserialize(ProjectStore.Serialize(document));
+
+        Assert.Equal(row, Assert.Single(loaded.TimelineViewState.CollapsedAnimationRows));
+        Assert.Equal(ProjectStore.Serialize(document), ProjectStore.Serialize(loaded));
+    }
+
+    [Fact]
     public async Task InvalidOrCancelledSaveLeavesExistingBytesAndNoTemporaryFiles()
     {
         using var directory = new TemporaryProjectDirectory();

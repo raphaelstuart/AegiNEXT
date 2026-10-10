@@ -17,6 +17,7 @@ public sealed class ExportSettingsViewModel : VideoExportSettingsViewModel
     private ImmutableArray<Guid> selectedIds = [];
     private VideoExportPreset? selectedPreset;
     private VideoExportPreset? draft;
+    internal event EventHandler? DraftChanging;
     private string name = string.Empty;
     private bool newDraft;
     private bool loading;
@@ -143,6 +144,7 @@ public sealed class ExportSettingsViewModel : VideoExportSettingsViewModel
     public void UpdatePresets(IEnumerable<VideoExportPreset> presets, Guid? selectedId = null)
     {
         ArgumentNullException.ThrowIfNull(presets);
+        DraftChanging?.Invoke(this, EventArgs.Empty);
         var pending = draft;
         var dirty = IsDirty;
         var wasNew = newDraft;
@@ -200,6 +202,7 @@ public sealed class ExportSettingsViewModel : VideoExportSettingsViewModel
     /// <summary>等待保存、恢复或取消；失败和取消保留全部原始草稿。</summary>
     public async Task<bool> PrepareToLeaveAsync()
     {
+        DraftChanging?.Invoke(this, EventArgs.Empty);
         if (!IsDirty)
         {
             return true;
@@ -406,6 +409,7 @@ public sealed class ExportSettingsViewModel : VideoExportSettingsViewModel
 
     private void LoadDraft(VideoExportPreset? preset, bool isNew)
     {
+        DraftChanging?.Invoke(this, EventArgs.Empty);
         loading = true;
         try
         {

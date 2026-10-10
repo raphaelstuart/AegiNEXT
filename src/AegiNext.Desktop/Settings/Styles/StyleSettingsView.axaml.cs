@@ -38,7 +38,18 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
             RefreshPreview();
             _ = LoadFontCandidatesAsync();
         };
-        DetachedFromVisualTree += (_, _) => preview.Invalidate(++previewRevision);
+        DetachedFromVisualTree += (_, _) =>
+        {
+            CancelNumericDrags();
+            preview.Invalidate(++previewRevision);
+        };
+        PropertyChanged += (_, args) =>
+        {
+            if (args.Property == IsVisibleProperty && !IsVisible)
+            {
+                CancelNumericDrags();
+            }
+        };
         AddHandler(KeyDownEvent, (_, e) =>
         {
             if (e.Key == Key.Escape && e.Source is Control source &&
@@ -62,6 +73,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         {
             return;
         }
+        CancelNumericDrags();
         preview.Invalidate(++previewRevision);
         previewPresetId = null;
         if (observedFonts is not null)
@@ -74,6 +86,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         if (model is not null)
         {
             model.PropertyChanged -= ModelChanged;
+            model.DraftChanging -= OnDraftChanging;
             model.CommitPendingInputs = null;
             model.HasPendingInputs = null;
         }
@@ -82,6 +95,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         if (model is not null)
         {
             model.PropertyChanged += ModelChanged;
+            model.DraftChanging += OnDraftChanging;
             model.CommitPendingInputs = CommitFontInput;
             model.HasPendingInputs = () =>
             {
@@ -102,6 +116,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         {
             return;
         }
+        CancelNumericDrags();
         var list = this.FindControl<ListBox>("StyleList")!;
         var ids = list.Selection.SelectedItems.OfType<AegiNext.Core.Presets.SubtitleStylePreset>()
             .Select(value => value.Id).ToArray();
@@ -170,6 +185,10 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
 
     private void ModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(StyleSettingsViewModel.SelectedStyle) or nameof(StyleSettingsViewModel.SelectedIds))
+        {
+            CancelNumericDrags();
+        }
         if (e.PropertyName == nameof(StyleSettingsViewModel.PreviewRevision))
         {
             RefreshPreview();
@@ -195,6 +214,16 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         {
             this.FindControl<SubtitleAlignmentPicker>("AlignmentPicker")!.SetCurrentValue(
                 SubtitleAlignmentPicker.AlignmentIndexProperty, model!.AlignmentIndex);
+        }
+    }
+
+    private void OnDraftChanging(object? sender, EventArgs e) => CancelNumericDrags();
+
+    private void CancelNumericDrags()
+    {
+        foreach (var title in this.GetVisualDescendants().OfType<NumericDragLabel>())
+        {
+            title.CancelDrag();
         }
     }
 
@@ -346,6 +375,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         {
             return;
         }
+        CancelNumericDrags();
         disposed = true;
         previewRevision++;
         this.FindControl<PreviewViewportControl>("StylePreviewViewport")!.CancelInteraction();
@@ -359,6 +389,7 @@ public sealed partial class StyleSettingsView : UserControl, IDisposable
         if (model is not null)
         {
             model.PropertyChanged -= ModelChanged;
+            model.DraftChanging -= OnDraftChanging;
             model.CommitPendingInputs = null;
             model.HasPendingInputs = null;
         }

@@ -1,9 +1,11 @@
 using System.ComponentModel;
+using AegiNext.Desktop.Controls;
 using AegiNext.Media.Encoding.Presets;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Selection;
 using Avalonia.Markup.Xaml;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Settings.Export;
 
@@ -25,6 +27,14 @@ public sealed partial class ExportSettingsView : UserControl
             this.FindControl<ComboBox>("AudioModeCombo")!, this.FindControl<ComboBox>("QualityModeCombo")!,
             this.FindControl<ComboBox>("BitrateModeCombo")!];
         DataContextChanged += (_, _) => ChangeModel();
+        DetachedFromVisualTree += (_, _) => CancelNumericDrags();
+        PropertyChanged += (_, args) =>
+        {
+            if (args.Property == IsVisibleProperty && !IsVisible)
+            {
+                CancelNumericDrags();
+            }
+        };
         presetList.SelectionChanged += OnSelectionChanged;
     }
 
@@ -39,9 +49,11 @@ public sealed partial class ExportSettingsView : UserControl
 
     private void ChangeModel()
     {
+        CancelNumericDrags();
         if (model is not null)
         {
             model.PropertyChanged -= OnModelChanged;
+            model.DraftChanging -= OnDraftChanging;
             model.ChoicesRefreshing -= OnChoicesRefreshing;
             model.ChoicesRefreshed -= OnChoicesRefreshed;
         }
@@ -49,6 +61,7 @@ public sealed partial class ExportSettingsView : UserControl
         if (model is not null)
         {
             model.PropertyChanged += OnModelChanged;
+            model.DraftChanging += OnDraftChanging;
             model.ChoicesRefreshing += OnChoicesRefreshing;
             model.ChoicesRefreshed += OnChoicesRefreshed;
             SynchronizeSelection();
@@ -61,6 +74,7 @@ public sealed partial class ExportSettingsView : UserControl
         {
             return;
         }
+        CancelNumericDrags();
         var ids = presetList.Selection.SelectedItems.OfType<VideoExportPreset>().Select(value => value.Id).ToArray();
         var primary = e.AddedItems.OfType<VideoExportPreset>().LastOrDefault()?.Id ??
             (model.SelectedPreset is { } current && ids.Contains(current.Id) ? current.Id : ids.Cast<Guid?>().FirstOrDefault());
@@ -114,6 +128,10 @@ public sealed partial class ExportSettingsView : UserControl
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(ExportSettingsViewModel.SelectedPreset) or nameof(ExportSettingsViewModel.SelectedIds))
+        {
+            CancelNumericDrags();
+        }
         if (e.PropertyName is nameof(ExportSettingsViewModel.ExportPresets) or nameof(ExportSettingsViewModel.SelectedIds))
         {
             SynchronizeSelection();
@@ -121,6 +139,16 @@ public sealed partial class ExportSettingsView : UserControl
         else if (e.PropertyName == nameof(ExportSettingsViewModel.Error))
         {
             FocusInvalidField();
+        }
+    }
+
+    private void OnDraftChanging(object? sender, EventArgs e) => CancelNumericDrags();
+
+    private void CancelNumericDrags()
+    {
+        foreach (var title in this.GetVisualDescendants().OfType<NumericDragLabel>())
+        {
+            title.CancelDrag();
         }
     }
 

@@ -90,7 +90,7 @@
         <ContentControl.ContentTemplate>
           <DataTemplate x:DataType="workspace:MaskNumericField">
             <Grid ColumnDefinitions="*,120" ColumnSpacing="6">
-              <TextBlock Classes="field" Text="{Loc Key=Workbench.MASK_ROTATION}" VerticalAlignment="Center" />
+              <controls:NumericDragLabel Input="{Binding #MaskRotationInput}" Classes="field" Text="{Loc Key=Workbench.MASK_ROTATION}" VerticalAlignment="Center" />
               <controls:NumericDraftInput Name="MaskRotationInput" Grid.Column="1" IsEnabled="{Binding CanEdit}" RawText="{Binding Draft.RawText, Mode=TwoWay}"
                   Value="{Binding Draft.Value, Mode=TwoWay}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" />
             </Grid>

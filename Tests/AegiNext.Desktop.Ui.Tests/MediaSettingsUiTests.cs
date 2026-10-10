@@ -24,6 +24,8 @@ public sealed class MediaSettingsUiTests
             var selector = UiTestActions.Find<ComboBox>(settings, "PreviewDecodeModeCombo");
             selector.SelectedIndex = 1;
             Dispatcher.UIThread.RunJobs();
+            await context.Session.ApplicationContext.Completion.WaitAsync(TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
             Assert.Equal(VideoDecodeMode.Software, context.Session.Preferences.PreviewDecodeMode);
             Assert.Equal(VideoDecodeMode.Software, context.Controller.DecodeMode);
             Assert.Same(document, context.Session.DocumentSnapshot);

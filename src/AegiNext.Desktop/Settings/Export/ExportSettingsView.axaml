@@ -59,7 +59,7 @@
           <ComboBox Name="QualityModeCombo" ItemsSource="{Binding QualityModes}" HorizontalAlignment="Stretch"
                     IsEnabled="{Binding CanSelectQualityMode}" SelectedIndex="{Binding QualityMode, Mode=TwoWay}" />
           <StackPanel IsVisible="{Binding IsCrfMode}" Spacing="8">
-            <TextBlock Classes="field" Text="{Loc Key=Workbench.Quality}" />
+            <controls:NumericDragLabel Name="CrfInputTitle" Classes="field" Text="{Loc Key=Workbench.Quality}" Input="{Binding #CrfInput}" />
             <controls:NumericDraftInput Name="CrfInput" RawText="{Binding CrfText, Mode=TwoWay}" Minimum="0" Maximum="51"
                                         Value="{Binding Crf, Mode=TwoWay}" />
           </StackPanel>
@@ -67,7 +67,7 @@
             <TextBlock Classes="field" Text="{Loc Key=Workbench.RateControlMode}" />
             <ComboBox Name="BitrateModeCombo" ItemsSource="{Binding BitrateModes}" HorizontalAlignment="Stretch"
                       SelectedIndex="{Binding BitrateMode, Mode=TwoWay}" />
-            <TextBlock Classes="field" Text="{Loc Key=Workbench.VideoBitrate}" />
+            <controls:NumericDragLabel Name="VideoBitrateInputTitle" Classes="field" Text="{Loc Key=Workbench.VideoBitrate}" Input="{Binding #VideoBitrateInput}" />
             <controls:NumericDraftInput Name="VideoBitrateInput" RawText="{Binding VideoBitrateText, Mode=TwoWay}"
                                         Minimum="0.1" Maximum="200" Increment="0.001" Value="{Binding VideoBitrate, Mode=TwoWay}" />
           </StackPanel>
@@ -75,7 +75,7 @@
           <ComboBox Name="AudioModeCombo" ItemsSource="{Binding AudioModes}" HorizontalAlignment="Stretch"
                     SelectedIndex="{Binding AudioMode, Mode=TwoWay}" />
           <StackPanel IsVisible="{Binding IsAacAudio}" Spacing="8">
-            <TextBlock Classes="field" Text="{Loc Key=Workbench.AudioBitrate}" />
+            <controls:NumericDragLabel Name="AudioBitrateInputTitle" Classes="field" Text="{Loc Key=Workbench.AudioBitrate}" Input="{Binding #AudioBitrateInput}" />
             <controls:NumericDraftInput Name="AudioBitrateInput" RawText="{Binding AudioBitrateText, Mode=TwoWay}"
                                         Minimum="32" Maximum="512" Value="{Binding AudioBitrate, Mode=TwoWay}" Increment="16" />
           </StackPanel>

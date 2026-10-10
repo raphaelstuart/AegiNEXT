@@ -18,7 +18,7 @@ public sealed class ClipMaskNumericUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         session.Editor.SetClipMask(session.SelectedLayer!.Id, new RectangleClipMask { TopLeft = new(10, 20), BottomRight = new(500, 400) });
         var original = session.DocumentSnapshot;

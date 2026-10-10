@@ -228,6 +228,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         };
         styleFields.AddHandler(KeyDownEvent, OnStyleFieldKeyDown, RoutingStrategies.Bubble, true);
         styleFields.AddHandler(LostFocusEvent, OnStyleFieldLostFocus, RoutingStrategies.Bubble);
+        BindNumericDrags();
         coordinator.Changed += OnCoordinatorChanged;
         session.StyleLibraryChanged += OnStyleLibraryChanged;
         session.Fonts.Changed += OnFontsChanged;
@@ -330,10 +331,10 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         var column = 0;
         foreach (var (axisName, property) in new[] { ("X", nameof(SubtitleDetailsStyleDraft.ShadowXText)), ("Y", nameof(SubtitleDetailsStyleDraft.ShadowYText)) })
         {
-            var label = new TextBlock { Text = axisName, VerticalAlignment = VerticalAlignment.Center };
+            var input = Number(draft, property, prefix + "Shadow" + axisName + "Input", -4096, 4096);
+            var label = new NumericDragLabel { Text = axisName, Input = input, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(label, column++);
             vector.Children.Add(label);
-            var input = Number(draft, property, prefix + "Shadow" + axisName + "Input", -4096, 4096);
             input.Width = double.NaN;
             input.MinWidth = 0;
             Grid.SetColumn(input, column++);
@@ -367,14 +368,14 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
     private StackPanel Field(string key, Control input)
     {
         var field = new StackPanel { Name = input.Name is null ? null : input.Name + "Field", Spacing = 4, Width = 200, Margin = new Thickness(0, 0, 12, 8) };
-        field.Children.Add(Label(key));
+        field.Children.Add(Label(key, input as NumericDraftInput));
         field.Children.Add(input);
         return field;
     }
 
-    private TextBlock Label(string key)
+    private TextBlock Label(string key, NumericDraftInput? input = null)
     {
-        var label = new TextBlock();
+        var label = input is null ? new TextBlock() : new NumericDragLabel { Input = input };
         label.Classes.Add("field");
         bindings.Add(label.Bind(TextBlock.TextProperty, Localization.Observe(key).ToBinding()));
         return label;
@@ -551,6 +552,11 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
 
     private void OnStyleFieldLostFocus(object? sender, RoutedEventArgs e)
     {
+        if (e.Source is Control source && source.GetSelfAndVisualAncestors().OfType<NumericDraftInput>()
+            .Any(input => input.IsTitleDragging))
+        {
+            return;
+        }
         if (synchronizing || completingInput || StyleField(e.Source as Control) is null)
         {
             return;
@@ -639,6 +645,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         {
             return;
         }
+        CancelNumericDrags();
         var start = editor.SelectionStart;
         var end = editor.SelectionEnd;
         if (!coordinator.SetStyleSelection(Math.Min(start, end), Math.Abs(end - start)) ||
@@ -788,7 +795,15 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         }
     }
 
-    private void OnCoordinatorChanged(object? sender, EventArgs e) => Refresh();
+    private void OnCoordinatorChanged(object? sender, EventArgs e)
+    {
+        if (numericDragSnapshot is not null && NumericDragTargetMatches())
+        {
+            return;
+        }
+        CancelNumericDrags();
+        Refresh();
+    }
     private void OnStyleLibraryChanged(object? sender, EventArgs e) => Refresh();
     private void OnFontsChanged(object? sender, EventArgs e)
     {
@@ -904,6 +919,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
     /// <summary>取消面板内未提交的指针手势。</summary>
     public void CancelGestures()
     {
+        CancelNumericDrags();
         formattingPointerActive = formattingFocusPending = false;
         ++styleFocusRevision;
         axis.CancelGesture();
@@ -1071,6 +1087,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         }
         _ = session.RunCommandAsync(coordinator.StopPlaybackAsync);
         coordinator.Changed -= OnCoordinatorChanged;
+        session.NumericGestureCancellationRequested -= OnNumericGestureCancellation;
         session.StyleLibraryChanged -= OnStyleLibraryChanged;
         session.Fonts.Changed -= OnFontsChanged;
         selectionFont.PropertyChanged -= OnFontPickerChanged;

@@ -13,6 +13,8 @@ public sealed class IconText : UserControl
 {
     public static readonly StyledProperty<string> TextProperty = AvaloniaProperty.Register<IconText, string>(nameof(Text), string.Empty);
     public static readonly StyledProperty<string> IconKeyProperty = AvaloniaProperty.Register<IconText, string>(nameof(IconKey), "Settings");
+    private readonly TextBlock label;
+    private readonly StackPanel contentPanel;
     private readonly MaterialIcon icon = WorkbenchIcon.Create("Settings");
 
     /// <summary>沿用共享字体、行高和图标布局，不改变宿主的 DataContext。</summary>
@@ -20,11 +22,11 @@ public sealed class IconText : UserControl
     {
         this.Bind(AutomationProperties.NameProperty, this.GetObservable(TextProperty));
         AutomationProperties.SetAccessibilityView(icon, AccessibilityView.Raw);
-        var label = new TextBlock { FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+        label = new TextBlock { FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
         label.Bind(TextBlock.TextProperty, this.GetObservable(TextProperty));
         label.Bind(TextBlock.FontFamilyProperty, new DynamicResourceExtension("WorkbenchBodyFontFamily"));
         label.Bind(TextBlock.LineHeightProperty, new DynamicResourceExtension("WorkbenchInputLineHeight"));
-        Content = new StackPanel
+        contentPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 8,
@@ -32,6 +34,8 @@ public sealed class IconText : UserControl
             VerticalAlignment = VerticalAlignment.Center,
             Children = { icon, label }
         };
+        Content = contentPanel;
+        UpdateLabelVisibility();
     }
 
     public string Text
@@ -50,9 +54,19 @@ public sealed class IconText : UserControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == TextProperty && contentPanel is not null)
+        {
+            UpdateLabelVisibility();
+        }
         if (change.Property == IconKeyProperty)
         {
             icon.Kind = WorkbenchIcon.ResolveKind(IconKey);
         }
     }
+    private void UpdateLabelVisibility()
+    {
+        label.IsVisible = !string.IsNullOrEmpty(Text);
+        contentPanel.Spacing = label.IsVisible ? 8 : 0;
+    }
+
 }

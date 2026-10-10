@@ -7,24 +7,24 @@ internal static class AnimationEditOperations
 {
     internal static double Value(ProjectLayer layer, AnimationProperty property, AnimationEditTarget target, double fallback)
     {
-        var track = layer.Tracks.FirstOrDefault(value => value.Target == new AnimationTrackTarget(property));
+        var track = layer.Tracks.FirstOrDefault(value => value.Target == ResolveTarget(target, property));
         return track is null ? fallback : SceneEvaluator.EvaluateScalarTrack(track, target.LocalTime);
     }
 
     internal static ScenePoint Value(ProjectLayer layer, AnimationProperty property, AnimationEditTarget target, ScenePoint fallback)
     {
-        var track = layer.Tracks.FirstOrDefault(value => value.Target == new AnimationTrackTarget(property));
+        var track = layer.Tracks.FirstOrDefault(value => value.Target == ResolveTarget(target, property));
         return track is null ? fallback : SceneEvaluator.EvaluateVectorTrack(track, target.LocalTime);
     }
 
     internal static SceneColor Value(ProjectLayer layer, AnimationProperty property, AnimationEditTarget target, SceneColor fallback)
     {
-        var track = layer.Tracks.FirstOrDefault(value => value.Target == new AnimationTrackTarget(property));
+        var track = layer.Tracks.FirstOrDefault(value => value.Target == ResolveTarget(target, property));
         return track is null ? fallback : SceneEvaluator.EvaluateColorTrack(track, target.LocalTime);
     }
 
     internal static ProjectDocument SetValue(ProjectDocument document, AnimationEditTarget target, AnimationProperty property, AnimationValue value) =>
-        SetValue(document, target, new AnimationTrackTarget(property), value);
+        SetValue(document, target, ResolveTarget(target, property), value);
 
     internal static ProjectDocument SetValue(ProjectDocument document, AnimationEditTarget target, AnimationTrackTarget animationTarget, AnimationValue value)
     {
@@ -43,49 +43,12 @@ internal static class AnimationEditOperations
                 existing is null ? new(target.LocalTime, value) : existing with { Value = value });
         }
 
-        if (AnimationPropertyMetadata.IsMaskProperty(property))
-        {
-            return WorkspaceDraftOperations.UpdateLayer(document, layer.Id, item => item with
-            {
-                Mask = ClipMaskAnimation.SetBaseValue(item.Mask ?? throw new InvalidOperationException("Clip mask required."), animationTarget, value)
-            });
-        }
-
-        if (property is AnimationProperty.FILL or AnimationProperty.STROKE && layer.SubtitleId is { } subtitleId)
-        {
-            return WorkspaceDraftOperations.UpdateSubtitle(document, subtitleId, subtitle => subtitle with
-            {
-                Style = property == AnimationProperty.FILL
-                    ? subtitle.Style with { Fill = value.Color }
-                    : subtitle.Style with { Stroke = value.Color }
-            });
-        }
-
-        if (AnimationPropertyMetadata.IsSubtitleOnlyProperty(property) && layer.SubtitleId is { } styleId)
-        {
-            return WorkspaceDraftOperations.UpdateSubtitle(document, styleId, subtitle => subtitle with
-            {
-                Style = property switch
-                {
-                    AnimationProperty.LETTER_SPACING => subtitle.Style with { LetterSpacing = value.Scalar },
-                    AnimationProperty.FILL_BLUR => subtitle.Style with { FillBlur = value.Scalar },
-                    AnimationProperty.STROKE_BLUR => subtitle.Style with { StrokeBlur = value.Scalar },
-                    _ => throw new ArgumentOutOfRangeException(nameof(animationTarget))
-                }
-            });
-        }
-
-        return WorkspaceDraftOperations.UpdateLayer(document, layer.Id, item => property switch
-        {
-            AnimationProperty.FILL => item with { Fill = value.Color },
-            AnimationProperty.STROKE => item with { Stroke = value.Color },
-            AnimationProperty.POSITION => item with { Transform = item.Transform with { Position = value.Vector } },
-            AnimationProperty.SCALE => item with { Transform = item.Transform with { Scale = value.Vector } },
-            AnimationProperty.ROTATION => item with { Transform = item.Transform with { Rotation = value.Scalar } },
-            AnimationProperty.OPACITY => item with { Opacity = value.Scalar },
-            AnimationProperty.BLUR => item with { Blur = value.Scalar },
-            AnimationProperty.STROKE_WIDTH => item with { StrokeWidth = value.Scalar },
-            _ => item
-        });
+        return SubtitleAnimationEditing.SetBaseValue(document, layer.Id, animationTarget, value);
     }
+
+    private static AnimationTrackTarget ResolveTarget(AnimationEditTarget target, AnimationProperty property) =>
+        target.Target is { } identity && !AnimationPropertyMetadata.IsMaskProperty(property)
+            ? identity with { Property = property, NodeId = null,
+                State = AnimationPropertyMetadata.IsSubtitleVisualProperty(property) ? identity.State : SubtitleAnimationState.NORMAL } : new(property);
+
 }

@@ -14,7 +14,7 @@ public sealed class EffectLibraryIntegrationUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         await context.Session.EffectScripts.Completion;
         var original = context.Session.DocumentSnapshot;
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SETTINGS);
@@ -36,6 +36,7 @@ public sealed class EffectLibraryIntegrationUiTests
         combo.SelectedIndex = Array.IndexOf(context.ViewModel.Effects.Presets, preset.Name);
         Assert.True(combo.SelectedIndex >= 7);
         UiTestActions.Click(context.Window, "ApplyPresetButton");
+        await Assert.IsAssignableFrom<CommunityToolkit.Mvvm.Input.IAsyncRelayCommand>(context.ViewModel.Effects.ApplyPresetCommand).ExecutionTask!;
         var layer = context.Session.SelectedLayer!;
         var track = Assert.Single(layer.Tracks);
         Assert.Equal(AnimationProperty.OPACITY, track.Property);
@@ -54,7 +55,7 @@ public sealed class EffectLibraryIntegrationUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.OPEN_SETTINGS);
         var settings = Assert.Single(context.Window.OwnedWindows.OfType<SettingsWindow>());
         settings.SelectPage(SettingsPage.EFFECTS);
@@ -77,6 +78,7 @@ public sealed class EffectLibraryIntegrationUiTests
         var combo = UiTestActions.Find<ComboBox>(context.Window, "PresetCombo");
         combo.SelectedIndex = Array.IndexOf(context.ViewModel.Effects.Presets, preset.Name);
         UiTestActions.Click(context.Window, "ApplyPresetButton");
+        await Assert.IsAssignableFrom<CommunityToolkit.Mvvm.Input.IAsyncRelayCommand>(context.ViewModel.Effects.ApplyPresetCommand).ExecutionTask!;
         Assert.Single(context.Session.SelectedLayer!.Tracks);
         Assert.False(settings.ViewModel.Effects.IsDirty);
     }

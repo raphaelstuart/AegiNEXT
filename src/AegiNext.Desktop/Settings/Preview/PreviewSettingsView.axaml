@@ -7,7 +7,7 @@
     <StackPanel Spacing="16">
       <Border Classes="card">
         <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-          <TextBlock Text="{Loc Key=Settings.SubtitleAuditionMilliseconds}" VerticalAlignment="Center" />
+          <inputs:NumericDragLabel Name="SubtitleAuditionMillisecondsInputTitle" Text="{Loc Key=Settings.SubtitleAuditionMilliseconds}" VerticalAlignment="Center" Input="{Binding #SubtitleAuditionMillisecondsInput}" />
           <inputs:NumericDraftInput Name="SubtitleAuditionMillisecondsInput" Grid.Column="1"
               RawText="{Binding SubtitleAuditionMillisecondsText, Mode=TwoWay}"
               Minimum="1" Maximum="2147483647" Increment="1" FormatString="0" PreserveDoublePrecision="True" />

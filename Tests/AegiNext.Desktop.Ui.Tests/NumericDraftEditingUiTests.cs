@@ -21,7 +21,7 @@ public sealed class NumericDraftEditingUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var window = context.Window;
-        window.GetCommand(WorkbenchCommand.ADD_SUBTITLE).Execute(null);
+        await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
         window.Layouts.Activate(panelId);
         window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
@@ -30,6 +30,10 @@ public sealed class NumericDraftEditingUiTests
             UiTestActions.SelectAnimationProperty(window, AnimationProperty.OPACITY);
         }
         var input = UiTestActions.Find<NumericDraftInput>(window, fieldName);
+        input.BringIntoView();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
         var box = Assert.Single(input.GetVisualDescendants().OfType<TextBox>());
         Assert.True(box.Focus());
         box.Text = "7e-";
@@ -58,12 +62,16 @@ public sealed class NumericDraftEditingUiTests
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
         var window = context.Window;
-        window.GetCommand(WorkbenchCommand.ADD_SUBTITLE).Execute(null);
+        await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.ADD_SUBTITLE);
         window.Layouts.Activate(WorkbenchPanelIds.STYLES);
         window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
         var original = Assert.Single(window.DocumentSnapshot.Subtitles).Style.FontSize;
         var input = UiTestActions.Find<NumericDraftInput>(window, "FontSizeInput");
+        input.BringIntoView();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
         var box = Assert.Single(input.GetVisualDescendants().OfType<TextBox>());
         Assert.True(box.Focus());
         box.Text = "72.5";

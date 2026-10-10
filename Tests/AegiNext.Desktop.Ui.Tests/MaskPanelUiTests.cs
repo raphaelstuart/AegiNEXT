@@ -33,7 +33,7 @@ public sealed class MaskPanelUiTests
             Localization.SetLanguage(language);
             context.Window.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
             await context.OpenMediaAsync();
-            UiTestActions.CreateSubtitle(context);
+            await UiTestActions.CreateSubtitleAsync(context);
             var session = context.Session;
             session.Editor.SetClipMask(session.SelectedLayer!.Id, new RectangleClipMask { TopLeft = new(10, 20), BottomRight = new(400, 300) });
             await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_MASKS);
@@ -151,7 +151,7 @@ public sealed class MaskPanelUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         await context.ViewModel.ExecuteCommandAsync(WorkbenchCommand.VIEW_MASKS);
         var original = context.Session.DocumentSnapshot;
         UiTestActions.Click(context.Window, "RectangleMaskButton");
@@ -180,7 +180,7 @@ public sealed class MaskPanelUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         context.Session.UpdatePreferences(context.Session.Preferences with
         {
             ShortcutBindings = context.Session.Preferences.ShortcutBindings.Select(binding => binding.Command == WorkbenchCommand.END_TEXT_INPUT
@@ -239,7 +239,7 @@ public sealed class MaskPanelUiTests
             Localization.SetLanguage(language);
             context.Window.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
             await context.OpenMediaAsync();
-            UiTestActions.CreateSubtitle(context);
+            await UiTestActions.CreateSubtitleAsync(context);
             var session = context.Session;
             var first = new MaskNode { Position = new(10, 20) };
             var second = new MaskNode { Position = new(100, 50) };

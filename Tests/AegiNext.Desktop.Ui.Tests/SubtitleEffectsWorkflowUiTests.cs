@@ -30,7 +30,7 @@ public sealed class SubtitleEffectsWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = PrepareSubtitle(context);
+        var id = await PrepareSubtitleAsync(context);
         var original = context.Session.DocumentSnapshot;
         var canvas = UiTestActions.Find<EffectCanvasControl>(context.Window, "EffectCanvas");
         await PresentAsync(context.Window, canvas);
@@ -72,7 +72,7 @@ public sealed class SubtitleEffectsWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = PrepareSubtitle(context);
+        var id = await PrepareSubtitleAsync(context);
         var position = new SubtitlePosition
         {
             Anchor = new(0.25, 0.75), Pivot = new(0.3, 0.4), Offset = new(18, -24)
@@ -127,7 +127,7 @@ public sealed class SubtitleEffectsWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = PrepareSubtitle(context);
+        var id = await PrepareSubtitleAsync(context);
         context.Session.Editor.SetKeyframe(id, AnimationProperty.POSITION, new(new(1), new ScenePoint(10, 20)));
         Assert.True(context.Session.SelectKeyframe(new(id, AnimationProperty.POSITION, new(1), new(1))));
         var position = UiTestActions.Find<VectorDraftInput>(context.Window, "KeyframeVectorInput");
@@ -158,9 +158,10 @@ public sealed class SubtitleEffectsWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        PrepareSubtitle(context);
+        await PrepareSubtitleAsync(context);
         var panel = context.Window.Panels[WorkbenchPanelIds.EFFECTS];
         Assert.DoesNotContain(panel.GetLogicalDescendants().OfType<Control>(), control => removedControls.Contains(control.Name));
+        UiTestActions.ExpandEffectsCategory(context.Window, "PathCategory");
         UiTestActions.Click(context.Window, "PathButton");
         var initial = context.Session.DocumentSnapshot;
         Assert.Single(initial.Layers[0].MotionPath!.Path.Segments);
@@ -201,7 +202,7 @@ public sealed class SubtitleEffectsWorkflowUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        var id = PrepareSubtitle(context);
+        var id = await PrepareSubtitleAsync(context);
         foreach (var duration in new MediaTime[] { new(1, 10), new(3, 5), new(5) })
         {
             context.Session.Editor.SetSubtitleTiming(id, MediaTime.Zero, duration, TimelineEditMode.STRETCH);
@@ -210,6 +211,7 @@ public sealed class SubtitleEffectsWorkflowUiTests
             var expected = EffectScriptCompiler.Compile(BuiltinEffectScripts.Get(scriptId).Script, before.Layers[0]);
             UiTestActions.SelectBuiltinPreset(context.Window, scriptId);
             UiTestActions.Click(context.Window, "ApplyPresetButton");
+            await Assert.IsAssignableFrom<CommunityToolkit.Mvvm.Input.IAsyncRelayCommand>(context.ViewModel.Effects.ApplyPresetCommand).ExecutionTask!;
             var after = context.Session.DocumentSnapshot;
             Assert.Equal(expected.SelectMany(track => track.Keyframes), after.Layers[0].Tracks.SelectMany(track => track.Keyframes));
             Assert.All(after.Layers[0].Tracks, track => Assert.Equal(duration, track.Keyframes[^1].Time));
@@ -220,9 +222,9 @@ public sealed class SubtitleEffectsWorkflowUiTests
         }
     }
 
-    private static Guid PrepareSubtitle(MainWindowTestContext context)
+    private static async Task<Guid> PrepareSubtitleAsync(MainWindowTestContext context)
     {
-        var id = UiTestActions.CreateSubtitle(context);
+        var id = await UiTestActions.CreateSubtitleAsync(context);
         context.Session.Editor.Apply("Measured subtitle fixture", document => document with
         {
             Width = 640, Height = 360,

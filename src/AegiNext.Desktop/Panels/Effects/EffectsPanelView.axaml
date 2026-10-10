@@ -2,70 +2,132 @@
              xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common"
              xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:editing="using:AegiNext.Desktop.Editing"
              xmlns:converters="using:Avalonia.Data.Converters"
+             xmlns:core="clr-namespace:AegiNext.Core.Projects;assembly=AegiNext.Core"
              xmlns:workspace="using:AegiNext.Desktop.Workspace"
              xmlns:vm="using:AegiNext.Desktop.Panels.Effects" x:DataType="vm:EffectsPanelViewModel"
              x:Class="AegiNext.Desktop.Panels.Effects.EffectsPanelView" Classes="business-surface">
-  <ScrollViewer>
-    <StackPanel Name="EffectPanel" Margin="4" Spacing="8">
+  <UserControl.Styles>
+    <Style Selector="Button.effect-property-label">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="Button.effect-property-action, ToggleButton.effect-property-action">
+      <Setter Property="Width" Value="26" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="MinWidth" Value="26" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Grid.effect-row">
+      <Setter Property="ColumnSpacing" Value="6" />
+      <Setter Property="Margin" Value="4,3" />
+    </Style>
+    <Style Selector="Grid.effect-row > TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="*,Auto">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Name="EffectPanel" Margin="4" Spacing="6">
       <TextBlock Name="ValidationMessage" Text="{Binding ValidationError}"
                  IsVisible="{Binding ValidationError, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
                  Foreground="Tomato" TextWrapping="Wrap" />
-      <TextBlock Name="EditingTarget" Text="{Binding EditTargetLabel}"
-                 IsVisible="{Binding EditTargetLabel, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}"
-                 TextWrapping="Wrap" Classes="field" />
-      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-        <StackPanel Spacing="4">
-          <TextBlock Name="LayerStartLabel" Classes="field" Text="{Loc Key=Workbench.Start}" />
-          <TextBox Name="LayerStartInput" Text="{Binding LayerStart, Mode=TwoWay}" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" Spacing="4">
-          <TextBlock Name="LayerEndLabel" Classes="field" Text="{Loc Key=Workbench.End}" />
-          <TextBox Name="LayerEndInput" Text="{Binding LayerEnd, Mode=TwoWay}" />
-        </StackPanel>
+      <TextBlock Name="EditingTarget" Text="{Binding EditTargetLabel}" IsVisible="{Binding EditTargetLabel, Converter={x:Static converters:StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" Classes="field" />
+      <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto">
+        <TextBlock Text="{Loc Key=Workbench.EffectScope}" />
+        <ComboBox Grid.Column="1" Grid.ColumnSpan="2" Name="EffectScopeCombo" ItemsSource="{Binding Scopes}"
+            SelectedItem="{Binding SelectedScope, Mode=TwoWay}" IsEnabled="{Binding CanEditTextScope}" HorizontalAlignment="Stretch" />
       </Grid>
-      <TextBlock Classes="field" Text="{Loc Key=Workbench.PositionVector}" />
-      <controls:VectorDraftInput Name="PositionInput" XFieldKey="PositionXInput" YFieldKey="PositionYInput"
-                                 XText="{Binding PositionXText, Mode=TwoWay}"
-                                 YText="{Binding PositionYText, Mode=TwoWay}" X="{Binding PositionX, Mode=TwoWay}"
-                                 Y="{Binding PositionY, Mode=TwoWay}" Minimum="-2000032768" Maximum="2000032768"
-                                 IsEnabled="{Binding CanEditPosition}" />
-      <Button Name="ResetPositionButton" Command="{Binding ResetPositionCommand}"
-              IsEnabled="{Binding CanResetPosition}">
-        <controlsCommon:IconText IconKey="ResetPosition" Text="{Loc Key=Workbench.ResetPosition}" />
-      </Button>
-      <StackPanel Spacing="4" ToolTip.Tip="{Binding ScaleEditingHint}">
-        <TextBlock Classes="field" Text="{Loc Key=Workbench.ScaleVector}" />
-        <controls:VectorDraftInput Name="ScaleInput" XFieldKey="ScaleXInput" YFieldKey="ScaleYInput"
-                                 XText="{Binding ScaleXText, Mode=TwoWay}" YText="{Binding ScaleYText, Mode=TwoWay}"
-                                 X="{Binding ScaleX, Mode=TwoWay}" Y="{Binding ScaleY, Mode=TwoWay}" Minimum="{x:Static vm:EffectsPanelViewModel.ScaleMinimum}"
-                                 Maximum="{x:Static vm:EffectsPanelViewModel.ScaleMaximum}" IsEnabled="{Binding CanEditScale}" />
-      </StackPanel>
-      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-        <StackPanel ToolTip.Tip="{Binding RotationEditingHint}">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.Rotation}" />
-          <controls:NumericDraftInput Name="RotationInput" RawText="{Binding RotationText, Mode=TwoWay}"
-                                      Minimum="{x:Static vm:EffectsPanelViewModel.RotationMinimum}" Maximum="{x:Static vm:EffectsPanelViewModel.RotationMaximum}" Value="{Binding Rotation, Mode=TwoWay}"
-                                      IsEnabled="{Binding CanEditRotation}" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" ToolTip.Tip="{Binding OpacityEditingHint}">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.Opacity}" />
-          <controls:NumericDraftInput Name="OpacityInput" RawText="{Binding OpacityText, Mode=TwoWay}" Minimum="0"
-                                      Maximum="1" Increment="0.05" Value="{Binding Opacity, Mode=TwoWay}"
-                                      IsEnabled="{Binding CanEditOpacity}" />
-        </StackPanel>
+      <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" IsVisible="{Binding CanEditTextScope}">
+        <TextBlock Text="{Loc Key=Workbench.VisualState}" />
+        <ComboBox Grid.Column="1" Grid.ColumnSpan="2" Name="EffectStateCombo" ItemsSource="{Binding States}"
+            SelectedItem="{Binding SelectedState, Mode=TwoWay}" HorizontalAlignment="Stretch" />
       </Grid>
-      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+      <WrapPanel IsVisible="{Binding CanEditTextScope}">
+        <Button Name="CreateAnimationRangeButton" Content="{Loc Key=Workbench.CreateAnimationRange}" Command="{Binding CreateRangeCommand}" IsEnabled="{Binding CanCreateRange}" />
+        <Button Name="DeleteAnimationRangeButton" Content="{Loc Key=Workbench.DeleteAnimationRange}" Command="{Binding DeleteRangeCommand}" IsEnabled="{Binding CanManageRange}" />
+        <Button Command="{Binding MoveRangeUpCommand}" IsEnabled="{Binding CanManageRange}" ToolTip.Tip="{Loc Key=Workbench.MoveRangeUp}" ><controlsCommon:IconText IconKey="Up" /></Button>
+        <Button Command="{Binding MoveRangeDownCommand}" IsEnabled="{Binding CanManageRange}" ToolTip.Tip="{Loc Key=Workbench.MoveRangeDown}" ><controlsCommon:IconText IconKey="Down" /></Button>
+      </WrapPanel>
+      <controlsCommon:PropertySection Name="ClipCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryClip}" IsExpanded="{Binding ClipExpanded, Mode=TwoWay}">
         <StackPanel>
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.Blend}" />
-          <ComboBox Name="BlendCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Blend, Mode=TwoWay}"
-                    ItemsSource="{Binding Blends}" />
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto"><TextBlock Name="LayerStartLabel" Text="{Loc Key=Workbench.Start}" /><TextBox Grid.Column="1" Grid.ColumnSpan="2" Name="LayerStartInput" Text="{Binding LayerStart, Mode=TwoWay}" /></Grid>
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto"><TextBlock Name="LayerEndLabel" Text="{Loc Key=Workbench.End}" /><TextBox Grid.Column="1" Grid.ColumnSpan="2" Name="LayerEndInput" Text="{Binding LayerEnd, Mode=TwoWay}" /></Grid>
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" IsVisible="{Binding CanResizeLayer}"><TextBlock Text="{Loc Key=Workbench.Size}" /><controls:VectorDraftInput Grid.Column="1" Grid.ColumnSpan="2" Name="LayerSizeInput" XFieldKey="LayerWidthInput" YFieldKey="LayerHeightInput" XText="{Binding LayerWidthText, Mode=TwoWay}" YText="{Binding LayerHeightText, Mode=TwoWay}" X="{Binding LayerWidth, Mode=TwoWay}" Y="{Binding LayerHeight, Mode=TwoWay}" Minimum="1" Maximum="200000" /></Grid>
         </StackPanel>
-        <StackPanel Grid.Column="1">
-          <TextBlock Classes="field" Text="{Loc Key=Workbench.Blur}" />
-          <controls:NumericDraftInput Name="BlurInput" RawText="{Binding BlurText, Mode=TwoWay}" Minimum="0"
-                                      Maximum="128" Value="{Binding Blur, Mode=TwoWay}" />
+      </controlsCommon:PropertySection>
+      <controlsCommon:PropertySection Name="TransformCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryTransform}" IsExpanded="{Binding TransformExpanded, Mode=TwoWay}" IsEnabled="{Binding CanEditTargetTransform}">
+        <StackPanel>
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" IsVisible="{Binding IsWholeLayerTarget}">
+            <TextBlock Text="{Loc Key=Workbench.PositionVector}" />
+            <controls:VectorDraftInput Grid.Column="1" Name="PositionInput" XFieldKey="PositionXInput" YFieldKey="PositionYInput" XText="{Binding PositionXText, Mode=TwoWay}" YText="{Binding PositionYText, Mode=TwoWay}" X="{Binding PositionX, Mode=TwoWay}" Y="{Binding PositionY, Mode=TwoWay}" Minimum="-2000032768" Maximum="2000032768" IsEnabled="{Binding CanEditPosition}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsPositionAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetPositionAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.POSITION}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+            </StackPanel>
+          </Grid>
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" ToolTip.Tip="{Binding ScaleEditingHint}">
+            <TextBlock Text="{Loc Key=Workbench.ScaleVector}" />
+            <controls:VectorDraftInput Grid.Column="1" Name="ScaleInput" Increment="0.01" XFieldKey="ScaleXInput" YFieldKey="ScaleYInput" XText="{Binding ScaleXText, Mode=TwoWay}" YText="{Binding ScaleYText, Mode=TwoWay}" X="{Binding ScaleX, Mode=TwoWay}" Y="{Binding ScaleY, Mode=TwoWay}" Minimum="{x:Static vm:EffectsPanelViewModel.ScaleMinimum}" Maximum="{x:Static vm:EffectsPanelViewModel.ScaleMaximum}" IsEnabled="{Binding CanEditScale}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsScaleAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetScaleAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.SCALE}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+            </StackPanel>
+          </Grid>
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" ToolTip.Tip="{Binding RotationEditingHint}">
+            <controls:NumericDragLabel Text="{Loc Key=Workbench.Rotation}" Input="{Binding #RotationInput}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <controls:NumericDraftInput Grid.Column="1" Name="RotationInput" RawText="{Binding RotationText, Mode=TwoWay}" Minimum="{x:Static vm:EffectsPanelViewModel.RotationMinimum}" Maximum="{x:Static vm:EffectsPanelViewModel.RotationMaximum}" Value="{Binding Rotation, Mode=TwoWay}" IsEnabled="{Binding CanEditRotation}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsRotationAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetRotationAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.ROTATION}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+            </StackPanel>
+          </Grid>
+          <Button Name="ResetPositionButton" IsVisible="{Binding IsWholeLayerTarget}" Command="{Binding ResetPositionCommand}" IsEnabled="{Binding CanResetPosition}"><controlsCommon:IconText IconKey="ResetPosition" Text="{Loc Key=Workbench.ResetPosition}" /></Button>
         </StackPanel>
-      </Grid>
+      </controlsCommon:PropertySection>
+      <controlsCommon:PropertySection Name="TypographyCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryTypography}" IsExpanded="{Binding TypographyExpanded, Mode=TwoWay}">
+        <ItemsControl ItemsSource="{Binding TypographyRows}">
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EffectPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </controlsCommon:PropertySection>
+      <controlsCommon:PropertySection Name="FillCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryFill}" IsExpanded="{Binding FillExpanded, Mode=TwoWay}">
+        <ItemsControl ItemsSource="{Binding FillRows}">
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EffectPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </controlsCommon:PropertySection>
+      <controlsCommon:PropertySection Name="StrokeCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryStroke}" IsExpanded="{Binding StrokeExpanded, Mode=TwoWay}">
+        <ItemsControl ItemsSource="{Binding StrokeRows}">
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EffectPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </controlsCommon:PropertySection>
+      <controlsCommon:PropertySection Name="ShadowCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryShadow}" IsExpanded="{Binding ShadowExpanded, Mode=TwoWay}">
+        <ItemsControl ItemsSource="{Binding ShadowRows}">
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EffectPropertyRowViewModel"><vm:EffectPropertyRowView DataContext="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </controlsCommon:PropertySection>
+      <controlsCommon:PropertySection Name="CompositeCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryComposite}" IsExpanded="{Binding CompositeExpanded, Mode=TwoWay}" IsVisible="{Binding IsWholeLayerTarget}">
+        <StackPanel>
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" ToolTip.Tip="{Binding OpacityEditingHint}"><controls:NumericDragLabel Text="{Loc Key=Workbench.Opacity}" Input="{Binding #OpacityInput}" VerticalAlignment="Center" TextWrapping="Wrap" /><controls:NumericDraftInput Grid.Column="1" Name="OpacityInput" RawText="{Binding OpacityText, Mode=TwoWay}" Minimum="0" Maximum="1" Increment="0.05" Value="{Binding Opacity, Mode=TwoWay}" IsEnabled="{Binding CanEditOpacity}" /><StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsOpacityAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetOpacityAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.OPACITY}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+            </StackPanel></Grid>
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto"><TextBlock Text="{Loc Key=Workbench.Blend}" /><ComboBox Grid.Column="1" Grid.ColumnSpan="2" Name="BlendCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Blend, Mode=TwoWay}" ItemsSource="{Binding Blends}" /></Grid>
+          <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto"><controls:NumericDragLabel Text="{Loc Key=Workbench.Blur}" Input="{Binding #BlurInput}" VerticalAlignment="Center" TextWrapping="Wrap" /><controls:NumericDraftInput Grid.Column="1" Name="BlurInput" RawText="{Binding BlurText, Mode=TwoWay}" Minimum="0" Maximum="512" Increment="0.5" Value="{Binding Blur, Mode=TwoWay}" /><StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+              <ToggleButton Classes="effect-property-action" IsChecked="{Binding IsBlurAnimated, Mode=OneWay}" Command="{Binding TogglePropertyAnimationCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.TogglePropertyAnimation}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+              <Button Classes="effect-property-action" Command="{Binding AddPropertyKeyframeCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.Keyframe}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+              <Button Classes="effect-property-action" IsEnabled="{Binding CanResetBlurAnimation}" Command="{Binding ResetPropertyCommand}" CommandParameter="{x:Static core:AnimationProperty.BLUR}" ToolTip.Tip="{Loc Key=Workbench.ResetProperty}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+            </StackPanel></Grid>
+        </StackPanel>
+      </controlsCommon:PropertySection>
+      <controlsCommon:PropertySection Name="PathCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryPath}" IsExpanded="{Binding PathExpanded, Mode=TwoWay}" IsVisible="{Binding IsWholeLayerTarget}">
+        <StackPanel Spacing="4">
       <WrapPanel>
         <Button Name="PathButton" Command="{Binding PathCommand}">
           <controlsCommon:IconText IconKey="Path" Text="{Loc Key=Workbench.Path}" />
@@ -83,6 +145,10 @@
       <StackPanel Orientation="Horizontal" Spacing="8">
         <CheckBox Name="OrientPathCheck" IsChecked="{Binding OrientPath, Mode=TwoWay}" Content="{Loc Key=Workbench.OrientPath}" />
       </StackPanel>
+        </StackPanel>
+      </controlsCommon:PropertySection>
+      <controlsCommon:PropertySection Name="AnimationCategory" Classes="effect-category" Header="{Loc Key=Workbench.EffectCategoryAnimation}" IsExpanded="{Binding AnimationExpanded, Mode=TwoWay}">
+        <StackPanel Spacing="4">
       <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
         <StackPanel Spacing="4">
           <TextBlock Classes="field" Text="{Loc Key=Workbench.Property}" />
@@ -95,6 +161,7 @@
                     SelectedIndex="{Binding Interpolation, Mode=TwoWay}" ItemsSource="{Binding Interpolations}" />
         </StackPanel>
       </Grid>
+      <controls:NumericDragLabel Text="{Loc Key=Workbench.Power}" Input="{Binding #PowerExponentInput}" IsVisible="{Binding IsPowerInterpolation}" />
       <controls:NumericDraftInput Name="PowerExponentInput" PreserveDoublePrecision="True" IsEnabled="{Binding CanEditKeyframes}" IsVisible="{Binding IsPowerInterpolation}" Minimum="0" Maximum="79228162514264337593543950335"
           RawText="{Binding PowerExponent.RawText, Mode=TwoWay}" Value="{Binding PowerExponent.Value, Mode=TwoWay}" />
       <StackPanel Name="OrderedTransformSection" Spacing="4" IsVisible="{Binding IsOrderedTransform}">
@@ -102,26 +169,33 @@
         <ComboBox Name="TransformOperationCombo" ItemsSource="{Binding TransformOperations}" SelectedItem="{Binding SelectedOperation, Mode=TwoWay}" HorizontalAlignment="Stretch" />
         <Grid ColumnDefinitions="*,*" ColumnSpacing="4">
           <StackPanel>
-            <TextBlock Text="{Loc Key=Workbench.Start}" />
+            <controls:NumericDragLabel Text="{Loc Key=Workbench.Start}" Input="{Binding #OperationStartInput}" />
             <controls:NumericDraftInput Name="OperationStartInput" RawText="{Binding OperationStart.RawText, Mode=TwoWay}" Value="{Binding OperationStart.Value, Mode=TwoWay}" Minimum="-1000000000" Maximum="1000000000" />
           </StackPanel>
           <StackPanel Grid.Column="1">
-            <TextBlock Text="{Loc Key=Workbench.End}" />
+            <controls:NumericDragLabel Text="{Loc Key=Workbench.End}" Input="{Binding #OperationEndInput}" />
             <controls:NumericDraftInput Name="OperationEndInput" RawText="{Binding OperationEnd.RawText, Mode=TwoWay}" Value="{Binding OperationEnd.Value, Mode=TwoWay}" Minimum="-1000000000" Maximum="1000000000" />
           </StackPanel>
         </Grid>
         <controls:VectorDraftInput Name="OperationVectorInput" IsVisible="{Binding IsVectorProperty}" XFieldKey="OperationValueXInput" YFieldKey="OperationValueYInput"
             XText="{Binding OperationValueX.RawText, Mode=TwoWay}" YText="{Binding OperationValueY.RawText, Mode=TwoWay}"
             X="{Binding OperationValueX.Value, Mode=TwoWay}" Y="{Binding OperationValueY.Value, Mode=TwoWay}" Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" />
+        <controls:NumericDragLabel Text="{Loc Key=Workbench.Value}" Input="{Binding #OperationValueInput}" IsVisible="{Binding IsScalarProperty}" />
         <controls:NumericDraftInput Name="OperationValueInput" IsVisible="{Binding IsScalarProperty}" RawText="{Binding OperationValueX.RawText, Mode=TwoWay}"
             Value="{Binding OperationValueX.Value, Mode=TwoWay}" Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" />
+        <controls:ColorDraftInput Name="OperationColorInput" CommitOnLostFocus="False" IsVisible="{Binding IsColorProperty}" Draft="{Binding OperationColorDraft}" />
+        <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto">
+          <TextBlock Text="{Loc Key=Workbench.AnimationComponents}" />
+          <ComboBox Grid.Column="1" Grid.ColumnSpan="2" ItemsSource="{Binding OperationComponents}" SelectedItem="{Binding SelectedOperationComponents, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+        </Grid>
+        <CheckBox IsVisible="{Binding CanUseRelativeOperation}" IsChecked="{Binding OperationIsRelative, Mode=TwoWay}" Content="{Loc Key=Workbench.RelativeFontSizeOperation}" />
         <Grid ColumnDefinitions="*,*" ColumnSpacing="4">
           <StackPanel>
-            <TextBlock Text="{Loc Key=Workbench.Power}" />
+            <controls:NumericDragLabel Text="{Loc Key=Workbench.Power}" Input="{Binding #OperationAccelerationInput}" />
             <controls:NumericDraftInput Name="OperationAccelerationInput" PreserveDoublePrecision="True" RawText="{Binding OperationAcceleration.RawText, Mode=TwoWay}" Value="{Binding OperationAcceleration.Value, Mode=TwoWay}" Minimum="0" Maximum="79228162514264337593543950335" />
           </StackPanel>
           <StackPanel Grid.Column="1">
-            <TextBlock Text="{Loc Key=Workbench.TransformOrder}" />
+            <controls:NumericDragLabel Text="{Loc Key=Workbench.TransformOrder}" Input="{Binding #OperationOrderInput}" />
             <controls:NumericDraftInput Name="OperationOrderInput" RawText="{Binding OperationOrder.RawText, Mode=TwoWay}" Value="{Binding OperationOrder.Value, Mode=TwoWay}" Minimum="1" Maximum="100000" />
           </StackPanel>
         </Grid>
@@ -133,8 +207,13 @@
                                  YText="{Binding KeyframeValueYText, Mode=TwoWay}"
                                  X="{Binding KeyframeValue, Mode=TwoWay}" Y="{Binding KeyframeValueY, Mode=TwoWay}"
                                  Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}" />
+      <Grid Classes="effect-row" ColumnDefinitions="108,*,Auto" IsVisible="{Binding IsColorProperty}">
+        <TextBlock Text="{Loc Key=Workbench.ColorInterpolationSpace}" />
+        <ComboBox Grid.Column="1" Grid.ColumnSpan="2" ItemsSource="{Binding ColorSpaces}" SelectedIndex="{Binding ColorSpace, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+      </Grid>
       <controls:ColorDraftInput Name="KeyframeColorInput" IsEnabled="{Binding CanEditKeyframes}" IsVisible="{Binding IsColorProperty}"
                                 Draft="{Binding KeyframeColorDraft}" />
+      <controls:NumericDragLabel Text="{Loc Key=Workbench.Value}" Input="{Binding #KeyframeValueInput}" IsVisible="{Binding IsScalarProperty}" />
       <controls:NumericDraftInput Name="KeyframeValueInput" IsEnabled="{Binding CanEditKeyframes}" IsVisible="{Binding IsScalarProperty}"
                                   RawText="{Binding KeyframeValueText, Mode=TwoWay}"
                                   Minimum="{Binding KeyframeMinimum}" Maximum="{Binding KeyframeMaximum}"
@@ -149,6 +228,12 @@
           <controlsCommon:IconText IconKey="DeleteKeyframe" Text="{Loc Key=Workbench.DeleteKeyframe}" />
         </Button>
       </StackPanel>
+        </StackPanel>
+      </controlsCommon:PropertySection>
+    </StackPanel>
+  </ScrollViewer>
+      <Border Grid.Row="1" Margin="4" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,1,0,0" Padding="0,6,0,0">
+        <StackPanel Spacing="4">
       <TextBlock Classes="field" Text="{Loc Key=Workbench.Preset}" />
       <ComboBox Name="PresetCombo" HorizontalAlignment="Stretch" SelectedIndex="{Binding Preset, Mode=TwoWay}"
                 ItemsSource="{Binding Presets}" />
@@ -161,7 +246,7 @@
           <controlsCommon:IconText IconKey="ManageEffectScripts" Text="{Loc Key=Workbench.ManageEffectScripts}" />
         </Button>
       </WrapPanel>
-    </StackPanel>
-  </ScrollViewer>
-
+        </StackPanel>
+      </Border>
+  </Grid>
 </UserControl>

@@ -40,6 +40,7 @@ public sealed class TimingPostProcessorSettingsViewModel : ObservableObject
     }
 
     public event EventHandler<TimingPostProcessorPreferencesChangedEventArgs>? Changed;
+    internal event EventHandler? StyleSelectionChanging;
     public event EventHandler<TimingPostProcessorAssociationEventArgs>? AssociateRequested;
     public event EventHandler<TimingPostProcessorAssociationEventArgs>? UnlinkRequested;
     public ObservableCollection<TimingStyleChoice> Styles { get; } = [];
@@ -54,7 +55,12 @@ public sealed class TimingPostProcessorSettingsViewModel : ObservableObject
         get => selectedStyle;
         set
         {
-            if (refreshingStyles || value == selectedStyle || IsBusy || !CommitAll())
+            if (refreshingStyles || value == selectedStyle || IsBusy)
+            {
+                return;
+            }
+            StyleSelectionChanging?.Invoke(this, EventArgs.Empty);
+            if (!CommitAll())
             {
                 return;
             }
@@ -244,6 +250,7 @@ public sealed class TimingPostProcessorSettingsViewModel : ObservableObject
     public void UpdateStyles(IEnumerable<SubtitleStylePreset> presets)
     {
         ArgumentNullException.ThrowIfNull(presets);
+        StyleSelectionChanging?.Invoke(this, EventArgs.Empty);
         var existing = Styles.ToDictionary(style => style.Id, style => style.IsSelected);
         var primaryId = selectedStyle?.Id;
         var followSavedOptions = selectedStyle?.Options is { } savedOptions && Options == savedOptions &&

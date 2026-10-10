@@ -12,7 +12,7 @@
     <common:WindowTitleBar Name="IntegerInputTitleBar" />
     <Grid Grid.Row="1" Margin="24" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="16">
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-        <TextBlock Name="IntegerInputLabel" Text="{Binding Label}" VerticalAlignment="Center" />
+        <inputs:NumericDragLabel Name="IntegerInputLabel" Text="{Binding Label}" VerticalAlignment="Center" Input="{Binding #IntegerInput}" />
         <inputs:NumericDraftInput Name="IntegerInput" Grid.Column="1"
                                   RawText="{Binding RawText, Mode=TwoWay}"
                                   Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"

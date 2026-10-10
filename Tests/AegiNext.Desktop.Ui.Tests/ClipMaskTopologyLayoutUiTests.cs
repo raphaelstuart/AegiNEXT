@@ -24,7 +24,7 @@ public sealed class ClipMaskTopologyLayoutUiTests
             Localization.SetLanguage(language);
             context.Window.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
             await context.OpenMediaAsync();
-            UiTestActions.CreateSubtitle(context, text: "蒙版 Clip 123");
+            await UiTestActions.CreateSubtitleAsync(context, text: "蒙版 Clip 123");
             var session = context.Session;
             var first = new MaskNode { Position = new(100, 100) };
             var second = new MaskNode { Position = new(300, 100) };

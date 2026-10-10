@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controlsCommon="using:AegiNext.Desktop.Controls.Common" xmlns:controls="using:AegiNext.Desktop.Controls" xmlns:vm="using:AegiNext.Desktop.Panels.Effects"
+             x:Class="AegiNext.Desktop.Panels.Effects.EffectPropertyRowView" x:DataType="vm:EffectPropertyRowViewModel">
+  <Border Classes="effect-property-row" Padding="4,3" BorderBrush="{DynamicResource PreviewBorder}" BorderThickness="0,0,0,1">
+    <Grid Name="RowGrid" ColumnDefinitions="108,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="3">
+      <Grid>
+        <controls:NumericDragLabel Text="{Binding Name}" Input="{Binding #ScalarInput}" IsVisible="{Binding IsScalar}"
+            VerticalAlignment="Center" TextWrapping="Wrap" ToolTip.Tip="{Binding Name}" />
+        <Button Classes="effect-property-label" Content="{Binding Name}" Command="{Binding SelectCommand}"
+            IsVisible="{Binding !IsScalar}" HorizontalContentAlignment="Left" ToolTip.Tip="{Binding Name}" />
+      </Grid>
+      <StackPanel Name="ValueEditor" Grid.Column="1" Spacing="3" VerticalAlignment="Center" ToolTip.Tip="{Binding EditingHint}">
+        <controls:NumericDraftInput Name="ScalarInput" ToolTip.Tip="{Binding EditingHint}" IsVisible="{Binding IsScalar}" IsEnabled="{Binding IsEnabled}"
+            RawText="{Binding X.RawText, Mode=TwoWay}" Value="{Binding X.Value, Mode=TwoWay}"
+            Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" Increment="{Binding Increment}" />
+        <controls:VectorDraftInput Name="VectorInput" IsVisible="{Binding IsVector}" IsEnabled="{Binding IsEnabled}"
+            XFieldKey="RangeValueXInput" YFieldKey="RangeValueYInput"
+            XText="{Binding X.RawText, Mode=TwoWay}" YText="{Binding Y.RawText, Mode=TwoWay}"
+            X="{Binding X.Value, Mode=TwoWay}" Y="{Binding Y.Value, Mode=TwoWay}"
+            Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" Increment="{Binding Increment}" />
+        <controls:ColorDraftInput Name="ColorInput" CommitOnLostFocus="False" IsVisible="{Binding IsColor}" IsEnabled="{Binding IsEnabled}" Draft="{Binding Color}" />
+      </StackPanel>
+      <StackPanel Name="RowActions" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Spacing="2">
+        <ToggleButton Classes="effect-property-action" IsEnabled="{Binding CanToggleAnimation}" IsChecked="{Binding IsAnimated, Mode=OneWay}"
+            Command="{Binding ToggleAnimationCommand}" ToolTip.Tip="{Binding AnimationHint}" ><controlsCommon:IconText IconKey="Clock" /></ToggleButton>
+        <Button Classes="effect-property-action" IsEnabled="{Binding CanAddKeyframe}" Command="{Binding AddKeyframeCommand}" ToolTip.Tip="{Binding KeyframeHint}" ><controlsCommon:IconText IconKey="Keyframe" /></Button>
+        <Button Classes="effect-property-action" IsEnabled="{Binding CanReset}" Command="{Binding ResetCommand}" ToolTip.Tip="{Binding ResetHint}" ><controlsCommon:IconText IconKey="Reset" /></Button>
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

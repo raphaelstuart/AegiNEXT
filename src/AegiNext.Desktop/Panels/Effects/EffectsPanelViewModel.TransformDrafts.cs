@@ -15,6 +15,7 @@ internal sealed partial class EffectsPanelViewModel
     private Guid? operationLayer;
     private AnimationTrackTarget operationTarget;
     private Guid? operationIdentity;
+    private bool operationOptionsDirty;
 
     private IEnumerable<(string Name, NumericValueDraft Draft)> OperationFields =>
     [
@@ -22,10 +23,12 @@ internal sealed partial class EffectsPanelViewModel
         ("OperationValueXInput", OperationValueX), ("OperationValueYInput", OperationValueY),
         ("OperationAccelerationInput", OperationAcceleration), ("OperationOrderInput", OperationOrder)
     ];
-    internal bool HasOperationDraft => OperationFields.Any(draftField => operationOriginals.TryGetValue(draftField.Name, out var original) && draftField.Draft.RawText != original);
+    internal bool HasOperationDraft => operationOptionsDirty || OperationColorDraft.IsDirty || OperationFields.Any(draftField => operationOriginals.TryGetValue(draftField.Name, out var original) && draftField.Draft.RawText != original);
 
     private void InitializeOperationDrafts()
     {
+        OperationColorDraft.Changed += (_, _) => MarkOperationChanged();
+        OperationColorDraft.Committed += (_, _) => session.TryCommitDrafts(false);
         foreach (var field in OperationFields)
         {
             field.Draft.PropertyChanged += (_, e) =>
@@ -34,14 +37,24 @@ internal sealed partial class EffectsPanelViewModel
                 {
                     return;
                 }
-                session.NotifyTaskInputChanged();
-                operationSource ??= session.DocumentSnapshot;
-                operationLayer ??= SelectedLayer?.Id;
-                operationTarget = Target;
-                operationIdentity ??= SelectedOperation?.Id;
-                session.RefreshMaskPreview();
+                MarkOperationChanged();
             };
         }
+    }
+
+    private void MarkOperationChanged()
+    {
+        if (loadingOperation || session.IsUpdating)
+        {
+            return;
+        }
+        operationOptionsDirty = true;
+        session.NotifyTaskInputChanged();
+        operationSource ??= session.DocumentSnapshot;
+        operationLayer ??= SelectedLayer?.Id;
+        operationTarget = Target;
+        operationIdentity ??= SelectedOperation?.Id;
+        session.RefreshMaskPreview();
     }
 
     public bool RestoreOperationField(string? name)
@@ -96,12 +109,26 @@ internal sealed partial class EffectsPanelViewModel
         {
             throw new InvalidDataException(Localization.Get("Workbench.InvalidValue"));
         }
-        var x = Read("OperationValueXInput", OperationValueX);
-        AnimationValue value = operation.Value.IsVector ? new ScenePoint(x, Read("OperationValueYInput", OperationValueY)) : x;
+        AnimationValue value;
+        if (operation.Value.IsColor)
+        {
+            if (!OperationColorDraft.TryCommit(out var color))
+            {
+                session.ViewModel.InvalidFieldKey = "OperationColorInput";
+                throw new InvalidDataException(OperationColorDraft.Error);
+            }
+            value = color;
+        }
+        else
+        {
+            var x = Read("OperationValueXInput", OperationValueX);
+            value = operation.Value.IsVector ? new ScenePoint(x, Read("OperationValueYInput", OperationValueY)) : x;
+        }
         var changed = operation with
         {
             Start = new MediaTime((long)Math.Round(start * 1000000), 1000000),
-            End = new MediaTime((long)Math.Round(end * 1000000), 1000000), Value = value, Acceleration = acceleration
+            End = new MediaTime((long)Math.Round(end * 1000000), 1000000), Value = value, Acceleration = acceleration,
+            ComponentMask = operationComponentMask, Mode = operationIsRelative ? AnimationTransformMode.MULTIPLY_BY : AnimationTransformMode.INTERPOLATE_TO
         };
         var operations = track.Transforms.Remove(operation).Insert((int)order - 1, changed);
         return WorkspaceDraftOperations.UpdateLayer(document, layer.Id, candidate => candidate with
@@ -141,5 +168,7 @@ internal sealed partial class EffectsPanelViewModel
         operationLayer = null;
         operationIdentity = null;
         operationOriginals.Clear();
+        operationOptionsDirty = false;
+        OperationColorDraft.Load(OperationColorDraft.Value);
     }
 }

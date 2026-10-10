@@ -80,6 +80,49 @@ internal sealed partial class EffectsPanelViewModel
             }
         }
     }
+    public ColorDraft OperationColorDraft { get; } = new();
+    public EffectComponentChoice[] OperationComponents => IsColorProperty
+        ? [new(0, Localization.Get("Workbench.AnimationAllComponents")), new(7, Localization.Get("Workbench.AnimationRgb")),
+            new(8, Localization.Get("Workbench.AnimationAlpha")), new(1, "R"), new(2, "G"), new(4, "B")]
+        : IsVectorProperty ? [new(0, Localization.Get("Workbench.AnimationAllComponents")), new(1, "X"), new(2, "Y")]
+        : [new(0, Localization.Get("Workbench.AnimationAllComponents"))];
+    private int operationComponentMask;
+    public EffectComponentChoice? SelectedOperationComponents
+    {
+        get => OperationComponents.FirstOrDefault(choice => choice.Mask == operationComponentMask);
+        set
+        {
+            if (value is not null && SetProperty(ref operationComponentMask, value.Mask) && !loadingOperation && !session.IsUpdating)
+            {
+                MarkOperationChanged();
+            }
+        }
+    }
+    private bool operationIsRelative;
+    public bool OperationIsRelative
+    {
+        get => operationIsRelative;
+        set
+        {
+            if (SetProperty(ref operationIsRelative, value) && !loadingOperation && !session.IsUpdating)
+            {
+                MarkOperationChanged();
+            }
+        }
+    }
+    public bool CanUseRelativeOperation => Property == AnimationProperty.FONT_SIZE;
+    public string[] ColorSpaces { get; private set; } = [Localization.Get("Workbench.ColorLinearRgb"), Localization.Get("Workbench.ColorSrgb")];
+    public int ColorSpace
+    {
+        get => (int)(SelectedLayer?.Tracks.FirstOrDefault(track => track.Target == Target)?.ColorSpace ?? AnimationColorSpace.LINEAR_RGB);
+        set
+        {
+            if (!session.IsUpdating && value is >= 0 and <= 1 && value != ColorSpace)
+            {
+                _ = session.SetEffectColorSpaceAsync(Target, (AnimationColorSpace)value);
+            }
+        }
+    }
     public NumericValueDraft OperationStart { get; } = new();
     public NumericValueDraft OperationEnd { get; } = new();
     public NumericValueDraft OperationValueX { get; } = new();
@@ -121,6 +164,11 @@ internal sealed partial class EffectsPanelViewModel
         loadingOperation = true;
         try
         {
+            OperationColorDraft.Load(operation.Value.IsColor ? operation.Value.Color : SceneColor.White);
+            operationComponentMask = operation.ComponentMask;
+            operationIsRelative = operation.Mode == AnimationTransformMode.MULTIPLY_BY;
+            OnPropertyChanged(nameof(SelectedOperationComponents));
+            OnPropertyChanged(nameof(OperationIsRelative));
             OperationStart.Load(Seconds(operation.Start));
             OperationEnd.Load(Seconds(operation.End));
             OperationValueX.Load(operation.Value.GetComponent(0));

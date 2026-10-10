@@ -13,9 +13,10 @@ public sealed class EffectsPanelCleanupUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var panel = context.Window.Panels[WorkbenchPanelIds.EFFECTS];
         Assert.Null(panel.FindControl<TextBox>("LayerNameInput"));
+        context.ViewModel.Effects.ClipExpanded = true;
         var originalName = context.Session.SelectedLayer!.Name;
         context.ViewModel.Effects.RotationText = "15";
         Assert.True(context.Session.TryCommitDrafts());
@@ -39,7 +40,7 @@ public sealed class EffectsPanelCleanupUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var panel = context.Window.Panels[WorkbenchPanelIds.EFFECTS];
         context.ViewModel.Effects.EditTargetLabel = string.Empty;
         Dispatcher.UIThread.RunJobs();

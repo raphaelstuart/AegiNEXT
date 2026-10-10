@@ -29,6 +29,7 @@ public sealed partial class IntegerInputDialog : Window, IWindowTitleBarHost
         this.viewModel = viewModel;
         DataContext = viewModel;
         AvaloniaXamlLoader.Load(this);
+        DataContextChanged += (_, _) => this.FindControl<NumericDragLabel>("IntegerInputLabel")!.CancelDrag();
         titleBar = this.FindControl<WindowTitleBar>("IntegerInputTitleBar")!;
         chrome = WindowChrome.Attach(this, titleBar);
         if (viewModel is not null)
@@ -73,6 +74,17 @@ public sealed partial class IntegerInputDialog : Window, IWindowTitleBarHost
     {
         if (pressedKeys.Contains(e.Key))
         {
+            e.Handled = true;
+            return;
+        }
+
+        if (this.FindControl<NumericDraftInput>("IntegerInput")!.IsTitleDragging && e.Key is Key.Escape or Key.Enter)
+        {
+            if (e.Key == Key.Escape)
+            {
+                this.FindControl<NumericDragLabel>("IntegerInputLabel")!.CancelDrag();
+            }
+            pressedKeys.Add(e.Key);
             e.Handled = true;
             return;
         }

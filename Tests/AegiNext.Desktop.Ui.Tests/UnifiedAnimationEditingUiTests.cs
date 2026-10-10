@@ -18,12 +18,13 @@ public sealed class UnifiedAnimationEditingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         var id = session.SelectedLayer!.Id;
         session.Editor.SetKeyframe(id, AnimationProperty.OPACITY, new(new(1), 0.25));
         session.Editor.SetKeyframe(id, AnimationProperty.OPACITY, new(new(2), 0.75));
         session.SelectKeyframe(new(id, AnimationProperty.OPACITY, new(1), new(1)));
+        UiTestActions.ExpandEffectsCategory(context.Window, "CompositeCategory");
         var input = UiTestActions.Find<NumericDraftInput>(context.Window, "OpacityInput");
         input.BringIntoView();
         context.Window.UpdateLayout();
@@ -52,7 +53,7 @@ public sealed class UnifiedAnimationEditingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         var id = session.SelectedLayer!.Id;
         session.Editor.SetKeyframe(id, AnimationProperty.OPACITY, new(new(0), 0.2));
@@ -74,7 +75,7 @@ public sealed class UnifiedAnimationEditingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         var id = session.SelectedLayer!.Id;
         session.Editor.SetKeyframe(id, AnimationProperty.OPACITY, new(new(1), 0.25));
@@ -96,7 +97,7 @@ public sealed class UnifiedAnimationEditingUiTests
     {
         await using var context = new MainWindowTestContext();
         await context.OpenMediaAsync();
-        UiTestActions.CreateSubtitle(context);
+        await UiTestActions.CreateSubtitleAsync(context);
         var session = context.Session;
         var mask = new RectangleClipMask { TopLeft = new(100, 100), BottomRight = new(500, 400) };
         session.Editor.SetClipMask(session.SelectedLayer!.Id, mask);

@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using AegiNext.Desktop.Controls;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Settings.TimingPostProcessor;
@@ -11,11 +13,14 @@ namespace AegiNext.Desktop.Settings.TimingPostProcessor;
 /// <summary>组合参数输入并转发字段确认操作，不访问工程或播放器。</summary>
 public sealed partial class TimingPostProcessorSettingsView : UserControl
 {
+    private TimingPostProcessorSettingsViewModel? observedModel;
+
     /// <summary>加载局部页面并连接数值草稿确认和恢复。</summary>
     public TimingPostProcessorSettingsView()
     {
         DataContext = null;
         AvaloniaXamlLoader.Load(this);
+        DataContextChanged += (_, _) => ChangeModel();
         var styles = this.FindControl<ListBox>("TimingPostProcessorStylesList")!;
         styles.AddHandler(PointerPressedEvent, (_, args) => SelectStyle(args.Source), RoutingStrategies.Tunnel, true);
         styles.GotFocus += (_, args) => SelectStyle(args.Source);
@@ -27,6 +32,40 @@ public sealed partial class TimingPostProcessorSettingsView : UserControl
         BindField("StartAfterMillisecondsInput", TimingPostProcessorField.START_AFTER);
         BindField("EndBeforeMillisecondsInput", TimingPostProcessorField.END_BEFORE);
         BindField("EndAfterMillisecondsInput", TimingPostProcessorField.END_AFTER);
+    }
+
+    private void ChangeModel()
+    {
+        CancelNumericDrags();
+        if (observedModel is not null)
+        {
+            observedModel.PropertyChanged -= OnModelChanged;
+            observedModel.StyleSelectionChanging -= OnStyleSelectionChanging;
+        }
+        observedModel = DataContext as TimingPostProcessorSettingsViewModel;
+        if (observedModel is not null)
+        {
+            observedModel.PropertyChanged += OnModelChanged;
+            observedModel.StyleSelectionChanging += OnStyleSelectionChanging;
+        }
+    }
+
+    private void OnStyleSelectionChanging(object? sender, EventArgs args) => CancelNumericDrags();
+
+    private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(TimingPostProcessorSettingsViewModel.SelectedStyle))
+        {
+            CancelNumericDrags();
+        }
+    }
+
+    private void CancelNumericDrags()
+    {
+        foreach (var title in this.GetVisualDescendants().OfType<NumericDragLabel>())
+        {
+            title.CancelDrag();
+        }
     }
 
     private void SelectStyle(object? source)
@@ -42,11 +81,48 @@ public sealed partial class TimingPostProcessorSettingsView : UserControl
     private void BindField(string name, TimingPostProcessorField field)
     {
         var input = this.FindControl<NumericDraftInput>(name)!;
+        var title = this.FindControl<NumericDragLabel>(name + "Title")!;
+        var focusRevision = 0L;
+        TimingPostProcessorSettingsViewModel? dragModel = null;
+        title.DragStarted += (_, _) =>
+        {
+            focusRevision++;
+            dragModel = DataContext as TimingPostProcessorSettingsViewModel;
+        };
+        title.DragCompleted += (_, args) =>
+        {
+            focusRevision++;
+            var frozenModel = dragModel;
+            dragModel = null;
+            if (args.Changed && input.IsEffectivelyVisible && frozenModel is { IsBusy: false } &&
+                ReferenceEquals(DataContext, frozenModel))
+            {
+                frozenModel.Commit(field);
+            }
+        };
+        title.DragCanceled += (_, _) =>
+        {
+            focusRevision++;
+            dragModel = null;
+        };
+        DataContextChanged += (_, _) =>
+        {
+            focusRevision++;
+            title.CancelDrag();
+        };
+        PropertyChanged += (_, args) =>
+        {
+            if (args.Property == IsVisibleProperty && !IsVisible)
+            {
+                title.CancelDrag();
+            }
+        };
         input.AddHandler(KeyDownEvent, (_, args) =>
         {
             if (DataContext is TimingPostProcessorSettingsViewModel model && args.Key is Key.Enter or Key.Escape &&
                 !HasComposition(input))
             {
+                focusRevision++;
                 if (args.Key == Key.Escape)
                 {
                     model.Restore(field);
@@ -61,11 +137,18 @@ public sealed partial class TimingPostProcessorSettingsView : UserControl
         }, RoutingStrategies.Tunnel);
         input.LostFocus += (_, _) =>
         {
-            if (IsEffectivelyVisible && DataContext is TimingPostProcessorSettingsViewModel { IsBusy: false } model &&
-                !HasComposition(input))
+            var revision = ++focusRevision;
+            var currentModel = DataContext as TimingPostProcessorSettingsViewModel;
+            var currentStyle = currentModel?.SelectedStyle;
+            Dispatcher.UIThread.Post(() =>
             {
-                model.Commit(field);
-            }
+                if (revision == focusRevision && !input.IsTitleDragging && !input.IsKeyboardFocusWithin && input.IsEffectivelyVisible &&
+                    currentModel is { IsBusy: false } && ReferenceEquals(DataContext, currentModel) &&
+                    ReferenceEquals(currentModel.SelectedStyle, currentStyle) && !HasComposition(input))
+                {
+                    currentModel.Commit(field);
+                }
+            }, DispatcherPriority.Background);
         };
     }
 

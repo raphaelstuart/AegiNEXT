@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using AegiNext.Desktop.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input;
@@ -17,10 +18,46 @@ public sealed partial class MediaSettingsView : UserControl
         DataContext = null;
         AvaloniaXamlLoader.Load(this);
         var input = this.FindControl<NumericDraftInput>("AudioExtraDelayInput")!;
+        var title = this.FindControl<NumericDragLabel>("AudioExtraDelayInputTitle")!;
+        var focusRevision = 0L;
+        MediaSettingsViewModel? dragModel = null;
+        title.DragStarted += (_, _) =>
+        {
+            focusRevision++;
+            dragModel = DataContext as MediaSettingsViewModel;
+        };
+        title.DragCompleted += (_, args) =>
+        {
+            focusRevision++;
+            var frozenModel = dragModel;
+            dragModel = null;
+            if (args.Changed && IsEffectivelyVisible && ReferenceEquals(DataContext, frozenModel))
+            {
+                frozenModel?.CommitAudioCalibration();
+            }
+        };
+        title.DragCanceled += (_, _) =>
+        {
+            focusRevision++;
+            dragModel = null;
+        };
+        DataContextChanged += (_, _) =>
+        {
+            focusRevision++;
+            title.CancelDrag();
+        };
+        PropertyChanged += (_, args) =>
+        {
+            if (args.Property == IsVisibleProperty && !IsVisible)
+            {
+                title.CancelDrag();
+            }
+        };
         input.AddHandler(KeyDownEvent, (_, args) =>
         {
             if (DataContext is MediaSettingsViewModel model && args.Key is Key.Enter or Key.Escape && !HasComposition(input))
             {
+                focusRevision++;
                 if (args.Key == Key.Escape)
                 {
                     model.RestoreAudioCalibration();
@@ -34,10 +71,16 @@ public sealed partial class MediaSettingsView : UserControl
         }, RoutingStrategies.Tunnel);
         input.LostFocus += (_, _) =>
         {
-            if (IsEffectivelyVisible && DataContext is MediaSettingsViewModel model && !HasComposition(input))
+            var revision = ++focusRevision;
+            var currentModel = DataContext as MediaSettingsViewModel;
+            Dispatcher.UIThread.Post(() =>
             {
-                model.CommitAudioCalibration();
-            }
+                if (revision == focusRevision && !input.IsTitleDragging && !input.IsKeyboardFocusWithin && IsEffectivelyVisible &&
+                    currentModel is not null && ReferenceEquals(DataContext, currentModel) && !HasComposition(input))
+                {
+                    currentModel.CommitAudioCalibration();
+                }
+            }, DispatcherPriority.Background);
         };
     }
 

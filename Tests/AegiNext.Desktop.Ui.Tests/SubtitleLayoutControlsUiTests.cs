@@ -393,7 +393,7 @@ public sealed class SubtitleLayoutControlsUiTests
     [InlineData("PivotYInput")]
     [InlineData("OffsetXInput")]
     [InlineData("OffsetYInput")]
-    public void TextEntryAndSpinnerKeepTheRawDraftAuthoritativeAndOnlyEditTheirComponent(string fieldKey)
+    public void TextEntryAndTitleDragKeepTheRawDraftAuthoritativeAndOnlyEditTheirComponent(string fieldKey)
     {
         using var environment = new UiTestEnvironment();
         var draft = CreateDraft(0.25);
@@ -426,12 +426,20 @@ public sealed class SubtitleLayoutControlsUiTests
             Assert.Equal(typedValue, field.Value);
             var spinner = Assert.Single(input.GetVisualDescendants().OfType<ButtonSpinner>());
             var increase = Assert.Single(spinner.GetVisualDescendants().OfType<Button>(), value => value.Name == "PART_IncreaseButton");
-            Assert.True(increase.IsEffectivelyEnabled);
-            var point = increase.TranslatePoint(new Point(increase.Bounds.Width / 2, increase.Bounds.Height / 2), window)!.Value;
-            window.MouseDown(point, MouseButton.Left);
-            window.MouseUp(point, MouseButton.Left);
+            Assert.False(input.ShowButtonSpinner);
+            Assert.False(increase.IsEffectivelyVisible);
+            var title = Assert.Single(editor.GetVisualDescendants().OfType<NumericDragLabel>(), value => ReferenceEquals(value.Input, input));
+            title.BringIntoView();
             Flush(window);
-            var expectedValue = typedValue + (offset ? 1m : 0.1m);
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            using var frame = window.CaptureRenderedFrame();
+            var point = title.TranslatePoint(new Point(title.Bounds.Width / 2, title.Bounds.Height / 2), window)!.Value;
+            Assert.Same(title, window.InputHitTest(point));
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseMove(point + new Vector(8, 0));
+            window.MouseUp(point + new Vector(8, 0), MouseButton.Left);
+            Flush(window);
+            var expectedValue = typedValue + (offset ? 8m : 0.08m);
             Assert.Equal(expectedValue.ToString(System.Globalization.CultureInfo.CurrentCulture), field.RawText);
             Assert.Equal(expectedValue, field.Value);
             Assert.Equal(expectedValue, input.Value);

@@ -28,7 +28,7 @@
           <TextBlock Text="{Loc Key=Settings.AudioTiming}" Classes="heading" />
           <TextBlock Name="AudioClockStatus" Text="{Binding AudioClockStatus}" TextWrapping="Wrap" />
           <Grid ColumnDefinitions="*,160" ColumnSpacing="16">
-            <TextBlock Text="{Loc Key=Settings.AudioExtraDelay}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <inputs:NumericDragLabel Name="AudioExtraDelayInputTitle" Text="{Loc Key=Settings.AudioExtraDelay}" VerticalAlignment="Center" TextWrapping="Wrap" Input="{Binding #AudioExtraDelayInput}" />
             <inputs:NumericDraftInput Name="AudioExtraDelayInput" Grid.Column="1"
                 RawText="{Binding ExtraDelayMillisecondsText, Mode=TwoWay}" IsEnabled="{Binding CanCalibrate}"
                 Minimum="-1000" Maximum="1000" Increment="1" FormatString="0" PreserveDoublePrecision="True" />
