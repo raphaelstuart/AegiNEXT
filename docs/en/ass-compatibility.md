@@ -4,7 +4,7 @@
 
 AegiNext uses native subtitle, text-range, karaoke, animation, and mask models. ASS is an exchange format: import converts supported content into native data, while export produces a target file and loss diagnostics. Project persistence does not pass through ASS, so exchange limits do not rewrite the native project.
 
-See the [ASS tag audit](ass-tag-audit.md) for native relationships, conversion in each direction, implementation status, and remaining change size. See [subtitle editing](subtitle-editing.md) for the workflow.
+See the [ASS tag audit](ass-tag-audit.md) for native relationships, conversion in each direction, and implementation status. See [subtitle editing](subtitle-editing.md) for the workflow.
 
 ## Corresponding content
 
