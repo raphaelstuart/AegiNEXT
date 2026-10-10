@@ -165,6 +165,20 @@
     <Setter Property="HorizontalContentAlignment" Value="Center"/>
     <Setter Property="VerticalContentAlignment" Value="Center"/>
   </Style>
+  <Style Selector="ComboBox.icon-selector">
+    <Setter Property="Width" Value="{DynamicResource WorkbenchControlHeight}"/>
+    <Setter Property="Height" Value="{DynamicResource WorkbenchControlHeight}"/>
+    <Setter Property="MinWidth" Value="{DynamicResource WorkbenchControlHeight}"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+  </Style>
+  <Style Selector="ComboBox.icon-selector /template/ PathIcon#DropDownGlyph">
+    <Setter Property="IsVisible" Value="False"/>
+  </Style>
+  <Style Selector="ComboBox.icon-selector /template/ ContentControl#ContentPresenter">
+    <Setter Property="Grid.ColumnSpan" Value="2"/>
+    <Setter Property="Margin" Value="0"/>
+  </Style>
   <Style Selector="Border.card">
     <Setter Property="Background" Value="{DynamicResource PreviewSurface}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource PreviewBorder}"/>

@@ -43,7 +43,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
     private readonly ComboBox kind = new() { Name = "KaraokeHighlightKindInput", Width = 200 };
     private readonly ComboBox presets = new() { Name = "SelectionStylePresetCombo", Width = 200 };
     private readonly FontFamilyPicker selectionFont = new() { Name = "SelectionFontInput", Width = 200, RestoreOnEscape = false, CommitOnLostFocus = false };
-    private readonly ComboBox visualState = new() { Name = "SubtitleVisualStateInput", Width = 180 };
+    private readonly ComboBox visualState = new() { Name = "SubtitleVisualStateInput" };
     private readonly DraftPopup clipPopup = new() { OverlayDismissEventPassThrough = true,
         Placement = PlacementMode.BottomEdgeAlignedLeft, VerticalOffset = 4 };
     private readonly ToolbarToggleButton enableKaraoke = new() { Name = "EnableKaraokeToggle" };
@@ -142,6 +142,9 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
             "Workbench.EnableKaraokeHint");
         enableKaraoke.Width = double.NaN;
         enableKaraoke.Padding = new(8, 0);
+        visualState.Classes.Add("icon-selector");
+        visualState.Resources["ComboBoxThemeMinWidth"] = 0d;
+        visualState.SelectionBoxItemTemplate = new FuncDataTemplate<string>((_, _) => WorkbenchIcon.Create("HighlightStyle"));
         visualState.SelectionChanged += (_, _) =>
         {
             if (!synchronizing && visualState.SelectedIndex >= 0)
@@ -156,11 +159,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
             }
         };
         BuildStyleFields();
-        styleToolbar.Children.Add(ToolbarSeparator("PlaybackActionSeparator"));
-        styleToolbar.Children.Add(play);
-        styleToolbar.Children.Add(loop);
-        styleToolbar.Children.Add(snap);
-        styleToolbar.Children.Add(keepTimeLabels);
+        styleToolbar.Children.Add(ToolbarSeparator("VisualStateSeparator"));
         styleToolbar.Children.Add(visualState);
         var restore = Button("Workbench.RestoreDraft", "Reset", () =>
         {
@@ -715,6 +714,9 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
                 KaraokeVisualState.ACTIVE => 2,
                 _ => 0
             };
+            var appearanceHint = Localization.Get("Workbench.VisualState.Select") + " · " + visualState.SelectedItem;
+            ToolTip.SetTip(visualState, appearanceHint);
+            AutomationProperties.SetName(visualState, appearanceHint);
             styleFields.DataContext = IsEditingVisualState ? coordinator.HighlightDraft : coordinator.StyleDraft;
             rich.IsEnabled = line is not null;
             var start = Math.Min(selectionStart, selectionEnd);

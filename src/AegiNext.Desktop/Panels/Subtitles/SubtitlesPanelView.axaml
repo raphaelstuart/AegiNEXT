@@ -19,13 +19,6 @@
     <Style Selector="ComboBox#SubtitleColorTagFilterCombo.filtered">
       <Setter Property="BorderBrush" Value="{DynamicResource WorkbenchDockActiveForeground}" />
     </Style>
-    <Style Selector="ComboBox#SubtitleColorTagFilterCombo /template/ PathIcon#DropDownGlyph">
-      <Setter Property="IsVisible" Value="False" />
-    </Style>
-    <Style Selector="ComboBox#SubtitleColorTagFilterCombo /template/ ContentControl#ContentPresenter">
-      <Setter Property="Grid.ColumnSpan" Value="2" />
-      <Setter Property="Margin" Value="0" />
-    </Style>
   </UserControl.Styles>
   <Border Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}"
           BorderThickness="0" CornerRadius="{DynamicResource WorkbenchPanelCornerRadius}" ClipToBounds="True">
@@ -39,8 +32,7 @@
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>
-        <ComboBox Name="SubtitleColorTagFilterCombo" Width="{DynamicResource WorkbenchControlHeight}" Height="{DynamicResource WorkbenchControlHeight}"
-                  Padding="0" Margin="0,0,8,4" HorizontalContentAlignment="Center"
+        <ComboBox Name="SubtitleColorTagFilterCombo" Classes="icon-selector" Margin="0,0,8,4"
                   Classes.filtered="{Binding IsColorTagFilterActive}"
                   ItemsSource="{Binding ColorTagFilters}" SelectedItem="{Binding SelectedColorTagFilter, Mode=OneWay}"
                   ToolTip.Tip="{Binding ColorTagFilterHint}" AutomationProperties.Name="{Binding ColorTagFilterHint}">

@@ -304,12 +304,12 @@ public sealed class SubtitleDetailsFieldsUiTests
         host.Height = 900;
         Flush(host);
         var toolbar = UiTestActions.Find<Grid>(host, "SubtitleDetailsToolbar");
-        var left = UiTestActions.Find<StackPanel>(host, "SelectionStyleToolbar");
+        var timingActions = UiTestActions.Find<WrapPanel>(host, "KaraokeTimingActions");
         var actions = UiTestActions.Find<StackPanel>(host, "SubtitleDetailsActions");
         var snap = UiTestActions.Find<ToolbarToggleButton>(host, "KaraokeSnapToggle");
         var enable = UiTestActions.Find<ToolbarToggleButton>(host, "EnableKaraokeToggle");
         var restore = UiTestActions.Find<Button>(host, "RestoreDraftButton");
-        Assert.Same(left, snap.Parent);
+        Assert.Same(timingActions, snap.Parent);
         Assert.Equal(MaterialIconKind.Magnet, Assert.IsType<MaterialIcon>(snap.Content).Kind);
         Assert.Equal(32, snap.Bounds.Width);
         Assert.Equal(32, snap.Bounds.Height);
@@ -328,7 +328,7 @@ public sealed class SubtitleDetailsFieldsUiTests
             Assert.Equal(Localization.Get("Workbench.RestoreDraft"), restoreContent.Text);
             Assert.Equal(Localization.Get("Workbench.KaraokeSnapHint"), ToolTip.GetTip(snap));
             Assert.Equal(Localization.Get("Workbench.KaraokeSnap"), AutomationProperties.GetName(snap));
-            Assert.Equal(enableContent.Text, ToolTip.GetTip(enable));
+            Assert.Equal(Localization.Get("Workbench.EnableKaraokeHint"), ToolTip.GetTip(enable));
             Assert.Equal(enableContent.Text, AutomationProperties.GetName(enable));
             Assert.Equal(restoreContent.Text, ToolTip.GetTip(restore));
             Assert.Equal(restoreContent.Text, AutomationProperties.GetName(restore));
@@ -477,7 +477,7 @@ public sealed class SubtitleDetailsFieldsUiTests
         var enable = UiTestActions.Find<ToggleButton>(host, "EnableKaraokeToggle");
         enable.BringIntoView();
         Flush(host);
-        Assert.False(enable.IsEffectivelyEnabled);
+        Assert.True(enable.IsEffectivelyEnabled);
         UiTestActions.Click(host, "GenerateAllTimingButton");
         Flush(host);
         Assert.True(enable.IsChecked);

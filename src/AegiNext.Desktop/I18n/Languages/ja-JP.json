@@ -911,6 +911,7 @@
     "Tasks.SwitchDecodeMode": "プレビューのデコーダーを切り替え",
     "Tasks.ExportPresets": "エンコードプリセットをエクスポート",
     "Tasks.SettingsCaptureLayout": "保存済みのレイアウト設定を読み取り",
+    "Workbench.VisualState.Select": "編集する外観",
     "Workbench.VisualState.Normal": "通常の外観",
     "Workbench.VisualState.Inactive": "未アクティブの外観",
     "Workbench.VisualState.Active": "アクティブの外観",

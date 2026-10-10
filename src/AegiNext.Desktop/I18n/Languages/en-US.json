@@ -973,6 +973,7 @@
     "Settings.ColorTagDefault.Blue": "Blue",
     "Settings.ColorTagDefault.Purple": "Purple",
     "Settings.ColorTagDefault.Gray": "Gray",
+    "Workbench.VisualState.Select": "Edit appearance",
     "Workbench.VisualState.Normal": "Normal appearance",
     "Workbench.VisualState.Inactive": "Inactive appearance",
     "Workbench.VisualState.Active": "Active appearance",

@@ -973,6 +973,7 @@
     "Settings.ColorTagDefault.Blue": "蓝色",
     "Settings.ColorTagDefault.Purple": "紫色",
     "Settings.ColorTagDefault.Gray": "灰色",
+    "Workbench.VisualState.Select": "编辑外观",
     "Workbench.VisualState.Normal": "普通外观",
     "Workbench.VisualState.Inactive": "未激活外观",
     "Workbench.VisualState.Active": "已激活外观",

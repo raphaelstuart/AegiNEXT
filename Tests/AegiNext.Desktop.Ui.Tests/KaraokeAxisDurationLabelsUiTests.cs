@@ -313,7 +313,7 @@ public sealed class KaraokeAxisDurationLabelsUiTests
         Flush(window);
         var axis = UiTestActions.Find<KaraokeClipAxis>(window, "KaraokeAxis");
         var toggle = UiTestActions.Find<ToolbarToggleButton>(window, "KaraokeTimeLabelsToggle");
-        Assert.Same(UiTestActions.Find<Panel>(window, "SelectionStyleToolbar"), toggle.Parent);
+        Assert.Same(UiTestActions.Find<Panel>(window, "KaraokeTimingActions"), toggle.Parent);
         Assert.Equal(MaterialIconKind.ClockOutline, Assert.IsType<MaterialIcon>(toggle.Content).Kind);
         Assert.Equal(32, toggle.Bounds.Width);
         Assert.Equal(32, toggle.Bounds.Height);

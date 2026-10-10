@@ -20,7 +20,7 @@ Select multiple rows in the subtitle list or clips in the timeline, right-click 
 
 ## Rich text and karaoke
 
-Select a subtitle and open **Subtitle Details** from View or the subtitle row. The dockable panel edits native text, visual ranges, and timing together. ASS tags belong to import and export.
+Select a subtitle and open **Subtitle Details** from View or the subtitle row. The dockable panel edits native text, visual ranges, and timing together. ASS tags belong to import and export. The square appearance button at the top opens the three editing states; its tooltip names the current state. Playback, loop, snapping, and duration-label controls share the timing-editing toolbar above the axis.
 
 1. **Normal** edits selected text typography, fill, outline, and shadow. **Inactive (INACTIVE)** and **Active (ACTIVE)** preview and edit the two highlight appearances. Untimed and disabled text can also retain both range styles. With no text selection, highlight edits cover the whole line; an ACTIVE whole-line preset can provide its default appearance.
 2. Select complete untimed text, choose **Time selected text**, and explicitly enter its start and end. Opening the panel and ordinary text editing do not generate timing. First **Enable highlight** with no timing data divides the visible cue duration among complete graphemes. Existing whole groups stay intact and disabled caches are restored first. **Reset** in the timing toolbar regenerates all grapheme timing, replacing the line's enabled and cached groups.

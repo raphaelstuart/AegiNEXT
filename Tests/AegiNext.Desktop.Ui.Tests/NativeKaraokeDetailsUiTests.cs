@@ -5,12 +5,14 @@ using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -18,6 +20,76 @@ namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class NativeKaraokeDetailsUiTests
 {
+    [AvaloniaTheory]
+    [InlineData("en-US", false)]
+    [InlineData("en-US", true)]
+    [InlineData("zh-CN", true)]
+    [InlineData("ja-JP", false)]
+    public async Task CompactAppearancePickerAndTimingToolbarPreserveSelectionWithoutEditingTheProject(string language,
+        bool dark)
+    {
+        await using var context = new MainWindowTestContext();
+        context.Session.UpdatePreferences(context.Session.Preferences with { Language = language });
+        var original = Prepare(context);
+        var host = await Open(context);
+        host.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
+        Flush(host);
+        var appearance = UiTestActions.Find<ComboBox>(host, "SubtitleVisualStateInput");
+        Assert.Equal(32, appearance.Bounds.Width);
+        Assert.Equal(32, appearance.Bounds.Height);
+        Assert.Equal(0, appearance.SelectedIndex);
+        Assert.DoesNotContain(appearance.GetVisualDescendants().OfType<TextBlock>(),
+            text => text.IsEffectivelyVisible && !string.IsNullOrEmpty(text.Text));
+        var timingActions = UiTestActions.Find<WrapPanel>(host, "KaraokeTimingActions");
+        var createTiming = UiTestActions.Find<Button>(host, "CreateSelectedTimingButton");
+        foreach (var name in new[]
+        {
+            "SubtitlePlayPauseButton", "SubtitleLoopToggle", "KaraokeSnapToggle", "KaraokeTimeLabelsToggle"
+        })
+        {
+            var control = UiTestActions.Find<Control>(host, name);
+            Assert.Same(timingActions, control.Parent);
+            Assert.Equal(createTiming.Bounds.Y, control.Bounds.Y);
+            Assert.Equal(32, control.Bounds.Width);
+            Assert.Equal(32, control.Bounds.Height);
+        }
+        Capture(host, $"native-compact-karaoke-{language}-{(dark ? "dark" : "light")}.png");
+        ClickControl(appearance);
+        Flush(host);
+        Assert.True(appearance.IsDropDownOpen);
+        var choices = new[] { "Normal", "Inactive", "Active" };
+        for (var index = 0; index < choices.Length; index++)
+        {
+            var item = appearance.ContainerFromIndex(index)!;
+            Assert.True(item.Bounds.Width > appearance.Bounds.Width);
+            Assert.Contains(Localization.Get("Workbench.VisualState." + choices[index]),
+                item.GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text));
+        }
+        var inactive = appearance.ContainerFromIndex(1)!;
+        Capture(Assert.IsAssignableFrom<TopLevel>(TopLevel.GetTopLevel(inactive)),
+            $"native-appearance-menu-{language}-{(dark ? "dark" : "light")}.png");
+        ClickControl(inactive);
+        Flush(host);
+        Assert.False(appearance.IsDropDownOpen);
+        Assert.Equal(1, appearance.SelectedIndex);
+        Assert.Equal(KaraokeVisualState.INACTIVE, context.Session.Details.VisualState);
+        var translatedLanguage = language == "zh-CN" ? "en-US" : "zh-CN";
+        context.Session.UpdatePreferences(context.Session.Preferences with { Language = translatedLanguage });
+        Flush(host);
+        Assert.Equal(1, appearance.SelectedIndex);
+        Assert.Equal(Localization.Get("Workbench.VisualState.Inactive"), appearance.SelectedItem);
+        var appearanceHint = Localization.Get("Workbench.VisualState.Select") + " · " + appearance.SelectedItem;
+        Assert.Equal(appearanceHint, ToolTip.GetTip(appearance));
+        Assert.Equal(appearanceHint, AutomationProperties.GetName(appearance));
+        Assert.True(appearance.Focus());
+        UiTestActions.Press(host, Key.Down);
+        Flush(host);
+        Assert.Equal(2, appearance.SelectedIndex);
+        Assert.Equal(KaraokeVisualState.ACTIVE, context.Session.Details.VisualState);
+        Assert.Same(original, context.Session.Editor.Snapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+    }
+
     [AvaloniaFact]
     public async Task FirstEnableClickGeneratesGraphemesAndOffOnRestoresExactTimingIdsAndStyles()
     {

@@ -142,11 +142,17 @@ internal sealed partial class SubtitleDetailsPanelView
         ConfigureTimingAction(mergeTiming, "Workbench.MergeSelectedKaraokeGroups", "Merge", () => coordinator.MergeSelectedGroups(), false);
         ToolTip.SetShowOnDisabled(mergeTiming, true);
         ConfigureTimingAction(fitTiming, "Workbench.FitKaraokeAxis", "Timeline", () => axis.FitToContent());
+        foreach (var control in new Control[] { play, loop, snap, keepTimeLabels })
+        {
+            control.Margin = new(0, 0, 6, 6);
+        }
+        keepTimeLabels.Margin = new(0, 0, 14, 6);
         BuildManualTimingPopup();
         return new()
         {
             Name = "KaraokeTimingActions", Children =
             {
+                play, loop, snap, keepTimeLabels,
                 createTiming, generateTiming, restoreTiming, splitTiming, mergeTiming, fitTiming
             }
         };
