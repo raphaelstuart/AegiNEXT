@@ -31,6 +31,25 @@ public static partial class ProjectEditingOperations
         return ClearAnimationTracksCore(document, selection, property);
     }
 
+    /// <summary>原子清除完整目标的动画，保留同属性的其他文本范围、状态和蒙版节点。</summary>
+    public static ProjectDocument ClearAnimationTracks(ProjectDocument document, IReadOnlyCollection<Guid> layerIds,
+        AnimationTrackTarget target)
+    {
+        ProjectValidator.Validate(document);
+        SubtitleAnimationTargetValidation.ValidateIdentity(target);
+        var selected = SelectClipLayers(document, layerIds);
+        foreach (var layer in selected)
+        {
+            var subtitle = layer.SubtitleId is { } id ? document.Subtitles[SubtitleIndex(document, id)] : null;
+            SubtitleAnimationTargetValidation.Validate(target, subtitle, layer.Mask);
+        }
+
+        var selection = selected.Select(layer => layer.Id).ToHashSet();
+        var layers = MapTrackLayers(document.Layers, layer => selection.Contains(layer.Id) && layer.Tracks.Any(track => track.Target == target)
+            ? layer with { Tracks = layer.Tracks.Where(track => track.Target != target).ToImmutableArray() } : layer);
+        return layers == document.Layers ? document : Verified(document with { Layers = layers });
+    }
+
     private static ProjectDocument ClearAnimationTracksCore(ProjectDocument document, HashSet<Guid> selection,
         AnimationProperty? property)
     {

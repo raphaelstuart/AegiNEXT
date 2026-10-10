@@ -70,7 +70,9 @@ public static partial class ProjectEditingOperations
     {
         return line == document.Subtitles[index] ? document : Verified(document with
         {
-            Subtitles = document.Subtitles.SetItem(index, line)
+            Subtitles = document.Subtitles.SetItem(index, line),
+            Layers = MapTrackLayers(document.Layers, layer => layer.SubtitleId == line.Id
+                ? SubtitleAnimationRangeEditing.PruneTargets(layer, line) : layer)
         });
     }
 }

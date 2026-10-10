@@ -16,6 +16,7 @@ public sealed record SubtitleLine
     public Guid? ColorTagId { get; init; }
     public SubtitleStyle Style { get; init; } = new();
     public ImmutableArray<SubtitleInlineSpan> InlineSpans { get; init; } = [];
+    public ImmutableArray<SubtitleAnimationRange> AnimationRanges { get; init; } = [];
     public ImmutableArray<SubtitleKaraokeStyleSpan> KaraokeStyleSpans { get; init; } = [];
     public ImmutableArray<KaraokeSegment> Karaoke { get; init; } = [];
     public ImmutableArray<KaraokeSegment> InactiveKaraoke { get; init; } = [];

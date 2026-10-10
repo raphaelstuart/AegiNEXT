@@ -31,6 +31,7 @@ internal static class SubtitleContentEditing
         {
             Text = map.Text,
             InlineSpans = inlineSpans,
+            AnimationRanges = SubtitleAnimationRangeEditing.Remap(line.AnimationRanges, map),
             KaraokeStyleSpans = SubtitleKaraokeStyleEditing.Remap(line.KaraokeStyleSpans, map),
             Karaoke = karaoke,
             InactiveKaraoke = inactiveKaraoke

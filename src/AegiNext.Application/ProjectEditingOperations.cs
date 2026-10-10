@@ -32,11 +32,14 @@ public static partial class ProjectEditingOperations
         var contentTime = playhead - original.Start + layer.AnimationOffset;
         var (leftKaraoke, rightKaraoke) = SplitKaraoke(original.Karaoke, utf16Offset);
         var (leftInactiveKaraoke, rightInactiveKaraoke) = SplitKaraoke(original.InactiveKaraoke, utf16Offset);
+        var rightRangeIds = original.AnimationRanges.Where(range => range.Utf16Start + range.Utf16Length > utf16Offset)
+            .ToDictionary(range => range.Id, _ => Guid.NewGuid());
 
         var left = original with
         {
             End = playhead, Text = leftText, Karaoke = leftKaraoke, InactiveKaraoke = leftInactiveKaraoke,
             InlineSpans = SubtitleContentSplitMerge.SplitSpans(original.InlineSpans, utf16Offset, false),
+            AnimationRanges = SubtitleAnimationRangeEditing.Split(original.AnimationRanges, utf16Offset, false),
             KaraokeStyleSpans = SubtitleContentSplitMerge.SplitKaraokeStyleSpans(original.KaraokeStyleSpans, utf16Offset, false),
             KaraokeStyle = !leftKaraoke.IsEmpty || !leftInactiveKaraoke.IsEmpty ? original.KaraokeStyle : null
         };
@@ -44,16 +47,23 @@ public static partial class ProjectEditingOperations
         {
             Id = Guid.NewGuid(), Start = playhead, Text = rightText, Karaoke = rightKaraoke, InactiveKaraoke = rightInactiveKaraoke,
             InlineSpans = SubtitleContentSplitMerge.SplitSpans(original.InlineSpans, utf16Offset, true),
+            AnimationRanges = SubtitleAnimationRangeEditing.Split(original.AnimationRanges, utf16Offset, true, rightRangeIds),
             KaraokeStyleSpans = SubtitleContentSplitMerge.SplitKaraokeStyleSpans(original.KaraokeStyleSpans, utf16Offset, true),
             KaraokeStyle = !rightKaraoke.IsEmpty || !rightInactiveKaraoke.IsEmpty ? original.KaraokeStyle : null
         };
         var layerIndex = document.Layers.IndexOf(layer);
         var layers = document.Layers
-            .SetItem(layerIndex, LayerAnimationTiming.Clip(layer with { End = playhead }))
+            .SetItem(layerIndex, LayerAnimationTiming.Clip(SubtitleAnimationRangeEditing.PruneTargets(layer, left) with { End = playhead }))
             .Insert(layerIndex + 1, LayerAnimationTiming.Clip(layer with
             {
                 Id = right.Id, SubtitleId = right.Id, Start = playhead,
-                AnimationOffset = contentTime
+                AnimationOffset = contentTime,
+                Tracks = layer.Tracks.Where(track => track.Target.TextRangeId is not { } id || rightRangeIds.ContainsKey(id))
+                    .Select(track => track with
+                    {
+                        Target = track.Target.TextRangeId is { } id ? track.Target with { TextRangeId = rightRangeIds[id] } : track.Target,
+                        Transforms = track.Transforms.Select(operation => operation with { Id = Guid.NewGuid() }).ToImmutableArray()
+                    }).ToImmutableArray()
             }));
         return Verified(document with
         {
@@ -86,7 +96,8 @@ public static partial class ProjectEditingOperations
             throw new InvalidOperationException("重叠字幕不能合并为单个连续句。");
         }
 
-        if (!HasNeutralVisuals(firstLayer) || !HasNeutralVisuals(secondLayer))
+        if (!HasNeutralVisuals(firstLayer) || !HasNeutralVisuals(secondLayer) ||
+            first.AnimationRanges.Concat(second.AnimationRanges).Any(range => range.Scale != new ScenePoint(1, 1) || range.Rotation != 0))
         {
             throw new InvalidOperationException("包含片段动画、变换、蒙版或混合效果的字幕不能无损合并。");
         }
@@ -115,6 +126,10 @@ public static partial class ProjectEditingOperations
             End = second.End,
             Text = first.Text + separator + second.Text,
             InlineSpans = SubtitleContentSplitMerge.MergeSpans(first, second, checked(first.Text.Length + separator.Length)),
+            AnimationRanges = first.AnimationRanges.AddRange(second.AnimationRanges.Select(range => range with
+            {
+                Id = Guid.NewGuid(), Utf16Start = checked(range.Utf16Start + secondTextOffset)
+            })),
             Karaoke = firstKaraoke.AddRange(secondKaraoke),
             InactiveKaraoke = firstInactiveKaraoke.AddRange(secondInactiveKaraoke),
             KaraokeStyleSpans = SubtitleContentSplitMerge.MergeKaraokeStyleSpans(first, second, secondTextOffset, mergedKaraokeStyle),

@@ -31,7 +31,7 @@ public sealed class NativeKaraokePersistenceTests
         }
         var upgraded = ProjectStore.Deserialize(Encoding.UTF8.GetBytes(root.ToJsonString()));
         var line = upgraded.Subtitles[0];
-        Assert.Equal(11, upgraded.Version);
+        Assert.Equal(ProjectDocument.CURRENT_VERSION, upgraded.Version);
         Assert.Equal(2, line.Karaoke.Length);
         Assert.Equal(source.Subtitles[0].Karaoke[0].Id, line.Karaoke[0].Id);
         Assert.NotEqual(line.Karaoke[0].Id, line.Karaoke[1].Id);

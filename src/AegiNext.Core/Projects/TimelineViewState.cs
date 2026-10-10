@@ -37,7 +37,10 @@ public sealed record TimelineViewState
         foreach (var row in CollapsedAnimationRows)
         {
             if (row is null || row.OwnerId == Guid.Empty || !Enum.IsDefined(row.Scope) ||
-                !AnimationPropertyMetadata.CurrentProperties.Contains(row.Property) || !identities.Add(row))
+                !AnimationPropertyMetadata.CurrentProperties.Contains(row.Property) || !identities.Add(row) ||
+                row.TextRangeId == Guid.Empty || !Enum.IsDefined(row.State) ||
+                row.TextRangeId.HasValue && !AnimationPropertyMetadata.IsTextRangeProperty(row.Property) ||
+                row.State != SubtitleAnimationState.NORMAL && !AnimationPropertyMetadata.IsSubtitleVisualProperty(row.Property))
             {
                 throw new InvalidDataException("时间轴折叠行身份无效或重复。");
             }

@@ -37,7 +37,24 @@ public static class SceneEvaluator
             {
                 var transformFraction = time < operation.Start ? 0 : time >= operation.End ? 1 :
                     Math.Pow(Fraction(time - operation.Start, operation.End - operation.Start), operation.Acceleration);
-                result = AnimationValue.Lerp(result, operation.Value, transformFraction);
+                for (var component = 0; component < result.ComponentCount; component++)
+                {
+                    if (operation.ComponentMask != 0 && (operation.ComponentMask & (1 << component)) == 0)
+                    {
+                        continue;
+                    }
+                    var start = result.GetComponent(component);
+                    var target = operation.Value.GetComponent(component);
+                    var componentValue = operation.Mode switch
+                    {
+                        AnimationTransformMode.INTERPOLATE_TO => result.IsColor
+                            ? AnimationColorInterpolation.Interpolate(start, target, transformFraction, track.ColorSpace, component)
+                            : start + (target - start) * transformFraction,
+                        AnimationTransformMode.MULTIPLY_BY => start * (1 + (target - 1) * transformFraction),
+                        _ => throw new InvalidDataException("未知动画变换模式。")
+                    };
+                    result = result.WithComponent(component, componentValue);
+                }
             }
 
             return result;
@@ -77,16 +94,18 @@ public static class SceneEvaluator
         var first = frames[lower - 1];
         var second = frames[lower];
         var fraction = Fraction(time - first.Time, second.Time - first.Time);
-        var firstFraction = CurveFraction(first.Interpolation, first.CurveStart, first.CurveEnd, fraction, first.Exponent);
-        var value = AnimationValue.Lerp(first.Value, second.Value, firstFraction);
-        for (var component = 1; component < first.Value.ComponentCount; component++)
+        var value = first.Value;
+        for (var component = 0; component < first.Value.ComponentCount; component++)
         {
-            if (!first.ComponentCurves.IsDefaultOrEmpty && first.ComponentCurves[component - 1] is { } curve)
-            {
-                var componentFraction = CurveFraction(curve.Interpolation, curve.CurveStart, curve.CurveEnd, fraction, curve.Exponent);
-                var start = first.Value.GetComponent(component);
-                value = value.WithComponent(component, start + (second.Value.GetComponent(component) - start) * componentFraction);
-            }
+            var curve = component > 0 && !first.ComponentCurves.IsDefaultOrEmpty ? first.ComponentCurves[component - 1] : null;
+            var componentFraction = curve is null
+                ? CurveFraction(first.Interpolation, first.CurveStart, first.CurveEnd, fraction, first.Exponent)
+                : CurveFraction(curve.Interpolation, curve.CurveStart, curve.CurveEnd, fraction, curve.Exponent);
+            var start = first.Value.GetComponent(component);
+            var end = second.Value.GetComponent(component);
+            value = value.WithComponent(component, first.Value.IsColor
+                ? AnimationColorInterpolation.Interpolate(start, end, componentFraction, track.ColorSpace, component)
+                : start + (end - start) * componentFraction);
         }
 
         return value;
@@ -294,7 +313,21 @@ public static class SceneEvaluator
             StrokeBlur = Get(values, AnimationProperty.STROKE_BLUR, subtitle?.Style.StrokeBlur ?? 0),
             HasLetterSpacingAnimation = values.ContainsKey(new(AnimationProperty.LETTER_SPACING)),
             HasFillBlurAnimation = values.ContainsKey(new(AnimationProperty.FILL_BLUR)),
-            HasStrokeBlurAnimation = values.ContainsKey(new(AnimationProperty.STROKE_BLUR))
+            HasStrokeBlurAnimation = values.ContainsKey(new(AnimationProperty.STROKE_BLUR)),
+            FontSize = Get(values, AnimationProperty.FONT_SIZE, subtitle?.Style.FontSize ?? 0),
+            ShadowOffset = GetVector(values, AnimationProperty.SHADOW_OFFSET, subtitle?.Style.ShadowOffset ?? new(0, 0)),
+            ShadowBlur = Get(values, AnimationProperty.SHADOW_BLUR, subtitle?.Style.ShadowBlur ?? 0),
+            ShadowColor = GetColor(values, AnimationProperty.SHADOW_COLOR, subtitle?.Style.ShadowColor ?? SceneColor.Transparent),
+            HasFontSizeAnimation = values.ContainsKey(new(AnimationProperty.FONT_SIZE)),
+            HasShadowOffsetAnimation = values.ContainsKey(new(AnimationProperty.SHADOW_OFFSET)),
+            HasShadowBlurAnimation = values.ContainsKey(new(AnimationProperty.SHADOW_BLUR)),
+            HasShadowColorAnimation = values.ContainsKey(new(AnimationProperty.SHADOW_COLOR)),
+            AnimationValues = values.ToImmutableDictionary(),
+            AnimationRanges = subtitle is null ? [] : subtitle.AnimationRanges.Select(range => range with
+            {
+                Scale = values.TryGetValue(new(AnimationProperty.SCALE, TextRangeId: range.Id), out var scale) ? scale.Vector : range.Scale,
+                Rotation = values.TryGetValue(new(AnimationProperty.ROTATION, TextRangeId: range.Id), out var rotation) ? rotation.Scalar : range.Rotation
+            }).ToImmutableArray()
         };
     }
 

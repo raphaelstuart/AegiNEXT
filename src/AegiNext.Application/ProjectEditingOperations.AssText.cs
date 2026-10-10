@@ -27,7 +27,8 @@ public static partial class ProjectEditingOperations
             Mask = edited.Mask,
             Tracks = previous.Tracks.Where(track => !AnimationPropertyMetadata.IsMaskProperty(track.Property)).ToImmutableArray().AddRange(edited.MaskTracks)
         };
-        var line = edited.Line;
+        var line = SubtitleAnimationRangeEditing.RemapTextChange(document.Subtitles[index], edited.Line);
+        next = SubtitleAnimationRangeEditing.PruneTargets(next, line);
         if (line == document.Subtitles[index] && previous.Mask == next.Mask && previous.Tracks.SequenceEqual(next.Tracks))
         {
             return document;

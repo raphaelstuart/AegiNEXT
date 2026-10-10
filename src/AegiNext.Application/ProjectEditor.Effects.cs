@@ -21,6 +21,14 @@ public sealed partial class ProjectEditor
         Apply("Clear animation property tracks", document => ProjectEditingOperations.ClearAnimationTracks(document, selection, property));
     }
 
+    /// <summary>在一个可撤销事务中清除完整动画目标，保留同属性的其他范围和状态。</summary>
+    public void ClearAnimationTracks(IReadOnlyCollection<Guid> layerIds, AnimationTrackTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(layerIds);
+        var selection = layerIds.ToArray();
+        Apply("Clear animation target tracks", document => ProjectEditingOperations.ClearAnimationTracks(document, selection, target));
+    }
+
     /// <summary>按目标片段编译并原子组合脚本；保留未声明区间的既有动画、内容身份和路径。</summary>
     public void ApplyEffectScript(Guid layerId, EffectScript script)
     {

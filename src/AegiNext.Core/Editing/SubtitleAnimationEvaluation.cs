@@ -1,0 +1,185 @@
+using System.Collections.Immutable;
+using System.Globalization;
+using AegiNext.Core.Projects;
+
+namespace AegiNext.Core.Editing;
+
+/// <summary>字幕动画静态继承与逐状态绘制求值，不依赖渲染资源或编辑历史。</summary>
+public static class SubtitleAnimationEvaluation
+{
+    private static readonly ImmutableArray<AnimationProperty> styleProperties =
+    [
+        AnimationProperty.FONT_SIZE, AnimationProperty.LETTER_SPACING, AnimationProperty.FILL,
+        AnimationProperty.STROKE, AnimationProperty.STROKE_WIDTH, AnimationProperty.FILL_BLUR,
+        AnimationProperty.STROKE_BLUR, AnimationProperty.SHADOW_OFFSET, AnimationProperty.SHADOW_BLUR,
+        AnimationProperty.SHADOW_COLOR
+    ];
+
+    /// <summary>在静态样式上先应用指定状态的整句轨道，再按持久化范围顺序覆盖；几何状态由普通样式共享。</summary>
+    public static SubtitleStyle ApplyStyleAnimations(EvaluatedLayer layer, SubtitleStyle style, int utf16Offset,
+        SubtitleAnimationState state)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        ArgumentNullException.ThrowIfNull(style);
+        if (!Enum.IsDefined(state))
+        {
+            throw new ArgumentOutOfRangeException(nameof(state));
+        }
+        var subtitle = layer.Subtitle;
+        if (subtitle is null || utf16Offset < 0 || utf16Offset > subtitle.Text.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(utf16Offset));
+        }
+        if (layer.AnimationValues.IsEmpty)
+        {
+            return style;
+        }
+        style = ApplyScope(layer, style, null, state);
+        foreach (var range in subtitle.AnimationRanges)
+        {
+            if (utf16Offset >= range.Utf16Start && utf16Offset < range.Utf16Start + range.Utf16Length)
+            {
+                style = ApplyScope(layer, style, range.Id, state);
+            }
+        }
+        return style;
+    }
+
+    /// <summary>读取完整目标的静态基础值；文本范围采用首字素的局部及高亮继承，局部变换读取范围自身。</summary>
+    public static AnimationValue GetBaseValue(ProjectLayer layer, SubtitleLine? subtitle, AnimationTrackTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        SubtitleAnimationTargetValidation.Validate(target, subtitle, layer.Mask);
+        if (AnimationPropertyMetadata.IsMaskProperty(target.Property))
+        {
+            return ClipMaskAnimation.GetBaseValue(layer.Mask!, target);
+        }
+        if (target.TextRangeId is { } rangeId)
+        {
+            var range = subtitle!.AnimationRanges.Single(range => range.Id == rangeId);
+            if (target.Property == AnimationProperty.SCALE)
+            {
+                return range.Scale;
+            }
+            if (target.Property == AnimationProperty.ROTATION)
+            {
+                return range.Rotation;
+            }
+            return GetStyleValue(StaticStyleAt(subtitle, range.Utf16Start, target.State), target.Property);
+        }
+        if (subtitle is not null && styleProperties.Contains(target.Property))
+        {
+            var style = target.State == SubtitleAnimationState.NORMAL ? subtitle.Style : StaticStyleAt(subtitle, 0, target.State);
+            return GetStyleValue(style, target.Property);
+        }
+        return target.Property switch
+        {
+            AnimationProperty.POSITION => layer.Transform.Position,
+            AnimationProperty.SCALE => layer.Transform.Scale,
+            AnimationProperty.ROTATION => layer.Transform.Rotation,
+            AnimationProperty.OPACITY => layer.Opacity,
+            AnimationProperty.BLUR => layer.Blur,
+            AnimationProperty.FILL => layer.Fill,
+            AnimationProperty.STROKE => layer.Stroke,
+            AnimationProperty.STROKE_WIDTH => layer.StrokeWidth,
+            AnimationProperty.PATH_PROGRESS => 0,
+            _ => throw new ArgumentOutOfRangeException(nameof(target))
+        };
+    }
+
+    /// <summary>判断文本范围各字素是否具有同一基础值，供属性面板显示混合状态。</summary>
+    public static bool IsBaseValueUniform(ProjectLayer layer, SubtitleLine? subtitle, AnimationTrackTarget target)
+    {
+        var first = GetBaseValue(layer, subtitle, target);
+        if (target.TextRangeId is not { } rangeId || !styleProperties.Contains(target.Property))
+        {
+            return true;
+        }
+        var range = subtitle!.AnimationRanges.Single(range => range.Id == rangeId);
+        foreach (var offset in StringInfo.ParseCombiningCharacters(subtitle.Text))
+        {
+            if (offset < range.Utf16Start || offset >= range.Utf16Start + range.Utf16Length)
+            {
+                continue;
+            }
+            if (GetStyleValue(StaticStyleAt(subtitle, offset, target.State), target.Property) != first)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    internal static SubtitleStyle WithStyleValue(SubtitleStyle style, AnimationProperty property, AnimationValue value)
+    {
+        return property switch
+        {
+            AnimationProperty.FONT_SIZE => style with { FontSize = value.Scalar },
+            AnimationProperty.LETTER_SPACING => style with { LetterSpacing = value.Scalar },
+            AnimationProperty.FILL => style with { Fill = value.Color },
+            AnimationProperty.STROKE => style with { Stroke = value.Color },
+            AnimationProperty.STROKE_WIDTH => style with { StrokeWidth = value.Scalar },
+            AnimationProperty.FILL_BLUR => style with { FillBlur = value.Scalar },
+            AnimationProperty.STROKE_BLUR => style with { StrokeBlur = value.Scalar },
+            AnimationProperty.SHADOW_OFFSET => style with { ShadowOffset = value.Vector },
+            AnimationProperty.SHADOW_BLUR => style with { ShadowBlur = value.Scalar },
+            AnimationProperty.SHADOW_COLOR => style with { ShadowColor = value.Color },
+            _ => throw new ArgumentOutOfRangeException(nameof(property))
+        };
+    }
+
+    private static SubtitleStyle ApplyScope(EvaluatedLayer layer, SubtitleStyle style, Guid? rangeId,
+        SubtitleAnimationState state)
+    {
+        foreach (var property in styleProperties)
+        {
+            if (layer.AnimationValues.TryGetValue(new(property, TextRangeId: rangeId, State: state), out var value))
+            {
+                style = WithStyleValue(style, property, value);
+            }
+        }
+        return style;
+    }
+
+    private static SubtitleStyle StaticStyleAt(SubtitleLine subtitle, int offset, SubtitleAnimationState state)
+    {
+        var style = subtitle.Style;
+        foreach (var span in subtitle.InlineSpans)
+        {
+            if (span.Utf16Start <= offset && offset < span.Utf16Start + span.Utf16Length)
+            {
+                style = span.Style.ApplyTo(style);
+                break;
+            }
+        }
+        if (state == SubtitleAnimationState.NORMAL)
+        {
+            return style;
+        }
+        var segment = subtitle.Karaoke.Concat(subtitle.InactiveKaraoke)
+            .FirstOrDefault(segment => segment.Utf16Start <= offset && offset < segment.Utf16Start + segment.Utf16Length);
+        var rangeStyle = KaraokeVisualStyleResolver.RangeStyleAt(subtitle, offset, state == SubtitleAnimationState.ACTIVE
+            ? KaraokeVisualState.ACTIVE : KaraokeVisualState.INACTIVE);
+        return state == SubtitleAnimationState.ACTIVE
+            ? KaraokeVisualStyleResolver.ResolveActive(style, subtitle.KaraokeStyle, segment, rangeStyle)
+            : rangeStyle?.ApplyTo(style) ?? style;
+    }
+
+    private static AnimationValue GetStyleValue(SubtitleStyle style, AnimationProperty property)
+    {
+        return property switch
+        {
+            AnimationProperty.FONT_SIZE => style.FontSize,
+            AnimationProperty.LETTER_SPACING => style.LetterSpacing,
+            AnimationProperty.FILL => style.Fill,
+            AnimationProperty.STROKE => style.Stroke,
+            AnimationProperty.STROKE_WIDTH => style.StrokeWidth,
+            AnimationProperty.FILL_BLUR => style.FillBlur,
+            AnimationProperty.STROKE_BLUR => style.StrokeBlur,
+            AnimationProperty.SHADOW_OFFSET => style.ShadowOffset,
+            AnimationProperty.SHADOW_BLUR => style.ShadowBlur,
+            AnimationProperty.SHADOW_COLOR => style.ShadowColor,
+            _ => throw new ArgumentOutOfRangeException(nameof(property))
+        };
+    }
+}

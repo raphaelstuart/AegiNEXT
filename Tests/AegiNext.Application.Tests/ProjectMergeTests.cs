@@ -321,7 +321,7 @@ public sealed class ProjectMergeTests
     }
 
     [Fact]
-    public void PreparedMergeSnapshotIsNormalizedBeforeItsSingleApply()
+    public void PreparedMergeSnapshotPreservesMultiCharacterKaraokeBeforeItsSingleApply()
     {
         var source = CreateDocument();
         source = source with
@@ -337,7 +337,7 @@ public sealed class ProjectMergeTests
         editor.Apply("Prepared merge", _ => result.Document);
 
         Assert.Same(result.Document, editor.Snapshot);
-        Assert.Equal(2, Assert.Single(result.Document.Subtitles).Karaoke.Length);
+        Assert.Single(Assert.Single(result.Document.Subtitles).Karaoke);
         Assert.Single(source.Subtitles[0].Karaoke);
         Assert.Equal(2, source.Subtitles[0].Karaoke[0].Utf16Length);
     }

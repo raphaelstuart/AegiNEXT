@@ -252,6 +252,8 @@ public sealed partial class ProjectEditor
                 throw new InvalidOperationException("编辑不能改变字幕标识。");
             }
 
+            after = SubtitleAnimationRangeEditing.RemapTextChange(before, after);
+
             if (after == before)
             {
                 return document;
@@ -260,7 +262,7 @@ public sealed partial class ProjectEditor
             return document with
             {
                 Subtitles = document.Subtitles.SetItem(index, after),
-                Layers = MapLayers(document.Layers, layer => layer.SubtitleId == id ? LayerAnimationTiming.Clip(layer with
+                Layers = MapLayers(document.Layers, layer => layer.SubtitleId == id ? LayerAnimationTiming.Clip(SubtitleAnimationRangeEditing.PruneTargets(layer, after) with
                 {
                     Start = after.Start, End = after.End, AnimationOffset = layer.AnimationOffset + after.Start - before.Start
                 }) : layer)

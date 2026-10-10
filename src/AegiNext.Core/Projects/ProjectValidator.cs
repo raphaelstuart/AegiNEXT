@@ -69,20 +69,21 @@ public static class ProjectValidator
         SubtitleColorTagValidator.Validate(document.ColorTags);
         var colorTagIds = document.ColorTags.Select(tag => tag.Id).ToHashSet();
         var subtitles = new Dictionary<Guid, SubtitleLine>();
+        var rangeIds = new HashSet<Guid>();
         foreach (var line in document.Subtitles)
         {
             NotNull(line, "数据项不能为 null。");
             Require(line.Id != Guid.Empty && subtitles.TryAdd(line.Id, line), "字幕标识为空或重复。");
             Require(line.Start < line.End && line.Text is not null && !line.Karaoke.IsDefault &&
                 !line.InactiveKaraoke.IsDefault && !line.KaraokeStyleSpans.IsDefault &&
-                !line.InlineSpans.IsDefault, "字幕区间或文本无效。");
+                !line.InlineSpans.IsDefault && !line.AnimationRanges.IsDefault && line.AnimationRanges.Length <= 256, "字幕区间或文本无效。");
             ValidateText(line.Text);
             ValidateSubtitleStyleName(line.StyleName);
             Require(line.StylePresetId is null || line.StylePresetId != Guid.Empty, "字幕样式预设标识无效。");
             Require(line.ColorTagId is null || colorTagIds.Contains(line.ColorTagId.Value), "字幕引用不存在的颜色标记。");
             Style(line.Style, assets);
             var boundaries = line.InlineSpans.IsEmpty && line.Karaoke.IsEmpty && line.InactiveKaraoke.IsEmpty &&
-                line.KaraokeStyleSpans.IsEmpty
+                line.KaraokeStyleSpans.IsEmpty && line.AnimationRanges.IsEmpty
                 ? null : new SubtitleTextBoundaries(line.Text);
             var previousEnd = 0;
             foreach (var span in line.InlineSpans)
@@ -101,6 +102,18 @@ public static class ProjectValidator
                 previousEnd = end;
             }
             ValidateSubtitleKaraokeCore(line, boundaries);
+            foreach (var range in line.AnimationRanges)
+            {
+                NotNull(range, "文字动画范围不能为 null。");
+                Require(range.Id != Guid.Empty && rangeIds.Add(range.Id) && Enum.IsDefined(range.Pivot), "文字动画范围标识或轴心无效。");
+                Require(range.Utf16Start >= 0 && range.Utf16Length > 0 &&
+                    (long)range.Utf16Start + range.Utf16Length <= line.Text.Length, "文字动画范围越界或为空。");
+                Require(boundaries!.Contains(range.Utf16Start) && boundaries.Contains(range.Utf16Start + range.Utf16Length),
+                    "文字动画范围不能拆开字素。");
+                Number(range.Scale.X, -10000, 10000, "范围 Scale X");
+                Number(range.Scale.Y, -10000, 10000, "范围 Scale Y");
+                Number(range.Rotation, -1e9, 1e9, "范围 Rotation");
+            }
         }
 
         var ids = new HashSet<Guid>();
@@ -307,7 +320,9 @@ public static class ProjectValidator
             Mask(mask);
         }
 
-        Tracks(layer.Tracks, mask: layer.Mask, allowNegativeKeyTimes: true);
+        var subtitle = layer.SubtitleId is { } animationSubtitleId && subtitles.TryGetValue(animationSubtitleId, out var animationLine)
+            ? animationLine : null;
+        Tracks(layer.Tracks, mask: layer.Mask, allowNegativeKeyTimes: true, subtitle: subtitle);
         Require(layer.Kind == LayerKind.SUBTITLE || layer.Tracks.All(track => !AnimationPropertyMetadata.IsSubtitleOnlyProperty(track.Property)),
             "字幕排版和分通道模糊动画只能应用于字幕片段。");
         if (enforceAnimationRange)
@@ -402,11 +417,14 @@ public static class ProjectValidator
     }
 
     private static void Tracks(ImmutableArray<AnimationTrack> tracks, bool allowLegacyColors = false, ClipMask? mask = null,
-        bool allowNegativeKeyTimes = false)
+        bool allowNegativeKeyTimes = false, SubtitleLine? subtitle = null)
     {
-        Require(!tracks.IsDefault && tracks.Length <= 30064 &&
-            tracks.Count(track => track is not null && !AnimationPropertyMetadata.IsNodeProperty(track.Property)) <= 64,
-            "普通轨道超过 64 条或蒙版节点轨道超过预算。");
+        Require(!tracks.IsDefault && tracks.Length <= 38256 &&
+            tracks.Count(track => track is not null && !AnimationPropertyMetadata.IsNodeProperty(track.Property) &&
+                !track.Target.TextRangeId.HasValue && track.Target.State == SubtitleAnimationState.NORMAL) <= 64 &&
+            tracks.Count(track => track is not null && AnimationPropertyMetadata.IsNodeProperty(track.Property)) <= 30000 &&
+            tracks.Count(track => track is not null && (track.Target.TextRangeId.HasValue || track.Target.State != SubtitleAnimationState.NORMAL)) <= 8192,
+            "普通、蒙版节点或文字动画轨道超过独立预算。");
         var targets = new HashSet<AnimationTrackTarget>();
         var maskNodes = mask is VectorClipMask vector ? vector.Contours.SelectMany(contour => contour.Nodes).Select(node => node.Id).ToHashSet() : null;
         foreach (var track in tracks)
@@ -416,8 +434,18 @@ public static class ProjectValidator
             Require(Enum.IsDefined(track.Property) &&
                 (!AnimationPropertyMetadata.IsLegacyComponent(track.Property) || allowLegacyColors && legacyColor) &&
                 AnimationPropertyMetadata.IsNodeProperty(track.Property) == track.Target.NodeId.HasValue &&
-                track.Target.NodeId != Guid.Empty && targets.Add(track.Target),
+                track.Target.NodeId != Guid.Empty && targets.Add(track.Target) && Enum.IsDefined(track.ColorSpace) &&
+                (track.ColorSpace == AnimationColorSpace.LINEAR_RGB || AnimationPropertyMetadata.GetValueKind(track.Property) == AnimationValueKind.COLOR),
                 "动画目标未知、重复、携带无效节点或尚未完成分量迁移。");
+            if (!legacyColor)
+            {
+                SubtitleAnimationTargetValidation.ValidateIdentity(track.Target);
+            }
+            Require(!allowLegacyColors || !track.Target.TextRangeId.HasValue, "预设不能保存真实文字动画范围身份。");
+            if (!allowLegacyColors)
+            {
+                SubtitleAnimationTargetValidation.Validate(track.Target, subtitle, mask);
+            }
             if (AnimationPropertyMetadata.IsMaskProperty(track.Property) && !allowLegacyColors)
             {
                 Require(mask is not null, "蒙版动画缺少蒙版几何。");
@@ -443,7 +471,33 @@ public static class ProjectValidator
                     Require(operation.Id != Guid.Empty && operationIds.Add(operation.Id) && operation.End >= operation.Start,
                         "有序变换标识或时间无效。");
                     Require(double.IsFinite(operation.Acceleration) && operation.Acceleration >= 0, "有序变换指数必须为有限非负数。");
-                    AnimationValue(track.Property, operation.Value);
+                    Require(Enum.IsDefined(operation.Mode) && operation.ComponentMask >= 0 &&
+                        operation.ComponentMask < (1 << dimension), "有序变换模式或分量掩码无效。");
+                    if (operation.Mode == AnimationTransformMode.MULTIPLY_BY)
+                    {
+                        if (track.Property == AnimationProperty.FONT_SIZE)
+                        {
+                            Require(operation.Value.Kind == AnimationValueKind.SCALAR && double.IsFinite(operation.Value.Scalar) &&
+                                operation.Value.Scalar > 0 && operation.Value.Scalar <= 409600, "字号乘法系数必须为有限正数。");
+                        }
+                        else
+                        {
+                            Require(AnimationPropertyMetadata.GetValueKind(track.Property) == AnimationValueKind.COLOR &&
+                                operation.Value.Kind == AnimationValueKind.COLOR &&
+                                operation.Value.Color.Red == 1 && operation.Value.Color.Green == 1 && operation.Value.Color.Blue == 1 &&
+                                double.IsFinite(operation.Value.Color.Alpha) && operation.Value.Color.Alpha is >= 0 and <= 1 &&
+                                (operation.ComponentMask == 0 || operation.ComponentMask == 8), "颜色乘法仅允许透明度衰减。");
+                        }
+                    }
+                    else
+                    {
+                        AnimationValue(track.Property, operation.Value);
+                    }
+                }
+
+                if (track.Property == AnimationProperty.FONT_SIZE)
+                {
+                    ValidateFontSizeTransformBounds(track);
                 }
 
                 continue;
@@ -488,6 +542,28 @@ public static class ProjectValidator
             Number(value.GetComponent(component), AnimationPropertyMetadata.GetMinimum(property, component),
                 AnimationPropertyMetadata.GetMaximum(property, component), "动画值分量");
         }
+    }
+
+    private static void ValidateFontSizeTransformBounds(AnimationTrack track)
+    {
+        var minimum = track.InitialValue!.Value.Scalar;
+        var maximum = minimum;
+        foreach (var operation in track.Transforms)
+        {
+            var value = operation.Value.Scalar;
+            if (operation.Mode == AnimationTransformMode.MULTIPLY_BY)
+            {
+                minimum *= Math.Min(1, value);
+                maximum *= Math.Max(1, value);
+            }
+            else
+            {
+                minimum = Math.Min(minimum, value);
+                maximum = Math.Max(maximum, value);
+            }
+        }
+        Number(minimum, 0.01, 4096, "有序字号变换的保守下界");
+        Number(maximum, 0.01, 4096, "有序字号变换的保守上界");
     }
 
     private static void Mask(ClipMask mask)

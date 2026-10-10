@@ -75,16 +75,19 @@ public static partial class ProjectEditingOperations
 
         var offset = start - content.EarliestStart;
         var subtitleIds = content.Subtitles.ToDictionary(line => line.Id, _ => Guid.NewGuid());
+        var rangeIds = content.Subtitles.ToDictionary(line => line.Id,
+            line => line.AnimationRanges.ToDictionary(range => range.Id, _ => Guid.NewGuid()));
         var layerIds = content.Layers.ToDictionary(layer => layer.Id,
             layer => layer.SubtitleId is { } subtitleId && layer.Id == subtitleId ? subtitleIds[subtitleId] : Guid.NewGuid());
         var subtitles = content.Subtitles.Select(line => line with
         {
             Id = subtitleIds[line.Id], Start = line.Start + offset, End = line.End + offset,
             ColorTagId = line.ColorTagId is { } tagId ? colorTagIds[tagId] : null,
+            AnimationRanges = line.AnimationRanges.Select(range => range with { Id = rangeIds[line.Id][range.Id] }).ToImmutableArray(),
             Karaoke = line.Karaoke.Select(clip => clip with { Id = Guid.NewGuid() }).ToImmutableArray(),
             InactiveKaraoke = line.InactiveKaraoke.Select(clip => clip with { Id = Guid.NewGuid() }).ToImmutableArray()
         }).ToImmutableArray();
-        var layers = mappedLayers.Select(layer => CloneClipboardLayer(layer, layerIds[layer.Id], subtitleIds, offset)).ToImmutableArray();
+        var layers = mappedLayers.Select(layer => CloneClipboardLayer(layer, layerIds[layer.Id], subtitleIds, rangeIds, offset)).ToImmutableArray();
         var result = Verified(document with
         {
             Subtitles = document.Subtitles.AddRange(subtitles),
@@ -202,7 +205,8 @@ public static partial class ProjectEditingOperations
         }).ToImmutableArray();
     }
 
-    private static ProjectLayer CloneClipboardLayer(ProjectLayer layer, Guid id, Dictionary<Guid, Guid> subtitleIds, MediaTime offset)
+    private static ProjectLayer CloneClipboardLayer(ProjectLayer layer, Guid id, Dictionary<Guid, Guid> subtitleIds,
+        Dictionary<Guid, Dictionary<Guid, Guid>> rangeIds, MediaTime offset)
     {
         var maskIds = layer.Mask is VectorClipMask vector
             ? vector.Contours.SelectMany(contour => contour.Nodes.Select(node => node.Id).Prepend(contour.Id))
@@ -223,7 +227,11 @@ public static partial class ProjectEditingOperations
             Start = layer.Start + offset, End = layer.End + offset, Mask = mask,
             Tracks = layer.Tracks.Select(track => track with
             {
-                Target = track.Target.NodeId is { } nodeId ? track.Target with { NodeId = maskIds[nodeId] } : track.Target,
+                Target = track.Target with
+                {
+                    NodeId = track.Target.NodeId is { } nodeId ? maskIds[nodeId] : null,
+                    TextRangeId = track.Target.TextRangeId is { } rangeId ? rangeIds[layer.SubtitleId!.Value][rangeId] : null
+                },
                 Transforms = track.Transforms.Select(operation => operation with { Id = Guid.NewGuid() }).ToImmutableArray()
             }).ToImmutableArray()
         };

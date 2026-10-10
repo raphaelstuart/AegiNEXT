@@ -424,23 +424,7 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
 
     private static SubtitleTextEditMap MapTextChange(string original, string edited)
     {
-        var previous = SubtitleTextEditMap.Boundaries(original);
-        var next = SubtitleTextEditMap.Boundaries(edited);
-        var prefix = 0;
-        while (prefix < previous.Length - 1 && prefix < next.Length - 1 &&
-            original.AsSpan(previous[prefix], previous[prefix + 1] - previous[prefix]).SequenceEqual(edited.AsSpan(next[prefix], next[prefix + 1] - next[prefix])))
-        {
-            prefix++;
-        }
-        var previousEnd = previous.Length - 1;
-        var nextEnd = next.Length - 1;
-        while (previousEnd > prefix && nextEnd > prefix &&
-            original.AsSpan(previous[previousEnd - 1], previous[previousEnd] - previous[previousEnd - 1]).SequenceEqual(edited.AsSpan(next[nextEnd - 1], next[nextEnd] - next[nextEnd - 1])))
-        {
-            previousEnd--;
-            nextEnd--;
-        }
-        return new(original, previous[prefix], previous[previousEnd] - previous[prefix], edited[next[prefix]..next[nextEnd]]);
+        return SubtitleTextEditMap.Between(original, edited);
     }
 
     private static SubtitleStyle StyleAt(SubtitleLine line, int offset)

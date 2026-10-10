@@ -1,5 +1,6 @@
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
+using System.Collections.Immutable;
 
 namespace AegiNext.Core.Editing;
 
@@ -18,4 +19,14 @@ public sealed record EvaluatedLayer(ProjectLayer Source, MediaTime LocalTime, La
     public bool HasLetterSpacingAnimation { get; init; }
     public bool HasFillBlurAnimation { get; init; }
     public bool HasStrokeBlurAnimation { get; init; }
+    public double FontSize { get; init; }
+    public ScenePoint ShadowOffset { get; init; }
+    public double ShadowBlur { get; init; }
+    public SceneColor ShadowColor { get; init; }
+    public bool HasFontSizeAnimation { get; init; }
+    public bool HasShadowOffsetAnimation { get; init; }
+    public bool HasShadowBlurAnimation { get; init; }
+    public bool HasShadowColorAnimation { get; init; }
+    public ImmutableDictionary<AnimationTrackTarget, AnimationValue> AnimationValues { get; init; } = ImmutableDictionary<AnimationTrackTarget, AnimationValue>.Empty;
+    public ImmutableArray<SubtitleAnimationRange> AnimationRanges { get; init; } = [];
 }

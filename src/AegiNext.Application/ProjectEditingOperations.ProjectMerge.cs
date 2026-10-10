@@ -75,6 +75,8 @@ public static partial class ProjectEditingOperations
             var assetIds = new Dictionary<Guid, Guid>();
             var trackIds = source.Document.Tracks.ToDictionary(track => track.Id, _ => NewMergeId(reservedIds));
             var subtitleIds = source.Document.Subtitles.ToDictionary(line => line.Id, _ => NewMergeId(reservedIds));
+            var rangeIds = source.Document.Subtitles.ToDictionary(line => line.Id,
+                line => line.AnimationRanges.ToDictionary(range => range.Id, _ => NewMergeId(reservedIds)));
             foreach (var asset in source.Document.Assets.Where(asset => dependencyIds.Contains(asset.Id)))
             {
                 var key = GetMergeAssetKey(asset);
@@ -113,6 +115,7 @@ public static partial class ProjectEditingOperations
                 subtitles.Add(line with
                 {
                     Id = id,
+                    AnimationRanges = line.AnimationRanges.Select(range => range with { Id = rangeIds[line.Id][range.Id] }).ToImmutableArray(),
                     ColorTagId = line.ColorTagId is { } tagId ? colorTagIds[tagId] : null,
                     Style = RemapMergeStyle(line.Style, assetIds),
                     InlineSpans = line.InlineSpans.Select(span => span with
@@ -128,7 +131,7 @@ public static partial class ProjectEditingOperations
 
             foreach (var layer in source.Document.Layers)
             {
-                layers.Add(CloneMergeLayer(layer, trackIds, subtitleIds, assetIds, reservedIds, importedLayerIds));
+                layers.Add(CloneMergeLayer(layer, trackIds, subtitleIds, rangeIds, assetIds, reservedIds, importedLayerIds));
             }
 
             foreach (var preset in source.Document.Presets)
@@ -239,7 +242,8 @@ public static partial class ProjectEditingOperations
     }
 
     private static ProjectLayer CloneMergeLayer(ProjectLayer layer, Dictionary<Guid, Guid> trackIds, Dictionary<Guid, Guid> subtitleIds,
-        Dictionary<Guid, Guid> assetIds, HashSet<Guid> reservedIds, ImmutableArray<Guid>.Builder importedLayerIds)
+        Dictionary<Guid, Dictionary<Guid, Guid>> rangeIds, Dictionary<Guid, Guid> assetIds,
+        HashSet<Guid> reservedIds, ImmutableArray<Guid>.Builder importedLayerIds)
     {
         var id = layer.SubtitleId is { } subtitleId && layer.Id == subtitleId
             ? subtitleIds[subtitleId] : NewMergeId(reservedIds);
@@ -263,16 +267,21 @@ public static partial class ProjectEditingOperations
             SubtitleId = layer.SubtitleId is { } referencedId ? subtitleIds[referencedId] : null,
             Image = layer.Image is { } image ? image with { AssetId = assetIds[image.AssetId] } : null,
             Mask = mask,
-            Tracks = CloneMergeAnimationTracks(layer.Tracks, maskIds, reservedIds)
+            Tracks = CloneMergeAnimationTracks(layer.Tracks, maskIds, reservedIds,
+                layer.SubtitleId is { } referencedSubtitle ? rangeIds[referencedSubtitle] : null)
         };
     }
 
     private static ImmutableArray<AnimationTrack> CloneMergeAnimationTracks(ImmutableArray<AnimationTrack> tracks,
-        Dictionary<Guid, Guid> nodeIds, HashSet<Guid> reservedIds)
+        Dictionary<Guid, Guid> nodeIds, HashSet<Guid> reservedIds, Dictionary<Guid, Guid>? rangeIds = null)
     {
         return tracks.Select(track => track with
         {
-            Target = track.Target.NodeId is { } nodeId ? track.Target with { NodeId = nodeIds[nodeId] } : track.Target,
+            Target = track.Target with
+            {
+                NodeId = track.Target.NodeId is { } nodeId ? nodeIds[nodeId] : null,
+                TextRangeId = track.Target.TextRangeId is { } rangeId ? rangeIds![rangeId] : null
+            },
             Transforms = track.Transforms.Select(operation => operation with { Id = NewMergeId(reservedIds) }).ToImmutableArray()
         }).ToImmutableArray();
     }
@@ -286,6 +295,7 @@ public static partial class ProjectEditingOperations
         foreach (var line in document.Subtitles)
         {
             ids.Add(line.Id);
+            ids.UnionWith(line.AnimationRanges.Select(range => range.Id));
             ids.UnionWith(line.Karaoke.Concat(line.InactiveKaraoke).Select(segment => segment.Id));
         }
         foreach (var layer in document.Layers)

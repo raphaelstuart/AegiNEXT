@@ -34,5 +34,9 @@ public enum AnimationProperty
     MASK_NODE_OUT_HANDLE = 28,
     LETTER_SPACING = 29,
     FILL_BLUR = 30,
-    STROKE_BLUR = 31
+    STROKE_BLUR = 31,
+    FONT_SIZE = 32,
+    SHADOW_OFFSET = 33,
+    SHADOW_BLUR = 34,
+    SHADOW_COLOR = 35
 }

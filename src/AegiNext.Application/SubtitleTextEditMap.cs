@@ -106,6 +106,31 @@ internal sealed class SubtitleTextEditMap
         return new(text);
     }
 
+    internal static SubtitleTextEditMap Between(string original, string edited)
+    {
+        var previous = Boundaries(original);
+        var next = Boundaries(edited);
+        var prefix = 0;
+        while (prefix < previous.Length - 1 && prefix < next.Length - 1 &&
+            original.AsSpan(previous[prefix], previous[prefix + 1] - previous[prefix])
+                .SequenceEqual(edited.AsSpan(next[prefix], next[prefix + 1] - next[prefix])))
+        {
+            prefix++;
+        }
+
+        var previousEnd = previous.Length - 1;
+        var nextEnd = next.Length - 1;
+        while (previousEnd > prefix && nextEnd > prefix &&
+            original.AsSpan(previous[previousEnd - 1], previous[previousEnd] - previous[previousEnd - 1])
+                .SequenceEqual(edited.AsSpan(next[nextEnd - 1], next[nextEnd] - next[nextEnd - 1])))
+        {
+            previousEnd--;
+            nextEnd--;
+        }
+
+        return new(original, previous[prefix], previous[previousEnd] - previous[prefix], edited[next[prefix]..next[nextEnd]]);
+    }
+
     internal static void ValidateRange(string text, SubtitleTextBoundaries boundaries, int start, int length)
     {
         if (start < 0 || length < 0 || (long)start + length > text.Length ||

@@ -9,6 +9,8 @@ public sealed record AnimationTrack(AnimationTrackTarget Target, ImmutableArray<
 {
     public AnimationValue? InitialValue { get; init; }
     public ImmutableArray<AnimationTransformOperation> Transforms { get; init; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public AnimationColorSpace ColorSpace { get; init; }
 
     [JsonIgnore]
     public bool IsOrdered => !Transforms.IsDefaultOrEmpty;
