@@ -3,6 +3,7 @@ using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Styling;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -153,7 +154,8 @@ internal sealed partial class SubtitleDetailsPanelView
 
     private void ConfigureTimingAction(Button button, string key, string icon, Action action, bool bindHint = true)
     {
-        button.Content = IconLabel(key, icon);
+        button.Content = WorkbenchIcon.Create(icon);
+        button.Classes.Add("icon-button");
         button.Margin = new(0, 0, 6, 6);
         bindings.Add(button.Bind(AutomationProperties.NameProperty, Localization.Observe(key).ToBinding()));
         if (bindHint)
