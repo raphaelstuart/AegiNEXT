@@ -112,7 +112,7 @@ internal sealed partial class SubtitleDetailsPanelView
                 axis.KeepDurationLabelsVisible = keepTimeLabels.IsChecked == true;
             }
         };
-        bindings.Add(axis.Bind(ToolTip.TipProperty, Localization.Observe("Workbench.KaraokeAxisGestureHint").ToBinding()));
+        // bindings.Add(axis.Bind(ToolTip.TipProperty, Localization.Observe("Workbench.KaraokeAxisGestureHint").ToBinding()));
         var popupFrame = PopupFrame(timingFields);
         popupFrame.AddHandler(KeyDownEvent, (_, e) =>
         {
