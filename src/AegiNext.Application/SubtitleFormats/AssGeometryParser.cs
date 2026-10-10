@@ -11,6 +11,7 @@ internal sealed class AssGeometryParser
     private readonly IReadOnlyDictionary<string, AssStyleDefinition> styles;
     private readonly double canvasScaleX;
     private readonly double canvasScaleY;
+    private readonly bool sourceConstraints;
     private readonly List<SubtitleFormatDiagnostic> diagnostics = [];
     private AssStyleDefinition baseline;
     private ScenePoint currentScale;
@@ -25,12 +26,13 @@ internal sealed class AssGeometryParser
     private AnimationTrack? move;
 
     internal AssGeometryParser(SubtitleLine original, IReadOnlyDictionary<string, AssStyleDefinition> styles,
-        double canvasScaleX, double canvasScaleY)
+        double canvasScaleX, double canvasScaleY, bool sourceConstraints = true)
     {
         this.original = original;
         this.styles = styles;
         this.canvasScaleX = canvasScaleX;
         this.canvasScaleY = canvasScaleY;
+        this.sourceConstraints = sourceConstraints;
         baseline = OriginalDefinition();
         currentScale = baseline.Scale;
         currentRotation = baseline.Rotation;
@@ -52,16 +54,22 @@ internal sealed class AssGeometryParser
         switch (name)
         {
             case "fscx":
-                currentScale = currentScale with { X = value.Length == 0 ? baseline.Scale.X : AssFormatValues.Number(value) / 100 };
+                currentScale = currentScale with { X = value.Length == 0 ? baseline.Scale.X : Scale(value) };
                 break;
             case "fscy":
-                currentScale = currentScale with { Y = value.Length == 0 ? baseline.Scale.Y : AssFormatValues.Number(value) / 100 };
+                currentScale = currentScale with { Y = value.Length == 0 ? baseline.Scale.Y : Scale(value) };
                 break;
             case "fr":
             case "frz":
                 currentRotation = value.Length == 0 ? baseline.Rotation : AssFormatValues.Number(value);
                 break;
         }
+    }
+
+    private double Scale(string value)
+    {
+        var scale = AssFormatValues.Number(value) / 100;
+        return sourceConstraints ? Math.Max(scale, 0) : scale;
     }
 
     internal void Observe()

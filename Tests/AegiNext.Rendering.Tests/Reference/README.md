@@ -1,6 +1,6 @@
 # 独立 libass 渲染对照
 
-这些测试实际调用外部 libass 的解析器、字体整形与渲染器，再与 `AssSubtitleFormat.Parse` 导入后的 `ProjectSceneRenderer` 比较。绑定遵循 [libass 0.17.2 官方 ass.h](https://github.com/libass/libass/blob/0.17.2/libass/ass.h)。不经过项目 ASS 解析器生成外部基线；外部字体提供器关闭，双方固定使用仓库的 `Fixtures/NotoSans.ttf`。
+这些测试实际调用外部 libass 的解析器、字体整形与渲染器。原生画面对照使用 `AssSubtitleFormat.Parse` 导入后的 `ProjectSceneRenderer`；源操作约束对照则使用手写静态 ASS 帧，同时检查原始输入与项目导入再导出的 ASS 在 libass 中的表现。绑定遵循 [libass 0.17.2 官方 ass.h](https://github.com/libass/libass/blob/0.17.2/libass/ass.h)。外部基线不经过项目 ASS 解析器；外部字体提供器关闭，双方固定使用仓库的 `Fixtures/NotoSans.ttf`。
 
 运行时配置：
 
@@ -11,7 +11,7 @@
 
 ```sh
 dotnet test Tests/AegiNext.Rendering.Tests/AegiNext.Rendering.Tests.csproj -c Release \
-  --filter 'FullyQualifiedName~AssLibassReferenceTests|FullyQualifiedName~AssContinuousAnimationReferenceTests'
+  --filter 'FullyQualifiedName~AssLibassReferenceTests|FullyQualifiedName~AssContinuousAnimationReferenceTests|FullyQualifiedName~AssShadowClampReferenceTests|FullyQualifiedName~AssKaraokeNormalFillReferenceTests|FullyQualifiedName~AssNumericClampReferenceTests'
 ```
 
 ## 指标与实际限制
@@ -26,6 +26,10 @@ dotnet test Tests/AegiNext.Rendering.Tests/AegiNext.Rendering.Tests.csproj -c Re
 
 原始 libass 帧还确认 `t(-500,-500,...)` 是瞬变，与直接样式完全相同；`t(0,0,...)` 按整段事件时长插值，不能表达零时刻瞬变。
 
-当前 19 个用例已在 libass 0.17.5 上实际运行且无跳过：原有 16 项包括 1 个运行时/字体检查、7 个计时、颜色和 alpha 指标对照、5 个明确报告的外观差异特征测试、3 个外部语义和诊断负对照。新增 1 项连续 RGB／分通道 alpha 的中间时刻及导出对照，RGB 按 sRGB 编码空间比较；新增 2 项绝对／相对字号动画的墨迹增长对照。
+用例分为 33 项：原有 16 项包括 1 个运行时/字体检查、7 个计时、颜色和 alpha 指标对照、5 个明确报告的外观差异特征测试、3 个外部语义和诊断负对照；连续动画包含 1 项 RGB／分通道 alpha 和 2 项绝对／相对字号增长对照；源约束和状态填充增加 14 项。RGB 按 sRGB 编码空间比较。
 
 字号测试以各自零时刻墨迹尺寸归一后比较增长，容许 3 px 栅格差异。固定字体下 Skia 与 FreeType 的字号度量基线仍不同，因此这两项证明的是连续动画的相对增长，不能解释为绝对字号或逐像素等价。所有用例也没有证明每一种 ASS 组合都无损。
+
+新增源约束测试使用独立手算值生成每个时刻的静态 ASS 基线：5 项阴影测试覆盖有符号起值、负 shad 目标、源顺序和瞬时边界；6 项数值测试覆盖非正字号复位、负缩放、描边与 blur 的逐操作上下界。原始输入和导入再导出的结果都必须与静态基线对应。非空墨迹能量容忍 2%，边界容忍 1 px；空帧严格要求为空。数值测试另要求最大 alpha 差不超过 0.005。阴影样例采用无描边和不同的填充／阴影颜色，隔离已知合成差异，不证明通用原生阴影等价。
+
+3 项卡拉 OK 填充测试比较原生画面、手写 ASS 次要颜色轨道和实际出口：普通 FILL 继承、静态未激活覆盖、动画未激活覆盖分别测试，激活时刻保持绿色填充。颜色阈值为 `1/255 + 0.001`，最大 alpha 阈值为 0.002；没有放宽既有外观差异特征测试。

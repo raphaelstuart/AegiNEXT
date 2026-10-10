@@ -233,9 +233,26 @@ public sealed class AssNumericTransformImportTests
     public void OutOfRangeNumericAnimationOnlyLosesItsOwnProperty(string invalid)
     {
         var parsed = Parse("{" + invalid + "\\t(0,2000,\\frz90)}a");
+        var tracks = Assert.Single(parsed.Clips).Tracks;
 
-        Assert.Single(Assert.Single(parsed.Clips).Tracks, track => track.Property == AnimationProperty.ROTATION);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformRange");
+        Assert.Single(tracks, track => track.Property == AnimationProperty.ROTATION);
+        if (invalid.Contains("fscx-10", StringComparison.Ordinal))
+        {
+            Assert.Equal(0.45, SceneEvaluator.EvaluateVectorTrack(Assert.Single(tracks,
+                track => track.Property == AnimationProperty.SCALE), new(1)).X, 9);
+            Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformRange");
+        }
+        else if (invalid.Contains("blur1000", StringComparison.Ordinal))
+        {
+            Assert.Equal(100 * AssBlurConversion.SigmaPerUnit, SceneEvaluator.EvaluateScalarTrack(Assert.Single(tracks,
+                track => track.Property == AnimationProperty.STROKE_BLUR), new(1)), 9);
+            Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformRange");
+        }
+        else
+        {
+            Assert.Single(tracks);
+            Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformRange");
+        }
     }
 
     [Fact]
@@ -244,8 +261,10 @@ public sealed class AssNumericTransformImportTests
         var parsed = Parse("{\\t(0,2000,\\fscx-10\\fscy300)}a");
         var track = Assert.Single(Assert.Single(parsed.Clips).Tracks, track => track.Property == AnimationProperty.SCALE);
 
-        Assert.Equal(new ScenePoint(1, 2), SceneEvaluator.EvaluateVectorTrack(track, new(1)));
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformRange");
+        var value = SceneEvaluator.EvaluateVectorTrack(track, new(1));
+        Assert.Equal(0.45, value.X, 9);
+        Assert.Equal(2, value.Y, 9);
+        Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformRange");
     }
 
     [Theory]

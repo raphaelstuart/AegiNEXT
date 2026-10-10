@@ -14,7 +14,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
 {
     private readonly AssResolutionContext borderResolution = resolution ?? new(scaleX, scaleY);
     private readonly AssMaskParser maskParser = new(original.End - original.Start, scaleX, scaleY, canvasWidth, canvasHeight);
-    private readonly AssGeometryParser geometryParser = new(original, styles, scaleX, scaleY);
+    private readonly AssGeometryParser geometryParser = new(original, styles, scaleX, scaleY, !projectSource);
     private readonly AssOpacityParser opacityParser = new(original.End - original.Start, original.Id);
     private AssNumericTransformParser numericParser = null!;
     private AssTextAnimationImport textAnimation = null!;
@@ -61,8 +61,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     internal AssTextEditResult Parse(string source)
     {
         AssFormatValues.CheckText(source);
-        numericParser = new(original, geometryParser.CurrentScale, geometryParser.CurrentRotation);
-        textAnimation = new(original, secondaryColor, geometryParser.CurrentScale, geometryParser.CurrentRotation);
+        numericParser = new(original, geometryParser.CurrentScale, geometryParser.CurrentRotation, ExternalBlurMaximum);
+        textAnimation = new(original, secondaryColor, geometryParser.CurrentScale, geometryParser.CurrentRotation, !projectSource);
         for (var index = 0; index < source.Length;)
         {
             if (source[index] == '{')
@@ -165,7 +165,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         ImmutableArray<AnimationTrack> numericTracks = [];
         if (!projectSource)
         {
-            transform = geometryParser.Transform();
+            transform = textAnimation.NormalizeTransform(geometryParser.Transform());
             var appearance = new AssTransformAppearance(transform, original.Id);
             line = appearance.Import(line);
             numericTracks = numericParser.Tracks(transform, contentOffset);
@@ -332,7 +332,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 }
                 break;
             case "shad":
-                current = current with { ShadowOffset = value.Length == 0 ? baseline.ShadowOffset : borderResolution.Shadow(AssFormatValues.Number(value)) }; break;
+                current = current with { ShadowOffset = value.Length == 0 ? baseline.ShadowOffset : borderResolution.Shadow(Math.Max(AssFormatValues.Number(value), 0)) }; break;
             case "xshad": current = current with { ShadowOffset = current.ShadowOffset with { X = value.Length == 0 ? baseline.ShadowOffset.X : AssFormatValues.Number(value) * borderResolution.BorderScaleX } }; break;
             case "yshad": current = current with { ShadowOffset = current.ShadowOffset with { Y = value.Length == 0 ? baseline.ShadowOffset.Y : AssFormatValues.Number(value) * borderResolution.BorderScaleY } }; break;
             case "blur":
@@ -580,8 +580,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         var visualTags = tags.Where(tag => tag.Name is "bord" or "blur" or "3c" or "3a" or "4c" or "4a" or "shad" or "xshad" or "yshad").ToArray();
         var candidate = 0;
+        var needsShadOperation = visualTags.Any(tag => tag.Name == "shad") &&
+            (current.ShadowOffset.X < 0 || current.ShadowOffset.Y < 0 || textAnimation.HasShadowAnimation);
         if (timing.Start != MediaTime.Zero && timing.Start == timing.End && instantVisual is null &&
-            visualTags.Length > 0 && visualTags.All(tag => tag.Value.Length > 0))
+            visualTags.Length > 0 && visualTags.All(tag => tag.Value.Length > 0) && !needsShadOperation)
         {
             var milliseconds = checked(timing.Start.Numerator * 1000 / timing.Start.Denominator);
             ParseInstantTransform("(" + milliseconds.ToString(CultureInfo.InvariantCulture) + "," +
@@ -606,7 +608,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 continue;
             }
             if (tag.Value.Length > 0 && textAnimation.AddStyle(tag.Name, tag.Value, timing, scaleY,
-                borderResolution, visualTags.Contains(tag) ? candidate : 0))
+                borderResolution, resetStyle.FontSize, visualTags.Contains(tag) ? candidate : 0))
             {
                 continue;
             }
@@ -626,11 +628,18 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             double target;
             if (tag.Name == "blur")
             {
-                if (!TryExternalBlur(tag.Value, sourceStart, sourceLength, out target))
+                if (projectSource)
+                {
+                    target = AssFormatValues.Number(tag.Value) * ExternalBlurScale;
+                }
+                else if (!TryExternalBlur(tag.Value, sourceStart, sourceLength, out target, true))
                 {
                     continue;
                 }
-                ResolveExternalBlur(current, target);
+                if (!projectSource)
+                {
+                    ResolveExternalBlur(current, target);
+                }
             }
             else
             {
@@ -647,7 +656,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 }
             }
             numericParser.Add(tag.Name, timing, target, tag.Name is "bord" or "blur" ? candidate : 0);
-            textAnimation.AddNumeric(tag.Name, timing, target, tag.Name is "bord" or "blur" ? candidate : 0);
+            textAnimation.AddNumeric(tag.Name, timing, target, tag.Name is "bord" or "blur" ? candidate : 0,
+                tag.Name == "blur" ? ExternalBlurMaximum : null);
         }
     }
 
@@ -687,7 +697,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 "4c" when argument.Length > 0 => visual with { ShadowColor = AssFormatValues.Color(argument, target.ShadowColor) },
                 "4a" when argument.Length > 0 => visual with { ShadowColor = target.ShadowColor with { Alpha = AssFormatValues.Alpha(argument) } },
                 "bord" when argument.Length > 0 => visual with { StrokeWidth = BorderWidth(AssFormatValues.Number(argument)) },
-                "shad" when argument.Length > 0 => visual with { ShadowOffset = borderResolution.Shadow(AssFormatValues.Number(argument)) },
+                "shad" when argument.Length > 0 => visual with { ShadowOffset = borderResolution.Shadow(Math.Max(AssFormatValues.Number(argument), 0)) },
                 "xshad" when argument.Length > 0 => visual with { ShadowOffset = target.ShadowOffset with { X = AssFormatValues.Number(argument) * borderResolution.BorderScaleX } },
                 "yshad" when argument.Length > 0 => visual with { ShadowOffset = target.ShadowOffset with { Y = AssFormatValues.Number(argument) * borderResolution.BorderScaleY } },
                 "blur" when argument.Length > 0 => visual with { ShadowBlur = AssFormatValues.Number(argument) * scaleY },
@@ -712,7 +722,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
 
     private double BorderWidth(double value)
     {
-        var width = borderResolution.Stroke(value);
+        var width = borderResolution.Stroke(projectSource ? value : Math.Max(value, 0));
         ReportBorderApproximation(width);
         return width;
     }
@@ -725,13 +735,15 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
     }
 
-    private bool TryExternalBlur(string value, int sourceStart, int sourceLength, out double blur)
+    private double ExternalBlurScale => AssBlurConversion.SigmaPerUnit * Math.Sqrt((blurScaleX ?? scaleX) * (blurScaleY ?? scaleY));
+
+    private double ExternalBlurMaximum => AssSourceAnimationEvaluator.MAX_BLUR * ExternalBlurScale;
+
+    private bool TryExternalBlur(string value, int sourceStart, int sourceLength, out double blur, bool interpolate = false)
     {
         var amount = value.Length == 0 ? 0 : AssFormatValues.Number(value);
-        var horizontalScale = blurScaleX ?? scaleX;
-        var verticalScale = blurScaleY ?? scaleY;
-        blur = amount * AssBlurConversion.SigmaPerUnit * Math.Sqrt(horizontalScale * verticalScale);
-        if (!double.IsFinite(blur) || amount < 0)
+        blur = (interpolate ? amount : Math.Clamp(amount, 0, AssSourceAnimationEvaluator.MAX_BLUR)) * ExternalBlurScale;
+        if (!double.IsFinite(blur))
         {
             Report("Ass.BlurRange", "ASS 边缘模糊换算后超出原生范围，已忽略该模糊标签并保留其他样式。", sourceStart, sourceLength);
             return false;

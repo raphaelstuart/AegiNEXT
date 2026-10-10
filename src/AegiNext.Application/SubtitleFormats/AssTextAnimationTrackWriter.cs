@@ -12,16 +12,27 @@ internal static class AssTextAnimationTrackWriter
         Func<AnimationValue, double[]> components, MediaTime origin, MediaTime end, Guid subtitleId,
         ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, bool forceSampling = false)
     {
+        var reportedPrecision = new HashSet<string>(StringComparer.Ordinal);
+        string OutputTags(AnimationValue value, int mask, AnimationTransformMode mode)
+        {
+            var output = tags(value, mask, mode);
+            if (output.Length > 0 && value.IsColor)
+            {
+                AssExportPrecision.AddColor(value.Color, subtitleId, diagnostics, mask, reportedPrecision);
+            }
+            return output;
+        }
+
         if (!forceSampling && Exact(track) && origin == MediaTime.Zero && !track.Transforms.Any(operation => operation.End <= origin))
         {
             var initial = track.IsOrdered ? track.InitialValue!.Value : track.Keyframes[0].Value;
-            var result = new StringBuilder(tags(initial, 0, AnimationTransformMode.INTERPOLATE_TO));
+            var result = new StringBuilder(OutputTags(initial, 0, AnimationTransformMode.INTERPOLATE_TO));
             if (track.IsOrdered)
             {
                 foreach (var operation in track.Transforms)
                 {
                     Append(result, operation.Start, operation.End, operation.Acceleration,
-                        tags(operation.Value, operation.ComponentMask, operation.Mode), subtitleId, diagnostics);
+                        OutputTags(operation.Value, operation.ComponentMask, operation.Mode), subtitleId, diagnostics, reportedPrecision);
                 }
             }
             else
@@ -40,13 +51,13 @@ internal static class AssTextAnimationTrackWriter
                         Append(result, curve.Interpolation == KeyframeInterpolation.HOLD ? next.Time : first.Time,
                             next.Time, curve.Interpolation == KeyframeInterpolation.EASE_IN ? 2 :
                                 curve.Interpolation == KeyframeInterpolation.POWER ? curve.Exponent : 1,
-                            tags(next.Value, 1 << component, AnimationTransformMode.INTERPOLATE_TO), subtitleId, diagnostics);
+                            OutputTags(next.Value, 1 << component, AnimationTransformMode.INTERPOLATE_TO), subtitleId, diagnostics, reportedPrecision);
                     }
                 }
             }
             return result.ToString();
         }
-        return Sample(track, tags, components, origin, end, subtitleId, diagnostics);
+        return Sample(track, OutputTags, components, origin, end, subtitleId, diagnostics, reportedPrecision);
     }
 
     private static bool Exact(AnimationTrack track)
@@ -71,7 +82,7 @@ internal static class AssTextAnimationTrackWriter
 
     private static string Sample(AnimationTrack track, Func<AnimationValue, int, AnimationTransformMode, string> tags,
         Func<AnimationValue, double[]> components, MediaTime origin, MediaTime end, Guid subtitleId,
-        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
+        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, ISet<string> reportedPrecision)
     {
         var sampled = AssAnimationSampler.Sample(track, components, origin, end);
         var limited = sampled.Limited;
@@ -82,13 +93,13 @@ internal static class AssTextAnimationTrackWriter
         for (var index = 0; index < sampled.Frames.Length - 1; index++)
         {
             Append(result, sampled.Frames[index].Time - origin, sampled.Frames[index + 1].Time - origin, 1,
-                tags(sampled.Frames[index + 1].Value, 0, AnimationTransformMode.INTERPOLATE_TO), subtitleId, diagnostics);
+                tags(sampled.Frames[index + 1].Value, 0, AnimationTransformMode.INTERPOLATE_TO), subtitleId, diagnostics, reportedPrecision);
         }
         return result.ToString();
     }
 
     private static void Append(StringBuilder result, MediaTime startTime, MediaTime endTime, double acceleration,
-        string tags, Guid subtitleId, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
+        string tags, Guid subtitleId, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, ISet<string> reportedPrecision)
     {
         if (tags.Length == 0)
         {
@@ -109,6 +120,7 @@ internal static class AssTextAnimationTrackWriter
         {
             diagnostics.Add(new("Ass.TransformTimeQuantization", "ASS 变换时间已量化到毫秒，正时长至少保留 1 毫秒。", SubtitleId: subtitleId));
         }
+        AssExportPrecision.AddNumbers(subtitleId, diagnostics, reportedPrecision, acceleration);
         result.Append("\\t(").Append(start.ToString(CultureInfo.InvariantCulture)).Append(',')
             .Append(end.ToString(CultureInfo.InvariantCulture)).Append(',').Append(AssFormatValues.Number(acceleration))
             .Append(',').Append(tags).Append(')');

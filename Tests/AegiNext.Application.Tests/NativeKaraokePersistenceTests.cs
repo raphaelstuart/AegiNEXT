@@ -48,7 +48,7 @@ public sealed class NativeKaraokePersistenceTests
     }
 
     [Fact]
-    public void VersionElevenRoundTripPreservesMultiCharacterGroupsGapsAndDormantStyles()
+    public void CurrentVersionRoundTripPreservesMultiCharacterGroupsGapsAndDormantStyles()
     {
         var document = Document();
         var line = document.Subtitles[0];

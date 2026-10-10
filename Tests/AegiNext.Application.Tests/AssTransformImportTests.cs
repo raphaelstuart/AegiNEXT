@@ -76,9 +76,16 @@ public sealed class AssTransformImportTests
     {
         var result = Parse("{\\fscx" + scale + "\\fscy125\\frz45}a");
 
-        Assert.Equal(new ScenePoint(1, 1.25), result.Transform.Scale);
+        Assert.Equal(new ScenePoint(scale == "-10" ? 0 : 1, 1.25), result.Transform.Scale);
         Assert.Equal(-45, result.Transform.Rotation);
-        Assert.Contains(result.Diagnostics, item => item.Code == "Ass.UnsupportedTransform");
+        if (scale == "-10")
+        {
+            Assert.DoesNotContain(result.Diagnostics, item => item.Code == "Ass.UnsupportedTransform");
+        }
+        else
+        {
+            Assert.Contains(result.Diagnostics, item => item.Code == "Ass.UnsupportedTransform");
+        }
     }
 
     [Fact]

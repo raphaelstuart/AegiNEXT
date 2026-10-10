@@ -32,8 +32,19 @@ internal static class AssTextAnimationProjection
         {
             Target = track.Target with { TextRangeId = identities[id] }
         } : track).ToImmutableArray();
-        var preserved = layer?.Tracks.Where(track => !IsTextTrack(track) || !Representable(track)).ToImmutableArray() ?? [];
-        return (restored with { AnimationRanges = ranges }, preserved.AddRange(tracks));
+        var representableShadows = layer is null ? new HashSet<AnimationTrackTarget>() :
+            RepresentableShadows(layer, original, baseline);
+        var preserveFill = layer is not null && EquivalentFill(expectedLine, baseline.NumericTracks,
+            parsed.Line, parsed.NumericTracks);
+        var preserved = layer is null ? ImmutableArray<AnimationTrack>.Empty : layer.Tracks
+            .Where(track => !IsTextTrack(track) || !Representable(track, representableShadows) ||
+                preserveFill && track.Property == AnimationProperty.FILL).ToImmutableArray();
+        var independentShadowTargets = preserved.Where(track => track.Property == AnimationProperty.SHADOW_BLUR)
+            .Select(track => track.Target).ToHashSet();
+        var represented = tracks.Where(track => !(preserveFill && track.Property == AnimationProperty.FILL) &&
+            (track.Property != AnimationProperty.SHADOW_BLUR || !independentShadowTargets.Contains(track.Target)));
+        ranges = RestorePreservedRanges(ranges, originalRanges, preserved, expected);
+        return (restored with { AnimationRanges = ranges }, preserved.AddRange(represented));
     }
 
     internal static bool IsTextTrack(AnimationTrack track) => track.Target.TextRangeId is not null ||
@@ -41,8 +52,151 @@ internal static class AssTextAnimationProjection
         AnimationProperty.STROKE or AnimationProperty.STROKE_WIDTH or AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR or
         AnimationProperty.SHADOW_OFFSET or AnimationProperty.SHADOW_BLUR or AnimationProperty.SHADOW_COLOR;
 
-    private static bool Representable(AnimationTrack track) => track.Property != AnimationProperty.SHADOW_BLUR &&
-        (track.Target.State == SubtitleAnimationState.NORMAL || track.Property == AnimationProperty.FILL);
+    private static bool Representable(AnimationTrack track, HashSet<AnimationTrackTarget> representableShadows)
+    {
+        return track.Property == AnimationProperty.SHADOW_BLUR ? representableShadows.Contains(track.Target) :
+            track.Target.State == SubtitleAnimationState.NORMAL || track.Property == AnimationProperty.FILL;
+    }
+
+    private static ImmutableArray<SubtitleAnimationRange> RestorePreservedRanges(ImmutableArray<SubtitleAnimationRange> ranges,
+        ImmutableArray<SubtitleAnimationRange> originalRanges, ImmutableArray<AnimationTrack> preserved,
+        ImmutableArray<SubtitleAnimationRange> expected)
+    {
+        var referencedIds = preserved.Where(track => track.Property is AnimationProperty.SHADOW_BLUR or AnimationProperty.FILL)
+            .Select(track => track.Target.TextRangeId).ToHashSet();
+        var protectedRanges = originalRanges.Where(range => referencedIds.Contains(range.Id)).ToDictionary(range => range.Id);
+        var shadowRangeIds = preserved.Where(track => track.Property == AnimationProperty.SHADOW_BLUR)
+            .Select(track => track.Target.TextRangeId).ToHashSet();
+        var ambiguousScopes = originalRanges.GroupBy(range => (Start: range.Utf16Start, Length: range.Utf16Length))
+            .Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
+        ranges = ranges.Select(range => protectedRanges.TryGetValue(range.Id, out var originalRange) &&
+            shadowRangeIds.Contains(range.Id) && ambiguousScopes.Contains((originalRange.Utf16Start, originalRange.Utf16Length))
+                ? originalRange : range).ToImmutableArray();
+        var projectedScopes = expected.GroupBy(range => (range.Utf16Start, range.Utf16Length))
+            .Where(group => group.Count() == 1).ToDictionary(group => group.Key, group => group.Single());
+        ranges = ranges.AddRange(originalRanges.Where(range => protectedRanges.ContainsKey(range.Id) &&
+            !ranges.Any(candidate => candidate.Id == range.Id)).Select(range =>
+        {
+            var projected = projectedScopes.GetValueOrDefault((range.Utf16Start, range.Utf16Length));
+            var geometryWasProjected = !shadowRangeIds.Contains(range.Id) &&
+                range.Pivot == SubtitleAnimationPivot.SUBTITLE_ANCHOR && range.Scale.X >= 0 && range.Scale.Y >= 0 &&
+                projected is not null && projected.Scale == range.Scale && projected.Rotation == range.Rotation &&
+                !originalRanges.Any(candidate => candidate.Id != range.Id &&
+                    candidate.Utf16Start < range.Utf16Start + range.Utf16Length &&
+                    range.Utf16Start < candidate.Utf16Start + candidate.Utf16Length);
+            return geometryWasProjected ? range with { Scale = new(1, 1), Rotation = 0 } : range;
+        }));
+        var originalOrder = originalRanges.Select((range, index) => (range.Id, Index: index))
+            .ToDictionary(pair => pair.Id, pair => pair.Index);
+        var orderedOriginals = ranges.Where(range => originalOrder.ContainsKey(range.Id))
+            .OrderBy(range => originalOrder[range.Id]).ToArray();
+        var cursor = 0;
+        return ranges.Select(range => originalOrder.ContainsKey(range.Id) ? orderedOriginals[cursor++] : range).ToImmutableArray();
+    }
+
+    private static HashSet<AnimationTrackTarget> RepresentableShadows(ProjectLayer layer, SubtitleLine line, AssTextEditResult baseline)
+    {
+        var tracks = layer.Tracks.Where(track => track.Target.State == SubtitleAnimationState.NORMAL &&
+            track.Property is AnimationProperty.SHADOW_BLUR or AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR)
+            .ToDictionary(track => track.Target);
+        var baselineScopes = baseline.NumericTracks.Where(track => track.Property == AnimationProperty.SHADOW_BLUR &&
+            track.Target.State == SubtitleAnimationState.NORMAL).Select(track => Scope(baseline.Line, track)).ToHashSet();
+        var ambiguousScopes = line.AnimationRanges.GroupBy(range => (Start: range.Utf16Start, Length: range.Utf16Length))
+            .Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
+        var candidates = new HashSet<AnimationTrackTarget>();
+        foreach (var shadow in tracks.Values.Where(track => track.Property == AnimationProperty.SHADOW_BLUR))
+        {
+            var scope = Scope(line, shadow);
+            if (baselineScopes.Contains(scope) && !ambiguousScopes.Contains((scope.Start, scope.Length)))
+            {
+                candidates.Add(shadow.Target);
+            }
+        }
+        if (candidates.Count == 0)
+        {
+            return candidates;
+        }
+        var boundaries = new SortedSet<int> { 0, line.Text.Length };
+        foreach (var span in line.InlineSpans)
+        {
+            boundaries.Add(span.Utf16Start);
+            boundaries.Add(span.Utf16Start + span.Utf16Length);
+        }
+        foreach (var range in line.AnimationRanges)
+        {
+            boundaries.Add(range.Utf16Start);
+            boundaries.Add(range.Utf16Start + range.Utf16Length);
+        }
+        var represented = new HashSet<AnimationTrackTarget>();
+        var comparisons = new Dictionary<(AnimationTrackTarget Shadow, AnimationTrackTarget Blur), bool>();
+        var spanIndex = 0;
+        foreach (var offset in boundaries.Where(offset => offset < line.Text.Length))
+        {
+            var shadow = SelectedTrack(tracks, line, AnimationProperty.SHADOW_BLUR, offset);
+            if (shadow is null || !candidates.Contains(shadow.Target))
+            {
+                continue;
+            }
+            while (spanIndex < line.InlineSpans.Length &&
+                line.InlineSpans[spanIndex].Utf16Start + line.InlineSpans[spanIndex].Utf16Length <= offset)
+            {
+                spanIndex++;
+            }
+            var span = spanIndex < line.InlineSpans.Length && line.InlineSpans[spanIndex].Utf16Start <= offset
+                ? line.InlineSpans[spanIndex] : null;
+            var style = span?.Style.ApplyTo(line.Style) ?? line.Style;
+            var blurProperty = style.StrokeWidth > 0 ? AnimationProperty.STROKE_BLUR : AnimationProperty.FILL_BLUR;
+            var blur = SelectedTrack(tracks, line, blurProperty, offset);
+            var equivalent = false;
+            if (blur is not null)
+            {
+                var pair = (shadow.Target, blur.Target);
+                if (!comparisons.TryGetValue(pair, out equivalent))
+                {
+                    equivalent = EquivalentValues(shadow, blur);
+                    comparisons.Add(pair, equivalent);
+                }
+            }
+            if (!equivalent)
+            {
+                candidates.Remove(shadow.Target);
+                continue;
+            }
+            represented.Add(shadow.Target);
+        }
+        candidates.IntersectWith(represented);
+        return candidates;
+    }
+
+    private static AnimationTrack? SelectedTrack(Dictionary<AnimationTrackTarget, AnimationTrack> tracks,
+        SubtitleLine line, AnimationProperty property, int offset,
+        SubtitleAnimationState state = SubtitleAnimationState.NORMAL)
+    {
+        tracks.TryGetValue(new(property, State: state), out var selected);
+        foreach (var range in line.AnimationRanges)
+        {
+            if (range.Utf16Start > offset || offset >= range.Utf16Start + range.Utf16Length)
+            {
+                continue;
+            }
+            if (tracks.TryGetValue(new(property, TextRangeId: range.Id, State: state), out var scoped))
+            {
+                selected = scoped;
+            }
+        }
+        return selected;
+    }
+
+    private static bool EquivalentValues(AnimationTrack first, AnimationTrack second)
+    {
+        if (first.IsOrdered != second.IsOrdered)
+        {
+            return false;
+        }
+        return first.IsOrdered ? first.InitialValue == second.InitialValue && first.Transforms.Length == second.Transforms.Length &&
+            first.Transforms.Zip(second.Transforms).All(pair => pair.First with { Id = pair.Second.Id } == pair.Second) :
+            first.Keyframes.SequenceEqual(second.Keyframes);
+    }
 
     private static bool Equivalent(SubtitleLine firstLine, ImmutableArray<AnimationTrack> first,
         SubtitleLine secondLine, ImmutableArray<AnimationTrack> second)
@@ -55,6 +209,12 @@ internal static class AssTextAnimationProjection
         {
             return false;
         }
+        return EquivalentTracks(firstLine, first, secondLine, second);
+    }
+
+    private static bool EquivalentTracks(SubtitleLine firstLine, ImmutableArray<AnimationTrack> first,
+        SubtitleLine secondLine, ImmutableArray<AnimationTrack> second)
+    {
         if (first.Length != second.Length)
         {
             return false;
@@ -63,14 +223,61 @@ internal static class AssTextAnimationProjection
         {
             var scope = Scope(firstLine, track);
             var candidate = second.FirstOrDefault(candidate => Scope(secondLine, candidate) == scope);
-            if (candidate is null || track.ColorSpace != candidate.ColorSpace || track.InitialValue != candidate.InitialValue ||
-                !track.Keyframes.SequenceEqual(candidate.Keyframes) || track.Transforms.Length != candidate.Transforms.Length ||
-                track.Transforms.Zip(candidate.Transforms).Any(pair => pair.First with { Id = pair.Second.Id } != pair.Second))
+            if (candidate is null || !EquivalentTrack(track, candidate))
             {
                 return false;
             }
         }
         return true;
+    }
+
+    private static bool EquivalentFill(SubtitleLine firstLine, ImmutableArray<AnimationTrack> first,
+        SubtitleLine secondLine, ImmutableArray<AnimationTrack> second)
+    {
+        var firstTracks = first.Where(track => track.Property == AnimationProperty.FILL).ToDictionary(track => track.Target);
+        var secondTracks = second.Where(track => track.Property == AnimationProperty.FILL).ToDictionary(track => track.Target);
+        var boundaries = new SortedSet<int> { 0, secondLine.Text.Length };
+        foreach (var range in firstLine.AnimationRanges.Concat(secondLine.AnimationRanges))
+        {
+            boundaries.Add(range.Utf16Start);
+            boundaries.Add(range.Utf16Start + range.Utf16Length);
+        }
+        var states = Enum.GetValues<SubtitleAnimationState>();
+        var comparisons = new Dictionary<(AnimationTrackTarget First, AnimationTrackTarget Second), bool>();
+        foreach (var offset in boundaries.Where(offset => offset < secondLine.Text.Length))
+        {
+            foreach (var state in states)
+            {
+                var firstTrack = SelectedTrack(firstTracks, firstLine, AnimationProperty.FILL, offset, state);
+                var secondTrack = SelectedTrack(secondTracks, secondLine, AnimationProperty.FILL, offset, state);
+                if (firstTrack is null || secondTrack is null)
+                {
+                    if (firstTrack is not null || secondTrack is not null)
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                var pair = (firstTrack.Target, secondTrack.Target);
+                if (!comparisons.TryGetValue(pair, out var equivalent))
+                {
+                    equivalent = EquivalentTrack(firstTrack, secondTrack);
+                    comparisons.Add(pair, equivalent);
+                }
+                if (!equivalent)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static bool EquivalentTrack(AnimationTrack first, AnimationTrack second)
+    {
+        return first.ColorSpace == second.ColorSpace && first.InitialValue == second.InitialValue &&
+            first.Keyframes.SequenceEqual(second.Keyframes) && first.Transforms.Length == second.Transforms.Length &&
+            first.Transforms.Zip(second.Transforms).All(pair => pair.First with { Id = pair.Second.Id } == pair.Second);
     }
 
     private static (AnimationProperty Property, SubtitleAnimationState State, int Start, int Length) Scope(SubtitleLine line, AnimationTrack track)

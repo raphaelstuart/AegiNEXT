@@ -121,7 +121,7 @@ public sealed class AssTextAnimationCompatibilityTests
     {
         var document = Import(@"{\xshad2\yshad4\t(\xshad-6)\t(\yshad12)\t(1000,2000,\shad8)}ab");
         var track = Assert.Single(document.Layers[0].Tracks, track => track.Property == AnimationProperty.SHADOW_OFFSET);
-        Assert.Equal(new ScenePoint(-2, 8), SceneEvaluator.EvaluateVectorTrack(track, new(1)));
+        Assert.Equal(new ScenePoint(0, 8), SceneEvaluator.EvaluateVectorTrack(track, new(1)));
         Assert.Equal(new ScenePoint(2, 9), SceneEvaluator.EvaluateVectorTrack(track, new(3, 2)));
     }
 

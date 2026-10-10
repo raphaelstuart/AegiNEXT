@@ -112,7 +112,7 @@ internal static class AssTextWriter
             {
                 CheckTagBoundary(result);
                 var outputStyle = conversion?.ConvertStyle(style) ?? style;
-                result.Append("{\\r").Append(StyleTags(outputStyle, projection)).Append(conversion?.GeometryTags).Append('}');
+                result.Append("{\\r").Append(StyleTags(outputStyle, projection, line.Id, diagnostics)).Append(conversion?.GeometryTags).Append('}');
                 AddStyleDiagnostics(outputStyle, line.Id, diagnostics, projection);
                 previous = style;
                 if (clip is not null)
@@ -127,7 +127,7 @@ internal static class AssTextWriter
                     result.Append("\\1c").Append(AssFormatValues.Color(active.Fill, false)).Append("\\1a").Append(AssFormatValues.Alpha(active.Fill));
                     if (clip.HighlightKind == KaraokeHighlightKind.SWEEP)
                     {
-                        result.Append(VisualTags(inactive, projection));
+                        result.Append(VisualTags(inactive, projection, line.Id, diagnostics));
                         if (VisualsDiffer(inactive, active))
                         {
                             diagnostics.Add(new("Ass.KaraokeVisual", "ASS 的逐字扫过不能完整保留前后的独立描边和阴影，已采用未激活外观。", SubtitleId: line.Id));
@@ -135,7 +135,7 @@ internal static class AssTextWriter
                     }
                     else if (clipStartCount == 0)
                     {
-                        result.Append(VisualTags(active, projection));
+                        result.Append(VisualTags(active, projection, line.Id, diagnostics));
                         var representedInactive = clip.HighlightKind == KaraokeHighlightKind.OUTLINE_STEP ? active with { StrokeWidth = 0 } : active;
                         if (VisualsDiffer(inactive, representedInactive))
                         {
@@ -144,8 +144,8 @@ internal static class AssTextWriter
                     }
                     else
                     {
-                        result.Append(VisualTags(inactive, projection));
-                        var changes = ChangedVisualTags(inactive, active, projection);
+                        result.Append(VisualTags(inactive, projection, line.Id, diagnostics));
+                        var changes = ChangedVisualTags(inactive, active, projection, line.Id, diagnostics);
                         if (changes.Length > 0)
                         {
                             var startMs = checked(clipStartCount * 10).ToString(CultureInfo.InvariantCulture);
@@ -200,25 +200,28 @@ internal static class AssTextWriter
         return new(result.ToString(), diagnostics.Distinct().ToImmutableArray(), new(time, 100));
     }
 
-    private static string StyleTags(SubtitleStyle style, bool projection)
+    private static string StyleTags(SubtitleStyle style, bool projection, Guid id,
+        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
     {
         if (style.FontFamily.IndexOfAny(['\\', '{', '}', '\r', '\n']) >= 0)
         {
             throw new InvalidDataException("ASS 字体名包含标签控制字符。");
         }
         return string.Create(CultureInfo.InvariantCulture,
-            $"\\fn{style.FontFamily}\\fs{AssFormatValues.Number(style.FontSize)}\\fsp{AssFormatValues.Number(style.LetterSpacing)}\\b{(style.Bold ? 1 : 0)}\\i{(style.Italic ? 1 : 0)}\\u{(style.Underline ? 1 : 0)}\\s{(style.Strikethrough ? 1 : 0)}\\1c{AssFormatValues.Color(style.Fill, false)}\\1a{AssFormatValues.Alpha(style.Fill)}\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? string.Empty : style.WrapMode == SubtitleWrapMode.NO_WRAP ? "\\q2" : "\\q1") + "\\blur" + AssFormatValues.Number(AssBlurConversion.Value(style, projection));
+            $"\\fn{style.FontFamily}\\fs{AssFormatValues.Number(style.FontSize)}\\fsp{AssFormatValues.Number(style.LetterSpacing)}\\b{(style.Bold ? 1 : 0)}\\i{(style.Italic ? 1 : 0)}\\u{(style.Underline ? 1 : 0)}\\s{(style.Strikethrough ? 1 : 0)}\\1c{AssFormatValues.Color(style.Fill, false)}\\1a{AssFormatValues.Alpha(style.Fill)}\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? string.Empty : style.WrapMode == SubtitleWrapMode.NO_WRAP ? "\\q2" : "\\q1") + "\\blur" + BlurValue(style, projection, id, diagnostics);
     }
 
     private static bool OutOfGamut(SceneColor color) => color.Red is < 0 or > 1 || color.Green is < 0 or > 1 || color.Blue is < 0 or > 1;
 
-    private static string VisualTags(SubtitleStyle style, bool projection)
+    private static string VisualTags(SubtitleStyle style, bool projection, Guid id,
+        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
     {
         return string.Create(CultureInfo.InvariantCulture,
-            $"\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + "\\blur" + AssFormatValues.Number(AssBlurConversion.Value(style, projection));
+            $"\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + "\\blur" + BlurValue(style, projection, id, diagnostics);
     }
 
-    private static string ChangedVisualTags(SubtitleStyle inactive, SubtitleStyle active, bool projection)
+    private static string ChangedVisualTags(SubtitleStyle inactive, SubtitleStyle active, bool projection, Guid id,
+        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
     {
         var tags = new StringBuilder();
         if (inactive.Stroke != active.Stroke)
@@ -243,9 +246,20 @@ internal static class AssTextWriter
         }
         if (!AssBlurConversion.Value(inactive, projection).Equals(AssBlurConversion.Value(active, projection)))
         {
-            tags.Append("\\blur").Append(AssFormatValues.Number(AssBlurConversion.Value(active, projection)));
+            tags.Append("\\blur").Append(BlurValue(active, projection, id, diagnostics));
         }
         return tags.ToString();
+    }
+
+    private static string BlurValue(SubtitleStyle style, bool projection, Guid id,
+        ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
+    {
+        var amount = AssBlurConversion.Value(style, projection);
+        if (!projection)
+        {
+            AssExportPrecision.AddBlurRange(amount, id, diagnostics);
+        }
+        return AssFormatValues.Number(amount);
     }
 
     private static bool VisualsDiffer(SubtitleStyle inactive, SubtitleStyle active)

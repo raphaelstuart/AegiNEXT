@@ -189,10 +189,18 @@ public static class ProjectStore
         {
             FlatClipJsonMigration.Upgrade(content, options);
         }
-        SubtitleKaraokeStyleJsonMigration.Upgrade(content, options);
+        if (number < 11)
+        {
+            SubtitleKaraokeStyleJsonMigration.Upgrade(content, options);
+        }
         content["version"] = ProjectDocument.CURRENT_VERSION;
         var document = content.Deserialize<ProjectDocument>(options) ?? throw new JsonException("项目不能为空。");
-        return LegacySubtitleKaraokeMigration.Upgrade(document);
+        if (number < 11)
+        {
+            return LegacySubtitleKaraokeMigration.Upgrade(document);
+        }
+        ProjectValidator.Validate(document);
+        return document;
     }
 
     private static JsonSerializerOptions CreateOptions()

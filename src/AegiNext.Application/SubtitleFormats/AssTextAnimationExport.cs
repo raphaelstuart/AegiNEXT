@@ -42,6 +42,11 @@ internal sealed class AssTextAnimationExport(SubtitleLine line, ProjectLayer lay
                 selected[(track.Property, track.Target.State)] = track;
             }
         }
+        if (karaoke && (selected.ContainsKey((AnimationProperty.FILL, SubtitleAnimationState.INACTIVE)) ||
+            KaraokeVisualStyleResolver.RangeStyleAt(line, offset, KaraokeVisualState.INACTIVE)?.Fill is not null))
+        {
+            selected.Remove((AnimationProperty.FILL, SubtitleAnimationState.NORMAL));
+        }
         if (matching.Length > 1)
         {
             Report("Ass.RangeOverlap", "重叠文字范围的样式按范围顺序转换，叠加几何和轴心不能在 ASS 中精确表达，已省略重叠范围几何。");
@@ -70,9 +75,9 @@ internal sealed class AssTextAnimationExport(SubtitleLine line, ProjectLayer lay
             {
                 Report("Ass.RangePivot", "文字范围使用独立中心轴心，ASS 只能采用字幕共享轴心；范围几何位置可能不同。");
             }
-            result.Append("\\fscx").Append(AssFormatValues.Number((range.Scale.X < 0 ? 1 : range.Scale.X) * scale.X * 100))
-                .Append("\\fscy").Append(AssFormatValues.Number((range.Scale.Y < 0 ? 1 : range.Scale.Y) * scale.Y * 100))
-                .Append("\\frz").Append(AssFormatValues.Number(-(range.Rotation + rotation)));
+            result.Append("\\fscx").Append(Number((range.Scale.X < 0 ? 1 : range.Scale.X) * scale.X * 100))
+                .Append("\\fscy").Append(Number((range.Scale.Y < 0 ? 1 : range.Scale.Y) * scale.Y * 100))
+                .Append("\\frz").Append(Number(-(range.Rotation + rotation)));
         }
         foreach (var pair in selected)
         {
@@ -92,9 +97,14 @@ internal sealed class AssTextAnimationExport(SubtitleLine line, ProjectLayer lay
             }
             if (track.Target.State != SubtitleAnimationState.NORMAL && !karaoke)
             {
+                if (!projection)
+                {
+                    Report("Ass.DormantKaraokeAnimation", "未计时文字保存的 ACTIVE/INACTIVE 动画无法写入 ASS；已按普通正文导出，工程中的状态动画保持不变。");
+                }
                 continue;
             }
-            var channel = track.Target.State == SubtitleAnimationState.INACTIVE ? "2" : "1";
+            var channel = track.Target.State == SubtitleAnimationState.INACTIVE ||
+                karaoke && track.Property == AnimationProperty.FILL && track.Target.State == SubtitleAnimationState.NORMAL ? "2" : "1";
             if (track.Target.State != SubtitleAnimationState.NORMAL && track.Property != AnimationProperty.FILL)
             {
                 Report("Ass.KaraokeAnimation", "ASS 描边、阴影和排版只有共享通道，不能保留激活与未激活状态的独立连续动画，已省略该状态轨道。");
@@ -151,7 +161,7 @@ internal sealed class AssTextAnimationExport(SubtitleLine line, ProjectLayer lay
         return result.ToString();
     }
 
-    private static string ValueTags(AnimationProperty property, AnimationValue value, int mask, AnimationTransformMode mode,
+    private string ValueTags(AnimationProperty property, AnimationValue value, int mask, AnimationTransformMode mode,
         string channel, ScenePoint scale, double rotation, double appearanceScale)
     {
         var result = new StringBuilder();
@@ -174,22 +184,22 @@ internal sealed class AssTextAnimationExport(SubtitleLine line, ProjectLayer lay
         {
             if (Component(0) && value.Vector.X >= 0)
             {
-                result.Append("\\fscx").Append(AssFormatValues.Number(value.Vector.X * scale.X * 100));
+                result.Append("\\fscx").Append(Number(value.Vector.X * scale.X * 100));
             }
             if (Component(1) && value.Vector.Y >= 0)
             {
-                result.Append("\\fscy").Append(AssFormatValues.Number(value.Vector.Y * scale.Y * 100));
+                result.Append("\\fscy").Append(Number(value.Vector.Y * scale.Y * 100));
             }
         }
         else if (property == AnimationProperty.SHADOW_OFFSET)
         {
             if (Component(0))
             {
-                result.Append("\\xshad").Append(AssFormatValues.Number(value.Vector.X * appearanceScale));
+                result.Append("\\xshad").Append(Number(value.Vector.X * appearanceScale));
             }
             if (Component(1))
             {
-                result.Append("\\yshad").Append(AssFormatValues.Number(value.Vector.Y * appearanceScale));
+                result.Append("\\yshad").Append(Number(value.Vector.Y * appearanceScale));
             }
         }
         else
@@ -209,15 +219,25 @@ internal sealed class AssTextAnimationExport(SubtitleLine line, ProjectLayer lay
                     AnimationProperty.FILL_BLUR or AnimationProperty.STROKE_BLUR => value.Scalar * appearanceScale / AssBlurConversion.SigmaPerUnit,
                     AnimationProperty.ROTATION => -(value.Scalar + rotation), _ => value.Scalar
                 };
+                if (tag == "blur" && !projection)
+                {
+                    AssExportPrecision.AddBlurRange(amount, line.Id, diagnostics, reported);
+                }
                 result.Append('\\').Append(tag);
                 if (mode == AnimationTransformMode.MULTIPLY_BY && amount >= 0)
                 {
                     result.Append('+');
                 }
-                result.Append(AssFormatValues.Number(amount));
+                result.Append(Number(amount));
             }
         }
         return result.ToString();
+    }
+
+    private string Number(double amount)
+    {
+        AssExportPrecision.AddNumbers(line.Id, diagnostics, reported, amount);
+        return AssFormatValues.Number(amount);
     }
 
     private static bool Equivalent(AnimationTrack first, AnimationTrack second)

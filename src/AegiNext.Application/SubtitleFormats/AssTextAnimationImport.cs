@@ -16,10 +16,13 @@ internal sealed class AssTextAnimationImport
     private int observedRevision = -1;
     private int observedCandidate;
     private bool observedKaraoke;
+    private bool normalizedScale;
+    private readonly bool sourceConstraints;
 
-    internal AssTextAnimationImport(SubtitleLine original, SceneColor secondary, ScenePoint scale, double rotation)
+    internal AssTextAnimationImport(SubtitleLine original, SceneColor secondary, ScenePoint scale, double rotation, bool sourceConstraints = true)
     {
         this.original = original;
+        this.sourceConstraints = sourceConstraints;
         channels = new()
         {
             ["fs"] = new(original.Style.FontSize), ["fsp"] = new(original.Style.LetterSpacing),
@@ -31,6 +34,8 @@ internal sealed class AssTextAnimationImport
     }
 
     internal IEnumerable<SubtitleFormatDiagnostic> Diagnostics => diagnostics;
+
+    internal bool HasShadowAnimation => !channels["shadow"].Snapshot(0).Operations.IsEmpty;
 
     internal void Observe(int offset, int length, bool karaoke, int excludedCandidate)
     {
@@ -100,21 +105,18 @@ internal sealed class AssTextAnimationImport
         }
     }
 
-    internal void AddNumeric(string name, AssTransformTiming timing, double value, int candidate = 0)
+    internal void AddNumeric(string name, AssTransformTiming timing, double value, int candidate = 0, double? maximum = null)
     {
         revision++;
-        if (name is "fscx" or "fscy" && value < 0)
-        {
-            Report("Ass.TransformRange", "ASS 负字形缩放不能精确转换，已省略该轴操作。");
-            return;
-        }
         var key = name is "fscx" or "fscy" ? "scale" : name == "fr" ? "frz" : name;
         AnimationValue target = name is "fscx" or "fscy" ? new ScenePoint(value, value) : name is "fr" or "frz" ? -value : value;
-        channels[key].Add(new(timing, target, name == "fscx" ? 1 : name == "fscy" ? 2 : 0, KaraokeCandidate: candidate));
+        channels[key].Add(new(timing, target, name == "fscx" ? 1 : name == "fscy" ? 2 : 0, KaraokeCandidate: candidate,
+            ClampNonNegative: sourceConstraints && name is "fscx" or "fscy" or "bord" or "blur",
+            Maximum: sourceConstraints ? maximum : null));
     }
 
     internal bool AddStyle(string name, string value, AssTransformTiming timing, double scaleY,
-        AssResolutionContext resolution, int candidate = 0)
+        AssResolutionContext resolution, double resetFontSize, int candidate = 0)
     {
         revision++;
         if (name == "fs")
@@ -122,14 +124,16 @@ internal sealed class AssTextAnimationImport
             var relative = value[0] is '+' or '-';
             var amount = AssFormatValues.Number(value);
             channels["fs"].Add(new(timing, relative ? 1 + amount / 10 : amount * scaleY,
-                Mode: relative ? AnimationTransformMode.MULTIPLY_BY : AnimationTransformMode.INTERPOLATE_TO));
+                Mode: relative ? AnimationTransformMode.MULTIPLY_BY : AnimationTransformMode.INTERPOLATE_TO,
+                NonPositiveFallback: sourceConstraints ? resetFontSize : null));
             return true;
         }
         if (name is "shad" or "xshad" or "yshad")
         {
             var amount = AssFormatValues.Number(value);
-            var target = name == "shad" ? resolution.Shadow(Math.Max(amount, 0)) : new ScenePoint(amount * resolution.BorderScaleX, amount * resolution.BorderScaleY);
-            channels["shadow"].Add(new(timing, target, name == "xshad" ? 1 : name == "yshad" ? 2 : 0, KaraokeCandidate: candidate));
+            var target = resolution.Shadow(amount);
+            channels["shadow"].Add(new(timing, target, name == "xshad" ? 1 : name == "yshad" ? 2 : 0,
+                KaraokeCandidate: candidate, ClampNonNegative: sourceConstraints && name == "shad"));
             return true;
         }
         if (name is "c" or "1c" or "2c" or "3c" or "4c")
@@ -156,6 +160,32 @@ internal sealed class AssTextAnimationImport
         return false;
     }
 
+    internal LayerTransform NormalizeTransform(LayerTransform transform)
+    {
+        for (var index = 0; index < runs.Count; index++)
+        {
+            var run = runs[index];
+            var snapshot = run.Channels["scale"];
+            var normalized = NormalizeScale(snapshot, transform.Scale);
+            if (!normalized.Equivalent(snapshot))
+            {
+                normalizedScale = true;
+                runs[index] = run with { Channels = run.Channels.SetItem("scale", normalized) };
+            }
+        }
+        var mixed = runs.Count > 0 && runs.Skip(1).Any(run => !run.Channels["scale"].Equivalent(runs[0].Channels["scale"]));
+        var staticGeometry = runs.Any(run => run.Channels["scale"].Initial.Vector != transform.Scale);
+        if (!mixed && !staticGeometry)
+        {
+            return transform;
+        }
+        return transform with
+        {
+            Scale = new(ScaleNeedsUnitBasis(transform.Scale.X, 0) ? 1 : transform.Scale.X,
+                ScaleNeedsUnitBasis(transform.Scale.Y, 1) ? 1 : transform.Scale.Y)
+        };
+    }
+
     internal (SubtitleLine Line, ImmutableArray<AnimationTrack> Tracks) Convert(SubtitleLine line,
         ImmutableArray<AnimationTrack> existing, LayerTransform transform, MediaTime contentOffset)
     {
@@ -170,9 +200,21 @@ internal sealed class AssTextAnimationImport
                 key is "1c" or "2c" && run.Karaoke != runs[0].Karaoke);
             var staticGeometry = runs.Any(run => key == "scale" && run.Channels[key].Initial.Vector != transform.Scale ||
                 key == "frz" && run.Channels[key].Initial.Scalar != transform.Rotation);
-            if (!animated && !staticGeometry || existing.Any(track => track.Property == property) && key != "blur")
+            var replaceScale = key == "scale" && (normalizedScale || mixed || staticGeometry);
+            if (!animated && !staticGeometry || existing.Any(track => track.Property == property) && key != "blur" && !replaceScale)
             {
                 continue;
+            }
+            if (replaceScale)
+            {
+                var wholeLineTarget = new AnimationTrackTarget(AnimationProperty.SCALE);
+                for (var index = tracks.Count - 1; index >= 0; index--)
+                {
+                    if (tracks[index].Target == wholeLineTarget)
+                    {
+                        tracks.RemoveAt(index);
+                    }
+                }
             }
             if (key == "blur" && runs.Any(BorderCrossesZero))
             {
@@ -209,7 +251,7 @@ internal sealed class AssTextAnimationImport
                 {
                     continue;
                 }
-                if (!existing.Any(track => track.Property == targetProperty && track.Target.TextRangeId == rangeId && track.Target.State == state))
+                if (!tracks.Any(track => track.Property == targetProperty && track.Target.TextRangeId == rangeId && track.Target.State == state))
                 {
                     AddTrack(tracks, snapshot, targetProperty, rangeId, state, key, transform, contentOffset);
                 }
@@ -250,6 +292,67 @@ internal sealed class AssTextAnimationImport
         {
             Start = original.Start, End = original.End, AnimationOffset = contentOffset, Tracks = tracks.ToImmutable()
         }).Tracks);
+    }
+
+    private AssTextAnimationSnapshot NormalizeScale(AssTextAnimationSnapshot snapshot, ScenePoint fallback)
+    {
+        var initial = snapshot.Initial;
+        for (var component = 0; component < initial.ComponentCount; component++)
+        {
+            if (!ValidScale(initial.GetComponent(component), component))
+            {
+                var fallbackValue = component == 0 ? fallback.X : fallback.Y;
+                initial = initial.WithComponent(component, ValidScale(fallbackValue, component) ? fallbackValue : 1);
+                Report("Ass.TransformRange", "ASS 字形缩放基础值超出原生范围，已回退该轴并保留另一轴和其他内容。");
+            }
+        }
+        var operations = ImmutableArray.CreateBuilder<AssTextAnimationOperation>();
+        foreach (var operation in snapshot.Operations)
+        {
+            var value = operation.Value;
+            var mask = operation.ComponentMask == 0 ? (1 << value.ComponentCount) - 1 : operation.ComponentMask;
+            var remaining = mask;
+            for (var component = 0; component < value.ComponentCount; component++)
+            {
+                if (!ValidScale(operation.ClampNonNegative ? Math.Max(value.GetComponent(component), 0) : value.GetComponent(component), component))
+                {
+                    var bit = 1 << component;
+                    if ((mask & bit) != 0)
+                    {
+                        remaining &= ~bit;
+                        Report("Ass.TransformRange", "ASS 字形缩放动画超出原生范围，已省略该轴操作并保留另一轴和其他内容。");
+                    }
+                    value = value.WithComponent(component, initial.GetComponent(component));
+                }
+            }
+            if (remaining != 0)
+            {
+                operations.Add(operation with
+                {
+                    Value = value,
+                    ComponentMask = remaining == mask ? operation.ComponentMask : remaining
+                });
+            }
+        }
+        return new(initial, operations.ToImmutable());
+    }
+
+    private static bool ValidScale(double value, int component) => double.IsFinite(value) && value >= 0 &&
+        value <= AnimationPropertyMetadata.GetMaximum(AnimationProperty.SCALE, component);
+
+    private bool ScaleNeedsUnitBasis(double basis, int component)
+    {
+        if (!double.IsFinite(basis) || basis == 0)
+        {
+            return true;
+        }
+        return runs.Any(run =>
+        {
+            var snapshot = run.Channels["scale"];
+            return !ValidScale(snapshot.Initial.GetComponent(component) / basis, component) ||
+                snapshot.Operations.Any(operation => !ValidScale((operation.ClampNonNegative
+                    ? Math.Max(operation.Value.GetComponent(component), 0) : operation.Value.GetComponent(component)) / basis, component));
+        });
     }
 
     private void AddTrack(ImmutableArray<AnimationTrack>.Builder tracks, AssTextAnimationSnapshot snapshot,
@@ -295,7 +398,37 @@ internal sealed class AssTextAnimationImport
                 ComponentMask = operation.ComponentMask, Mode = operation.Mode
             }).ToImmutableArray()
         };
-        if (key == "shadow" && transform.Rotation != 0 && snapshot.Operations.Any(operation => operation.ComponentMask != 0))
+        var minimum = key == "fs" ? AnimationPropertyMetadata.GetMinimum(AnimationProperty.FONT_SIZE) : double.NegativeInfinity;
+        if (AssSourceAnimationEvaluator.NeedsSampling(snapshot, minimum))
+        {
+            double[] Components(AnimationValue value) => Enumerable.Range(0, value.ComponentCount).Select(value.GetComponent).ToArray();
+            var discontinuities = AssSourceAnimationEvaluator.Discontinuities(snapshot).ToArray();
+            var samples = AssAnimationSampler.Sample(track, Components,
+                offset, offset + original.End - original.Start,
+                time => AssSourceAnimationEvaluator.Evaluate(snapshot, time - offset),
+                time => AssSourceAnimationEvaluator.Evaluate(snapshot, time - offset, true),
+                discontinuities.Select(time => time + offset));
+            var belowFontFloor = key == "fs" && (samples.Frames.Any(frame => frame.Value.Scalar < minimum) ||
+                discontinuities.Any(time => time >= MediaTime.Zero && time <= original.End - original.Start &&
+                    AssSourceAnimationEvaluator.Evaluate(snapshot, time, true).Scalar < minimum));
+            if (belowFontFloor)
+            {
+                Report("Ass.FontSizeRange", "ASS 连续字号经过小于原生 0.01 的正值，已钳制到原生下限并保留逐操作样式复位。");
+            }
+            track = track with
+            {
+                InitialValue = null, Transforms = [],
+                Keyframes = samples.Frames.Select(frame => frame with
+                {
+                    Value = ConvertValue(key == "fs" ? Math.Max(frame.Value.Scalar, minimum) : frame.Value,
+                        AnimationTransformMode.INTERPOLATE_TO)
+                }).ToImmutableArray()
+            };
+            Report(samples.Limited ? "Ass.AnimationSamplingLimit" : "Ass.AnimationSampling",
+                samples.Limited ? $"ASS {key} 逐操作约束采样达到 1 毫秒、断点量化或 4096 点限制，部分区间误差可能超过 1/255。" :
+                    $"ASS {key} 插值后的逐操作约束已采样为原生动画，检查的源坐标分量误差不超过 1/255，最短间隔为 1 毫秒。");
+        }
+        else if (key == "shadow" && transform.Rotation != 0 && snapshot.Operations.Any(operation => operation.ComponentMask != 0))
         {
             var source = track with
             {

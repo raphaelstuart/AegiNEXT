@@ -77,6 +77,10 @@ internal sealed record AssNumericAnimation(AnimationProperty Property, int Compo
         }
         var initialValue = Scale(initial, factor);
         AssExportPrecision.AddNumbers(id, diagnostics, initialValue);
+        if (tag == "\\blur")
+        {
+            AssExportPrecision.AddBlurRange(initialValue, id, diagnostics);
+        }
         var result = new StringBuilder(tag).Append(AssFormatValues.Number(initialValue));
         foreach (var operation in pending)
         {
@@ -96,6 +100,10 @@ internal sealed record AssNumericAnimation(AnimationProperty Property, int Compo
             }
             var value = Scale(operation.Value, factor);
             AssExportPrecision.AddNumbers(id, diagnostics, value, operation.Exponent);
+            if (tag == "\\blur")
+            {
+                AssExportPrecision.AddBlurRange(value, id, diagnostics);
+            }
             result.Append("\\t(").Append(start.ToString(CultureInfo.InvariantCulture)).Append(',')
                 .Append(end.ToString(CultureInfo.InvariantCulture)).Append(',').Append(AssFormatValues.Number(operation.Exponent))
                 .Append(',').Append(tag).Append(AssFormatValues.Number(value)).Append(')');

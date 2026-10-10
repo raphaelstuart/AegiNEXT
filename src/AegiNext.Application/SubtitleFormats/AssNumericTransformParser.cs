@@ -10,6 +10,7 @@ internal sealed class AssNumericTransformParser
     private readonly SubtitleLine original;
     private readonly Dictionary<string, AssNumericImportChannel> channels;
     private readonly List<SubtitleFormatDiagnostic> diagnostics = [];
+    private readonly double blurMaximum;
     private bool observed;
     private bool hasBorder;
     private bool hasNoBorder;
@@ -19,9 +20,10 @@ internal sealed class AssNumericTransformParser
     private int observedRevision = -1;
     private int observedCandidate;
 
-    internal AssNumericTransformParser(SubtitleLine original, ScenePoint scale, double rotation)
+    internal AssNumericTransformParser(SubtitleLine original, ScenePoint scale, double rotation, double blurMaximum = double.PositiveInfinity)
     {
         this.original = original;
+        this.blurMaximum = blurMaximum;
         channels = new()
         {
             ["fsp"] = new(original.Style.LetterSpacing), ["bord"] = new(original.Style.StrokeWidth), ["blur"] = new(0),
@@ -131,6 +133,11 @@ internal sealed class AssNumericTransformParser
             return;
         }
         var channel = channels[name];
+        if (name == "bord" && channel.Operations.Any(operation => operation.Value < 0) ||
+            name == "blur" && channel.Operations.Any(operation => operation.Value < 0 || operation.Value > blurMaximum))
+        {
+            return;
+        }
         var values = channel.Operations.Select(operation => operation.Value).Prepend(channel.Initial).Select(convert);
         if (values.Any(value => !double.IsFinite(value) || value < AnimationPropertyMetadata.GetMinimum(property) || value > AnimationPropertyMetadata.GetMaximum(property)))
         {
@@ -143,6 +150,10 @@ internal sealed class AssNumericTransformParser
 
     private AnimationTrack? Scale(ScenePoint fallback)
     {
+        if (RequiresScaleClamp("fscx") || RequiresScaleClamp("fscy"))
+        {
+            return null;
+        }
         var horizontal = ScaleAxis("fscx");
         var vertical = ScaleAxis("fscy");
         if (!horizontal && !vertical)
@@ -181,6 +192,8 @@ internal sealed class AssNumericTransformParser
         Report("Ass.TransformScaleAxes", "ASS 横纵缩放包含独立时序的重叠或瞬时操作，无法准确对应原生完整向量操作，已舍弃缩放动画并保留其他属性。");
         return null;
     }
+
+    private bool RequiresScaleClamp(string name) => Usable(name) && channels[name].Operations.Any(operation => operation.Value < 0);
 
     private bool ScaleAxis(string name)
     {

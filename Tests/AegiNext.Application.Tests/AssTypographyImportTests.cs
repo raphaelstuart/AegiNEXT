@@ -213,8 +213,8 @@ public sealed class AssTypographyImportTests
     [Theory]
     [InlineData("\\fsp5000", "Ass.LetterSpacingRange", 2)]
     [InlineData("\\fsp-5000", "Ass.LetterSpacingRange", 2)]
-    [InlineData("\\blur700", "Ass.BlurRange", 0)]
-    [InlineData("\\blur-1", "Ass.BlurRange", 2)]
+    [InlineData("\\blur700", "", 100)]
+    [InlineData("\\blur-1", "", 0)]
     public void OutOfRangeTagsOnlyDiscardTheirOwnValueAndKeepOtherFormatting(string tag, string code, double expectedBlur)
     {
         var parsed = AssSubtitleFormat.Parse(File("{\\fsp3\\blur2" + tag + "\\i1}a"), 640, 360);
@@ -223,7 +223,14 @@ public sealed class AssTypographyImportTests
         Assert.Equal(3, style.LetterSpacing);
         Assert.Equal(expectedBlur * AssBlurConversion.SigmaPerUnit, style.StrokeBlur, 12);
         Assert.True(style.Italic);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == code);
+        if (code.Length > 0)
+        {
+            Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == code);
+        }
+        else
+        {
+            Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.BlurRange");
+        }
     }
 
     [Fact]
@@ -233,8 +240,8 @@ public sealed class AssTypographyImportTests
         var parsed = AssSubtitleFormat.Parse(File("{\\blur" + amount + "}a", fontScaleX: "400", fontScaleY: "400"), 640, 360);
         var style = StyleAt(Assert.Single(parsed.Lines), 0);
 
-        Assert.Equal(300, style.StrokeBlur, 10);
-        Assert.Equal(300, style.ShadowBlur, 10);
+        Assert.Equal(100 * AssBlurConversion.SigmaPerUnit / 4, style.StrokeBlur, 10);
+        Assert.Equal(100 * AssBlurConversion.SigmaPerUnit / 4, style.ShadowBlur, 10);
         Assert.Equal(0, style.FillBlur);
         Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.BlurRange");
     }

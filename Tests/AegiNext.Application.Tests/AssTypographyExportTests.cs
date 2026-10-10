@@ -121,7 +121,7 @@ public sealed class AssTypographyExportTests
     }
 
     [Fact]
-    public void LargeIntermediateAssSigmaIsAllowedWhenInverseLayerScaleRestoresTheNativeRange()
+    public void LargeIntermediateAssBlurReportsThePlaybackClampBeforeInverseLayerScale()
     {
         var line = Line() with { Style = Line().Style with { FillBlur = 300 } };
         var layer = Layer(line) with { Transform = new() { Scale = new(4, 4) } };
@@ -129,8 +129,8 @@ public sealed class AssTypographyExportTests
         Assert.True(Assert.Single(BlurValues(Body(written.Text))) * AssBlurConversion.SigmaPerUnit > 512);
         var parsed = AssSubtitleFormat.Parse(written.Text, 640, 360);
 
-        Assert.Equal(300, Effective(Assert.Single(parsed.Lines)).FillBlur, 8);
-        Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.BlurRange");
+        Assert.Contains(written.Diagnostics, diagnostic => diagnostic.Code == "Ass.BlurRange");
+        Assert.Equal(100 * AssBlurConversion.SigmaPerUnit / 4, Effective(Assert.Single(parsed.Lines)).FillBlur, 8);
         Assert.Equal(300, line.Style.FillBlur);
     }
 
