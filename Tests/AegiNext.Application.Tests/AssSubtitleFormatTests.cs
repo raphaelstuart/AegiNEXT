@@ -106,11 +106,14 @@ public sealed class AssSubtitleFormatTests
     }
 
     [Fact]
-    public void QuantizationRejectsVisiblePositiveClipsWhenSubtitleCannotContainThem()
+    public void QuantizationPreservesTinyPositiveClipsWithoutMovingTheirIndependentStarts()
     {
         var line = new SubtitleLine { Text = "ab", End = new(1, 1000),
             Karaoke = [new(0, 1, new(0), new(1, 2000), SceneColor.White), new(1, 1, new(1, 2000), new(1, 1000), SceneColor.White)] };
-        Assert.Throws<InvalidDataException>(() => AssSubtitleFormat.Write(Document(line)));
+        var written = AssSubtitleFormat.Write(Document(line));
+        var imported = Assert.Single(AssSubtitleFormat.Parse(written.Text).Lines);
+        Assert.All(imported.Karaoke, group => Assert.Equal((MediaTime.Zero, new MediaTime(1, 100)), (group.Start, group.End)));
+        Assert.Contains(written.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeQuantization");
         Assert.Equal(new MediaTime(1, 1000), line.End);
         Assert.Equal(2, line.Karaoke.Length);
     }
@@ -191,7 +194,7 @@ public sealed class AssSubtitleFormatTests
     }
 
     [Fact]
-    public void ExportCropsKaraokeAgainstContentOriginWithoutExtendingDialogue()
+    public void ExportPreservesAllKaraokeAgainstContentOriginWithoutExtendingDialogue()
     {
         var line = new SubtitleLine { Text = "abcd", Start = new(5), End = new(6),
             Karaoke = [new(0, 1, new(0), new(1), SceneColor.White), new(1, 1, new(4), new(11, 2), SceneColor.White),
@@ -199,15 +202,16 @@ public sealed class AssSubtitleFormatTests
         var document = Document(line);
         document = document with { Layers = [document.Layers[0] with { AnimationOffset = new(5) }] };
         var result = AssSubtitleFormat.Write(document);
-        var imported = Assert.Single(AssSubtitleFormat.Parse(result.Text).Lines);
+        var importedClip = Assert.Single(AssSubtitleFormat.Parse(result.Text).Clips);
+        var imported = importedClip.Line;
         Assert.Equal(line.Start, imported.Start);
         Assert.Equal(line.End, imported.End);
         Assert.Equal("abcd", imported.Text);
-        Assert.Equal(2, imported.Karaoke.Length);
-        Assert.Equal(MediaTime.Zero, imported.Karaoke[0].Start);
-        Assert.Equal(new MediaTime(1), imported.Karaoke[^1].End);
-        Assert.All(imported.Karaoke, clip => Assert.True(clip.End > clip.Start && clip.End <= imported.End - imported.Start));
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeCrop");
+        Assert.Equal(new MediaTime(5), importedClip.ContentOffset);
+        Assert.Equal(line.Karaoke.Select(group => (group.Utf16Start, group.Utf16Length, group.Start, group.End)),
+            imported.Karaoke.Select(group => (group.Utf16Start, group.Utf16Length, group.Start, group.End)));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeCrop");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "Ass.KaraokeClockCompatibility");
     }
 
     [Fact]

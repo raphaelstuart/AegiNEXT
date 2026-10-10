@@ -169,7 +169,7 @@ public sealed class AssTypographyImportTests
         }
         else
         {
-            Assert.Empty(parsed.Diagnostics);
+            Assert.Equal("Ass.ShadowComposition", Assert.Single(parsed.Diagnostics).Code);
         }
     }
 

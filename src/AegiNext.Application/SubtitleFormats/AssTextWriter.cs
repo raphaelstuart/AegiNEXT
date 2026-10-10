@@ -8,12 +8,17 @@ namespace AegiNext.Application.SubtitleFormats;
 
 internal static class AssTextWriter
 {
-    internal static AssBodyWriteResult Write(SubtitleLine line, MediaTime origin, bool projection = false, bool preserveContentClock = false,
+    internal static AssBodyWriteResult Write(SubtitleLine line, MediaTime origin, bool projection = false,
         AssEventConversionContext? conversion = null, MediaTime? eventOrigin = null)
     {
         AssTextParser.ValidateLine(line);
         var result = new StringBuilder();
         var diagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
+        if (!projection)
+        {
+            SubtitleFormatLossAnalysis.AddAssKaraokeLoss(line, diagnostics);
+            AssShadowComposition.AddDiagnostics(line, origin, diagnostics);
+        }
         for (var index = 0; index < line.Text.Length - 1; index++)
         {
             if (line.Text[index] == '\\' && line.Text[index + 1] is 'N' or 'n' or 'h')
@@ -50,12 +55,7 @@ internal static class AssTextWriter
         SubtitleStyle? previousActive = null;
         var spanIndex = 0;
         var clipIndex = 0;
-        var visible = line.End - line.Start;
-        var visibleCount = visible.ToTimestamp(new(1, 100), MediaTimeRounding.CEILING).Value;
-        if (!projection && !preserveContentClock && line.Karaoke.Any(clip => clip.Start < origin || clip.End > origin + visible))
-        {
-            diagnostics.Add(new("Ass.KaraokeCrop", "部分卡拉 OK 片段超出字幕可见范围，导出时裁剪片段并保留整句起止时间。", SubtitleId: line.Id));
-        }
+        var clockOrigin = eventOrigin ?? origin;
         for (var index = 0; index < offsets.Length - 1; index++)
         {
             var offset = offsets[index];
@@ -72,14 +72,6 @@ internal static class AssTextWriter
                 clipIndex++;
             }
             var clip = clipIndex < line.Karaoke.Length && line.Karaoke[clipIndex].Utf16Start <= offset ? line.Karaoke[clipIndex] : null;
-            if (clip is not null && !projection && !preserveContentClock && (clip.End <= origin || clip.Start >= origin + line.End - line.Start))
-            {
-                clip = null;
-            }
-            if (clip is not null && clip != previousClip && !projection && !preserveContentClock && time >= visibleCount)
-            {
-                throw new InvalidDataException("字幕范围内的厘秒不足以保留全部卡拉 OK 正时长，无法导出。");
-            }
             var nativeInactive = clip is null ? null : KaraokeVisualStyleResolver.ResolveInactive(style, clip,
                 KaraokeVisualStyleResolver.StyleAt(line.KaraokeStyleSpans, offset, KaraokeVisualState.INACTIVE));
             var nativeActive = clip is null ? null : KaraokeVisualStyleResolver.ResolveActive(style, line.KaraokeStyle, clip,
@@ -94,19 +86,19 @@ internal static class AssTextWriter
             {
                 if (clip is not null)
                 {
-                    var start = preserveContentClock ? clip.Start - origin : clip.Start < origin ? MediaTime.Zero : clip.Start - origin;
-                    var end = clip.End - origin;
-                    end = !projection && !preserveContentClock && end > visible ? visible : end;
-                    clipStartCount = preserveContentClock ? start.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value : Math.Max(time, start.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value);
-                    endCount = Math.Max(clipStartCount + 1, end.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value);
-                    if (!projection && !preserveContentClock && endCount > visibleCount)
+                    var start = clip.Start - clockOrigin;
+                    var end = clip.End - clockOrigin;
+                    clipStartCount = AssKaraokeTiming.Quantize(start);
+                    endCount = AssKaraokeTiming.Quantize(end);
+                    if (endCount <= clipStartCount)
                     {
-                        throw new InvalidDataException("卡拉 OK 的正时长厘秒量化超出字幕范围，无法导出。");
+                        endCount = checked(clipStartCount + 1);
                     }
-                    if (endCount != end.ToTimestamp(new(1, 100), MediaTimeRounding.TO_EVEN).Value ||
-                        !projection && (new MediaTime(clipStartCount, 100) != start || new MediaTime(endCount, 100) != end))
+                    AssKaraokeTiming.ValidateCount(endCount);
+                    AssKaraokeTiming.ValidateCount(endCount - clipStartCount);
+                    if (new MediaTime(clipStartCount, 100) != start || new MediaTime(endCount, 100) != end)
                     {
-                        diagnostics.Add(new("Ass.KaraokeQuantization", "卡拉 OK 的正时长厘秒量化调整了片段边界。", SubtitleId: line.Id));
+                        diagnostics.Add(new("Ass.KaraokeQuantization", "卡拉 OK 起止时间已独立量化为厘秒；量化后折叠的正时长保留至少一厘秒，组间可能因此重叠。", SubtitleId: line.Id));
                     }
                 }
             }
@@ -135,9 +127,14 @@ internal static class AssTextWriter
                             diagnostics.Add(new("Ass.KaraokeVisual", "ASS 的逐字扫过不能完整保留前后的独立描边和阴影，已采用未激活外观。", SubtitleId: line.Id));
                         }
                     }
-                    else if (clipStartCount <= 0)
+                    else if (clipStartCount == 0)
                     {
                         result.Append(VisualTags(active, projection));
+                        var representedInactive = clip.HighlightKind == KaraokeHighlightKind.OUTLINE_STEP ? active with { StrokeWidth = 0 } : active;
+                        if (VisualsDiffer(inactive, representedInactive))
+                        {
+                            diagnostics.Add(new("Ass.KaraokeVisual", "演唱组在 ASS 对白起点已激活，采用激活外观；零起点瞬时变换在 ASS 中表示整行渐变，无法保存隐藏的未激活边缘和阴影。", SubtitleId: line.Id));
+                        }
                     }
                     else
                     {
@@ -165,9 +162,10 @@ internal static class AssTextWriter
             {
                 if (clip is not null)
                 {
-                    if (preserveContentClock)
+                    if (clipStartCount < time || clipStartCount - time > AssKaraokeTiming.MAX_CENTISECONDS)
                     {
                         result.Append("{\\kt").Append(clipStartCount.ToString(CultureInfo.InvariantCulture)).Append('}');
+                        diagnostics.Add(new("Ass.KaraokeClockCompatibility", "重叠、倒序或负相对时间的演唱组使用 kt 保留独立起点；部分 ASS 工具和播放器可能不支持此标签。", SubtitleId: line.Id));
                     }
                     else if (clipStartCount > time)
                     {

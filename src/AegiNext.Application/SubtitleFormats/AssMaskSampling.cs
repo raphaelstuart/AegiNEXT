@@ -10,7 +10,7 @@ internal static class AssMaskSampling
     internal static ImmutableArray<AssMaskSample> Samples(ProjectDocument document, ProjectLayer layer, SubtitleLine line,
         ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics, MediaTime timeOffset = default)
     {
-        var tags = AssMaskWriter.WriteTags(layer, layer.AnimationOffset, diagnostics);
+        var tags = AssMaskWriter.WriteTags(layer, AssEventClock.Origin(line.Start, line.Start, layer.AnimationOffset, timeOffset), diagnostics);
         if (tags is not null)
         {
             return [new(line.Start, line.End, layer.AnimationOffset, tags, false)];

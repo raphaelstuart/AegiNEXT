@@ -202,8 +202,7 @@ internal sealed class AssEventConversionContext
 
     internal MediaTime EventOrigin(AssMaskSample sample, MediaTime timeOffset)
     {
-        return new MediaTime((sample.Start + timeOffset).ToTimestamp(new(1, 100), MediaTimeRounding.FLOOR).Value, 100) -
-            timeOffset - line.Start + layer.AnimationOffset;
+        return AssEventClock.Origin(line.Start, sample.Start, layer.AnimationOffset, timeOffset);
     }
 
     internal string AnimationTags(SubtitleStyle style, MediaTime origin)

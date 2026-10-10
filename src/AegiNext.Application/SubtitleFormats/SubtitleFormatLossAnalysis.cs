@@ -50,4 +50,63 @@ public static class SubtitleFormatLossAnalysis
         }
     }
 
+    internal static void AddAssKaraokeLoss(SubtitleLine line, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
+    {
+        if (!line.InactiveKaraoke.IsEmpty)
+        {
+            diagnostics.Add(new("Ass.InactiveKaraoke", "ASS 无法保存停用演唱组的缓存时间、模式和默认高亮颜色；这些文字按普通正文导出。", SubtitleId: line.Id));
+        }
+        if (line.KaraokeStyleSpans.IsEmpty && line.KaraokeStyle is null)
+        {
+            return;
+        }
+        var boundaries = new SortedSet<int> { 0, line.Text.Length };
+        foreach (var span in line.InlineSpans)
+        {
+            boundaries.Add(span.Utf16Start);
+            boundaries.Add(span.Utf16Start + span.Utf16Length);
+        }
+        foreach (var span in line.KaraokeStyleSpans)
+        {
+            boundaries.Add(span.Utf16Start);
+            boundaries.Add(span.Utf16Start + span.Utf16Length);
+        }
+        foreach (var group in line.Karaoke)
+        {
+            boundaries.Add(group.Utf16Start);
+            boundaries.Add(group.Utf16Start + group.Utf16Length);
+        }
+        var offsets = boundaries.ToArray();
+        var clipIndex = 0;
+        var inlineIndex = 0;
+        for (var index = 0; index < offsets.Length - 1; index++)
+        {
+            var offset = offsets[index];
+            while (clipIndex < line.Karaoke.Length && line.Karaoke[clipIndex].Utf16Start + line.Karaoke[clipIndex].Utf16Length <= offset)
+            {
+                clipIndex++;
+            }
+            if (clipIndex < line.Karaoke.Length && line.Karaoke[clipIndex].Utf16Start <= offset)
+            {
+                continue;
+            }
+            while (inlineIndex < line.InlineSpans.Length && line.InlineSpans[inlineIndex].Utf16Start + line.InlineSpans[inlineIndex].Utf16Length <= offset)
+            {
+                inlineIndex++;
+            }
+            var ordinary = inlineIndex < line.InlineSpans.Length && line.InlineSpans[inlineIndex].Utf16Start <= offset
+                ? line.InlineSpans[inlineIndex].Style.ApplyTo(line.Style) : line.Style;
+            var defaultActive = KaraokeVisualStyleResolver.ResolveActive(ordinary, null, null);
+            var active = KaraokeVisualStyleResolver.ResolveActive(ordinary, line.KaraokeStyle, null,
+                KaraokeVisualStyleResolver.RangeStyleAt(line, offset, KaraokeVisualState.ACTIVE));
+            var inactive = KaraokeVisualStyleResolver.ResolveInactive(ordinary, null,
+                KaraokeVisualStyleResolver.RangeStyleAt(line, offset, KaraokeVisualState.INACTIVE));
+            if (active != defaultActive || inactive != ordinary)
+            {
+                diagnostics.Add(new("Ass.DormantKaraokeStyle", "未计时文字保存的 ACTIVE/INACTIVE 外观无法写入 ASS；已按普通正文导出，保留项目中的高亮样式范围。", SubtitleId: line.Id));
+                return;
+            }
+        }
+    }
+
 }

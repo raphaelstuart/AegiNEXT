@@ -9,8 +9,10 @@ namespace AegiNext.Application.SubtitleFormats;
 
 internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<string, AssStyleDefinition> styles,
     SceneColor secondary, double scaleX = 1, double scaleY = 1, bool projectSource = false, int canvasWidth = 1920, int canvasHeight = 1080,
-    int wrapStyle = 0, double? blurScaleX = null, double? blurScaleY = null, bool blurUsesPlayRes = true)
+    int wrapStyle = 0, double? blurScaleX = null, double? blurScaleY = null, bool blurUsesPlayRes = true,
+    AssResolutionContext? resolution = null)
 {
+    private readonly AssResolutionContext borderResolution = resolution ?? new(scaleX, scaleY);
     private readonly AssMaskParser maskParser = new(original.End - original.Start, scaleX, scaleY, canvasWidth, canvasHeight);
     private readonly AssGeometryParser geometryParser = new(original, styles, scaleX, scaleY);
     private readonly AssOpacityParser opacityParser = new(original.End - original.Start, original.Id);
@@ -148,7 +150,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             Text = text.ToString(), Style = lineStyle, InlineSpans = spans.ToImmutable(), KaraokeStyleSpans = karaokeStyles.ToImmutable(),
             Karaoke = karaoke.ToImmutable(), InactiveKaraoke = []
         };
-        var contentOffset = !projectSource && !line.Karaoke.IsEmpty && line.Karaoke[0].Start < MediaTime.Zero ? -line.Karaoke[0].Start : MediaTime.Zero;
+        var firstContentTime = line.Karaoke.IsEmpty ? MediaTime.Zero : line.Karaoke.Min(clip => clip.Start);
+        var contentOffset = !projectSource && firstContentTime < MediaTime.Zero ? -firstContentTime : MediaTime.Zero;
         if (contentOffset > MediaTime.Zero)
         {
             line = line with { Karaoke = line.Karaoke.Select(clip => clip with { Start = clip.Start + contentOffset, End = clip.End + contentOffset }).ToImmutableArray() };
@@ -166,6 +169,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             diagnostics.AddRange(numericParser.Diagnostics);
         }
         ValidateLine(line);
+        if (!projectSource)
+        {
+            AssShadowComposition.AddDiagnostics(line, contentOffset, diagnostics);
+        }
         diagnostics.AddRange(maskParser.Diagnostics);
         var opacityTracks = projectSource ? [] : opacityParser.Tracks(contentOffset);
         diagnostics.AddRange(opacityParser.Diagnostics);
@@ -230,7 +237,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
 
     private void ApplyTag(string name, string value, int sourceStart, int sourceLength)
     {
-        var baseline = projectSource ? original.Style : resetStyle;
+        var baseline = resetStyle;
         switch (name)
         {
             case "fn":
@@ -277,26 +284,26 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             case "u": current = current with { Underline = value.Length == 0 ? baseline.Underline : AssFormatValues.Integer(value) != 0 }; break;
             case "s": current = current with { Strikethrough = value.Length == 0 ? baseline.Strikethrough : AssFormatValues.Integer(value) != 0 }; break;
             case "c":
-            case "1c": current = current with { Fill = value.Length == 0 ? baseline.Fill : AssFormatValues.Color(value, current.Fill) }; break;
-            case "2c": inactive = value.Length == 0 ? (projectSource ? secondaryColor : resetSecondaryColor) : AssFormatValues.Color(value, inactive ?? secondaryColor); break;
-            case "3c": current = current with { Stroke = value.Length == 0 ? baseline.Stroke : AssFormatValues.Color(value, current.Stroke) }; break;
-            case "4c": current = current with { ShadowColor = value.Length == 0 ? baseline.ShadowColor : AssFormatValues.Color(value, current.ShadowColor) }; break;
+            case "1c": current = current with { Fill = value.Length == 0 ? baseline.Fill with { Alpha = current.Fill.Alpha } : AssFormatValues.Color(value, current.Fill) }; break;
+            case "2c": inactive = value.Length == 0 ? resetSecondaryColor with { Alpha = (inactive ?? secondaryColor).Alpha } : AssFormatValues.Color(value, inactive ?? secondaryColor); break;
+            case "3c": current = current with { Stroke = value.Length == 0 ? baseline.Stroke with { Alpha = current.Stroke.Alpha } : AssFormatValues.Color(value, current.Stroke) }; break;
+            case "4c": current = current with { ShadowColor = value.Length == 0 ? baseline.ShadowColor with { Alpha = current.ShadowColor.Alpha } : AssFormatValues.Color(value, current.ShadowColor) }; break;
             case "alpha":
                 var alpha = value.Length == 0 ? baseline.Fill.Alpha : AssFormatValues.Alpha(value);
                 current = current with
                 {
                     Fill = current.Fill with { Alpha = alpha },
-                    Stroke = current.Stroke with { Alpha = value.Length == 0 && !projectSource ? baseline.Stroke.Alpha : alpha },
-                    ShadowColor = current.ShadowColor with { Alpha = value.Length == 0 && !projectSource ? baseline.ShadowColor.Alpha : alpha }
+                    Stroke = current.Stroke with { Alpha = value.Length == 0 ? baseline.Stroke.Alpha : alpha },
+                    ShadowColor = current.ShadowColor with { Alpha = value.Length == 0 ? baseline.ShadowColor.Alpha : alpha }
                 };
-                inactive = (inactive ?? secondaryColor) with { Alpha = value.Length == 0 && !projectSource ? resetSecondaryColor.Alpha : alpha };
+                inactive = (inactive ?? secondaryColor) with { Alpha = value.Length == 0 ? resetSecondaryColor.Alpha : alpha };
                 break;
             case "1a": current = current with { Fill = current.Fill with { Alpha = value.Length == 0 ? baseline.Fill.Alpha : AssFormatValues.Alpha(value) } }; break;
-            case "2a": inactive = (inactive ?? secondaryColor) with { Alpha = value.Length == 0 ? (projectSource ? secondaryColor : resetSecondaryColor).Alpha : AssFormatValues.Alpha(value) }; break;
+            case "2a": inactive = (inactive ?? secondaryColor) with { Alpha = value.Length == 0 ? resetSecondaryColor.Alpha : AssFormatValues.Alpha(value) }; break;
             case "3a": current = current with { Stroke = current.Stroke with { Alpha = value.Length == 0 ? baseline.Stroke.Alpha : AssFormatValues.Alpha(value) } }; break;
             case "4a": current = current with { ShadowColor = current.ShadowColor with { Alpha = value.Length == 0 ? baseline.ShadowColor.Alpha : AssFormatValues.Alpha(value) } }; break;
             case "bord":
-                current = current with { StrokeWidth = value.Length == 0 ? (projectSource ? baseline : resetStyle).StrokeWidth : AssFormatValues.Number(value) * scaleY };
+                current = current with { StrokeWidth = value.Length == 0 ? baseline.StrokeWidth : BorderWidth(AssFormatValues.Number(value)) };
                 if (!projectSource)
                 {
                     numericParser.Set(name, current.StrokeWidth);
@@ -308,10 +315,9 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 }
                 break;
             case "shad":
-                var shadow = value.Length == 0 ? baseline.ShadowOffset.Y : AssFormatValues.Number(value) * scaleY;
-                current = current with { ShadowOffset = new(shadow * scaleX / scaleY, shadow) }; break;
-            case "xshad": current = current with { ShadowOffset = current.ShadowOffset with { X = AssFormatValues.Number(value) * scaleX } }; break;
-            case "yshad": current = current with { ShadowOffset = current.ShadowOffset with { Y = AssFormatValues.Number(value) * scaleY } }; break;
+                current = current with { ShadowOffset = value.Length == 0 ? baseline.ShadowOffset : borderResolution.Shadow(AssFormatValues.Number(value)) }; break;
+            case "xshad": current = current with { ShadowOffset = current.ShadowOffset with { X = value.Length == 0 ? baseline.ShadowOffset.X : AssFormatValues.Number(value) * borderResolution.BorderScaleX } }; break;
+            case "yshad": current = current with { ShadowOffset = current.ShadowOffset with { Y = value.Length == 0 ? baseline.ShadowOffset.Y : AssFormatValues.Number(value) * borderResolution.BorderScaleY } }; break;
             case "blur":
                 if (!projectSource)
                 {
@@ -366,7 +372,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 break;
             case "an":
             case "a":
-                var alignment = name == "an" ? AssFormatValues.Alignment(AssFormatValues.Integer(value)) :
+                var alignment = value.Length == 0 ? baseline.Alignment : name == "an" ? AssFormatValues.Alignment(AssFormatValues.Integer(value)) :
                     AssFormatValues.LegacyAlignment(AssFormatValues.Integer(value));
                 if (explicitAlignment)
                 {
@@ -412,7 +418,9 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 break;
             case "kt":
                 FlushKaraoke();
-                karaokeTime = new(AssFormatValues.Integer(value), 100);
+                var karaokeStart = AssFormatValues.Integer(value);
+                AssKaraokeTiming.ValidateCount(karaokeStart);
+                karaokeTime = new(karaokeStart, 100);
                 if (projectSource && karaokeTime < MediaTime.Zero)
                 {
                     throw new InvalidDataException("项目高级代码的卡拉 OK 时间不能为负。");
@@ -428,6 +436,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 {
                     throw new InvalidDataException("ASS 卡拉 OK 时长不能为负。");
                 }
+                AssKaraokeTiming.ValidateCount(centiseconds);
                 segmentDuration = new(centiseconds, 100);
                 segmentStart = text.Length;
                 segmentSourceStart = sourceStart;
@@ -475,6 +484,8 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         {
             return;
         }
+        AssKaraokeTiming.ValidateClock(karaokeTime);
+        AssKaraokeTiming.ValidateClock(karaokeTime + duration);
         if (text.Length > segmentStart && duration > MediaTime.Zero)
         {
             karaokeMap.Add(new(segmentSourceStart, segmentSourceLength, karaoke.Count));
@@ -547,7 +558,7 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         var visualTags = tags.Where(tag => tag.Name is "bord" or "blur" or "3c" or "3a" or "4c" or "4a" or "shad" or "xshad" or "yshad").ToArray();
         var candidate = 0;
-        if (timing.Start > MediaTime.Zero && timing.Start == timing.End && instantVisual is null &&
+        if (timing.Start != MediaTime.Zero && timing.Start == timing.End && instantVisual is null &&
             visualTags.Length > 0 && visualTags.All(tag => tag.Value.Length > 0))
         {
             var milliseconds = checked(timing.Start.Numerator * 1000 / timing.Start.Denominator);
@@ -593,10 +604,14 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 target = AssFormatValues.Number(tag.Value) * (tag.Name switch
                 {
                     "fsp" => scaleX,
-                    "bord" => scaleY,
+                    "bord" => borderResolution.StrokeScale,
                     "fscx" or "fscy" => 0.01,
                     _ => 1
                 });
+                if (tag.Name == "bord")
+                {
+                    ReportBorderApproximation(target);
+                }
             }
             numericParser.Add(tag.Name, timing, target, tag.Name is "bord" or "blur" ? candidate : 0);
         }
@@ -610,10 +625,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         }
         var parts = value[1..^1].Split(',', 3);
         if (parts.Length != 3 || !long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var start) ||
-            !long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var end) || start <= 0 || start != end ||
+            !long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var end) || start == 0 || start != end ||
             !parts[2].TrimStart().StartsWith('\\') || instantVisual is not null)
         {
-            Report("Ass.UnsupportedTag", "ASS 仅支持与逐字起点对齐的单个正时间瞬时边缘和阴影变换。", sourceStart, sourceLength);
+            Report("Ass.UnsupportedTag", "ASS 仅支持与演唱组起点对齐的单个非零时间瞬时边缘和阴影变换。", sourceStart, sourceLength);
             return;
         }
         var visual = new KaraokeVisualStyleOverride();
@@ -637,10 +652,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 "3a" when argument.Length > 0 => visual with { Stroke = target.Stroke with { Alpha = AssFormatValues.Alpha(argument) } },
                 "4c" when argument.Length > 0 => visual with { ShadowColor = AssFormatValues.Color(argument, target.ShadowColor) },
                 "4a" when argument.Length > 0 => visual with { ShadowColor = target.ShadowColor with { Alpha = AssFormatValues.Alpha(argument) } },
-                "bord" when argument.Length > 0 => visual with { StrokeWidth = AssFormatValues.Number(argument) * scaleY },
-                "shad" when argument.Length > 0 => visual with { ShadowOffset = new(AssFormatValues.Number(argument) * scaleX, AssFormatValues.Number(argument) * scaleY) },
-                "xshad" when argument.Length > 0 => visual with { ShadowOffset = target.ShadowOffset with { X = AssFormatValues.Number(argument) * scaleX } },
-                "yshad" when argument.Length > 0 => visual with { ShadowOffset = target.ShadowOffset with { Y = AssFormatValues.Number(argument) * scaleY } },
+                "bord" when argument.Length > 0 => visual with { StrokeWidth = BorderWidth(AssFormatValues.Number(argument)) },
+                "shad" when argument.Length > 0 => visual with { ShadowOffset = borderResolution.Shadow(AssFormatValues.Number(argument)) },
+                "xshad" when argument.Length > 0 => visual with { ShadowOffset = target.ShadowOffset with { X = AssFormatValues.Number(argument) * borderResolution.BorderScaleX } },
+                "yshad" when argument.Length > 0 => visual with { ShadowOffset = target.ShadowOffset with { Y = AssFormatValues.Number(argument) * borderResolution.BorderScaleY } },
                 "blur" when argument.Length > 0 => visual with { ShadowBlur = AssFormatValues.Number(argument) * scaleY },
                 _ => visual
             };
@@ -659,6 +674,21 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         instantVisualTime = new(start, 1000);
         instantSourceStart = sourceStart;
         instantSourceLength = sourceLength;
+    }
+
+    private double BorderWidth(double value)
+    {
+        var width = borderResolution.Stroke(value);
+        ReportBorderApproximation(width);
+        return width;
+    }
+
+    private void ReportBorderApproximation(double width)
+    {
+        if (!projectSource && borderResolution.ApproximatesStroke && width > 0)
+        {
+            ReportTypographyOnce("Ass.BorderResampling", "ASS 描边的横纵重采样比例不同，已按几何平均比例近似转换为原生单一描边宽度。");
+        }
     }
 
     private bool TryExternalBlur(string value, int sourceStart, int sourceLength, out double blur)

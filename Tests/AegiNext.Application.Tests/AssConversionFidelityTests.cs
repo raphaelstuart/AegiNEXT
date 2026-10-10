@@ -43,11 +43,12 @@ public sealed class AssConversionFidelityTests
         Assert.Equal(48, style.FontSize);
         if (blur == 0)
         {
-            Assert.Empty(imported.Diagnostics);
+            Assert.Equal("Ass.ShadowComposition", Assert.Single(imported.Diagnostics).Code);
         }
         else
         {
-            Assert.Equal("Ass.BlurAppearance", Assert.Single(imported.Diagnostics).Code);
+            Assert.Equal<string>(["Ass.BlurAppearance", "Ass.ShadowComposition"],
+                imported.Diagnostics.Select(item => item.Code));
         }
         Assert.Equal("text", line.Text);
     }
@@ -76,7 +77,8 @@ public sealed class AssConversionFidelityTests
 
         Assert.Equal("ab", line.Text);
         Assert.Equal(2, line.Karaoke.Length);
-        Assert.Equal("Ass.BlurAppearance", Assert.Single(imported.Diagnostics).Code);
+        Assert.Equal<string>(["Ass.BlurAppearance", "Ass.ShadowComposition"],
+            imported.Diagnostics.Select(item => item.Code));
         for (var index = 0; index < line.Karaoke.Length; index++)
         {
             var segment = line.Karaoke[index];
@@ -110,7 +112,8 @@ public sealed class AssConversionFidelityTests
         Assert.Equal(0, active.FillBlur);
         Assert.Equal(8 * 2 / Math.Sqrt(Math.Log(256)), active.StrokeBlur, 10);
         Assert.Equal(active.StrokeBlur, active.ShadowBlur);
-        Assert.Equal("Ass.BlurAppearance", Assert.Single(imported.Diagnostics).Code);
+        Assert.Equal<string>(["Ass.BlurAppearance", "Ass.ShadowComposition"],
+            imported.Diagnostics.Select(item => item.Code));
     }
 
     [Fact]
@@ -131,9 +134,10 @@ public sealed class AssConversionFidelityTests
         Assert.True(track.IsOrdered);
         Assert.Equal(8 * 2 / Math.Sqrt(Math.Log(256)),
             SceneEvaluator.EvaluateScalarTrack(track, clip.ContentOffset + new MediaTime(1, 2)), 10);
-        Assert.Equal(2, imported.Diagnostics.Length);
+        Assert.Equal(3, imported.Diagnostics.Length);
         Assert.Contains(imported.Diagnostics, value => value.Code == "Ass.BlurAppearance");
         Assert.Contains(imported.Diagnostics, value => value.Code == "Ass.TransformAppearanceAnimation");
+        Assert.Contains(imported.Diagnostics, value => value.Code == "Ass.ShadowComposition");
     }
 
     [Fact]

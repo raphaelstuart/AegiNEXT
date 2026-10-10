@@ -113,11 +113,18 @@ public static class AssSubtitleFormat
         var blurUsesPlayRes = layoutWidth <= 0 || layoutHeight <= 0;
         var blurScaleX = (double)targetWidth / (blurUsesPlayRes ? width : layoutWidth);
         var blurScaleY = (double)targetHeight / (blurUsesPlayRes ? height : layoutHeight);
+        var scaledBorder = !Get(info, "ScaledBorderAndShadow", "yes").Equals("no", StringComparison.OrdinalIgnoreCase);
+        var resolution = scaledBorder ? new AssResolutionContext(scaleX, scaleY) :
+            blurUsesPlayRes ? new(1, 1) : new((double)targetWidth / layoutWidth, (double)targetHeight / layoutHeight);
+        if (!scaledBorder && blurUsesPlayRes)
+        {
+            diagnostics.Add(new("Ass.BorderLayoutResolution", "ASS 未提供完整有效的 LayoutRes，未缩放描边与阴影按目标画布像素解释；原视频尺寸不同时外观可能不同。"));
+        }
         var styles = new Dictionary<string, AssStyleDefinition>(StringComparer.Ordinal);
         var unsupportedGeometry = new HashSet<string>(StringComparer.Ordinal);
         foreach (var fields in styleRows)
         {
-            var style = ParseStyle(fields, scaleX, scaleY, wrapStyle, diagnostics);
+            var style = ParseStyle(fields, scaleX, scaleY, wrapStyle, resolution, diagnostics);
             if (!styles.TryAdd(style.Name, style))
             {
                 throw new InvalidDataException("ASS 样式名称重复。");
@@ -172,7 +179,7 @@ public static class AssSubtitleFormat
             }
             var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth,
                 canvasHeight: targetHeight, wrapStyle: wrapStyle, blurScaleX: blurScaleX, blurScaleY: blurScaleY,
-                blurUsesPlayRes: blurUsesPlayRes).Parse(Required(fields, "Text"));
+                blurUsesPlayRes: blurUsesPlayRes, resolution: resolution).Parse(Required(fields, "Text"));
             var importedLine = parsed.Line;
             lines.Add(importedLine);
             clips.Add(new(importedLine, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks).AddRange(parsed.OpacityTracks).AddRange(parsed.NumericTracks), parsed.ContentOffset)
@@ -249,7 +256,7 @@ public static class AssSubtitleFormat
                     throw new InvalidDataException("ASS 蒙版展开后的总对白数量超过 100,000 条预算。");
                 }
                 var sampleLine = line with { Start = sample.Start, End = sample.End };
-                var body = AssTextWriter.Write(sampleLine, sample.ContentTime, preserveContentClock: sample.Expanded, conversion: conversion,
+                var body = AssTextWriter.Write(sampleLine, sample.ContentTime, conversion: conversion,
                     eventOrigin: conversion.EventOrigin(sample, timeOffset));
                 foreach (var diagnostic in body.Diagnostics)
                 {
@@ -275,7 +282,7 @@ public static class AssSubtitleFormat
         return new(text, diagnostics.DistinctBy(diagnostic => (diagnostic.SubtitleId, diagnostic.Code)).ToImmutableArray());
     }
 
-    private static AssStyleDefinition ParseStyle(Dictionary<string, string> row, double sx, double sy, int wrapStyle,
+    private static AssStyleDefinition ParseStyle(Dictionary<string, string> row, double sx, double sy, int wrapStyle, AssResolutionContext resolution,
         ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
     {
         var spacing = AssFormatValues.Number(Get(row, "Spacing", "0")) * sx;
@@ -292,14 +299,18 @@ public static class AssSubtitleFormat
             ShadowColor = AssFormatValues.Color(Get(row, "BackColour", "&H00000000")),
             Bold = AssFormatValues.Integer(Get(row, "Bold", "0")) != 0, Italic = AssFormatValues.Integer(Get(row, "Italic", "0")) != 0,
             Underline = AssFormatValues.Integer(Get(row, "Underline", "0")) != 0, Strikethrough = AssFormatValues.Integer(Get(row, "StrikeOut", "0")) != 0,
-            StrokeWidth = AssFormatValues.Number(Get(row, "Outline", "0")) * sy,
-            ShadowOffset = new(AssFormatValues.Number(Get(row, "Shadow", "0")) * sx, AssFormatValues.Number(Get(row, "Shadow", "0")) * sy),
+            StrokeWidth = resolution.Stroke(AssFormatValues.Number(Get(row, "Outline", "0"))),
+            ShadowOffset = resolution.Shadow(AssFormatValues.Number(Get(row, "Shadow", "0"))),
             ShadowBlur = 0, Alignment = AssFormatValues.Alignment(AssFormatValues.Integer(Get(row, "Alignment", "2"))),
             Margins = new(
                 AssFormatValues.Number(Get(row, "MarginL", Get(row, "MarginV", "0"))) * sx,
                 AssFormatValues.Number(Get(row, "MarginR", Get(row, "MarginV", "0"))) * sx,
                 AssFormatValues.Number(Get(row, "MarginV", "0")) * sy)
         };
+        if (resolution.ApproximatesStroke && style.StrokeWidth > 0)
+        {
+            diagnostics.Add(new("Ass.BorderResampling", "ASS 描边的横纵重采样比例不同，已按几何平均比例近似转换为原生单一描边宽度。"));
+        }
         ProjectValidator.ValidateSubtitleStyle(style);
         return new(Required(row, "Name"), style, AssFormatValues.Color(Get(row, "SecondaryColour", "&H000000FF")))
         {
