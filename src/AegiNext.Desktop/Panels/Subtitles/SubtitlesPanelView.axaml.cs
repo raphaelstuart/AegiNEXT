@@ -53,6 +53,7 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         contextMenu = new() { Items = { detailItem, moveItem } };
         contextMenu.Opening += OnContextMenuOpening;
         list.ContextMenu = contextMenu;
+        InitializeColorTags();
         list.AddHandler(PointerPressedEvent, (_, e) =>
         {
             if (e.GetCurrentPoint(list).Properties.IsRightButtonPressed && e.Source is Visual source)
@@ -112,7 +113,11 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
 
     public string PanelId => "subtitles";
 
-    private void OnContextMenuOpening(object? sender, EventArgs e) => viewModel.SetMoveContext();
+    private void OnContextMenuOpening(object? sender, EventArgs e)
+    {
+        viewModel.SetMoveContext();
+        RefreshColorTagMenu();
+    }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -140,7 +145,11 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
         SynchronizeSelection();
     }
 
-    private void OnSessionSelectionChanged(object? sender, EventArgs e) => SynchronizeSelection();
+    private void OnSessionSelectionChanged(object? sender, EventArgs e)
+    {
+        SynchronizeSelection();
+        RefreshColorTagContainers();
+    }
 
     private void SynchronizeSelection()
     {
@@ -251,6 +260,7 @@ internal sealed partial class SubtitlesPanelView : UserControl, IWorkbenchPanelV
     {
         disposed = true;
         ReleaseKeyboardRoot();
+        ReleaseColorTags();
         list.RemoveHandler(KeyDownEvent, OnSubtitleKeyDown);
         detailMenuBinding.Dispose();
         moveMenuBinding.Dispose();

@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:colorTags="using:AegiNext.Desktop.Settings.ColorTags" xmlns:styling="using:AegiNext.Desktop.Styling"
+             xmlns:controls="using:AegiNext.Desktop.Controls"
+             xmlns:common="using:AegiNext.Desktop.Controls.Common"
+             x:Class="AegiNext.Desktop.Settings.ColorTags.SubtitleColorTagsSettingsView"
+             x:DataType="colorTags:SubtitleColorTagsSettingsViewModel" Classes="business-surface">
+  <UserControl.Resources>
+    <styling:SubtitleColorTagSwatchConverter x:Key="ColorTagColorConverter" />
+  </UserControl.Resources>
+  <Grid Name="ColorTagsPage" IsVisible="{Binding $parent[UserControl].IsVisible}"
+        RowDefinitions="Auto,*" RowSpacing="12">
+    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+      <StackPanel Name="ColorTagLibraryToolbar" Orientation="Horizontal" Spacing="8">
+        <Button Name="AddColorTagButton" Command="{Binding AddCommand}">
+          <common:IconText Text="{Loc Key=Settings.Add}" IconKey="Add" />
+        </Button>
+        <Button Name="DeleteColorTagButton" Command="{Binding DeleteCommand}">
+          <common:IconText Text="{Loc Key=Settings.Delete}" IconKey="Delete" />
+        </Button>
+        <Button Name="SaveColorTagsButton" Command="{Binding SaveCommand}" Classes="accent">
+          <common:IconText Text="{Loc Key=Settings.Save}" IconKey="Save" />
+        </Button>
+        <Button Name="RestoreColorTagsButton" Command="{Binding RestoreCommand}">
+          <common:IconText Text="{Loc Key=Settings.RestoreColorTags}" IconKey="Undo" />
+        </Button>
+      </StackPanel>
+    </ScrollViewer>
+    <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="16">
+      <Grid>
+        <ListBox Name="ColorTagList" ItemsSource="{Binding Tags}"
+                 SelectedItem="{Binding SelectedTag, Mode=TwoWay}" IsEnabled="{Binding IsAvailable}"
+                 Background="{DynamicResource SettingsSurface}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="colorTags:SubtitleColorTagSettingsItem">
+              <Grid ColumnDefinitions="20,*" ColumnSpacing="8">
+                <Border Background="{Binding ColorHex, Converter={StaticResource ColorTagColorConverter}}"
+                        Width="14" Height="14" CornerRadius="7" VerticalAlignment="Center" IsHitTestVisible="False" />
+                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           ToolTip.Tip="{Binding Name}" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock IsVisible="{Binding IsEmpty}" Text="{Loc Key=Settings.EmptyColorTags}" Classes="field"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+      </Grid>
+      <ScrollViewer Name="ColorTagEditorScroll" Grid.Column="1" AllowAutoHide="False"
+                    HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Name="ColorTagEditor" Spacing="12">
+          <StackPanel Spacing="8" IsEnabled="{Binding CanEdit}">
+            <TextBlock Text="{Loc Key=Settings.ColorTagName}" Classes="field" />
+            <TextBox Name="ColorTagNameInput" Text="{Binding SelectedTag.Name, Mode=TwoWay}" MaxLength="128" />
+          </StackPanel>
+          <StackPanel Spacing="8" IsEnabled="{Binding CanEdit}">
+            <TextBlock Text="{Loc Key=Settings.ColorTagColor}" Classes="field" />
+            <controls:ColorDraftInput Name="ColorTagColorInput" Draft="{Binding SelectedTag.ColorDraft}"
+                                     CommitOnLostFocus="False" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</UserControl>

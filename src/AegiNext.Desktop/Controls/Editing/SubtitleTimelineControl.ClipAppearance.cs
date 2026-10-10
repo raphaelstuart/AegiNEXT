@@ -1,5 +1,6 @@
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Settings;
+using AegiNext.Desktop.Styling;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -20,6 +21,8 @@ public sealed partial class SubtitleTimelineControl
     private Pen inactiveBoundaryPen = new(Brushes.Transparent, 1);
     private Pen selectedClipBorder = new(Brushes.Transparent, 1.5);
     private Pen inactiveClipBorder = new(Brushes.Transparent, 1);
+    private readonly Dictionary<Guid, (SolidColorBrush Inactive, SolidColorBrush Selected, Pen Border)> colorTagAppearances = [];
+    private Pen selectedColorTagBorder = new(Brushes.Transparent, 1.5);
     private IReadOnlyList<TimelineRow>? projectedRows;
     private Guid[] projectedSelection = [];
     private (TimelineDragMode Mode, Guid Id, MediaTime Start, MediaTime End, MediaTime Origin, bool Valid) projectedDrag;
@@ -65,6 +68,21 @@ public sealed partial class SubtitleTimelineControl
         selectedClipBorder = new(selectedClipBrush, 1.5);
         var invalid = drawingPalette.InvalidClip.Color;
         invalidRangeBrush = new(Color.FromArgb((byte)Math.Round(invalid.A * 0.15), invalid.R, invalid.G, invalid.B));
+        RefreshColorTagAppearance();
+    }
+
+    private void RefreshColorTagAppearance()
+    {
+        var dark = ActualThemeVariant == ThemeVariant.Dark;
+        colorTagAppearances.Clear();
+        foreach (var tag in document.ColorTags)
+        {
+            colorTagAppearances.Add(tag.Id, (
+                SubtitleColorTagPalette.ResolveClipBackground(tag.ColorHex, dark, false),
+                SubtitleColorTagPalette.ResolveClipBackground(tag.ColorHex, dark, true),
+                new Pen(SubtitleColorTagPalette.ResolveSwatch(tag.ColorHex), 1)));
+        }
+        selectedColorTagBorder = new(drawingPalette.ActiveClipBorder, 1.5);
     }
 
     private void RefreshClipRangeProjection()

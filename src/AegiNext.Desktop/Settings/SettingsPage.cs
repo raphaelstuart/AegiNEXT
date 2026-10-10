@@ -15,5 +15,6 @@ public enum SettingsPage
     EXPORT_PRESETS,
     TRANSFER,
     TASKS,
-    AUDIO_ANALYSIS
+    AUDIO_ANALYSIS,
+    SUBTITLE_COLOR_TAGS
 }

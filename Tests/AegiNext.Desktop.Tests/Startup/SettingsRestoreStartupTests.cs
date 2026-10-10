@@ -1,3 +1,4 @@
+using AegiNext.Application.ColorTags;
 using AegiNext.Application.Presets;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Transfer;
@@ -43,6 +44,31 @@ public sealed class SettingsRestoreStartupTests
         Assert.Empty(context.StyleLibrary.Snapshot.Presets);
         Assert.Empty(context.EffectScriptLibrary.Snapshot.Presets);
         Assert.Empty(context.ExportPresetLibrary.Snapshot.Presets);
+        Assert.Empty(context.ColorTagLibrary.Snapshot.Tags);
+    }
+
+    /// <summary>旧版设置包在启动恢复时保留本地标签库，不重新初始化默认色。</summary>
+    [Fact]
+    public async Task VersionOneStartupRestorePreservesTheExistingTagLibrary()
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        var path = Path.Combine(directory.Path, "subtitle-color-tags.json");
+        var document = new SubtitleColorTagLibraryDocument
+        {
+            Tags = [new() { Name = "本地标签", ColorHex = "#123456" }]
+        };
+        await SubtitleColorTagStore.SaveAsync(document, path);
+        var original = await File.ReadAllBytesAsync(path);
+        using var restore = new UserSettingsRestoreService(directory.Path);
+        await restore.StageAsync(new() { ColorTags = null });
+
+        SettingsRestoreStartup.ApplyOnce(directory.Path);
+        await using var context = new DesktopApplicationContext(new(directory.Path));
+        await context.Initialization;
+
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Equal(document.Tags[0], Assert.Single(context.ColorTagLibrary.Snapshot.Tags));
+        Assert.False(context.SettingsRestore.HasPending);
     }
 
     [Fact]

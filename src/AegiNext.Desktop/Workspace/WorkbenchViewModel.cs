@@ -36,13 +36,16 @@ internal sealed class WorkbenchViewModel : ObservableObject
         Log = new(session.Journal);
         foreach (var command in Enum.GetValues<WorkbenchCommand>())
         {
-            commands.Add(command, new(() => ExecuteCommandAsync(command), () => session.CanExecuteCommand(command),
+            commands.Add(command, new(() => ExecuteCommandAsync(command), () =>
+                    session.CanExecuteCommand(command) && (ContextCommandAvailability?.Invoke(command) ?? true),
                 AsyncRelayCommandOptions.AllowConcurrentExecutions));
         }
     }
 
     public event EventHandler<WorkbenchHostCommandEventArgs>? HostCommandRequested;
     internal Func<WorkbenchHostCommandEventArgs, Task>? HostCommandHandler { get; set; }
+    internal Func<WorkbenchCommand, bool?>? ContextCommandAvailability { get; set; }
+    internal Func<WorkbenchCommand, bool>? TryExecuteContextCommand { get; set; }
     public event EventHandler? GesturesCancelled;
     public event EventHandler? DraftErrorFocusRequested;
     public PreviewPanelViewModel Preview { get; }
@@ -82,7 +85,8 @@ internal sealed class WorkbenchViewModel : ObservableObject
     /// <summary>取得菜单、快捷键和面板共同使用的命令实例。</summary>
     public ICommand GetCommand(WorkbenchCommand command) => commands[command];
     /// <summary>等待指定工作流完成，沿用会话的验证和错误处理边界。</summary>
-    public Task ExecuteCommandAsync(WorkbenchCommand command) => session.ExecuteCommandAsync(command);
+    public Task ExecuteCommandAsync(WorkbenchCommand command) => TryExecuteContextCommand?.Invoke(command) == true
+        ? Task.CompletedTask : session.ExecuteCommandAsync(command);
     /// <summary>验证各面板草稿，并将全部有效修改合并为一次工程事务。</summary>
     public bool TryCommitDrafts() => session.TryCommitDrafts();
     /// <summary>取消未完成的预览、时间线和面板指针手势。</summary>
@@ -110,6 +114,7 @@ internal sealed class WorkbenchViewModel : ObservableObject
     internal void RefreshCommands()
     {
         Subtitles.RefreshMoveCommand();
+        Subtitles.MergeCueCommand.NotifyCanExecuteChanged();
         Timeline.RefreshMoveCommand();
         foreach (var command in commands.Values)
         {

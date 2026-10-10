@@ -12,4 +12,7 @@ public sealed record ClipClipboardContent(
     ImmutableArray<ProjectLayer> Layers,
     ImmutableArray<SubtitleLine> Subtitles,
     ImmutableArray<Guid> SourceTrackIds = default,
-    Guid? ReferenceTrackId = null);
+    Guid? ReferenceTrackId = null)
+{
+    public ImmutableArray<SubtitleColorTag> ColorTags { get; init; } = [];
+}

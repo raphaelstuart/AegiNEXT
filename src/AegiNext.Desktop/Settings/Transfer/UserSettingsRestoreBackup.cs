@@ -4,7 +4,7 @@ namespace AegiNext.Desktop.Settings.Transfer;
 
 internal sealed record UserSettingsRestoreBackup
 {
-    public int Version { get; init; } = 1;
+    public int Version { get; init; } = 2;
     public Guid Id { get; init; }
     public ImmutableArray<UserSettingsRestoreEntry> Files { get; init; } = [];
 }

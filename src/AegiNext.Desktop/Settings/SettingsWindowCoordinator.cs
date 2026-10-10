@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.ComponentModel;
 using AegiNext.Application.Tasks;
+using AegiNext.Application.ColorTags;
 using AegiNext.Core.Effects;
 using AegiNext.Core.Presets;
 using AegiNext.Core.Projects;
@@ -81,6 +82,7 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
             window.UpdateShortcuts(applicationContext.Preferences.ShortcutBindings);
             window.UpdateStyles(applicationContext.StyleLibrary.Snapshot.Presets);
             window.UpdateEffects(applicationContext.EffectScriptLibrary.Snapshot.Presets);
+            window.ViewModel.ColorTags.UpdateLibrary(applicationContext.ColorTagLibrary.Snapshot);
             RefreshAvailability();
             RefreshMediaSettings();
             window.ShowError(applicationContext.LastError?.Message);
@@ -151,9 +153,14 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
             applicationContext.RunEffectOperationAsync(() => applicationContext.EffectScriptLibrary.UpsertAsync(preset)), true);
         window.ViewModel.Styles.ConfirmLeaveAsync = () => dialogs!.ConfirmPresetChangesAsync(false);
         window.ViewModel.Effects.ConfirmLeaveAsync = () => dialogs!.ConfirmPresetChangesAsync(true);
+        window.ViewModel.ColorTags.SaveDraftAsync = async (document, expected) =>
+            await RunAsync(() => SaveColorTagsAsync(document, expected, window))
+                ? applicationContext.ColorTagLibrary.Snapshot : null;
+        window.ViewModel.ColorTags.ConfirmLeaveAsync = () => dialogs!.ConfirmColorTagChangesAsync();
         applicationContext.PreferencesChanged += OnPreferencesChanged;
         applicationContext.StylesChanged += OnStylesChanged;
         applicationContext.EffectsChanged += OnEffectsChanged;
+        applicationContext.ColorTagsChanged += OnColorTagsChanged;
         applicationContext.BusyChanged += OnBusyChanged;
         applicationContext.ErrorChanged += OnErrorChanged;
         window.AppearanceChanged += OnAppearanceChanged;
@@ -199,9 +206,12 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         window.ViewModel.Effects.SaveDraftAsync = null;
         window.ViewModel.Styles.ConfirmLeaveAsync = null;
         window.ViewModel.Effects.ConfirmLeaveAsync = null;
+        window.ViewModel.ColorTags.SaveDraftAsync = null;
+        window.ViewModel.ColorTags.ConfirmLeaveAsync = null;
         applicationContext.PreferencesChanged -= OnPreferencesChanged;
         applicationContext.StylesChanged -= OnStylesChanged;
         applicationContext.EffectsChanged -= OnEffectsChanged;
+        applicationContext.ColorTagsChanged -= OnColorTagsChanged;
         applicationContext.BusyChanged -= OnBusyChanged;
         applicationContext.ErrorChanged -= OnErrorChanged;
         window.AppearanceChanged -= OnAppearanceChanged;
@@ -304,6 +314,23 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         Window?.UpdateEffects(applicationContext.EffectScriptLibrary.Snapshot.Presets);
     }
 
+    private void OnColorTagsChanged(object? sender, EventArgs e) =>
+        Window?.ViewModel.ColorTags.UpdateLibrary(applicationContext.ColorTagLibrary.Snapshot);
+
+    private Task SaveColorTagsAsync(SubtitleColorTagLibraryDocument document, SubtitleColorTagLibraryDocument expected,
+        SettingsWindow window) => applicationContext.RunColorTagOperationAsync(() =>
+        applicationContext.ColorTagLibrary.ReplaceAsync(document, () =>
+        {
+            if (disposed || !ReferenceEquals(Window, window))
+            {
+                throw new OperationCanceledException();
+            }
+            if (!ReferenceEquals(applicationContext.ColorTagLibrary.Snapshot, expected))
+            {
+                throw new InvalidDataException(Localization.Get("Settings.ColorTagLibraryChanged"));
+            }
+        }));
+
     private void OnBusyChanged(object? sender, EventArgs e)
     {
         RefreshAvailability();
@@ -336,6 +363,10 @@ internal sealed class SettingsWindowCoordinator(DesktopApplicationContext applic
         var projectBusy = session is { } active && (active.IsProjectBusy || active.IsClosing);
         Window?.SetStyleOperationBusy(deletionActive || applicationContext.StylesBusy || projectBusy || session?.Styles.IsBusy == true);
         Window?.SetEffectOperationBusy(deletionActive || applicationContext.EffectsBusy || projectBusy || session?.EffectScripts.IsBusy == true);
+        if (Window is { } window)
+        {
+            window.ViewModel.ColorTags.IsBusy = applicationContext.ColorTagsBusy;
+        }
         Window?.UpdateSelectionAvailability(session is { HasSelectedCue: true, IsProjectBusy: false, IsClosing: false });
         RefreshTimingStyles();
     }

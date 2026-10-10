@@ -54,8 +54,12 @@ public static partial class ProjectEditingOperations
             referenceTrackId = selected.Single(clip => clip.Id == primaryId).TrackId;
         }
 
+        var tagIds = lines.Where(line => line.ColorTagId.HasValue).Select(line => line.ColorTagId!.Value).ToHashSet();
         return new(document.Id, primaryId, selected.Min(layer => layer.Start), selected,
-            lines, document.Tracks.Select(track => track.Id).ToImmutableArray(), referenceTrackId);
+            lines, document.Tracks.Select(track => track.Id).ToImmutableArray(), referenceTrackId)
+        {
+            ColorTags = document.ColorTags.Where(tag => tagIds.Contains(tag.Id)).ToImmutableArray()
+        };
     }
 
     /// <summary>将最早起点对齐指定时间，保留原轨或将冻结的源基准对齐目标轨；越界或碰撞整批拒绝。</summary>
@@ -66,6 +70,8 @@ public static partial class ProjectEditingOperations
         ArgumentNullException.ThrowIfNull(content);
         ArgumentOutOfRangeException.ThrowIfLessThan(start, MediaTime.Zero);
         var mappedLayers = ValidateClipClipboard(document, content, targetTrackId);
+        var colorTags = document.ColorTags.ToBuilder();
+        var colorTagIds = ImportColorTags(colorTags, content.ColorTags);
 
         var offset = start - content.EarliestStart;
         var subtitleIds = content.Subtitles.ToDictionary(line => line.Id, _ => Guid.NewGuid());
@@ -74,6 +80,7 @@ public static partial class ProjectEditingOperations
         var subtitles = content.Subtitles.Select(line => line with
         {
             Id = subtitleIds[line.Id], Start = line.Start + offset, End = line.End + offset,
+            ColorTagId = line.ColorTagId is { } tagId ? colorTagIds[tagId] : null,
             Karaoke = line.Karaoke.Select(clip => clip with { Id = Guid.NewGuid() }).ToImmutableArray(),
             InactiveKaraoke = line.InactiveKaraoke.Select(clip => clip with { Id = Guid.NewGuid() }).ToImmutableArray()
         }).ToImmutableArray();
@@ -81,6 +88,7 @@ public static partial class ProjectEditingOperations
         var result = Verified(document with
         {
             Subtitles = document.Subtitles.AddRange(subtitles),
+            ColorTags = colorTags.Count == document.ColorTags.Length ? document.ColorTags : colorTags.ToImmutable(),
             Layers = document.Layers.AddRange(layers)
         });
         return new(result, layers.Select(layer => layer.Id).ToImmutableArray(), layerIds[content.PrimaryId]);
@@ -148,7 +156,7 @@ public static partial class ProjectEditingOperations
 
         var layers = targetTrackId is { } target
             ? MapClipboardTracks(document, content, target) : content.Layers;
-        ProjectValidator.Validate(document with { Layers = layers, Subtitles = content.Subtitles });
+        ProjectValidator.Validate(document with { Layers = layers, Subtitles = content.Subtitles, ColorTags = content.ColorTags });
         foreach (var layer in layers)
         {
             RequireSupportedClip(layer);

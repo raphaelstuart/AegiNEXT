@@ -1,8 +1,10 @@
 using System.Collections.Immutable;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using AegiNext.Application.ColorTags;
 using AegiNext.Application.Presets;
 using AegiNext.Core.Presets;
+using AegiNext.Core.Projects;
 using AegiNext.Desktop.Layouts;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Transfer;
@@ -48,6 +50,10 @@ internal static class UserSettingsTransferTestData
                     Preset = "veryslow", Crf = 17, VideoBitrate = 12345678, AudioMode = AudioExportMode.Aac, AudioBitrate = 256000
                 })]
             },
+            ColorTags = new SubtitleColorTagLibraryDocument
+            {
+                Tags = [new SubtitleColorTag { Name = "复核", ColorHex = "#123456" }]
+            },
             Layouts = new()
             {
                 Current = layout, CurrentPresetId = "user-transfer",
@@ -87,9 +93,11 @@ internal static class UserSettingsTransferTestData
     {
         var before = UserSettingsBundleStore.SerializeFiles(expected);
         var after = UserSettingsBundleStore.SerializeFiles(actual);
-        foreach (var file in UserSettingsBundleStore.Files)
+        Assert.Equal(expected.ColorTags is null, actual.ColorTags is null);
+        Assert.Equal(before.Keys.Order(StringComparer.Ordinal), after.Keys.Order(StringComparer.Ordinal));
+        foreach (var name in before.Keys)
         {
-            Assert.Equal(before[file.Name], after[file.Name]);
+            Assert.Equal(before[name], after[name]);
         }
     }
 }

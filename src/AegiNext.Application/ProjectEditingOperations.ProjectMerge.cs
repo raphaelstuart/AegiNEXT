@@ -55,6 +55,7 @@ public static partial class ProjectEditingOperations
         var subtitles = document.Subtitles.ToBuilder();
         var layers = document.Layers.ToBuilder();
         var presets = document.Presets.ToBuilder();
+        var colorTags = document.ColorTags.ToBuilder();
         var importedTrackIds = ImmutableArray.CreateBuilder<Guid>();
         var importedLayerIds = ImmutableArray.CreateBuilder<Guid>();
         var importedSubtitleIds = ImmutableArray.CreateBuilder<Guid>();
@@ -69,6 +70,7 @@ public static partial class ProjectEditingOperations
         }
         foreach (var source in importedSources)
         {
+            var colorTagIds = ImportColorTags(colorTags, source.Document.ColorTags, reservedIds);
             var dependencyIds = CollectMergeAssetIds(source.Document).ToHashSet();
             var assetIds = new Dictionary<Guid, Guid>();
             var trackIds = source.Document.Tracks.ToDictionary(track => track.Id, _ => NewMergeId(reservedIds));
@@ -111,6 +113,7 @@ public static partial class ProjectEditingOperations
                 subtitles.Add(line with
                 {
                     Id = id,
+                    ColorTagId = line.ColorTagId is { } tagId ? colorTagIds[tagId] : null,
                     Style = RemapMergeStyle(line.Style, assetIds),
                     InlineSpans = line.InlineSpans.Select(span => span with
                     {
@@ -144,7 +147,8 @@ public static partial class ProjectEditingOperations
         var merged = SubtitleKaraokeNormalization.Normalize(document with
         {
             Assets = assets.ToImmutable(), Tracks = tracks.ToImmutable(), Subtitles = subtitles.ToImmutable(),
-            Layers = layers.ToImmutable(), Presets = presets.ToImmutable()
+            Layers = layers.ToImmutable(), Presets = presets.ToImmutable(),
+            ColorTags = colorTags.Count == document.ColorTags.Length ? document.ColorTags : colorTags.ToImmutable()
         });
         return new(merged, importedTrackIds.ToImmutable(), importedLayerIds.ToImmutable(), importedSubtitleIds.ToImmutable());
     }
@@ -277,6 +281,7 @@ public static partial class ProjectEditingOperations
         ids.Add(document.Id);
         ids.UnionWith(document.Assets.Select(asset => asset.Id));
         ids.UnionWith(document.Tracks.Select(track => track.Id));
+        ids.UnionWith(document.ColorTags.Select(tag => tag.Id));
         foreach (var line in document.Subtitles)
         {
             ids.Add(line.Id);

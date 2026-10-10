@@ -422,8 +422,7 @@ internal sealed partial class WorkbenchSession
             {
                 SelectedCueId = null;
             }
-
-            ViewModel.Subtitles.SelectedRow = rows.FirstOrDefault(value => value.Id == SelectedCueId);
+            ViewModel.Subtitles.RefreshColorTags();
             var layers = document.Layers;
             if (!layers.Any(value => value.Id == SelectedLayerId))
             {
@@ -434,6 +433,9 @@ internal sealed partial class WorkbenchSession
             {
                 SelectedKeyTime = null;
             }
+            SyncCurrentTrackForSelection();
+            RefreshSubtitleSelection();
+            ViewModel.Subtitles.SelectedRow = rows.FirstOrDefault(value => value.Id == SelectedCueId);
             RefreshTitle();
             ViewModel.Timeline.Document = document;
             ViewModel.Timeline.SelectedCueId = SelectedCueId;
@@ -447,8 +449,6 @@ internal sealed partial class WorkbenchSession
             ViewModel.Timeline.SelectedLayerIds = selectedIds;
             ViewModel.Effects.Document = document;
             ViewModel.Effects.SelectedLayer = SelectedLayer;
-            SyncCurrentTrackForSelection();
-            RefreshSubtitleSelection();
             MaskEditing.Refresh(!preserveDrafts);
             RefreshInspector();
             ViewModel.Styles.CanApplyPreset = SelectedCue is not null && !IsProjectBusy && !closing && ViewModel.Styles.SelectedPreset is not null;
@@ -593,8 +593,13 @@ internal sealed partial class WorkbenchSession
 
         ViewModel.CancelGestures();
         InvalidateTimingSession();
+        var revealed = RevealSubtitleColorTagTargets([id]);
         SynchronizeCueSelection(id);
         RefreshDocument();
+        if (revealed)
+        {
+            SubtitleScrollRequested?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void SynchronizeCueSelection(Guid id)
@@ -626,6 +631,8 @@ internal sealed partial class WorkbenchSession
             InvalidateTimingSession();
         }
         SelectedLayerId = id;
+        var revealed = RevealSubtitleColorTagTargets(editor.Snapshot.Layers.Where(layer => selectedIds.Contains(layer.Id) || layer.Id == id)
+            .Select(layer => layer.SubtitleId).OfType<Guid>());
         ViewModel.Effects.SelectedIds = selectedIds;
         SelectedKeyTime = null;
         ViewModel.Effects.EditMode = CanvasEditMode.POSITION;
@@ -636,6 +643,10 @@ internal sealed partial class WorkbenchSession
 
         SynchronizeSubtitleSelectionFromLayers();
         RefreshDocument();
+        if (revealed)
+        {
+            SubtitleScrollRequested?.Invoke(this, EventArgs.Empty);
+        }
     }
 
 }

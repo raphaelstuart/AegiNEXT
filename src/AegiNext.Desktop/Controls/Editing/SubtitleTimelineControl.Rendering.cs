@@ -252,8 +252,15 @@ public sealed partial class SubtitleTimelineControl
 
                     var active = selectedIds.Contains(clip.Id);
                     var invalid = IsInvalidClipDrag(clip.Id);
-                    context.DrawRectangle(invalid ? drawingPalette.InvalidClip : active ? selectedClipBrush : inactiveClipBrush,
-                        active ? selectedClipBorder : inactiveClipBorder, rectangle, 3, 3);
+                    var appearance = (Inactive: inactiveClipBrush, Selected: selectedClipBrush, Border: inactiveClipBorder);
+                    var hasColorTag = clip.SubtitleId is { } subtitleId && cuesById[subtitleId].ColorTagId is { } tagId &&
+                        colorTagAppearances.TryGetValue(tagId, out appearance);
+                    var background = invalid ? drawingPalette.InvalidClip
+                        : hasColorTag ? active ? appearance.Selected : appearance.Inactive
+                        : active ? selectedClipBrush : inactiveClipBrush;
+                    var border = hasColorTag ? active ? selectedColorTagBorder : appearance.Border
+                        : active ? selectedClipBorder : inactiveClipBorder;
+                    context.DrawRectangle(background, border, rectangle, 3, 3);
                     using var clipOpacity = context.PushOpacity(active || invalid ? 1 : 0.6);
                     var maskBadge = ClipMaskBadgeRectangle(clip, rectangle);
                     if (maskBadge is { } badge)

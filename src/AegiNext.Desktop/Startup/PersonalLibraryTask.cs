@@ -9,7 +9,9 @@ internal sealed class PersonalLibraryTask(DesktopApplicationContext owner, Perso
     {
         PersonalLibraryKind.STYLE => "Tasks.StyleLibrary",
         PersonalLibraryKind.EFFECT => "Tasks.EffectLibrary",
-        _ => "Tasks.ExportPresetLibrary"
+        PersonalLibraryKind.EXPORT => "Tasks.ExportPresetLibrary",
+        PersonalLibraryKind.COLOR_TAG => "Tasks.ColorTagLibrary",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
     public override bool CanCancel => false;
     public override IReadOnlyCollection<AegiTaskResource> Resources => [owner.GetLibraryResource(kind)];

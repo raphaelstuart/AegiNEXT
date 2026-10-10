@@ -203,6 +203,7 @@ public static class ProjectStore
                 {
                     property.IsRequired = (property.Get is not null || property.Set is not null) &&
                         !(info.Type == typeof(ProjectDocument) && property.Name == "timelineViewState") &&
+                        !(info.Type == typeof(ProjectDocument) && property.Name == "colorTags") &&
                         !(info.Type == typeof(TimelineViewState) && property.Name == "collapsedTrackIds") &&
                         !(info.Type == typeof(SubtitleStyle) && property.Name is "fontVariant" or "textAlign") &&
                         !(info.Type == typeof(SubtitleFontVariant) && property.Name == "postScriptName") &&
@@ -210,11 +211,19 @@ public static class ProjectStore
                         !(info.Type == typeof(Keyframe) && property.Name is "componentCurves" or "exponent") &&
                         !(info.Type == typeof(AnimationCurve) && property.Name == "exponent") &&
                         !(info.Type == typeof(AnimationTrack) && property.Name is "initialValue" or "transforms") &&
-                        !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "inactiveKaraoke" or "styleName" or "stylePresetId") &&
+                        !(info.Type == typeof(SubtitleLine) && property.Name is "karaokeStyle" or "inactiveKaraoke" or "styleName" or "stylePresetId" or "colorTagId") &&
                         !(info.Type == typeof(ProjectTrack) && property.Name is "defaultStyle" or "stylePresetId" or "stylePresetName" or "autoApplyStyle");
                     if (info.Type == typeof(SubtitleLine) && property.Name == "inactiveKaraoke")
                     {
                         property.ShouldSerialize = static (instance, _) => !((SubtitleLine)instance).InactiveKaraoke.IsEmpty;
+                    }
+                    if (info.Type == typeof(ProjectDocument) && property.Name == "colorTags")
+                    {
+                        property.ShouldSerialize = static (instance, _) => !((ProjectDocument)instance).ColorTags.IsEmpty;
+                    }
+                    if (info.Type == typeof(SubtitleLine) && property.Name == "colorTagId")
+                    {
+                        property.ShouldSerialize = static (instance, _) => ((SubtitleLine)instance).ColorTagId.HasValue;
                     }
                 }
             }

@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using AegiNext.Desktop.Workspace;
 using AegiNext.Desktop.Editing;
 using AegiNext.Core.Projects;
+using AegiNext.Desktop.I18n;
 
 namespace AegiNext.Desktop.Panels.Subtitles;
 
@@ -20,6 +21,9 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
     private ProjectTrack? selectedTrack;
     private ProjectDocument? moveContextDocument;
     private Guid[] moveContextIds = [];
+    private SubtitleColorTagFilter colorTagFilter = SubtitleColorTagFilter.All;
+    private SubtitleColorTagFilterChoice[] colorTagFilters = [];
+    private Guid filterProjectId;
 
     internal SubtitlesPanelViewModel(WorkbenchSession session)
     {
@@ -27,6 +31,7 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
         MoveCommand = new(() => session.MoveSubtitleSelectionAsync(moveContextIds, moveContextDocument),
             () => moveContextIds.Length > 0 && ReferenceEquals(moveContextDocument, session.DocumentSnapshot) &&
                 !session.IsClosing && !session.IsProjectBusy && !session.IsUpdating);
+        MergeCueCommand = new(session.MergeVisibleSubtitleSelectionAsync, () => session.CanMergeVisibleSubtitleSelection);
     }
 
     public SubtitleRow[] Rows
@@ -60,11 +65,64 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
 
     internal void RefreshMoveCommand() => MoveCommand.NotifyCanExecuteChanged();
 
-    internal void NotifySelectionChanged() => OnPropertyChanged(nameof(SelectedIds));
+    internal void NotifySelectionChanged()
+    {
+        OnPropertyChanged(nameof(SelectedIds));
+        MergeCueCommand.NotifyCanExecuteChanged();
+    }
 
     public SubtitleRow[] VisibleRows => visibleRows;
     public ImmutableArray<ProjectTrack> Tracks => tracks;
     public ProjectTrack? SelectedTrack => selectedTrack;
+    public SubtitleColorTagFilterChoice[] ColorTagFilters => colorTagFilters;
+    public SubtitleColorTagFilterChoice? SelectedColorTagFilter => colorTagFilters.FirstOrDefault(choice => choice.Value == colorTagFilter);
+    public bool IsColorTagFilterActive => !colorTagFilter.IsAll;
+    public string ColorTagFilterHint => Localization.Get("Workbench.ColorTag.Filter") + " · " + SelectedColorTagFilter?.Name;
+    internal SubtitleColorTagFilter ColorTagFilter => colorTagFilter;
+
+    internal void RefreshColorTags()
+    {
+        var document = session.DocumentSnapshot;
+        if (filterProjectId != document.Id || colorTagFilter.TagId is { } tagId && !document.ColorTags.Any(tag => tag.Id == tagId))
+        {
+            colorTagFilter = SubtitleColorTagFilter.All;
+        }
+        filterProjectId = document.Id;
+        SubtitleColorTagFilterChoice[] choices =
+        [
+            new(SubtitleColorTagFilter.All, Localization.Get("Workbench.ColorTag.All")),
+            new(SubtitleColorTagFilter.Untagged, Localization.Get("Workbench.ColorTag.None")),
+            .. document.ColorTags.Select(tag => new SubtitleColorTagFilterChoice(new(false, tag.Id), tag.Name, tag.ColorHex))
+        ];
+        if (!colorTagFilters.SequenceEqual(choices))
+        {
+            colorTagFilters = choices;
+            OnPropertyChanged(nameof(ColorTagFilters));
+        }
+        OnPropertyChanged(nameof(SelectedColorTagFilter));
+        OnPropertyChanged(nameof(IsColorTagFilterActive));
+        OnPropertyChanged(nameof(ColorTagFilterHint));
+        RefreshVisibleRows();
+    }
+
+    internal void AcceptColorTagFilter(SubtitleColorTagFilter value)
+    {
+        colorTagFilter = value;
+        OnPropertyChanged(nameof(SelectedColorTagFilter));
+        OnPropertyChanged(nameof(IsColorTagFilterActive));
+        OnPropertyChanged(nameof(ColorTagFilterHint));
+        RefreshVisibleRows();
+    }
+
+    internal bool IsRowVisible(Guid id) => visibleRows.Any(row => row.Id == id);
+
+    /// <summary>在统一草稿边界内切换列表标签筛选。</summary>
+    public bool SelectColorTagFilter(SubtitleColorTagFilterChoice choice)
+    {
+        var accepted = session.TrySelectSubtitleColorTagFilter(choice.Value);
+        OnPropertyChanged(nameof(SelectedColorTagFilter));
+        return accepted;
+    }
 
     internal void UpdateTracks(ImmutableArray<ProjectTrack> values, Guid? currentId)
     {
@@ -86,14 +144,16 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
 
     private void RefreshVisibleRows()
     {
-        var subtitleIds = SelectedTrack is { } track
-            ? session.ClipIndex.GetTrackSubtitles(track.Id).Select(line => line.Id).ToHashSet() : [];
-        var values = Rows.Where(row => subtitleIds.Contains(row.Id)).OrderBy(row => row.Original.Start).ToArray();
+        var indexed = Rows.ToDictionary(row => row.Id);
+        var values = SelectedTrack is { } track
+            ? session.ClipIndex.GetTrackSubtitles(track.Id).Where(colorTagFilter.Matches)
+                .Where(line => indexed.ContainsKey(line.Id)).Select(line => indexed[line.Id]).ToArray() : [];
         if (!visibleRows.SequenceEqual(values))
         {
             visibleRows = values;
             OnPropertyChanged(nameof(VisibleRows));
         }
+        MergeCueCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>切换当前字幕轨道，保留全部行草稿的统一提交边界。</summary>
@@ -119,7 +179,7 @@ internal sealed class SubtitlesPanelViewModel : ObservableObject
 
     public ICommand SplitCueCommand => session.ViewModel.GetCommand(AegiNext.Desktop.Shortcuts.WorkbenchCommand.SPLIT_SUBTITLE);
 
-    public ICommand MergeCueCommand => session.ViewModel.GetCommand(AegiNext.Desktop.Shortcuts.WorkbenchCommand.MERGE_SUBTITLE);
+    public AsyncRelayCommand MergeCueCommand { get; }
     /// <summary>选择字幕，切换前统一验证待提交草稿。</summary>
     public void SelectCue(Guid id) => session.SelectCue(id);
     /// <summary>同步字幕列表的主项与完整选择集合，切换前统一验证草稿。</summary>

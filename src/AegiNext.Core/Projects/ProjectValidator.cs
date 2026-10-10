@@ -66,6 +66,8 @@ public static class ProjectValidator
             }
         }
 
+        SubtitleColorTagValidator.Validate(document.ColorTags);
+        var colorTagIds = document.ColorTags.Select(tag => tag.Id).ToHashSet();
         var subtitles = new Dictionary<Guid, SubtitleLine>();
         foreach (var line in document.Subtitles)
         {
@@ -77,6 +79,7 @@ public static class ProjectValidator
             ValidateText(line.Text);
             ValidateSubtitleStyleName(line.StyleName);
             Require(line.StylePresetId is null || line.StylePresetId != Guid.Empty, "字幕样式预设标识无效。");
+            Require(line.ColorTagId is null || colorTagIds.Contains(line.ColorTagId.Value), "字幕引用不存在的颜色标记。");
             Style(line.Style, assets);
             var boundaries = line.InlineSpans.IsEmpty && line.Karaoke.IsEmpty && line.InactiveKaraoke.IsEmpty
                 ? null : new SubtitleTextBoundaries(line.Text);

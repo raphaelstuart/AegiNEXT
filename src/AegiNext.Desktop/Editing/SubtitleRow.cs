@@ -31,6 +31,8 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
 
     public int Number { get; }
 
+    public Guid? ColorTagId => original.ColorTagId;
+
     public string ContentType => Localization.Get("Workbench.SubtitleType." + original.ContentKind);
 
     public string Duration => ((double)(original.End - original.Start).Numerator / (original.End - original.Start).Denominator).ToString("0.000", CultureInfo.InvariantCulture);
@@ -48,6 +50,7 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
 
         var durationChanged = original.End - original.Start != line.End - line.Start;
         var contentTypeChanged = original.ContentKind != line.ContentKind;
+        var colorTagChanged = original.ColorTagId != line.ColorTagId;
         original = line;
         originalStartText = TimelineTimeText.Format(line.Start);
         originalEndText = TimelineTimeText.Format(line.End);
@@ -61,6 +64,10 @@ internal sealed class SubtitleRow : INotifyPropertyChanged
         if (contentTypeChanged)
         {
             PropertyChanged?.Invoke(this, new(nameof(ContentType)));
+        }
+        if (colorTagChanged)
+        {
+            PropertyChanged?.Invoke(this, new(nameof(ColorTagId)));
         }
     }
 

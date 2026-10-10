@@ -25,7 +25,8 @@ internal sealed partial class WorkbenchSession
             {
                 return;
             }
-            var lines = ClipIndex.GetTrackSubtitles(trackId).ToArray();
+            var filter = ViewModel.Subtitles.ColorTagFilter;
+            var lines = ClipIndex.GetTrackSubtitles(trackId).Where(filter.Matches).ToArray();
             var index = Array.FindIndex(lines, line => line.Id == sourceId);
             if (index < 0)
             {
@@ -39,6 +40,12 @@ internal sealed partial class WorkbenchSession
                 {
                     targetId = nextId;
                 }
+                return;
+            }
+
+            if (!filter.IsAll)
+            {
+                targetId = sourceId;
                 return;
             }
 

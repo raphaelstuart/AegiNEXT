@@ -12,6 +12,7 @@
         xmlns:exportPages="using:AegiNext.Desktop.Settings.Export"
         xmlns:transferPages="using:AegiNext.Desktop.Settings.Transfer"
         xmlns:colorPages="using:AegiNext.Desktop.Settings.Colors"
+        xmlns:colorTagPages="using:AegiNext.Desktop.Settings.ColorTags"
         xmlns:mediaPages="using:AegiNext.Desktop.Settings.Media"
         xmlns:projectPages="using:AegiNext.Desktop.Settings.Projects"
         xmlns:previewPages="using:AegiNext.Desktop.Settings.Preview"
@@ -140,6 +141,12 @@
             <ListBoxItem Classes="navigation-section">
               <TextBlock Classes="navigation-section-title" Text="{Loc Key=Settings.NavigationSubtitles}" />
             </ListBoxItem>
+            <ListBoxItem DataContext="{x:Static settings:SettingsPage.SUBTITLE_COLOR_TAGS}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <materialIcons:MaterialIcon Width="18" Height="18" Kind="TagOutline" />
+                <TextBlock Text="{Loc Key=Settings.SubtitleColorTags}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ListBoxItem>
             <ListBoxItem DataContext="{x:Static settings:SettingsPage.STYLES}">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatText" />
@@ -226,6 +233,10 @@
         <Grid Grid.Row="1" IsVisible="{Binding IsColorsVisible}">
           <colorPages:ColorsSettingsView Name="ColorsView" DataContext="{Binding Colors}"
                                          IsVisible="{Binding $parent[Grid].IsVisible}" />
+        </Grid>
+        <Grid Grid.Row="1" IsVisible="{Binding IsColorTagsVisible}">
+          <colorTagPages:SubtitleColorTagsSettingsView Name="ColorTagsView" DataContext="{Binding ColorTags}"
+                                                     IsVisible="{Binding $parent[Grid].IsVisible}" />
         </Grid>
         <Grid Grid.Row="1" IsVisible="{Binding IsMediaVisible}">
           <mediaPages:MediaSettingsView Name="MediaView" DataContext="{Binding Media}"

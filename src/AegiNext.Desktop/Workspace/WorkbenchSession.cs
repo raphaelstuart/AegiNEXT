@@ -644,6 +644,7 @@ internal sealed partial class WorkbenchSession : IAsyncDisposable
             {
                 row.RefreshLanguage();
             }
+            ViewModel.Subtitles.RefreshColorTags();
             ViewModel.Effects.RefreshChoices(blendKeys.Select(key => Localization.Get("Workbench." + key)).ToArray(),
                 MaskPropertyChoices(),
                 interpolationKeys.Select(key => Localization.Get("Workbench." + key)).ToArray());

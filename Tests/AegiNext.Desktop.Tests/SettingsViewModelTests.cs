@@ -5,6 +5,7 @@ using AegiNext.Desktop.Editing;
 using AegiNext.Desktop.Settings;
 using AegiNext.Desktop.Settings.Appearance;
 using AegiNext.Desktop.Settings.Colors;
+using AegiNext.Desktop.Settings.ColorTags;
 using AegiNext.Desktop.Settings.Shortcuts;
 using AegiNext.Desktop.Settings.Styles;
 using AegiNext.Desktop.Settings.Preview;
@@ -295,6 +296,7 @@ public sealed class SettingsViewModelTests
                  {
                      typeof(SettingsWindowViewModel), typeof(AppearanceSettingsViewModel),
                      typeof(ColorsSettingsViewModel),
+                     typeof(SubtitleColorTagsSettingsViewModel),
                      typeof(PreviewSettingsViewModel),
                      typeof(ShortcutSettingsViewModel), typeof(StyleSettingsViewModel)
                  })

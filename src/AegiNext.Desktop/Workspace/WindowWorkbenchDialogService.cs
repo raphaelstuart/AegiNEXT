@@ -89,6 +89,15 @@ internal sealed class WindowWorkbenchDialogService : IWorkbenchDialogService
         return result switch { 1 => 0, 2 => 1, _ => 2 };
     }
 
+    /// <summary>询问个人颜色标签草稿：保存、恢复或取消切换。</summary>
+    public async Task<int> ConfirmColorTagChangesAsync()
+    {
+        var dialog = new UnsavedProjectDialog("Settings.UnsavedColorTagsText");
+        registerWindow?.Invoke(dialog);
+        var result = await dialog.ShowDialog<int>(ownerProvider());
+        return result switch { 1 => 0, 2 => 1, _ => 2 };
+    }
+
     /// <summary>提示下次启动恢复个人设置；取消请求会关闭确认窗口。</summary>
     public async Task<bool> ConfirmSettingsRestartAsync(CancellationToken cancellationToken = default)
     {

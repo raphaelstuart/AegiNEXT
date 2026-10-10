@@ -11,10 +11,10 @@ public sealed class UserSettingsBundleStoreTests
 {
     private static readonly string[] archiveFileNames =
     [
-        "effect-scripts.json", "export-presets.aegiexports", "layouts.json", "manifest.json", "preferences.json", "subtitle-styles.aegistyles"
+        "effect-scripts.json", "export-presets.aegiexports", "layouts.json", "manifest.json", "preferences.json", "subtitle-color-tags.json", "subtitle-styles.aegistyles"
     ];
 
-    /// <summary>五种设置通过固定条目完整往返，所有个人参数保持原值。</summary>
+    /// <summary>六种设置通过固定条目完整往返，所有个人参数保持原值。</summary>
     [Fact]
     public async Task CompleteBundleRoundTripsThroughMemoryAndAtomicFile()
     {
@@ -23,7 +23,8 @@ public sealed class UserSettingsBundleStoreTests
         var bytes = UserSettingsBundleStore.Serialize(bundle);
         var entries = UserSettingsTransferTestData.ReadArchive(bytes);
 
-        Assert.Equal(6, entries.Count);
+        Assert.Equal(7, entries.Count);
+        Assert.Equal(2, JsonNode.Parse(entries["manifest.json"])!["version"]!.GetValue<int>());
         Assert.Equal(archiveFileNames,
             entries.Keys.Order(StringComparer.Ordinal).ToArray());
         UserSettingsTransferTestData.AssertBundleEqual(bundle, UserSettingsBundleStore.Deserialize(bytes));
@@ -73,6 +74,8 @@ public sealed class UserSettingsBundleStoreTests
         Assert.Empty(bundle.Styles.Presets);
         Assert.Empty(bundle.Effects.Presets);
         Assert.Empty(bundle.ExportPresets.Presets);
+        Assert.NotNull(bundle.ColorTags);
+        Assert.Empty(bundle.ColorTags.Tags);
         Assert.Empty(bundle.Layouts.Presets);
     }
 
@@ -81,7 +84,7 @@ public sealed class UserSettingsBundleStoreTests
     [InlineData("{}")]
     [InlineData("null")]
     [InlineData("[]")]
-    [InlineData("{\"version\":2}")]
+    [InlineData("{\"version\":3}")]
     [InlineData("{\"version\":\"1\"}")]
     [InlineData("{\"version\":true}")]
     [InlineData("{\"version\":1,\"version\":1}")]
@@ -141,10 +144,48 @@ public sealed class UserSettingsBundleStoreTests
     [InlineData("effect-scripts.json")]
     [InlineData("export-presets.aegiexports")]
     [InlineData("layouts.json")]
+    [InlineData("subtitle-color-tags.json")]
     public void IncompleteComponentRejectsEntireBundle(string name)
     {
         var entries = UserSettingsTransferTestData.ReadArchive(UserSettingsBundleStore.Serialize(new()));
         entries[name] = "{}"u8.ToArray();
+
+        Assert.Throws<InvalidDataException>(() => UserSettingsBundleStore.Deserialize(UserSettingsTransferTestData.WriteArchive(entries)));
+    }
+
+    /// <summary>旧版包的标签缺失状态在重新序列化及暂存准备中保持缺失。</summary>
+    [Fact]
+    public void VersionOneBundleRetainsMissingTagLibraryAcrossReserialization()
+    {
+        var original = UserSettingsTransferTestData.CreateBundle();
+        var entries = UserSettingsTransferTestData.ReadArchive(UserSettingsBundleStore.Serialize(original));
+        entries.Remove("subtitle-color-tags.json");
+        entries["manifest.json"] = "{\"version\":1}"u8.ToArray();
+
+        var legacy = UserSettingsBundleStore.Deserialize(UserSettingsTransferTestData.WriteArchive(entries));
+        var restaged = UserSettingsBundleStore.Serialize(legacy);
+        var restagedEntries = UserSettingsTransferTestData.ReadArchive(restaged);
+
+        Assert.Null(legacy.ColorTags);
+        Assert.Null(UserSettingsBundleStore.Deserialize(restaged).ColorTags);
+        Assert.False(restagedEntries.ContainsKey("subtitle-color-tags.json"));
+        Assert.Equal(1, JsonNode.Parse(restagedEntries["manifest.json"])!["version"]!.GetValue<int>());
+        Assert.False(UserSettingsBundleStore.SerializeFiles(legacy).ContainsKey("subtitle-color-tags.json"));
+        UserSettingsTransferTestData.AssertBundleEqual(original with { ColorTags = null }, legacy);
+    }
+
+    /// <summary>各版本只接受该版本声明的完整文件集合。</summary>
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public void ManifestVersionRequiresItsExactFileSet(int version, bool retainTags)
+    {
+        var entries = UserSettingsTransferTestData.ReadArchive(UserSettingsBundleStore.Serialize(new()));
+        entries["manifest.json"] = Encoding.UTF8.GetBytes("{\"version\":" + version + "}");
+        if (!retainTags)
+        {
+            entries.Remove("subtitle-color-tags.json");
+        }
 
         Assert.Throws<InvalidDataException>(() => UserSettingsBundleStore.Deserialize(UserSettingsTransferTestData.WriteArchive(entries)));
     }

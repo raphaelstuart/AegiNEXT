@@ -108,6 +108,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         layouts.Error += OnLayoutError;
         layouts.FloatingWindowTitleChanged += OnFloatingWindowTitleChanged;
         ViewModel.HostCommandHandler = HandleHostCommandAsync;
+        ViewModel.ContextCommandAvailability = command => command == WorkbenchCommand.MERGE_SUBTITLE
+            ? windowRegistry.GetFocusCommandAvailability(command) : null;
+        ViewModel.TryExecuteContextCommand = command => command == WorkbenchCommand.MERGE_SUBTITLE &&
+            windowRegistry.TryExecuteContextCommand(command);
+        windowRegistry.FocusCommandContextChanged += OnFocusCommandContextChanged;
         ViewModel.PropertyChanged += OnViewModelChanged;
         ViewModel.Log.PropertyChanged += OnLogChanged;
         ViewModel.DraftErrorFocusRequested += OnDraftErrorFocusRequested;
@@ -258,9 +263,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             layouts.Changed -= OnLayoutChanged;
             layouts.Error -= OnLayoutError;
             layouts.FloatingWindowTitleChanged -= OnFloatingWindowTitleChanged;
+            windowRegistry.FocusCommandContextChanged -= OnFocusCommandContextChanged;
             windowRegistry.Dispose();
         }
     }
+
+    private void OnFocusCommandContextChanged(object? sender, EventArgs e) =>
+        ((IAsyncRelayCommand)ViewModel.GetCommand(WorkbenchCommand.MERGE_SUBTITLE)).NotifyCanExecuteChanged();
 
     private void RegisterAuxiliaryWindow(Window window)
     {

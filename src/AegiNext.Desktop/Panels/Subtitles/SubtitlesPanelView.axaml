@@ -1,13 +1,30 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:icons="using:Material.Icons.Avalonia"
              xmlns:editing="using:AegiNext.Desktop.Editing"
+             xmlns:styling="using:AegiNext.Desktop.Styling"
              xmlns:projects="using:AegiNext.Core.Projects"
              xmlns:vm="using:AegiNext.Desktop.Panels.Subtitles" x:DataType="vm:SubtitlesPanelViewModel"
              x:Class="AegiNext.Desktop.Panels.Subtitles.SubtitlesPanelView" Classes="business-surface">
+  <UserControl.Resources>
+    <styling:SubtitleColorTagSwatchConverter x:Key="ColorTagSwatchConverter" />
+  </UserControl.Resources>
   <UserControl.Styles>
     <Style Selector="ListBox#SubtitleList &gt; ListBoxItem">
       <Setter Property="Padding" Value="0,4" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox#SubtitleList TextBox, ListBox#SubtitleList TextBox:pointerover, ListBox#SubtitleList TextBox:focus">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ComboBox#SubtitleColorTagFilterCombo.filtered">
+      <Setter Property="BorderBrush" Value="{DynamicResource WorkbenchDockActiveForeground}" />
+    </Style>
+    <Style Selector="ComboBox#SubtitleColorTagFilterCombo /template/ PathIcon#DropDownGlyph">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="ComboBox#SubtitleColorTagFilterCombo /template/ ContentControl#ContentPresenter">
+      <Setter Property="Grid.ColumnSpan" Value="2" />
+      <Setter Property="Margin" Value="0" />
     </Style>
   </UserControl.Styles>
   <Border Background="{DynamicResource PreviewSurface}" BorderBrush="{DynamicResource PreviewBorder}"
@@ -22,26 +39,64 @@
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>
-        <Button Name="AddCueButton" Classes="icon-button" Margin="0,0,8,4" Command="{Binding AddCueCommand}"
-                ToolTip.Tip="{Loc Key=Workbench.Add}" AutomationProperties.Name="{Loc Key=Workbench.Add}">
-          <icons:MaterialIcon Kind="Plus" Width="16" Height="16" />
-        </Button>
-        <Button Name="DeleteCueButton" Classes="icon-button" Margin="0,0,8,4" Command="{Binding DeleteCueCommand}"
-                ToolTip.Tip="{Loc Key=Workbench.Delete}" AutomationProperties.Name="{Loc Key=Workbench.Delete}">
-          <icons:MaterialIcon Kind="Delete" Width="16" Height="16" />
-        </Button>
-        <Button Name="SplitCueButton" Classes="icon-button" Margin="0,0,8,4" Command="{Binding SplitCueCommand}"
-                ToolTip.Tip="{Loc Key=Workbench.Split}" AutomationProperties.Name="{Loc Key=Workbench.Split}">
-          <icons:MaterialIcon Kind="CallSplit" Width="16" Height="16" />
-        </Button>
-        <Button Name="MergeCueButton" Classes="icon-button" Margin="0,0,8,4" Command="{Binding MergeCueCommand}"
-                ToolTip.Tip="{Loc Key=Workbench.Merge}" AutomationProperties.Name="{Loc Key=Workbench.Merge}">
-          <icons:MaterialIcon Kind="CallMerge" Width="16" Height="16" />
-        </Button>
-        <Button Name="SubtitleDetailsButton" Classes="icon-button" Margin="0,0,0,4" Command="{Binding DetailsCommand}"
-                ToolTip.Tip="{Loc Key=Workbench.SubtitleDetails}" AutomationProperties.Name="{Loc Key=Workbench.SubtitleDetails}">
-          <icons:MaterialIcon Kind="TextBoxEditOutline" Width="16" Height="16" />
-        </Button>
+        <ComboBox Name="SubtitleColorTagFilterCombo" Width="{DynamicResource WorkbenchControlHeight}" Height="{DynamicResource WorkbenchControlHeight}"
+                  Padding="0" Margin="0,0,8,4" HorizontalContentAlignment="Center"
+                  Classes.filtered="{Binding IsColorTagFilterActive}"
+                  ItemsSource="{Binding ColorTagFilters}" SelectedItem="{Binding SelectedColorTagFilter, Mode=OneWay}"
+                  ToolTip.Tip="{Binding ColorTagFilterHint}" AutomationProperties.Name="{Binding ColorTagFilterHint}">
+          <ComboBox.Resources>
+            <x:Double x:Key="ComboBoxThemeMinWidth">0</x:Double>
+          </ComboBox.Resources>
+          <ComboBox.SelectionBoxItemTemplate>
+            <DataTemplate x:DataType="editing:SubtitleColorTagFilterChoice">
+              <Grid Name="SubtitleFilterIcon" Width="16" Height="16">
+                <icons:MaterialIcon Kind="FilterVariant" Width="16" Height="16" />
+                <Border Width="7" Height="7" CornerRadius="4" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                        BorderBrush="{DynamicResource PreviewSurface}" BorderThickness="1"
+                        IsVisible="{Binding HasColor}"
+                        Background="{Binding ColorHex, Converter={StaticResource ColorTagSwatchConverter}}" />
+              </Grid>
+            </DataTemplate>
+          </ComboBox.SelectionBoxItemTemplate>
+          <ComboBox.ItemContainerTheme>
+            <ControlTheme TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+              <Setter Property="MinHeight" Value="{DynamicResource WorkbenchControlHeight}" />
+              <Setter Property="Padding" Value="8,4" />
+            </ControlTheme>
+          </ComboBox.ItemContainerTheme>
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="editing:SubtitleColorTagFilterChoice">
+              <Grid ColumnDefinitions="Auto,*">
+                <Border Width="10" Height="10" CornerRadius="5" Margin="0,0,6,0" VerticalAlignment="Center"
+                        IsVisible="{Binding HasColor}"
+                        Background="{Binding ColorHex, Converter={StaticResource ColorTagSwatchConverter}}" />
+                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+              </Grid>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <StackPanel Name="SubtitleEditingActions" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+          <Button Name="AddCueButton" Classes="icon-button" Command="{Binding AddCueCommand}"
+                  ToolTip.Tip="{Loc Key=Workbench.Add}" AutomationProperties.Name="{Loc Key=Workbench.Add}">
+            <icons:MaterialIcon Kind="Plus" Width="16" Height="16" />
+          </Button>
+          <Button Name="DeleteCueButton" Classes="icon-button" Command="{Binding DeleteCueCommand}"
+                  ToolTip.Tip="{Loc Key=Workbench.Delete}" AutomationProperties.Name="{Loc Key=Workbench.Delete}">
+            <icons:MaterialIcon Kind="Delete" Width="16" Height="16" />
+          </Button>
+          <Button Name="SplitCueButton" Classes="icon-button" Command="{Binding SplitCueCommand}"
+                  ToolTip.Tip="{Loc Key=Workbench.Split}" AutomationProperties.Name="{Loc Key=Workbench.Split}">
+            <icons:MaterialIcon Kind="CallSplit" Width="16" Height="16" />
+          </Button>
+          <Button Name="MergeCueButton" Classes="icon-button" Command="{Binding MergeCueCommand}"
+                  ToolTip.Tip="{Loc Key=Workbench.Merge}" AutomationProperties.Name="{Loc Key=Workbench.Merge}">
+            <icons:MaterialIcon Kind="CallMerge" Width="16" Height="16" />
+          </Button>
+          <Button Name="SubtitleDetailsButton" Classes="icon-button" Command="{Binding DetailsCommand}"
+                  ToolTip.Tip="{Loc Key=Workbench.SubtitleDetails}" AutomationProperties.Name="{Loc Key=Workbench.SubtitleDetails}">
+            <icons:MaterialIcon Kind="TextBoxEditOutline" Width="16" Height="16" />
+          </Button>
+        </StackPanel>
       </WrapPanel>
       <Grid Grid.Row="1" RowDefinitions="Auto,*" Margin="12,0">
         <Grid ColumnDefinitions="76,112,112,70,*" Margin="0,0,0,4" ColumnSpacing="8">
@@ -56,7 +111,7 @@
                  ItemsSource="{Binding VisibleRows, Mode=OneWay}">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="editing:SubtitleRow">
-              <Grid ColumnDefinitions="76,112,112,70,*" ColumnSpacing="8">
+              <Grid Name="SubtitleRowSurface" ColumnDefinitions="76,112,112,70,*" ColumnSpacing="8">
                 <TextBlock Text="{Binding ContentType}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="11" />
                 <TextBox Grid.Column="1" Text="{Binding StartText,Mode=TwoWay}" TextAlignment="Center" />
                 <TextBox Grid.Column="2" Text="{Binding EndText,Mode=TwoWay}" TextAlignment="Center" />

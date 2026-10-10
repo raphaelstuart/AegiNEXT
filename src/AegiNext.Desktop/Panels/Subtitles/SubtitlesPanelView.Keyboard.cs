@@ -42,12 +42,27 @@ internal sealed partial class SubtitlesPanelView
     }
 
     /// <summary>在字幕列表焦点执行试听，在字幕内容输入执行换行和下一行命令，保留文本与输入法输入。</summary>
+    public bool OwnsFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
+    {
+        return command == WorkbenchCommand.MERGE_SUBTITLE && !disposed && focusedElement is Visual visual &&
+               (ReferenceEquals(visual, this) || visual.GetVisualAncestors().Contains(this)) ||
+               CanExecuteFocusCommand(command, focusedElement);
+    }
+
+    /// <summary>判断列表当前焦点对应的字幕操作能否执行。</summary>
     public bool CanExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
     {
         if (disposed || session.IsClosing || session.IsProjectBusy || advancingRow || keyboardRoot is null ||
             list.ContextMenu?.IsOpen == true)
         {
             return false;
+        }
+
+        if (command == WorkbenchCommand.MERGE_SUBTITLE)
+        {
+            return focusedElement is Visual visual &&
+                   (ReferenceEquals(visual, this) || visual.GetVisualAncestors().Contains(this)) &&
+                   session.CanMergeVisibleSubtitleSelection;
         }
 
         if (IsSubtitleAuditionCommand(command))
@@ -69,6 +84,15 @@ internal sealed partial class SubtitlesPanelView
     /// <summary>试听主选字幕，或在当前内容输入插入换行、提交并跳转后续内容输入。</summary>
     public bool TryExecuteFocusCommand(WorkbenchCommand command, IInputElement focusedElement)
     {
+        if (command == WorkbenchCommand.MERGE_SUBTITLE && OwnsFocusCommand(command, focusedElement))
+        {
+            if (CanExecuteFocusCommand(command, focusedElement))
+            {
+                _ = session.MergeVisibleSubtitleSelectionAsync();
+            }
+            return true;
+        }
+
         if (!CanExecuteFocusCommand(command, focusedElement))
         {
             return false;

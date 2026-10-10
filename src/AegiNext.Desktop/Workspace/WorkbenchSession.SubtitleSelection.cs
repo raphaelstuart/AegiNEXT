@@ -79,11 +79,31 @@ internal sealed partial class WorkbenchSession
             ResetSubtitleSelection(SelectedCueId);
         }
 
-        var surviving = editor.Snapshot.Subtitles.Where(line => ClipIndex.GetSubtitleTrackId(line.Id) == CurrentTrackId && selectedSubtitleIds.Contains(line.Id))
+        var filter = ViewModel.Subtitles.ColorTagFilter;
+        var surviving = editor.Snapshot.Subtitles.Where(line => ClipIndex.GetSubtitleTrackId(line.Id) == CurrentTrackId &&
+                filter.Matches(line) && selectedSubtitleIds.Contains(line.Id))
             .OrderBy(line => line.Start).Select(line => line.Id).ToImmutableArray();
         if (SelectedCueId is { } primary && !surviving.Contains(primary))
         {
-            surviving = [primary];
+            if (filter.IsAll)
+            {
+                surviving = [primary];
+            }
+            else
+            {
+                SelectedCueId = surviving.IsEmpty ? null : surviving[0];
+                subtitleSelectionPrimaryId = SelectedCueId;
+                SelectedLayerId = editor.Snapshot.Layers.FirstOrDefault(layer =>
+                    SelectedCueId is not null && layer.SubtitleId == SelectedCueId)?.Id;
+            }
+        }
+
+        if (!filter.IsAll)
+        {
+            var visible = ViewModel.Subtitles.VisibleRows.Select(row => row.Id).ToHashSet();
+            ViewModel.Effects.SelectedIds = ViewModel.Effects.SelectedIds.Where(id =>
+                ClipIndex.TryGetClip(id, out var layer) &&
+                (layer.SubtitleId is not { } cueId || visible.Contains(cueId))).ToArray();
         }
 
         selectedSubtitleIds = surviving;

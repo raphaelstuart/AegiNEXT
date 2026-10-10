@@ -2,6 +2,7 @@ using System.ComponentModel;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Settings.Appearance;
 using AegiNext.Desktop.Settings.Colors;
+using AegiNext.Desktop.Settings.ColorTags;
 using AegiNext.Desktop.Settings.Effects;
 using AegiNext.Desktop.Settings.Export;
 using AegiNext.Desktop.Settings.Shortcuts;
@@ -24,7 +25,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     private bool navigating;
     internal Task NavigationCompletion { get; private set; } = Task.CompletedTask;
     public bool IsNavigationAvailable => !navigating;
-    public bool HasUnsavedTemplates => Styles.IsDirty || Effects.IsDirty || ExportPresets.IsDirty;
+    public bool HasUnsavedTemplates => Styles.IsDirty || Effects.IsDirty || ExportPresets.IsDirty || ColorTags.IsDirty;
     private string? externalError;
     private string title = Localization.Get("Settings.Settings");
 
@@ -35,6 +36,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         preferences.Validate();
         Appearance = new(preferences);
         Colors = new(preferences);
+        ColorTags = new();
         Shortcuts = new(preferences.ShortcutBindings);
         Styles = new();
         Effects = new();
@@ -56,10 +58,12 @@ public sealed class SettingsWindowViewModel : ObservableObject
         TimingPostProcessor.PropertyChanged += PageModelChanged;
         Tasks.PropertyChanged += PageModelChanged;
         AudioAnalysis.PropertyChanged += PageModelChanged;
+        ColorTags.PropertyChanged += PageModelChanged;
     }
 
     public AppearanceSettingsViewModel Appearance { get; }
     public ColorsSettingsViewModel Colors { get; }
+    public SubtitleColorTagsSettingsViewModel ColorTags { get; }
     public ShortcutSettingsViewModel Shortcuts { get; }
     public StyleSettingsViewModel Styles { get; }
     public EffectSettingsViewModel Effects { get; }
@@ -72,16 +76,19 @@ public sealed class SettingsWindowViewModel : ObservableObject
     public TaskSettingsViewModel Tasks { get; }
     public AudioAnalysisSettingsViewModel AudioAnalysis { get; }
     public string Title => title;
+
     public SettingsPage CurrentPage
     {
         get => (SettingsPage)PageIndex;
         set => PageIndex = (int)value;
     }
+
     public bool IsAppearanceVisible => CurrentPage == SettingsPage.APPEARANCE;
     public bool IsShortcutsVisible => CurrentPage == SettingsPage.SHORTCUTS;
     public bool IsStylesVisible => CurrentPage == SettingsPage.STYLES;
     public bool IsEffectsVisible => CurrentPage == SettingsPage.EFFECTS;
     public bool IsColorsVisible => CurrentPage == SettingsPage.COLORS;
+    public bool IsColorTagsVisible => CurrentPage == SettingsPage.SUBTITLE_COLOR_TAGS;
     public bool IsMediaVisible => CurrentPage == SettingsPage.MEDIA;
     public bool IsProjectsVisible => CurrentPage == SettingsPage.PROJECTS;
     public bool IsPreviewVisible => CurrentPage == SettingsPage.PREVIEW;
@@ -97,6 +104,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.STYLES => "Styles",
         SettingsPage.EFFECTS => "Effects",
         SettingsPage.COLORS => "Colors",
+        SettingsPage.SUBTITLE_COLOR_TAGS => "SubtitleColorTags",
         SettingsPage.MEDIA => "Media",
         SettingsPage.PROJECTS => "Projects",
         SettingsPage.PREVIEW => "Preview",
@@ -119,6 +127,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
         SettingsPage.TRANSFER => Transfer.Error,
         SettingsPage.TASKS => Tasks.Error,
         SettingsPage.AUDIO_ANALYSIS => AudioAnalysis.Error,
+        SettingsPage.SUBTITLE_COLOR_TAGS => ColorTags.Error,
         _ => null
     });
 
@@ -145,10 +154,12 @@ public sealed class SettingsWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(CurrentPage));
             return false;
         }
+
         if (CurrentPage == page)
         {
             return true;
         }
+
         navigating = true;
         OnPropertyChanged(nameof(IsNavigationAvailable));
         try
@@ -165,11 +176,19 @@ public sealed class SettingsWindowViewModel : ObservableObject
             {
                 await ExportPresets.SelectionCompletion;
             }
+            else if (CurrentPage == SettingsPage.SUBTITLE_COLOR_TAGS)
+            {
+                await ColorTags.Completion;
+            }
+
             var accepted = CurrentPage switch
             {
                 SettingsPage.STYLES when Styles.SaveDraftAsync is not null => await Styles.PrepareToLeaveAsync(),
                 SettingsPage.EFFECTS when Effects.SaveDraftAsync is not null => await Effects.PrepareToLeaveAsync(),
-                SettingsPage.EXPORT_PRESETS when ExportPresets.SaveDraftAsync is not null => await ExportPresets.PrepareToLeaveAsync(),
+                SettingsPage.EXPORT_PRESETS when ExportPresets.SaveDraftAsync is not null => await ExportPresets
+                    .PrepareToLeaveAsync(),
+                SettingsPage.SUBTITLE_COLOR_TAGS when ColorTags.SaveDraftAsync is not null => await ColorTags
+                    .PrepareToLeaveAsync(),
                 _ => true
             };
             if (!accepted)
@@ -178,6 +197,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(CurrentPage));
                 return false;
             }
+
             SetPageIndex((int)page);
             return true;
         }
@@ -199,6 +219,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsStylesVisible));
             OnPropertyChanged(nameof(IsEffectsVisible));
             OnPropertyChanged(nameof(IsColorsVisible));
+            OnPropertyChanged(nameof(IsColorTagsVisible));
             OnPropertyChanged(nameof(IsMediaVisible));
             OnPropertyChanged(nameof(IsProjectsVisible));
             OnPropertyChanged(nameof(IsPreviewVisible));
@@ -225,6 +246,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     {
         Appearance.RefreshLanguage();
         Colors.RefreshLanguage();
+        ColorTags.RefreshLanguage();
         Shortcuts.RefreshLanguage();
         Styles.RefreshLanguage();
         Effects.RefreshLanguage();

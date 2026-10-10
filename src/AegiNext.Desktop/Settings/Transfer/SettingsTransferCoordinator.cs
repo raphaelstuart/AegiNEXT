@@ -80,6 +80,7 @@ internal sealed class SettingsTransferCoordinator : IDisposable
                 Styles = applicationContext.StyleLibrary.Snapshot,
                 Effects = applicationContext.EffectScriptLibrary.Snapshot,
                 ExportPresets = applicationContext.ExportPresetLibrary.Snapshot,
+                ColorTags = applicationContext.ColorTagLibrary.Snapshot,
                 Layouts = layouts ?? applicationContext.InitialLayout
             };
             if (layouts is null)
@@ -123,7 +124,8 @@ internal sealed class SettingsTransferCoordinator : IDisposable
             {
                 preview = imported;
                 window.ViewModel.Transfer.SetPreview(Path.GetFileName(path), imported.Styles.Presets.Length,
-                    imported.Effects.Presets.Length, imported.ExportPresets.Presets.Length, imported.Layouts.Presets.Count);
+                    imported.Effects.Presets.Length, imported.ExportPresets.Presets.Length, imported.Layouts.Presets.Count,
+                    imported.ColorTags?.Tags.Length);
             }
         });
     }

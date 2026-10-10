@@ -13,6 +13,7 @@ public sealed record SubtitleLine
     public string Text { get; init; } = string.Empty;
     public string StyleName { get; init; } = "Default";
     public Guid? StylePresetId { get; init; }
+    public Guid? ColorTagId { get; init; }
     public SubtitleStyle Style { get; init; } = new();
     public ImmutableArray<SubtitleInlineSpan> InlineSpans { get; init; } = [];
     public ImmutableArray<KaraokeSegment> Karaoke { get; init; } = [];

@@ -1,6 +1,10 @@
+using System.Collections.Immutable;
+using AegiNext.Application.ColorTags;
 using AegiNext.Application.Presets;
+using AegiNext.Core.Projects;
 using AegiNext.Media.Encoding.Presets;
 using AegiNext.Desktop.Editing;
+using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Rendering;
 using AegiNext.Desktop.Layouts;
 using AegiNext.Application.Tasks;
@@ -27,6 +31,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     private int queuedStyles;
     private int queuedEffects;
     private int queuedExports;
+    private int queuedColorTags;
     private bool closing;
     private Exception? preferencesLoadError;
     private readonly Dictionary<PersonalLibraryKind, Exception> libraryLoadErrors = [];
@@ -50,6 +55,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         StyleLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "subtitle-styles.aegistyles"));
         EffectScriptLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "effect-scripts.json"));
         ExportPresetLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "export-presets.aegiexports"));
+        ColorTagLibrary = new(Path.Combine(PreferencesStore.DirectoryPath, "subtitle-color-tags.json"));
         RecentProjects = new(PreferencesStore.DirectoryPath, Tasks, deferLoad: true);
         RecentProjects.ErrorChanged += OnRecentProjectsError;
         if (initialPreferences is not null)
@@ -64,12 +70,14 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     internal event EventHandler? StylesChanged;
     internal event EventHandler? EffectsChanged;
     internal event EventHandler? ExportPresetsChanged;
+    internal event EventHandler? ColorTagsChanged;
     internal event EventHandler? BusyChanged;
     internal event EventHandler? ErrorChanged;
     internal WorkbenchPreferencesStore PreferencesStore { get; }
     internal SubtitleStylePresetLibrary StyleLibrary { get; }
     internal EffectScriptPresetLibrary EffectScriptLibrary { get; }
     internal VideoExportPresetLibrary ExportPresetLibrary { get; }
+    internal SubtitleColorTagLibrary ColorTagLibrary { get; }
     internal UserSettingsRestoreService SettingsRestore { get; }
     internal RecentProjectService RecentProjects { get; }
     internal AegiTaskService Tasks { get; }
@@ -79,7 +87,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     [
         AegiTaskResource.DeferredStoragePath(Path.Combine(PreferencesStore.DirectoryPath, "preferences.json")),
         GetLibraryResource(PersonalLibraryKind.STYLE), GetLibraryResource(PersonalLibraryKind.EFFECT),
-        GetLibraryResource(PersonalLibraryKind.EXPORT),
+        GetLibraryResource(PersonalLibraryKind.EXPORT), GetLibraryResource(PersonalLibraryKind.COLOR_TAG),
         AegiTaskResource.DeferredStoragePath(Path.Combine(PreferencesStore.DirectoryPath, "recent-projects.json")),
         AegiTaskResource.DeferredStoragePath(Path.Combine(PreferencesStore.DirectoryPath, "layouts.json")),
         AegiTaskResource.Named("settings-restore:" + PreferencesStore.DirectoryPath)
@@ -114,6 +122,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     internal bool StylesBusy => Volatile.Read(ref queuedStyles) > 0;
     internal bool EffectsBusy => Volatile.Read(ref queuedEffects) > 0;
     internal bool ExportPresetsBusy => Volatile.Read(ref queuedExports) > 0;
+    internal bool ColorTagsBusy => Volatile.Read(ref queuedColorTags) > 0;
 
     internal void UpdatePreferences(Func<WorkbenchPreferences, WorkbenchPreferences> update)
     {
@@ -182,6 +191,11 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         return EnqueueLibraryOperation(operation, PersonalLibraryKind.EXPORT, true);
     }
 
+    internal Task RunColorTagOperationAsync(Func<Task> operation)
+    {
+        return EnqueueLibraryOperation(operation, PersonalLibraryKind.COLOR_TAG, true);
+    }
+
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
@@ -225,6 +239,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
             PersonalLibraryKind.STYLE => "subtitle-styles.aegistyles",
             PersonalLibraryKind.EFFECT => "effect-scripts.json",
             PersonalLibraryKind.EXPORT => "export-presets.aegiexports",
+            PersonalLibraryKind.COLOR_TAG => "subtitle-color-tags.json",
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
         return Path.Combine(PreferencesStore.DirectoryPath, name);
@@ -287,6 +302,8 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         await context.RunStageAsync("Tasks.StyleLibrary", _ => ExecuteLibraryOperationAsync(() => StyleLibrary.LoadAsync(), PersonalLibraryKind.STYLE, false));
         await context.RunStageAsync("Tasks.EffectLibrary", _ => ExecuteLibraryOperationAsync(() => EffectScriptLibrary.LoadAsync(), PersonalLibraryKind.EFFECT, false));
         await context.RunStageAsync("Tasks.ExportPresetLibrary", _ => ExecuteLibraryOperationAsync(() => ExportPresetLibrary.LoadAsync(), PersonalLibraryKind.EXPORT, false));
+        await context.RunStageAsync("Tasks.ColorTagLibrary", _ => ExecuteLibraryOperationAsync(
+            () => ColorTagLibrary.LoadAsync(CreateDefaultColorTags()), PersonalLibraryKind.COLOR_TAG, false));
         var recoveryErrors = new List<Exception>();
         foreach (var error in new[] { SettingsRestoreStartup.GetError(PreferencesStore.DirectoryPath), preferencesLoadError,
                      RecentProjects.LastError })
@@ -332,6 +349,9 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
                     case PersonalLibraryKind.EXPORT:
                         ExportPresetsChanged?.Invoke(this, EventArgs.Empty);
                         break;
+                    case PersonalLibraryKind.COLOR_TAG:
+                        ColorTagsChanged?.Invoke(this, EventArgs.Empty);
+                        break;
                 }
             }
         }
@@ -374,6 +394,9 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
             case PersonalLibraryKind.EXPORT:
                 Interlocked.Add(ref queuedExports, change);
                 break;
+            case PersonalLibraryKind.COLOR_TAG:
+                Interlocked.Add(ref queuedColorTags, change);
+                break;
         }
     }
 
@@ -384,6 +407,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
             PersonalLibraryKind.STYLE => StyleLibrary.Snapshot,
             PersonalLibraryKind.EFFECT => EffectScriptLibrary.Snapshot,
             PersonalLibraryKind.EXPORT => ExportPresetLibrary.Snapshot,
+            PersonalLibraryKind.COLOR_TAG => ColorTagLibrary.Snapshot,
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
     }
@@ -470,6 +494,20 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         }
     }
 
+    private static ImmutableArray<SubtitleColorTag> CreateDefaultColorTags()
+    {
+        return
+        [
+            new() { Name = Localization.Get("Settings.ColorTagDefault.Red"), ColorHex = "#FF3B30" },
+            new() { Name = Localization.Get("Settings.ColorTagDefault.Orange"), ColorHex = "#FF9500" },
+            new() { Name = Localization.Get("Settings.ColorTagDefault.Yellow"), ColorHex = "#FFCC00" },
+            new() { Name = Localization.Get("Settings.ColorTagDefault.Green"), ColorHex = "#34C759" },
+            new() { Name = Localization.Get("Settings.ColorTagDefault.Blue"), ColorHex = "#007AFF" },
+            new() { Name = Localization.Get("Settings.ColorTagDefault.Purple"), ColorHex = "#AF52DE" },
+            new() { Name = Localization.Get("Settings.ColorTagDefault.Gray"), ColorHex = "#8E8E93" }
+        ];
+    }
+
     private async Task DisposeCoreAsync()
     {
         await fontNamePreviews.DisposeAsync();
@@ -484,6 +522,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         StyleLibrary.Dispose();
         EffectScriptLibrary.Dispose();
         ExportPresetLibrary.Dispose();
+        ColorTagLibrary.Dispose();
         SettingsRestore.Dispose();
         PreferencesStore.Dispose();
         PreferencesChanged = null;
@@ -491,6 +530,7 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
         StylesChanged = null;
         EffectsChanged = null;
         ExportPresetsChanged = null;
+        ColorTagsChanged = null;
         BusyChanged = null;
         ErrorChanged = null;
     }

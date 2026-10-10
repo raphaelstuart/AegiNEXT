@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 using AegiNext.Desktop.Settings.Transfer;
 
@@ -7,7 +8,7 @@ namespace AegiNext.Desktop.Tests.Settings.Transfer;
 [Collection("Workspace session")]
 public sealed class UserSettingsRestoreServiceTests
 {
-    /// <summary>暂存和取消只改变待恢复包，取消操作保持五份原始配置字节。</summary>
+    /// <summary>暂存和取消只改变待恢复包，取消操作保持全部原始配置字节。</summary>
     [Fact]
     public async Task StageAndCancelKeepLiveFilesAndNotifyOnlyCompletedChanges()
     {
@@ -82,6 +83,7 @@ public sealed class UserSettingsRestoreServiceTests
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(5)]
+    [InlineData(6)]
     public async Task FailureAtAnyReplacementRollsBackAndAllowsFreshServiceRetry(int failedIndex)
     {
         using var directory = new TemporaryWorkbenchDirectory();
@@ -328,6 +330,83 @@ public sealed class UserSettingsRestoreServiceTests
         AssertFiles(directory.Path, original);
         Assert.True(restore.HasPending);
         Assert.False(restore.HasRecoveryJournal);
+    }
+
+    /// <summary>旧版包暂存并经新服务恢复后，本地标签文件字节或缺失状态不变。</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task VersionOneStageAndRestoreLeavesTheTagLibraryBytesAndAbsenceUnchanged(bool tagFileExists)
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        var path = Path.Combine(directory.Path, "subtitle-color-tags.json");
+        var original = "existing tag library raw bytes"u8.ToArray();
+        if (tagFileExists)
+        {
+            await File.WriteAllBytesAsync(path, original);
+        }
+        var bundle = UserSettingsTransferTestData.CreateBundle() with { ColorTags = null };
+        using (var restore = new UserSettingsRestoreService(directory.Path))
+        {
+            await restore.StageAsync(bundle);
+            Assert.Null((await UserSettingsBundleStore.LoadAsync(PendingPath(directory.Path))).ColorTags);
+        }
+        using var reopened = new UserSettingsRestoreService(directory.Path);
+        reopened.ApplyPending();
+
+        AssertPersistedFiles(directory.Path, UserSettingsBundleStore.SerializeFiles(bundle));
+        Assert.Equal(tagFileExists, File.Exists(path));
+        if (tagFileExists)
+        {
+            Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        }
+    }
+
+    /// <summary>升级前五文件备份及日志可以继续回滚或提交清理，当前标签库保持原样。</summary>
+    [Theory]
+    [InlineData("applying")]
+    [InlineData("committed")]
+    public async Task UpgradedServiceRecoversVersionOneFiveFileJournalWithoutChangingTags(string phase)
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        var original = WriteOriginalFiles(directory.Path);
+        var bundle = UserSettingsTransferTestData.CreateBundle() with { ColorTags = null };
+        var journal = await CaptureInterruptedJournalAsync(directory.Path, bundle);
+        var backupPath = BackupPath(directory.Path, journal.BackupId);
+        var backup = ReadBackup(backupPath);
+        var legacyBackup = backup with
+        {
+            Version = 1,
+            Files = backup.Files.Where(entry => entry.Name != "subtitle-color-tags.json").ToImmutableArray()
+        };
+        File.WriteAllBytes(Path.Combine(backupPath, "backup.json"), SettingsTransferJson.Serialize(legacyBackup, 65536));
+        WriteJournal(directory.Path, journal with { Version = 1, Phase = phase });
+        var tagPath = Path.Combine(directory.Path, "subtitle-color-tags.json");
+        var tagBytes = "tag library created after legacy backup"u8.ToArray();
+        await File.WriteAllBytesAsync(tagPath, tagBytes);
+        if (phase == "committed")
+        {
+            WriteFiles(directory.Path, UserSettingsBundleStore.SerializeFiles(bundle));
+        }
+        else
+        {
+            WriteFiles(directory.Path, UserSettingsBundleStore.SerializeFiles(bundle).Take(2));
+            File.Delete(PendingPath(directory.Path));
+        }
+        using var reopened = new UserSettingsRestoreService(directory.Path);
+        reopened.ApplyPending();
+
+        Assert.Equal(tagBytes, await File.ReadAllBytesAsync(tagPath));
+        Assert.False(reopened.HasPending);
+        Assert.False(reopened.HasRecoveryJournal);
+        if (phase == "committed")
+        {
+            AssertPersistedFiles(directory.Path, UserSettingsBundleStore.SerializeFiles(bundle));
+        }
+        else
+        {
+            AssertFiles(directory.Path, original.Where(pair => pair.Key != "subtitle-color-tags.json"));
+        }
     }
 
     private static async Task<UserSettingsRestoreJournal> CaptureInterruptedJournalAsync(string directory, UserSettingsBundle bundle)

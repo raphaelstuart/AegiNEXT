@@ -133,6 +133,7 @@ internal sealed class UserSettingsRestoreService : IDisposable
             var bundle = UserSettingsBundleStore.Deserialize(pendingBytes);
             bundle.Preferences.Validate();
             var content = UserSettingsBundleStore.SerializeFiles(bundle);
+            var files = UserSettingsBundleStore.GetFiles(bundle.ColorTags is null ? 1 : 2);
             var backup = CreateBackup();
             var journal = new UserSettingsRestoreJournal
             {
@@ -142,9 +143,9 @@ internal sealed class UserSettingsRestoreService : IDisposable
             WriteJournal(journal);
             try
             {
-                for (var index = 0; index < UserSettingsBundleStore.Files.Length; index++)
+                for (var index = 0; index < files.Length; index++)
                 {
-                    var file = UserSettingsBundleStore.Files[index];
+                    var file = files[index];
                     beforeReplace?.Invoke(index + 1);
                     _ = RegularFileExists(Path.Combine(directory, file.Name));
                     UserSettingsTransferFiles.WriteAtomic(Path.Combine(directory, file.Name), content[file.Name]);
@@ -205,12 +206,16 @@ internal sealed class UserSettingsRestoreService : IDisposable
         }
         var journal = SettingsTransferJson.Deserialize<UserSettingsRestoreJournal>(
             UserSettingsTransferFiles.Read(journalPath, MAXIMUM_METADATA_BYTES), MAXIMUM_METADATA_BYTES);
-        if (journal.Version != 1 || journal.BackupId == Guid.Empty || !ValidHash(journal.PendingSha256) ||
+        if (journal.Version is not (1 or 2) || journal.BackupId == Guid.Empty || !ValidHash(journal.PendingSha256) ||
             journal.Phase is not ("applying" or "committed"))
         {
             throw new InvalidDataException("用户设置恢复日志无效。");
         }
         var backup = ReadBackup(journal.BackupId);
+        if (backup.Version != journal.Version)
+        {
+            throw new InvalidDataException("用户设置恢复日志与原始备份版本不一致。");
+        }
         if (journal.Phase == "committed")
         {
             FinishCommittedRestore(journal);
@@ -257,15 +262,15 @@ internal sealed class UserSettingsRestoreService : IDisposable
         _ = RegularFileExists(metadataPath);
         var backup = SettingsTransferJson.Deserialize<UserSettingsRestoreBackup>(
             UserSettingsTransferFiles.Read(metadataPath, MAXIMUM_METADATA_BYTES), MAXIMUM_METADATA_BYTES);
-        if (backup.Version != 1 || backup.Id != id || backup.Files.IsDefault ||
-            backup.Files.Length != UserSettingsBundleStore.Files.Length)
+        var expectedFiles = UserSettingsBundleStore.GetFiles(backup.Version);
+        if (backup.Id != id || backup.Files.IsDefault || backup.Files.Length != expectedFiles.Length)
         {
             throw new InvalidDataException("用户设置原始备份元数据无效。");
         }
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in backup.Files)
         {
-            var file = entry is null ? null : UserSettingsBundleStore.Files.FirstOrDefault(value => value.Name == entry.Name);
+            var file = entry is null ? null : expectedFiles.FirstOrDefault(value => value.Name == entry.Name);
             if (file is null || entry is null || !names.Add(entry.Name) || entry.Length < 0 || entry.Length > file.MaximumBytes ||
                 entry.Existed && !ValidHash(entry.Sha256) || !entry.Existed && (entry.Length != 0 || entry.Sha256 is not null))
             {

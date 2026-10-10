@@ -18,6 +18,7 @@ public sealed record ProjectDocument
     public ImmutableArray<ProjectAsset> Assets { get; init; } = [];
     public ImmutableArray<ProjectTrack> Tracks { get; init; } = [ProjectTrack.Default];
     public ImmutableArray<SubtitleLine> Subtitles { get; init; } = [];
+    public ImmutableArray<SubtitleColorTag> ColorTags { get; init; } = [];
     public ImmutableArray<ProjectLayer> Layers { get; init; } = [];
     public ImmutableArray<EffectPreset> Presets { get; init; } = [];
     public TimelineViewState TimelineViewState { get; init; } = new();

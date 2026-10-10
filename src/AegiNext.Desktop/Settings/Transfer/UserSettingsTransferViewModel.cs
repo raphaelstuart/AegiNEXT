@@ -17,6 +17,7 @@ public sealed class UserSettingsTransferViewModel : ObservableObject
     private int effectCount;
     private int exportPresetCount;
     private int layoutCount;
+    private int? colorTagCount;
     private string? statusKey;
     private string? error;
 
@@ -46,6 +47,10 @@ public sealed class UserSettingsTransferViewModel : ObservableObject
     public bool CanRequestExit => canRequestExit;
     public string FileName => fileName;
     public string PreviewSummary => Localization.Format("Settings.TransferPreviewSummary", styleCount, effectCount, exportPresetCount, layoutCount);
+    /// <summary>显示待导入标签数量，旧版包显示保留本地库的说明。</summary>
+    public string ColorTagSummary => colorTagCount is { } count
+        ? Localization.Format("Settings.TransferColorTagSummary", count)
+        : Localization.Get("Settings.TransferColorTagsPreserved");
     public string? Status => statusKey is null ? null : Localization.Get(statusKey);
     public bool HasStatus => statusKey is not null;
     public string? Error => error;
@@ -68,16 +73,18 @@ public sealed class UserSettingsTransferViewModel : ObservableObject
         set => SetProperty(ref keepWorkspaceRoot, value);
     }
 
-    internal void SetPreview(string name, int styles, int effects, int exportPresets, int layouts)
+    internal void SetPreview(string name, int styles, int effects, int exportPresets, int layouts, int? colorTags = null)
     {
         fileName = name;
         styleCount = styles;
         effectCount = effects;
         exportPresetCount = exportPresets;
         layoutCount = layouts;
+        colorTagCount = colorTags;
         hasPreview = true;
         OnPropertyChanged(nameof(FileName));
         OnPropertyChanged(nameof(PreviewSummary));
+        OnPropertyChanged(nameof(ColorTagSummary));
         OnPropertyChanged(nameof(HasPreview));
         RefreshCommands();
     }
@@ -116,6 +123,7 @@ public sealed class UserSettingsTransferViewModel : ObservableObject
     public void RefreshLanguage()
     {
         OnPropertyChanged(nameof(PreviewSummary));
+        OnPropertyChanged(nameof(ColorTagSummary));
         OnPropertyChanged(nameof(Status));
     }
 

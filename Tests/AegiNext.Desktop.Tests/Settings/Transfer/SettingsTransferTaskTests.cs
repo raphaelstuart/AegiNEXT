@@ -134,4 +134,40 @@ public sealed class SettingsTransferTaskTests
         var bytes = UserSettingsBundleStore.Serialize(bundle);
         Assert.ThrowsAny<OperationCanceledException>(() => UserSettingsBundleStore.Deserialize(bytes, cancellation.Token));
     }
+
+    /// <summary>标签库写入与恢复暂存共用设置资源，暂存等待个人库操作完成。</summary>
+    [Fact]
+    public async Task RestoreStagingWaitsForAnActiveColorTagOperation()
+    {
+        using var directory = new TemporaryWorkbenchDirectory();
+        await using var owner = new DesktopApplicationContext(new(directory.Path));
+        await owner.Initialization;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var operation = owner.RunColorTagOperationAsync(async () =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+            await owner.ColorTagLibrary.ReplaceAsync(new());
+        });
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var stage = owner.Tasks.Submit(new UserSettingsRestoreStageTask(owner, new()));
+
+            Assert.False(stage.Completion.IsCompleted);
+            Assert.False(owner.SettingsRestore.HasPending);
+            release.TrySetResult();
+            await Task.WhenAll(operation, stage.Completion).WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.True(owner.SettingsRestore.HasPending);
+            Assert.False(owner.ColorTagsBusy);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await operation;
+            await owner.Completion;
+        }
+    }
 }

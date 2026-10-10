@@ -113,7 +113,11 @@ internal sealed partial class WorkbenchSession
 
     internal void MergeCue()
     {
-        var targets = MergeSubtitleTargets();
+        MergeCue(MergeSubtitleTargets());
+    }
+
+    private void MergeCue(Guid[] targets)
+    {
         if (targets.Length < 2)
         {
             return;

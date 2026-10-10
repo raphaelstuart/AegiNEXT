@@ -97,6 +97,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         ClipMenu.Items.Add(CreateMenuItem("MoveTimelineClipsMenuItem", "Move", viewModel.MoveClipsCommand));
         ClipMenu.Items.Add(CreateMenuItem("ClearClipAnimationTracksMenuItem", "ClearClipAnimationTracks", viewModel.ClearClipAnimationTracksCommand));
         ClipMenu.Items.Add(CreateMenuItem("DeleteTimelineClipsMenuItem", "DeleteTimelineClips", viewModel.DeleteClipsCommand));
+        ClipMenu.Items.Add(colorTagMenu.Item);
         AnimationMenu = new();
         animationClearItem = new() { Name = "ClearAnimationPropertyTracksMenuItem", Command = viewModel.ClearAnimationPropertyTracksCommand };
         AnimationMenu.Items.Add(animationClearItem);
@@ -419,6 +420,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
         TrackMenu.Close();
         ClipMenu.Close();
         viewModel.SetClipContext(e);
+        RefreshColorTagMenu();
         ClipMenu.Open(timeline);
     }
     private void OnAnimationRowContextRequested(object? sender, TimelineAnimationRowContextEventArgs e)
@@ -558,6 +560,7 @@ internal sealed partial class TimelinePanelView : UserControl, IWorkbenchPanelVi
             animationRowCollapsePointer = null;
             TrackMenu.Close();
             ClipMenu.Close();
+            colorTagMenu.Dispose();
             AnimationMenu.Close();
             overview.CancelGesture();
             overview.Dispose();

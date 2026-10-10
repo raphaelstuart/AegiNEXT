@@ -253,6 +253,7 @@ public sealed partial class SubtitleTimelineControl : Control, IDisposable
             cuesById = value.Subtitles.ToDictionary(item => item.Id);
             subtitleLayersByCue = layersById.Values.Where(item => item.SubtitleId.HasValue)
                 .ToDictionary(item => item.SubtitleId!.Value);
+            RefreshColorTagAppearance();
             valueRanges.Clear();
             trackIndexes.Clear();
         }

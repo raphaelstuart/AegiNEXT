@@ -12,6 +12,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Windowing;
@@ -27,6 +28,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
     private WorkbenchPreferences preferences = new();
     private ShortcutRouter router = new(ShortcutDefaults.CreateBindings());
     private bool disposed;
+    private bool focusRefreshPending;
 
     internal WorkbenchWindowRegistry(WorkbenchMenuCatalog catalog, Action invalidateTiming, Action? cancelGestures = null,
         bool includeApplicationMenu = true)
@@ -43,6 +45,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
     }
 
     internal IReadOnlyCollection<Window> Windows => windows.Keys;
+    internal event EventHandler? FocusCommandContextChanged;
 
     internal void Register(Window window, Func<string> titleProvider, WindowTitleBar? titleBar = null,
         WorkbenchWindowRole role = WorkbenchWindowRole.MAIN)
@@ -83,6 +86,8 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         window.AddHandler(InputElement.PointerPressedEvent, OnPointer, RoutingStrategies.Tunnel, true);
         window.AddHandler(InputElement.PointerWheelChangedEvent, OnWheel, RoutingStrategies.Tunnel, true);
         window.AddHandler(InputElement.TextInputEvent, OnText, RoutingStrategies.Tunnel, true);
+        window.AddHandler(InputElement.GotFocusEvent, OnFocusChanged, RoutingStrategies.Bubble, true);
+        window.Activated += OnActivated;
         window.Deactivated += OnDeactivated;
         window.Closed += OnClosed;
         window.PropertyChanged += OnWindowChanged;
@@ -232,7 +237,7 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
             return;
         }
 
-        if (id is WorkbenchCommand.COPY_CLIPS or WorkbenchCommand.PASTE_CLIPS or WorkbenchCommand.DELETE_SUBTITLE)
+        if (id is WorkbenchCommand.COPY_CLIPS or WorkbenchCommand.PASTE_CLIPS or WorkbenchCommand.DELETE_SUBTITLE or WorkbenchCommand.MERGE_SUBTITLE)
         {
             if (TryExecuteFocusCommand(id, window))
             {
@@ -293,14 +298,90 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         window ??= windows.Keys.FirstOrDefault(candidate => candidate.IsActive);
         if (window is null || !windows.ContainsKey(window) || window.IsDialog ||
             window is SettingsWindow { IsShortcutCaptureActive: true } ||
-            window.FocusManager.GetFocusedElement() is not Visual focused || HasOpenKeyboardSurface(window, focused) ||
-            HasActiveComposition(focused))
+            window.FocusManager.GetFocusedElement() is not Visual focused || HasOpenKeyboardSurface(window, focused))
         {
             return false;
         }
+        return TryExecuteOwnedFocusCommand(command, focused);
+    }
+
+    internal bool TryExecuteContextCommand(WorkbenchCommand command)
+    {
+        var focused = GetCommandFocus();
+        return focused is not null && TryExecuteOwnedFocusCommand(command, focused);
+    }
+
+    private static bool TryExecuteOwnedFocusCommand(WorkbenchCommand command, Visual focused)
+    {
         var target = focused.GetSelfAndVisualAncestors().OfType<IWorkbenchFocusCommandTarget>().FirstOrDefault();
-        return target is not null && target.CanExecuteFocusCommand(command, (IInputElement)focused) &&
+        if (target is null || !target.OwnsFocusCommand(command, (IInputElement)focused))
+        {
+            return false;
+        }
+        if (!HasActiveComposition(focused) && target.CanExecuteFocusCommand(command, (IInputElement)focused))
+        {
             target.TryExecuteFocusCommand(command, (IInputElement)focused);
+        }
+        return true;
+    }
+
+    internal bool? GetFocusCommandAvailability(WorkbenchCommand command)
+    {
+        var focused = GetCommandFocus();
+        if (focused is null)
+        {
+            return null;
+        }
+        var target = focused.GetSelfAndVisualAncestors().OfType<IWorkbenchFocusCommandTarget>().FirstOrDefault();
+        return target is not null && target.OwnsFocusCommand(command, (IInputElement)focused)
+            ? !HasActiveComposition(focused) && target.CanExecuteFocusCommand(command, (IInputElement)focused) : null;
+    }
+
+    private Visual? GetCommandFocus()
+    {
+        var window = windows.Keys.FirstOrDefault(candidate => candidate.IsActive);
+        if (window is null || window.IsDialog || !windows.TryGetValue(window, out var entry) ||
+            window.FocusManager.GetFocusedElement() is not Visual focused)
+        {
+            return null;
+        }
+        return IsCommandMenuSurface(focused)
+            ? entry.CommandFocus is { } previous && TopLevel.GetTopLevel(previous) == window ? previous : null
+            : focused;
+    }
+
+    private static bool IsCommandMenuSurface(Visual focused) => focused.GetSelfAndVisualAncestors()
+        .Any(visual => visual is MenuBase or MenuItem or WindowTitleBar or PopupRoot);
+
+    private void OnFocusChanged(object? sender, FocusChangedEventArgs e)
+    {
+        if (sender is Window window && windows.TryGetValue(window, out var entry) && e.Source is Visual focused)
+        {
+            if (!IsCommandMenuSurface(focused))
+            {
+                entry.CommandFocus = focused;
+            }
+            ScheduleFocusCommandRefresh();
+        }
+    }
+
+    private void OnActivated(object? sender, EventArgs e) => ScheduleFocusCommandRefresh();
+
+    private void ScheduleFocusCommandRefresh()
+    {
+        if (focusRefreshPending || disposed)
+        {
+            return;
+        }
+        focusRefreshPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            focusRefreshPending = false;
+            if (!disposed)
+            {
+                FocusCommandContextChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }, DispatcherPriority.Input);
     }
 
     private static bool HasActiveComposition(Visual focused)
@@ -403,6 +484,8 @@ internal sealed class WorkbenchWindowRegistry : IDisposable
         window.RemoveHandler(InputElement.PointerPressedEvent, OnPointer);
         window.RemoveHandler(InputElement.PointerWheelChangedEvent, OnWheel);
         window.RemoveHandler(InputElement.TextInputEvent, OnText);
+        window.RemoveHandler(InputElement.GotFocusEvent, OnFocusChanged);
+        window.Activated -= OnActivated;
         window.Deactivated -= OnDeactivated;
         window.Closed -= OnClosed;
         window.PropertyChanged -= OnWindowChanged;
