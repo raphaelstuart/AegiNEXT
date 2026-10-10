@@ -53,7 +53,7 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
     private Point basePosition;
     private Point pivot;
     private Point[] corners = [];
-    private SKRect localBounds;
+    private ProjectLayerGeometry? selectedGeometry;
     private readonly HashSet<(Type ErrorType, string Message)> reportedFailures = [];
     private bool disposed;
     private ProjectLayer? selected;
@@ -734,7 +734,7 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
         if (selected is null || GetGeometry(sceneDocument, selected.Id) is not { } geometry)
         {
             corners = [];
-            localBounds = SKRect.Empty;
+            selectedGeometry = null;
             return false;
         }
 
@@ -743,7 +743,7 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
         basePosition = new(geometry.BasePosition.X, geometry.BasePosition.Y);
         pivot = new(geometry.WorldPivot.X, geometry.WorldPivot.Y);
         corners = geometry.WorldCorners.Select(value => new Point(value.X, value.Y)).ToArray();
-        localBounds = geometry.LocalBounds;
+        selectedGeometry = geometry;
         return true;
     }
 
@@ -763,13 +763,12 @@ public sealed partial class EffectCanvasControl : Control, IDisposable, IWorkben
 
     private bool ContainsLayer(Point point, Matrix fit)
     {
-        if (!layerMatrix.TryInvert(out _) || !(layerMatrix * fit).TryInvert(out var inverse))
+        if (!fit.TryInvert(out var inverse))
         {
             return false;
         }
-
-        var local = point * inverse;
-        return localBounds.Contains((float)local.X, (float)local.Y);
+        var world = point * inverse;
+        return selectedGeometry?.ContainsWorldPoint(new((float)world.X, (float)world.Y)) == true;
     }
 
     private void PresentScene(ProjectDocument sceneDocument)

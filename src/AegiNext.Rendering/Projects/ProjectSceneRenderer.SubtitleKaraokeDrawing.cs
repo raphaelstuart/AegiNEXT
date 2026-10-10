@@ -8,11 +8,11 @@ namespace AegiNext.Rendering.Projects;
 public sealed partial class ProjectSceneRenderer
 {
     private void DrawKaraokeRun(SKCanvas canvas, SubtitleLayoutRun run, SubtitleLine subtitle,
-        EvaluatedLayer layer, SubtitleStyle normal, SubtitlePreviewMode previewMode)
+        EvaluatedLayer layer, SubtitleStyle normal, SubtitlePreviewMode previewMode, IReadOnlyDictionary<Guid, SKMatrix> matrices)
     {
-        var fragments = KaraokeFragments(run, subtitle, layer.LocalTime, normal, previewMode);
+        var fragments = KaraokeFragments(run, subtitle, layer, normal, previewMode, matrices);
         if (fragments.Count == run.Shape.Clusters.Length && fragments.All(fragment => fragment.InkClip is null) &&
-            fragments.All(fragment => fragment.Style == fragments[0].Style))
+            fragments.All(fragment => fragment.Style == fragments[0].Style && fragment.Matrix == SKMatrix.Identity))
         {
             DrawSubtitleRun(canvas, run, fragments[0].Style);
             return;
@@ -24,13 +24,23 @@ public sealed partial class ProjectSceneRenderer
             {
                 var key = InkPaint(fragments[first].Style, component);
                 var end = first + 1;
-                while (end < fragments.Count && InkPaint(fragments[end].Style, component) == key)
+                while (end < fragments.Count && InkPaint(fragments[end].Style, component) == key && fragments[end].Matrix == fragments[first].Matrix)
                 {
                     end++;
                 }
                 if (key.Color.Alpha > 0 && (component != 1 || key.StrokeWidth > 0))
                 {
-                    DrawOwnedInk(canvas, run, key, fragments.GetRange(first, end - first));
+                    var saved = canvas.Save();
+                    try
+                    {
+                        var matrix = fragments[first].Matrix;
+                        canvas.Concat(in matrix);
+                        DrawOwnedInk(canvas, run, key, fragments.GetRange(first, end - first));
+                    }
+                    finally
+                    {
+                        canvas.RestoreToCount(saved);
+                    }
                 }
                 first = end;
             }
@@ -38,8 +48,9 @@ public sealed partial class ProjectSceneRenderer
     }
 
     private static List<SubtitleVisualFragment> KaraokeFragments(SubtitleLayoutRun run, SubtitleLine subtitle,
-        MediaTime time, SubtitleStyle normal, SubtitlePreviewMode previewMode)
+        EvaluatedLayer layer, SubtitleStyle normal, SubtitlePreviewMode previewMode, IReadOnlyDictionary<Guid, SKMatrix> matrices)
     {
+        var time = layer.LocalTime;
         var timing = new Dictionary<int, (SubtitleKaraokeSpan Span, float Advance)>();
         var segmentIndex = 0;
         SubtitleKaraokeSpan? previousSpan = null;
@@ -83,20 +94,28 @@ public sealed partial class ProjectSceneRenderer
             var pieces = new List<SubtitleVisualFragment>();
             foreach (var glyph in run.Graphemes.AsSpan(firstMember, glyphCursor - firstMember))
             {
+                var ordinary = SubtitleAnimationEvaluation.ApplyStyleAnimations(layer, run.Style, glyph.Utf16Start, SubtitleAnimationState.NORMAL);
+                var matrix = RangeMatrix(layer, matrices, glyph.Utf16Start);
                 timing.TryGetValue(glyph.Utf16Start, out var clock);
                 var segment = clock.Span?.Segment;
                 var range = StyleRangeAt(subtitle, glyph.Utf16Start);
-                if (segment is null && previewMode == SubtitlePreviewMode.TIMED)
+                if (previewMode == SubtitlePreviewMode.NORMAL || segment is null && previewMode == SubtitlePreviewMode.TIMED)
                 {
-                    pieces.Add(new(normal, cluster.Utf16Start, glyph.Bounds, glyph.Bounds));
+                    pieces.Add(new(ordinary, cluster.Utf16Start, glyph.Bounds, glyph.Bounds) { Matrix = matrix });
                     continue;
                 }
                 if (segment is null && previewMode != SubtitlePreviewMode.TIMED)
                 {
                     segment = InactiveSegmentAt(subtitle, glyph.Utf16Start);
                 }
-                var inactive = KaraokeVisualStyleResolver.ResolveInactive(normal, segment, range?.InactiveStyle);
-                var active = KaraokeVisualStyleResolver.ResolveActive(normal, subtitle.KaraokeStyle, segment, range?.ActiveStyle);
+                var inactive = KaraokeVisualStyleResolver.ResolveInactive(ordinary, segment, range?.InactiveStyle);
+                var active = KaraokeVisualStyleResolver.ResolveActive(ordinary, subtitle.KaraokeStyle, segment, range?.ActiveStyle);
+                inactive = SubtitleAnimationEvaluation.ApplyStyleAnimations(layer, inactive, glyph.Utf16Start, SubtitleAnimationState.INACTIVE);
+                active = SubtitleAnimationEvaluation.ApplyStyleAnimations(layer, active, glyph.Utf16Start, SubtitleAnimationState.ACTIVE);
+                if (segment?.HighlightKind == KaraokeHighlightKind.OUTLINE_STEP)
+                {
+                    inactive = inactive with { StrokeWidth = 0 };
+                }
                 var amount = previewMode switch
                 {
                     SubtitlePreviewMode.HIGHLIGHTED => glyph.Bounds.Width,
@@ -105,11 +124,11 @@ public sealed partial class ProjectSceneRenderer
                 };
                 if (amount <= 0 || inactive == active)
                 {
-                    pieces.Add(new(inactive, cluster.Utf16Start, glyph.Bounds, glyph.Bounds));
+                    pieces.Add(new(inactive, cluster.Utf16Start, glyph.Bounds, glyph.Bounds) { Matrix = matrix });
                 }
                 else if (amount >= glyph.Bounds.Width)
                 {
-                    pieces.Add(new(active, cluster.Utf16Start, glyph.Bounds, glyph.Bounds));
+                    pieces.Add(new(active, cluster.Utf16Start, glyph.Bounds, glyph.Bounds) { Matrix = matrix });
                 }
                 else
                 {
@@ -125,8 +144,8 @@ public sealed partial class ProjectSceneRenderer
                         activeBounds.Right = glyph.Bounds.Left + amount;
                         inactiveBounds.Left = activeBounds.Right;
                     }
-                    pieces.Add(new(active, cluster.Utf16Start, activeBounds, activeBounds));
-                    pieces.Add(new(inactive, cluster.Utf16Start, inactiveBounds, inactiveBounds));
+                    pieces.Add(new(active, cluster.Utf16Start, activeBounds, activeBounds) { Matrix = matrix });
+                    pieces.Add(new(inactive, cluster.Utf16Start, inactiveBounds, inactiveBounds) { Matrix = matrix });
                 }
             }
             if (pieces.Count == 0)
@@ -134,9 +153,9 @@ public sealed partial class ProjectSceneRenderer
                 continue;
             }
             var decorationBounds = pieces.Select(piece => piece.DecorationClip).Aggregate(SKRect.Union);
-            if (pieces.All(piece => piece.Style == pieces[0].Style))
+            if (pieces.All(piece => piece.Style == pieces[0].Style && piece.Matrix == pieces[0].Matrix))
             {
-                fragments.Add(new(pieces[0].Style, cluster.Utf16Start, null, decorationBounds));
+                fragments.Add(new(pieces[0].Style, cluster.Utf16Start, null, decorationBounds) { Matrix = pieces[0].Matrix });
                 continue;
             }
             var ink = cluster.InkBounds;
@@ -159,7 +178,7 @@ public sealed partial class ProjectSceneRenderer
                 }
                 var previous = fragments.Count > 0 ? fragments[^1] : null;
                 if (previous is { InkClip: { } previousClip } && previous.Utf16Cluster == piece.Utf16Cluster &&
-                    previous.Style == piece.Style && previousClip.Right >= clip.Left)
+                    previous.Style == piece.Style && previous.Matrix == piece.Matrix && previousClip.Right >= clip.Left)
                 {
                     fragments[^1] = previous with
                     {

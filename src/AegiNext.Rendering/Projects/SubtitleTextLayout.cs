@@ -48,6 +48,11 @@ public sealed class SubtitleTextLayout
             var dy = Math.Max(Math.Max(grapheme.Bounds.Top - point.Y, 0), point.Y - grapheme.Bounds.Bottom);
             var next = Math.Min(dx * dx + dy * dy,
                 Math.Min(CaretDistance(point, grapheme.LeadingCaret), CaretDistance(point, grapheme.TrailingCaret)));
+            if (grapheme.UntransformedBounds is { } original && grapheme.LocalToVisible.TryInvert(out var inverse) &&
+                original.Contains(inverse.MapPoint(point)))
+            {
+                next = 0;
+            }
             if (next < distance)
             {
                 nearest = grapheme;

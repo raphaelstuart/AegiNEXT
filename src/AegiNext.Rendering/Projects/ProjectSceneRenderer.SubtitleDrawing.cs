@@ -53,33 +53,23 @@ public sealed partial class ProjectSceneRenderer
         SubtitlePreviewMode previewMode = SubtitlePreviewMode.TIMED)
     {
         var subtitle = layer.Subtitle!;
-        foreach (var line in Layout(document, layer).Lines)
+        var layout = Layout(document, layer);
+        var matrices = RangeMatrices(layer, layout.Snapshot);
+        foreach (var line in layout.Lines)
         {
             foreach (var run in line.Runs)
             {
-                var normal = AnimatedStyle(run.Style, layer);
-                if (previewMode == SubtitlePreviewMode.NORMAL ||
-                    run.Karaoke.IsEmpty && previewMode == SubtitlePreviewMode.TIMED)
+                var normal = SubtitleAnimationEvaluation.ApplyStyleAnimations(layer, run.Style, run.Utf16Offset, SubtitleAnimationState.NORMAL);
+                if (layer.AnimationRanges.IsEmpty && layer.AnimationValues.Keys.All(target => target.TextRangeId is null && target.State == SubtitleAnimationState.NORMAL) &&
+                    (previewMode == SubtitlePreviewMode.NORMAL || run.Karaoke.IsEmpty && previewMode == SubtitlePreviewMode.TIMED))
                 {
                     DrawSubtitleRun(canvas, run, normal);
                     continue;
                 }
-                DrawKaraokeRun(canvas, run, subtitle, layer, normal, previewMode);
+                DrawKaraokeRun(canvas, run, subtitle, layer, normal, previewMode, matrices);
 
             }
         }
-    }
-
-    private static SubtitleStyle AnimatedStyle(SubtitleStyle style, EvaluatedLayer layer)
-    {
-        return style with
-        {
-            Fill = layer.HasFillAnimation ? layer.Fill : style.Fill,
-            Stroke = layer.HasStrokeAnimation ? layer.Stroke : style.Stroke,
-            StrokeWidth = layer.HasStrokeWidthAnimation ? layer.StrokeWidth : style.StrokeWidth,
-            FillBlur = layer.HasFillBlurAnimation ? layer.FillBlur : style.FillBlur,
-            StrokeBlur = layer.HasStrokeBlurAnimation ? layer.StrokeBlur : style.StrokeBlur
-        };
     }
 
     private void DrawSubtitleRun(SKCanvas canvas, SubtitleLayoutRun run, SubtitleStyle style)

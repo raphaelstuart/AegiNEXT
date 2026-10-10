@@ -30,13 +30,13 @@ public sealed partial class ProjectSceneRenderer
             throw new ArgumentException("排版测量需要字幕层。", nameof(layer));
         }
         Prepare(document);
-        return Layout(document, layer).Snapshot;
+        return VisibleLayout(layer, Layout(document, layer).Snapshot);
     }
 
     private SubtitleLayout Layout(ProjectDocument document, EvaluatedLayer layer)
     {
-        return Layout(document, layer.Subtitle!, layer.HasLetterSpacingAnimation ? layer.LetterSpacing : null,
-            layer.HasLetterSpacingAnimation ? layer.Source.Id : null);
+        var subtitle = TypographySubtitle(layer);
+        return Layout(document, subtitle, animatedLayerId: ReferenceEquals(subtitle, layer.Subtitle) ? null : layer.Source.Id);
     }
 
     private SubtitleLayout Layout(ProjectDocument document, SubtitleLine subtitle, double? letterSpacing = null, Guid? animatedLayerId = null)

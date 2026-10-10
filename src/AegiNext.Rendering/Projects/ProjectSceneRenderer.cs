@@ -360,6 +360,9 @@ public sealed partial class ProjectSceneRenderer : IDisposable
                 a.HasLetterSpacingAnimation != b.HasLetterSpacingAnimation || !a.LetterSpacing.Equals(b.LetterSpacing) ||
                 a.HasFillBlurAnimation != b.HasFillBlurAnimation || !a.FillBlur.Equals(b.FillBlur) ||
                 a.HasStrokeBlurAnimation != b.HasStrokeBlurAnimation || !a.StrokeBlur.Equals(b.StrokeBlur) ||
+                a.AnimationValues.Count != b.AnimationValues.Count ||
+                a.AnimationValues.Any(pair => !b.AnimationValues.TryGetValue(pair.Key, out var value) || value != pair.Value) ||
+                !a.AnimationRanges.SequenceEqual(b.AnimationRanges) ||
                 a.Fill != b.Fill || a.Stroke != b.Stroke || !a.StrokeWidth.Equals(b.StrokeWidth) || !a.Blur.Equals(b.Blur) || !EquivalentMask(a.Mask, b.Mask) ||
                 (a.Subtitle is { Karaoke.IsEmpty: false } && a.LocalTime != b.LocalTime))
             {
@@ -523,11 +526,14 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         var pivot = SKPoint.Empty;
         var basePosition = SKPoint.Empty;
         var hasInk = true;
+        IReadOnlyList<SubtitleGraphemeGeometry>? visibleGraphemes = null;
         switch (layer.Source.Kind)
         {
             case LayerKind.SUBTITLE:
                 var layout = Layout(document, layer);
-                bounds = layout.Bounds;
+                var visible = VisibleLayout(layer, layout.Snapshot);
+                bounds = visible.Bounds;
+                visibleGraphemes = ReferenceEquals(visible, layout.Snapshot) ? null : visible.Graphemes;
                 pivot = layout.Pivot;
                 basePosition = layout.BasePosition;
                 hasInk = layout.HasInk;
@@ -559,7 +565,10 @@ public sealed partial class ProjectSceneRenderer : IDisposable
         local = SKMatrix.Concat(local, SKMatrix.CreateRotationDegrees((float)transform.Rotation));
         local = SKMatrix.Concat(local, SKMatrix.CreateScale((float)transform.ScaleX, (float)transform.ScaleY));
         local = SKMatrix.Concat(local, SKMatrix.CreateTranslation(-effectivePivot.X, -effectivePivot.Y));
-        return new(bounds, effectivePivot, basePosition, SKMatrix.Concat(parentToWorld, local), parentToWorld, hasInk);
+        return new(bounds, effectivePivot, basePosition, SKMatrix.Concat(parentToWorld, local), parentToWorld, hasInk)
+        {
+            VisibleGraphemes = visibleGraphemes
+        };
     }
 
     private SKTypeface Typeface(ProjectDocument document, SubtitleStyle style)
@@ -630,6 +639,7 @@ public sealed partial class ProjectSceneRenderer : IDisposable
     private void ClearLayouts()
     {
         layouts.Clear();
+        typographyProjections.Clear();
         foreach (var shaper in actualTextShapers.Values)
         {
             shaper.Dispose();
