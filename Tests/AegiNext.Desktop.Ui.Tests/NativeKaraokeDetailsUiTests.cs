@@ -3,6 +3,7 @@ using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Panels.SubtitleDetails;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia;
 using Avalonia.Automation;
@@ -11,10 +12,13 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Material.Icons;
+using Material.Icons.Avalonia;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
@@ -38,6 +42,10 @@ public sealed class NativeKaraokeDetailsUiTests
         Assert.Equal(32, appearance.Bounds.Width);
         Assert.Equal(32, appearance.Bounds.Height);
         Assert.Equal(0, appearance.SelectedIndex);
+        var normalBadge = Assert.Single(appearance.GetVisualDescendants().OfType<MaterialIcon>(),
+            icon => icon.Name == "SubtitleVisualStateBadge");
+        Assert.Equal(MaterialIconKind.CircleOutline, normalBadge.Kind);
+        var normalColor = Assert.IsAssignableFrom<ISolidColorBrush>(normalBadge.Foreground).Color;
         Assert.DoesNotContain(appearance.GetVisualDescendants().OfType<TextBlock>(),
             text => text.IsEffectivelyVisible && !string.IsNullOrEmpty(text.Text));
         var timingActions = UiTestActions.Find<WrapPanel>(host, "KaraokeTimingActions");
@@ -53,6 +61,14 @@ public sealed class NativeKaraokeDetailsUiTests
             Assert.Equal(32, control.Bounds.Width);
             Assert.Equal(32, control.Bounds.Height);
         }
+        var reset = UiTestActions.Find<Button>(host, "GenerateAllTimingButton");
+        var resetActions = UiTestActions.Find<StackPanel>(host, "KaraokeResetActions");
+        Assert.Same(resetActions, timingActions.Children[^1]);
+        Assert.Same(resetActions, reset.Parent);
+        Assert.Equal(MaterialIconKind.BackupRestore, Assert.IsType<MaterialIcon>(reset.Content).Kind);
+        var resetSeparator = UiTestActions.Find<Separator>(host, "KaraokeResetSeparator");
+        Assert.Same(resetActions, resetSeparator.Parent);
+        Assert.True(resetSeparator.Bounds.Right <= reset.Bounds.Left);
         Capture(host, $"native-compact-karaoke-{language}-{(dark ? "dark" : "light")}.png");
         ClickControl(appearance);
         Flush(host);
@@ -73,19 +89,35 @@ public sealed class NativeKaraokeDetailsUiTests
         Assert.False(appearance.IsDropDownOpen);
         Assert.Equal(1, appearance.SelectedIndex);
         Assert.Equal(KaraokeVisualState.INACTIVE, context.Session.Details.VisualState);
+        var inactiveBadge = Assert.Single(appearance.GetVisualDescendants().OfType<MaterialIcon>(),
+            icon => icon.Name == "SubtitleVisualStateBadge");
+        Assert.Equal(MaterialIconKind.ClockOutline, inactiveBadge.Kind);
+        var inactiveColor = Assert.IsAssignableFrom<ISolidColorBrush>(inactiveBadge.Foreground).Color;
+        Assert.NotEqual(normalColor, inactiveColor);
+        Capture(host, $"native-appearance-inactive-{language}-{(dark ? "dark" : "light")}.png");
         var translatedLanguage = language == "zh-CN" ? "en-US" : "zh-CN";
         context.Session.UpdatePreferences(context.Session.Preferences with { Language = translatedLanguage });
         Flush(host);
         Assert.Equal(1, appearance.SelectedIndex);
-        Assert.Equal(Localization.Get("Workbench.VisualState.Inactive"), appearance.SelectedItem);
-        var appearanceHint = Localization.Get("Workbench.VisualState.Select") + " · " + appearance.SelectedItem;
+        var selected = Assert.IsType<SubtitleVisualStateChoice>(appearance.SelectedItem);
+        Assert.Equal(Localization.Get("Workbench.VisualState.Inactive"), selected.Name);
+        var appearanceHint = Localization.Get("Workbench.VisualState.Select") + " · " + selected.Name;
         Assert.Equal(appearanceHint, ToolTip.GetTip(appearance));
         Assert.Equal(appearanceHint, AutomationProperties.GetName(appearance));
+        Assert.Equal(MaterialIconKind.ClockOutline, Assert.Single(appearance.GetVisualDescendants().OfType<MaterialIcon>(),
+            icon => icon.Name == "SubtitleVisualStateBadge").Kind);
         Assert.True(appearance.Focus());
         UiTestActions.Press(host, Key.Down);
         Flush(host);
         Assert.Equal(2, appearance.SelectedIndex);
         Assert.Equal(KaraokeVisualState.ACTIVE, context.Session.Details.VisualState);
+        var activeBadge = Assert.Single(appearance.GetVisualDescendants().OfType<MaterialIcon>(),
+            icon => icon.Name == "SubtitleVisualStateBadge");
+        Assert.Equal(MaterialIconKind.CheckCircle, activeBadge.Kind);
+        var activeColor = Assert.IsAssignableFrom<ISolidColorBrush>(activeBadge.Foreground).Color;
+        Assert.NotEqual(normalColor, activeColor);
+        Assert.NotEqual(inactiveColor, activeColor);
+        Capture(host, $"native-appearance-active-{language}-{(dark ? "dark" : "light")}.png");
         Assert.Same(original, context.Session.Editor.Snapshot);
         Assert.False(context.Session.Editor.CanUndo);
     }

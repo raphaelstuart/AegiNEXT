@@ -136,7 +136,7 @@ internal sealed partial class SubtitleDetailsPanelView
         clipPopup.Child = popupFrame;
         FlyoutBase.SetAttachedFlyout(axis, clipPopup);
         ConfigureTimingAction(createTiming, "Workbench.CreateSelectedTiming", "Add", BeginManualTiming);
-        ConfigureTimingAction(generateTiming, "Workbench.GenerateAllTiming", "Clock", () => coordinator.GenerateAllTiming());
+        ConfigureTimingAction(generateTiming, "Workbench.GenerateAllTiming", "Reset", () => coordinator.GenerateAllTiming());
         ConfigureTimingAction(restoreTiming, "Workbench.RestoreCachedTiming", "Restore", () => coordinator.RestoreCachedTiming());
         ConfigureTimingAction(splitTiming, "Workbench.SplitKaraokeGroup", "Split", () => coordinator.SplitSelectedGroup());
         ConfigureTimingAction(mergeTiming, "Workbench.MergeSelectedKaraokeGroups", "Merge", () => coordinator.MergeSelectedGroups(), false);
@@ -147,13 +147,19 @@ internal sealed partial class SubtitleDetailsPanelView
             control.Margin = new(0, 0, 6, 6);
         }
         keepTimeLabels.Margin = new(0, 0, 14, 6);
+        generateTiming.Margin = new(0);
+        var resetActions = new StackPanel
+        {
+            Name = "KaraokeResetActions", Orientation = Orientation.Horizontal, Margin = new(8, 0, 0, 6),
+            Children = { ToolbarSeparator("KaraokeResetSeparator"), generateTiming }
+        };
         BuildManualTimingPopup();
         return new()
         {
             Name = "KaraokeTimingActions", Children =
             {
                 play, loop, snap, keepTimeLabels,
-                createTiming, generateTiming, restoreTiming, splitTiming, mergeTiming, fitTiming
+                createTiming, restoreTiming, splitTiming, mergeTiming, fitTiming, resetActions
             }
         };
     }

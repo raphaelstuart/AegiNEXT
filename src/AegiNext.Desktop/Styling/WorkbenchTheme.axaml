@@ -113,6 +113,8 @@
         <SolidColorBrush x:Key="PreviewBorder">#DDE2EA</SolidColorBrush>
         <SolidColorBrush x:Key="PreviewMuted">#627087</SolidColorBrush>
         <SolidColorBrush x:Key="PreviewError">#B42318</SolidColorBrush>
+        <SolidColorBrush x:Key="WorkbenchAppearanceInactive">#B45309</SolidColorBrush>
+        <SolidColorBrush x:Key="WorkbenchAppearanceActive">#15803D</SolidColorBrush>
       </ResourceDictionary>
       <ResourceDictionary x:Key="Dark">
         <SolidColorBrush x:Key="PreviewBackground">#12151C</SolidColorBrush>
@@ -120,6 +122,8 @@
         <SolidColorBrush x:Key="PreviewBorder">#303949</SolidColorBrush>
         <SolidColorBrush x:Key="PreviewMuted">#9AAAC2</SolidColorBrush>
         <SolidColorBrush x:Key="PreviewError">#FF9A9A</SolidColorBrush>
+        <SolidColorBrush x:Key="WorkbenchAppearanceInactive">#FBBF24</SolidColorBrush>
+        <SolidColorBrush x:Key="WorkbenchAppearanceActive">#4ADE80</SolidColorBrush>
       </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>

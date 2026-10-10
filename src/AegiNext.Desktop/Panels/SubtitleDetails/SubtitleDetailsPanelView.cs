@@ -144,17 +144,15 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         enableKaraoke.Padding = new(8, 0);
         visualState.Classes.Add("icon-selector");
         visualState.Resources["ComboBoxThemeMinWidth"] = 0d;
-        visualState.SelectionBoxItemTemplate = new FuncDataTemplate<string>((_, _) => WorkbenchIcon.Create("HighlightStyle"));
+        visualState.SelectionBoxItemTemplate = new FuncDataTemplate<SubtitleVisualStateChoice>((choice, _) =>
+            choice is null ? null : BuildVisualStateIcon(choice, true));
+        visualState.ItemTemplate = new FuncDataTemplate<SubtitleVisualStateChoice>((choice, _) =>
+            choice is null ? null : BuildVisualStateMenuItem(choice));
         visualState.SelectionChanged += (_, _) =>
         {
-            if (!synchronizing && visualState.SelectedIndex >= 0)
+            if (!synchronizing && visualState.SelectedItem is SubtitleVisualStateChoice choice)
             {
-                coordinator.SetVisualState(visualState.SelectedIndex switch
-                {
-                    1 => KaraokeVisualState.INACTIVE,
-                    2 => KaraokeVisualState.ACTIVE,
-                    _ => null
-                });
+                coordinator.SetVisualState(choice.State);
                 Refresh();
             }
         };
@@ -204,11 +202,15 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         Grid.SetRow(axis, 2);
         richContent.Children.Add(axis);
         var root = new SubtitleDetailsLayout(toolbar, styleFields, richContent, error);
-        Content = new ScrollViewer
+        Content = new VisualLayerManager
         {
-            Name = "SubtitleDetailsScroll", Content = root,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            Name = "SubtitleDetailsVisualLayers", EnableAdornerLayer = true, ClipToBounds = true,
+            Child = new ScrollViewer
+            {
+                Name = "SubtitleDetailsScroll", Content = root,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            }
         };
         presets.SelectionChanged += async (_, _) =>
         {
@@ -706,15 +708,20 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
             enableKaraoke.IsChecked = coordinator.IsKaraokeEnabled;
             axis.IsVisible = line is not null;
             visualState.IsEnabled = line is not null;
-            visualState.ItemsSource = new[] { Localization.Get("Workbench.VisualState.Normal"),
-                Localization.Get("Workbench.VisualState.Inactive"), Localization.Get("Workbench.VisualState.Active") };
+            visualState.ItemsSource = new SubtitleVisualStateChoice[]
+            {
+                new(null, Localization.Get("Workbench.VisualState.Normal")),
+                new(KaraokeVisualState.INACTIVE, Localization.Get("Workbench.VisualState.Inactive")),
+                new(KaraokeVisualState.ACTIVE, Localization.Get("Workbench.VisualState.Active"))
+            };
             visualState.SelectedIndex = coordinator.VisualState switch
             {
                 KaraokeVisualState.INACTIVE => 1,
                 KaraokeVisualState.ACTIVE => 2,
                 _ => 0
             };
-            var appearanceHint = Localization.Get("Workbench.VisualState.Select") + " · " + visualState.SelectedItem;
+            var appearanceHint = Localization.Get("Workbench.VisualState.Select") + " · " +
+                (visualState.SelectedItem as SubtitleVisualStateChoice)?.Name;
             ToolTip.SetTip(visualState, appearanceHint);
             AutomationProperties.SetName(visualState, appearanceHint);
             styleFields.DataContext = IsEditingVisualState ? coordinator.HighlightDraft : coordinator.StyleDraft;

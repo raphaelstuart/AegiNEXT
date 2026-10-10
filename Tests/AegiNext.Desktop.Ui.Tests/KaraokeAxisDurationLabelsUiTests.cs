@@ -4,6 +4,7 @@ using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.I18n;
+using AegiNext.Desktop.Panels.SubtitleDetails;
 using AegiNext.Desktop.Shortcuts;
 using Avalonia;
 using Avalonia.Automation;
@@ -12,15 +13,149 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Material.Icons;
 using Material.Icons.Avalonia;
+using SkiaSharp;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class KaraokeAxisDurationLabelsUiTests
 {
+    [AvaloniaFact]
+    public async Task DenseBadgesMayOverlayTheirOwnPanelButNeverChangePixelsInAdjacentPanels()
+    {
+        await using var context = new MainWindowTestContext();
+        var text = new string('a', 32);
+        var id = context.Session.Editor.AddSubtitle(MediaTime.Zero, new(4), text);
+        context.Session.Editor.UpdateSubtitle(id, line => line with
+        {
+            Karaoke = [.. Enumerable.Range(0, text.Length).Select(index => new KaraokeSegment(index, 1,
+                new(index, 1000), new(index + 1, 1000), SceneColor.White))]
+        });
+        var original = context.Session.Editor.Snapshot;
+        context.Session.Editor.Reset(original);
+        context.Session.SelectCue(id);
+        using var view = new SubtitleDetailsPanelView(context.Session);
+        var root = new Grid { RowDefinitions = new("40,*"), ColumnDefinitions = new("160,*") };
+        var tabs = new Border { Background = Brushes.DarkSlateBlue };
+        Grid.SetColumnSpan(tabs, 2);
+        root.Children.Add(tabs);
+        var neighbor = new Border { Background = Brushes.DarkSlateGray };
+        Grid.SetRow(neighbor, 1);
+        root.Children.Add(neighbor);
+        Grid.SetRow(view, 1);
+        Grid.SetColumn(view, 1);
+        root.Children.Add(view);
+        var window = new Window { Width = 640, Height = 320, Content = root };
+        try
+        {
+            window.Show();
+            Flush(window);
+            var axis = UiTestActions.Find<KaraokeClipAxis>(view, "KaraokeAxis");
+            axis.BringIntoView();
+            Flush(window);
+            var axisOrigin = axis.TranslatePoint(default, window)!.Value;
+            var panelBounds = new Rect(view.TranslatePoint(default, window)!.Value, view.Bounds.Size);
+            using var withoutBadges = CapturePixels(window);
+            axis.KeepDurationLabelsVisible = true;
+            Flush(window);
+            Assert.Equal(text.Length, axis.DurationLabels.Count);
+            Assert.Contains(axis.DurationLabels, label => axisOrigin.Y + label.Bounds.Top < panelBounds.Top);
+            Assert.Equal(axisOrigin, axis.TranslatePoint(default, window));
+            Assert.Equal(88, axis.Bounds.Height);
+            using var withBadges = CapturePixels(window);
+            var scale = withBadges.Width / window.ClientSize.Width;
+            var changedOutside = 0;
+            var changedInside = 0;
+            var changedAboveAxis = 0;
+            for (var y = 0; y < withBadges.Height; y++)
+            {
+                for (var x = 0; x < withBadges.Width; x++)
+                {
+                    if (withBadges.GetPixel(x, y) == withoutBadges.GetPixel(x, y))
+                    {
+                        continue;
+                    }
+                    if (panelBounds.Contains(new Point((x + 0.5) / scale, (y + 0.5) / scale)))
+                    {
+                        changedInside++;
+                        if ((y + 0.5) / scale < axisOrigin.Y)
+                        {
+                            changedAboveAxis++;
+                        }
+                    }
+                    else
+                    {
+                        changedOutside++;
+                    }
+                }
+            }
+            Capture(window, "details-karaoke-badges-panel-boundary.png");
+            Assert.True(changedInside > 0);
+            Assert.True(changedAboveAxis > 0);
+            Assert.Equal(0, changedOutside);
+            Assert.Same(original, context.Session.Editor.Snapshot);
+            Assert.False(context.Session.Editor.CanUndo);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void ReparentingAxisUsesItsNewLocalLayerAndCancelsDraggingWithoutAnEdit()
+    {
+        using var environment = new UiTestEnvironment();
+        var line = DurationLine();
+        var axis = new KaraokeClipAxis { IsSnapEnabled = false, KeepDurationLabelsVisible = true };
+        axis.SetContent(line, MediaTime.Zero, line.Karaoke[1].Id);
+        axis.SelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.PrimaryClipId, e.SelectedClipIds);
+        var requests = 0;
+        axis.RangeRequested += (_, _) => requests++;
+        var source = new VisualLayerManager { EnableAdornerLayer = true, ClipToBounds = true, Child = axis };
+        var destination = new VisualLayerManager { EnableAdornerLayer = true, ClipToBounds = true };
+        var root = new Grid { ColumnDefinitions = new("*,*"), Children = { source, destination } };
+        Grid.SetColumn(destination, 1);
+        var window = new Window { Width = 640, Height = 320, Content = root };
+        try
+        {
+            window.Show();
+            Flush(window);
+            var oldLayer = Assert.IsType<AdornerLayer>(AdornerLayer.GetAdornerLayer(axis));
+            Assert.Single(oldLayer.Children.OfType<KaraokeDurationLabelsAdorner>());
+            var point = axis.TranslatePoint(axis.GeometryFor(line.Karaoke[1].Id).EndHandle.Center, window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseMove(point + new Vector(20, 0));
+            Assert.NotEmpty(axis.DurationLabels);
+            source.Child = null;
+            Flush(window);
+            Assert.Empty(axis.DurationLabels);
+            Assert.Empty(oldLayer.Children.OfType<KaraokeDurationLabelsAdorner>());
+            destination.Child = axis;
+            Flush(window);
+            var newLayer = Assert.IsType<AdornerLayer>(AdornerLayer.GetAdornerLayer(axis));
+            Assert.NotSame(oldLayer, newLayer);
+            Assert.Single(newLayer.Children.OfType<KaraokeDurationLabelsAdorner>());
+            AssertDurationLabels(axis, line, MediaTime.Zero);
+            destination.IsVisible = false;
+            Flush(window);
+            Assert.Empty(axis.DurationLabels);
+            destination.IsVisible = true;
+            Flush(window);
+            AssertDurationLabels(axis, line, MediaTime.Zero);
+            Assert.True(axis.KeepDurationLabelsVisible);
+            Assert.Equal(0, requests);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     [AvaloniaFact]
     public void DenseLabelsKeepEveryActualDurationCenteredAndUseSeparateRowsWithoutMovingTheAxis()
     {
@@ -367,6 +502,18 @@ public sealed class KaraokeAxisDurationLabelsUiTests
                 new(2, 1, new(19, 9), new(31, 11), SceneColor.White)
             ]
         };
+    }
+
+    private static SKBitmap CapturePixels(Window window)
+    {
+        Flush(window);
+        using var frame = window.CaptureRenderedFrame();
+        Assert.NotNull(frame);
+        using var stream = new MemoryStream();
+        frame.Save(stream, PngBitmapEncoderOptions.Default);
+        var pixels = SKBitmap.Decode(stream.ToArray());
+        Assert.NotNull(pixels);
+        return pixels;
     }
 
     private static void AssertDurationLabels(KaraokeClipAxis axis, SubtitleLine line, MediaTime offset)
