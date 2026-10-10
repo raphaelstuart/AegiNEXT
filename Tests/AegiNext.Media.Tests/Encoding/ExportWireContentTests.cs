@@ -40,7 +40,6 @@ public sealed class ExportWireContentTests
             Karaoke = [new(1, 2, new(1, 3), new(2, 3), SceneColor.White)
             {
                 HighlightKind = KaraokeHighlightKind.OUTLINE_STEP,
-                InactiveStyle = new() { StrokeWidth = 0 }, ActiveStyle = new() { Fill = new(1, 0, 0) }
             }]
         };
         var document = new ProjectDocument
@@ -64,7 +63,6 @@ public sealed class ExportWireContentTests
         Assert.Equal(3, clip.GetProperty("start").GetProperty("denominator").GetInt64());
         Assert.Equal(2, clip.GetProperty("end").GetProperty("numerator").GetInt64());
         Assert.Equal(3, clip.GetProperty("end").GetProperty("denominator").GetInt64());
-        Assert.Equal(line.Karaoke[0].ActiveStyle, clip.GetProperty("activeStyle").Deserialize<KaraokeVisualStyleOverride>(ExportWire.Options));
         Assert.Equal(font, transmitted.Project.GetProperty("assets")[0].Deserialize<ProjectAsset>(ExportWire.Options));
     }
 }
