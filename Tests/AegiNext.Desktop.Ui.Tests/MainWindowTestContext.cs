@@ -16,7 +16,7 @@ internal sealed class MainWindowTestContext : IAsyncDisposable
     internal MainWindowTestContext(Func<string, int, MediaTime, CancellationToken, Task<AudioPlaybackSession>>? audioFactory = null,
         Func<PreviewTestSource>? videoSourceFactory = null, MediaTime? mediaStart = null,
         Func<string, CancellationToken, Task<VideoPreviewMedia>>? mediaProbe = null,
-        Func<IVideoPreviewConverter>? videoConverterFactory = null)
+        Func<IVideoPreviewConverter>? videoConverterFactory = null, TimeProvider? playbackTimeProvider = null)
     {
         Window = new(present =>
         {
@@ -27,7 +27,7 @@ internal sealed class MainWindowTestContext : IAsyncDisposable
                     var source = videoSourceFactory?.Invoke() ?? new PreviewTestSource(1, 0, 5000, 10000, 15000, 20000);
                     sources.Add(source);
                     return source;
-                }, Clock, externalPosition: position), videoConverterFactory ?? (() => new UiPreviewConverter()), DispatchAsync, present, audioFactory);
+                }, playbackTimeProvider ?? Clock, externalPosition: position), videoConverterFactory ?? (() => new UiPreviewConverter()), DispatchAsync, present, audioFactory);
             return Controller;
         });
         Window.Show();

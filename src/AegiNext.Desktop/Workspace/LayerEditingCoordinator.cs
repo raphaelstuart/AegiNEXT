@@ -371,10 +371,15 @@ internal sealed class LayerEditingCoordinator(WorkbenchSession session, IWorkben
 
     internal void RefreshKeyframeAvailability()
     {
-        session.ViewModel.Effects.CanAddKeyframe = session.SelectedLayer is { } layer &&
-            layer.Tracks.FirstOrDefault(track => track.Target == ActiveTarget)?.Transforms.IsEmpty != false &&
-            LayerAnimationTiming.ClampTime(layer, session.ProjectPosition - layer.Start + layer.AnimationOffset) ==
-            session.ProjectPosition - layer.Start + layer.AnimationOffset;
+        if (session.SelectedLayer is not { } layer ||
+            layer.Tracks.FirstOrDefault(track => track.Target == ActiveTarget)?.Transforms.IsEmpty == false)
+        {
+            session.ViewModel.Effects.CanAddKeyframe = false;
+            return;
+        }
+
+        var time = session.ProjectPosition - layer.Start + layer.AnimationOffset;
+        session.ViewModel.Effects.CanAddKeyframe = LayerAnimationTiming.ClampTime(layer, time) == time;
     }
 
     internal void EditPath() => BeginPathEdit();
