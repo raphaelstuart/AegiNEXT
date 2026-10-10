@@ -20,6 +20,10 @@ public static class EffectScriptCompiler
     {
         EffectScriptValidator.Validate(script);
         ArgumentNullException.ThrowIfNull(target);
+        if (script.Version != 1)
+        {
+            throw new EffectScriptException("版本 2 会生成字幕范围，请使用 CompileTarget 接口保留完整编译结果。");
+        }
         try
         {
             return CompileCore(script, target, subtitleStyle ?? subtitle?.Style, preserveExistingAnimation, targetContext, subtitle);

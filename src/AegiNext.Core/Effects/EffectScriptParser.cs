@@ -6,12 +6,13 @@ using AegiNext.Core.Timing;
 
 namespace AegiNext.Core.Effects;
 
-/// <summary>解析版本 1 的声明式特效文本，拒绝未知指令和超过预算的输入。</summary>
+/// <summary>解析版本 1 和版本 2 的声明式特效文本，拒绝未知指令和超过预算的输入。</summary>
 public static class EffectScriptParser
 {
     public const int MAXIMUM_SOURCE_CHARACTERS = 262144;
     private const string NUMBER = @"[+-]?(?:\d+(?:\.\d+)?|\.\d+)";
     private static readonly Regex headerPattern = Pattern(@"^effect\s+""(?<id>[a-z][a-z0-9.-]{0,63})""\s+version\s+1$");
+    private static readonly Regex versionTwoHeaderPattern = Pattern(@"^effect\s+""[a-z][a-z0-9.-]{0,63}""\s+version\s+2$");
     private static readonly Regex segmentPattern = Pattern(@"^segment\s+(?<name>[a-z][a-z0-9.-]{0,63})\s+(?<kind>fixed|flex)\s+(?<amount>\S+)$");
     private static readonly Regex nodePattern = Pattern(@"^mask-node\(\s*(?<contour>\d+)\s*,\s*(?<node>\d+)\s*\)\.(?<part>position|in-handle|out-handle)$");
     private static readonly Regex powerPattern = Pattern(@"^power\(\s*(?<exponent>" + NUMBER + @")\s*\)$");
@@ -27,6 +28,20 @@ public static class EffectScriptParser
         if (source.Length > MAXIMUM_SOURCE_CHARACTERS)
         {
             throw new EffectScriptException("脚本超过 256 Ki 字符预算。");
+        }
+
+        foreach (var sourceLine in source.TrimStart('\uFEFF').Split('\n'))
+        {
+            var text = sourceLine.Split('#', 2)[0].Trim();
+            if (text.Length == 0)
+            {
+                continue;
+            }
+            if (versionTwoHeaderPattern.IsMatch(text))
+            {
+                return EffectScriptV2Parser.Parse(source);
+            }
+            break;
         }
 
         string? id = null;
@@ -141,7 +156,7 @@ public static class EffectScriptParser
         return result;
     }
 
-    private static MediaTime ParseDuration(string text, int line, int column)
+    internal static MediaTime ParseDuration(string text, int line, int column, bool allowZero = false)
     {
         var match = durationPattern.Match(text);
         if (!match.Success)
@@ -155,15 +170,15 @@ public static class EffectScriptParser
             value /= 1000;
         }
 
-        if (value <= 0 || value > EffectScriptValidator.MAXIMUM_FIXED_SECONDS)
+        if (value < 0 || !allowZero && value == 0 || value > EffectScriptValidator.MAXIMUM_FIXED_SECONDS)
         {
-            throw new EffectScriptException("固定段时长必须大于零且不超过 24 小时。", line, column);
+            throw new EffectScriptException(allowZero ? "启动延迟及错开间隔必须非负且不超过 24 小时。" : "固定段时长必须大于零且不超过 24 小时。", line, column);
         }
 
         return EffectScriptTiming.Scale(new(1), value);
     }
 
-    private static decimal ParseDecimal(string text, int line, int column)
+    internal static decimal ParseDecimal(string text, int line, int column)
     {
         var dot = text.IndexOf('.', StringComparison.Ordinal);
         if (dot >= 0 && text.Length - dot - 1 > 6 ||
@@ -175,7 +190,7 @@ public static class EffectScriptParser
         return value;
     }
 
-    private static (EffectScriptProperty Property, EffectScriptNodeSelector? Selector) ParseProperty(string text, int line, int column)
+    internal static (EffectScriptProperty Property, EffectScriptNodeSelector? Selector) ParseProperty(string text, int line, int column)
     {
         var node = nodePattern.Match(text);
         if (node.Success)
@@ -224,7 +239,7 @@ public static class EffectScriptParser
         return (property, null);
     }
 
-    private static AnimationCurve ParseInterpolation(string text, int line, int column)
+    internal static AnimationCurve ParseInterpolation(string text, int line, int column)
     {
         var power = powerPattern.Match(text);
         if (power.Success)
@@ -249,7 +264,7 @@ public static class EffectScriptParser
         });
     }
 
-    private static EffectScriptValue ParseValue(string text, int line, int column)
+    internal static EffectScriptValue ParseValue(string text, int line, int column)
     {
         if (text == "base")
         {
@@ -278,6 +293,23 @@ public static class EffectScriptParser
         }
 
         return value;
+    }
+
+    internal static EffectScriptKeyframe ParseKeyframe(string text, int line, int column)
+    {
+        var key = keyframePattern.Match(text);
+        if (!key.Success)
+        {
+            throw new EffectScriptException("关键帧应为 at 段内位置 属性 值 [插值方式]；段以 end 结束。", line, column);
+        }
+        var property = ParseProperty(key.Groups["property"].Value, line, column + key.Groups["property"].Index);
+        var curve = ParseInterpolation(key.Groups["interpolation"].Value, line, column + key.Groups["interpolation"].Index);
+        return new(ParseDecimal(key.Groups["progress"].Value, line, column + key.Groups["progress"].Index), property.Property,
+            ParseValue(key.Groups["value"].Value, line, column + key.Groups["value"].Index), curve.Interpolation, line, column)
+        {
+            NodeSelector = property.Selector,
+            Exponent = curve.Exponent
+        };
     }
 
     private static Regex Pattern(string pattern)

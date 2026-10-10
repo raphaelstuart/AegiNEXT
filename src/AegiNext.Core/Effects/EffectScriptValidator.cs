@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using AegiNext.Core.Timing;
 using AegiNext.Core.Projects;
 
@@ -9,21 +10,65 @@ public static class EffectScriptValidator
     public const int MAXIMUM_SEGMENTS = 128;
     public const int MAXIMUM_KEYFRAMES = 4096;
     public const int MAXIMUM_FIXED_SECONDS = 86400;
+    public const int MAXIMUM_SCOPES = 128;
 
     /// <summary>验证所有时间段；不解析目标片段的基础值，不修改输入。</summary>
     public static void Validate(EffectScript script)
     {
         ArgumentNullException.ThrowIfNull(script);
-        if (!IsIdentifier(script.Id) || !Enum.IsDefined(script.ShortClipPolicy) ||
-            script.Segments.IsDefaultOrEmpty || script.Segments.Length > MAXIMUM_SEGMENTS)
+        if (!IsIdentifier(script.Id) || !Enum.IsDefined(script.ShortClipPolicy) || script.Version is not (1 or 2) ||
+            script.Segments.IsDefault || script.Scopes.IsDefault)
         {
-            throw new EffectScriptException("脚本标识、短片段规则或时间段集合无效。");
+            throw new EffectScriptException("脚本标识、版本、短片段规则或集合无效。");
         }
-
-        var names = new HashSet<string>(StringComparer.Ordinal);
+        var totalSegments = 0;
         var totalKeys = 0;
+        if (script.Version == 1)
+        {
+            if (!script.Scopes.IsEmpty)
+            {
+                throw new EffectScriptException("版本 1 不能包含作用范围。");
+            }
+            ValidateSegments(script.Segments, false, ref totalSegments, ref totalKeys);
+            return;
+        }
+        if (!script.Segments.IsEmpty || script.Scopes.IsEmpty || script.Scopes.Length > MAXIMUM_SCOPES)
+        {
+            throw new EffectScriptException("版本 2 必须包含有界命名作用范围，不能同时包含旧版顶层时间段。");
+        }
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var scope in script.Scopes)
+        {
+            if (scope is null)
+            {
+                throw new EffectScriptException("作用范围不能为空。");
+            }
+            if (!IsIdentifier(scope.Name) || !names.Add(scope.Name) || scope.Target is null || scope.Unit is null ||
+                !Enum.IsDefined(scope.Order) || !Enum.IsDefined(scope.State) ||
+                scope.Delay < MediaTime.Zero || scope.Delay > new MediaTime(MAXIMUM_FIXED_SECONDS) ||
+                scope.Stagger < MediaTime.Zero || scope.Stagger > new MediaTime(MAXIMUM_FIXED_SECONDS))
+            {
+                throw new EffectScriptException("作用范围名称、目标、分组、顺序、状态或时序无效。", scope.Line, scope.Column);
+            }
+            ValidateTarget(scope.Target, scope.Line, scope.Column);
+            ValidateUnit(scope.Unit, scope.Line, scope.Column);
+            ValidateSegments(scope.Segments, true, ref totalSegments, ref totalKeys, scope.Line, scope.Column);
+        }
+    }
+
+    private static void ValidateSegments(ImmutableArray<EffectScriptSegment> segments, bool versionTwo,
+        ref int totalSegments, ref int totalKeys, int line = 0, int column = 1)
+    {
+        if (segments.IsDefaultOrEmpty || segments.Length > MAXIMUM_SEGMENTS ||
+            totalSegments > MAXIMUM_SEGMENTS - segments.Length)
+        {
+            throw new EffectScriptException("时间段集合无效或超过脚本聚合预算。", line, column);
+        }
+        totalSegments += segments.Length;
+        var names = new HashSet<string>(StringComparer.Ordinal);
         var hasFlex = false;
-        foreach (var segment in script.Segments)
+        var localKeys = 0;
+        foreach (var segment in segments)
         {
             if (segment is null)
             {
@@ -33,6 +78,16 @@ public static class EffectScriptValidator
             if (!IsIdentifier(segment.Name) || !names.Add(segment.Name) || segment.Keyframes.IsDefault)
             {
                 throw new EffectScriptException("时间段名称无效、重复或关键帧集合缺失。", segment.Line, segment.Column);
+            }
+
+            if (segment.RepeatCount <= 0 ||
+                !versionTwo && (segment.RepeatCount != 1 || segment.PingPong || segment.CycleDuration.HasValue) ||
+                segment.FixedDuration.HasValue && segment.CycleDuration.HasValue ||
+                !segment.FixedDuration.HasValue && (segment.RepeatCount != 1 || segment.PingPong && !segment.CycleDuration.HasValue) ||
+                segment.CycleDuration is { } cycle && (cycle <= MediaTime.Zero || cycle > new MediaTime(MAXIMUM_FIXED_SECONDS)))
+            {
+                throw new EffectScriptException("段重复及循环无效；repeat 仅用于版本 2 固定段，cycle 仅用于版本 2 自由段。",
+                    segment.Line, segment.Column);
             }
 
             if (segment.FixedDuration is { } duration)
@@ -51,11 +106,12 @@ public static class EffectScriptValidator
                 }
             }
 
-            totalKeys += segment.Keyframes.Length;
-            if (totalKeys > MAXIMUM_KEYFRAMES)
+            if (segment.Keyframes.Length > MAXIMUM_KEYFRAMES || totalKeys > MAXIMUM_KEYFRAMES - segment.Keyframes.Length)
             {
                 throw new EffectScriptException("关键帧数量超过预算。", segment.Line, segment.Column);
             }
+            totalKeys += segment.Keyframes.Length;
+            localKeys += segment.Keyframes.Length;
 
             var previous = new Dictionary<(EffectScriptProperty Property, EffectScriptNodeSelector? Selector), decimal>();
             foreach (var frame in segment.Keyframes)
@@ -123,9 +179,45 @@ public static class EffectScriptValidator
             }
         }
 
-        if (!hasFlex || totalKeys == 0)
+        if (!hasFlex || localKeys == 0)
         {
-            throw new EffectScriptException("脚本必须至少包含一个自由段和一个有关键帧的时间段。");
+            throw new EffectScriptException("脚本或作用范围必须至少包含一个自由段和一个有关键帧的时间段。", line, column);
+        }
+    }
+
+    private static void ValidateTarget(EffectScriptTargetSelector target, int line, int column)
+    {
+        if (!Enum.IsDefined(target.Kind) || target.Start <= 0 || target.Count <= 0 ||
+            (long)target.Start + target.Count - 1 > int.MaxValue ||
+            target.Kind != EffectScriptTargetKind.RANGE && (target.Start != 1 || target.Count != 1))
+        {
+            throw new EffectScriptException("作用范围目标无效；固定区间使用一基字素起点和正字素数量。", line, column);
+        }
+    }
+
+    private static void ValidateUnit(EffectScriptUnit unit, int line, int column)
+    {
+        if (!Enum.IsDefined(unit.Kind) || unit.Count <= 0 || unit.Delimiters.IsDefault ||
+            unit.Kind != EffectScriptUnitKind.CHUNK && unit.Count != 1 ||
+            (unit.Kind == EffectScriptUnitKind.SPLIT ? unit.Delimiters.IsEmpty : !unit.Delimiters.IsEmpty))
+        {
+            throw new EffectScriptException("分组方式、分块数量或文字分隔符集合无效。", line, column);
+        }
+        var unique = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var delimiter in unit.Delimiters)
+        {
+            if (string.IsNullOrEmpty(delimiter) || !unique.Add(delimiter))
+            {
+                throw new EffectScriptException("文字分隔符不能为空或重复。", line, column);
+            }
+            try
+            {
+                ProjectValidator.ValidateText(delimiter);
+            }
+            catch (InvalidDataException error)
+            {
+                throw new EffectScriptException("文字分隔符包含无效 Unicode。", line, column, error);
+            }
         }
     }
 
