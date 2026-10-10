@@ -52,7 +52,7 @@ public sealed class NativeKaraokeDetailsUiTests
         var createTiming = UiTestActions.Find<Button>(host, "CreateSelectedTimingButton");
         foreach (var name in new[]
         {
-            "SubtitlePlayPauseButton", "SubtitleLoopToggle", "KaraokeSnapToggle", "KaraokeTimeLabelsToggle"
+            "SubtitlePlayPauseButton", "SubtitleLoopToggle", "KaraokeSnapToggle", "KaraokeTimeLabelsToggle", "LinkedKaraokeTimingToggle"
         })
         {
             var control = UiTestActions.Find<Control>(host, name);
@@ -236,7 +236,7 @@ public sealed class NativeKaraokeDetailsUiTests
     }
 
     [AvaloniaFact]
-    public async Task LinkedDurationFieldMovesTextFollowingGroupsWhileEndInputRemainsIndependent()
+    public async Task ToolbarLinkageControlsDurationAndEndInputsAndSurvivesSelectionAndLanguageChanges()
     {
         await using var context = new MainWindowTestContext();
         var original = PrepareMultiple(context);
@@ -245,14 +245,20 @@ public sealed class NativeKaraokeDetailsUiTests
         UiTestActions.Find<RichSubtitleEditor>(host, "RichSubtitleInput").SetSelection(0, 1);
         Flush(host);
         var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
+        var linked = UiTestActions.Find<ToolbarToggleButton>(host, "LinkedKaraokeTimingToggle");
+        ClickControl(linked);
+        Assert.True(context.Session.Details.LinkedTimingEnabled);
+        Assert.True(axis.IsTimingLinked);
+        Assert.Equal(Localization.Get("Workbench.LinkedKaraokeTiming"), AutomationProperties.GetName(linked));
+        Assert.Equal(Localization.Get("Workbench.LinkedKaraokeTimingHint"), ToolTip.GetTip(linked));
+        Assert.Same(original, context.Session.Editor.Snapshot);
+        Assert.False(context.Session.Editor.CanUndo);
         var popup = Assert.IsType<DraftPopup>(FlyoutBase.GetAttachedFlyout(axis));
         ClickAxis(host, axis, line.Karaoke[0].Id, RawInputModifiers.None);
         Assert.True(popup.IsOpen);
         var content = Assert.IsAssignableFrom<Control>(popup.Child);
-        var linked = UiTestActions.Find<CheckBox>(content, "LinkedKaraokeDurationToggle");
-        ClickControl(linked);
-        Assert.True(context.Session.Details.LinkedDurationEnabled);
-        Assert.Equal(Localization.Get("Workbench.LinkedKaraokeDuration"), linked.Content);
+        Assert.DoesNotContain(content.GetVisualDescendants().OfType<CheckBox>(),
+            control => control.Name == "LinkedKaraokeDurationToggle");
         var duration = UiTestActions.Find<NumericDraftInput>(content, "KaraokeDurationInput");
         Assert.True(duration.FocusInput());
         duration.RawText = "2";
@@ -266,6 +272,14 @@ public sealed class NativeKaraokeDetailsUiTests
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.Editor.Snapshot);
         popup.ForceClose();
+        ClickAxis(host, axis, line.Karaoke[1].Id, RawInputModifiers.None);
+        Assert.True(linked.IsChecked);
+        Assert.True(axis.IsTimingLinked);
+        popup.ForceClose();
+        context.Session.UpdatePreferences(context.Session.Preferences with { Language = "zh-CN" });
+        Flush(host);
+        Assert.True(linked.IsChecked);
+        Assert.Equal(Localization.Get("Workbench.LinkedKaraokeTimingHint"), ToolTip.GetTip(linked));
         ClickAxis(host, axis, line.Karaoke[0].Id, RawInputModifiers.None);
         Assert.True(popup.IsOpen);
         var end = UiTestActions.Find<NumericDraftInput>(content, "KaraokeEndInput");
@@ -275,11 +289,109 @@ public sealed class NativeKaraokeDetailsUiTests
         Flush(host);
         changed = context.Session.Editor.Snapshot.Subtitles[0];
         Assert.Equal(new MediaTime(2), changed.Karaoke[0].End);
-        Assert.Same(line.Karaoke[1], changed.Karaoke[1]);
-        Assert.Same(line.Karaoke[2], changed.Karaoke[2]);
+        var delta = new MediaTime(2) - line.Karaoke[0].End;
+        Assert.Equal(line.Karaoke[1].Start + delta, changed.Karaoke[1].Start);
+        Assert.Equal(line.Karaoke[2].End + delta, changed.Karaoke[2].End);
         Assert.True(context.Session.Editor.Undo());
         Assert.Same(original, context.Session.Editor.Snapshot);
         Assert.False(context.Session.Editor.CanUndo);
+    }
+
+    [AvaloniaTheory]
+    [InlineData("start", true)]
+    [InlineData("end", true)]
+    [InlineData("move", true)]
+    [InlineData("start", false)]
+    [InlineData("end", false)]
+    [InlineData("move", false)]
+    public async Task ToolbarLinkagePreviewsAffectedGroupsAndReleasesOneUndo(string gesture, bool linked)
+    {
+        await using var context = new MainWindowTestContext();
+        var original = PrepareMultiple(context, gapped: true);
+        var line = original.Subtitles[0];
+        var host = await Open(context);
+        var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
+        var toggle = UiTestActions.Find<ToolbarToggleButton>(host, "LinkedKaraokeTimingToggle");
+        if (linked)
+        {
+            ClickControl(toggle);
+        }
+        ClickControl(UiTestActions.Find<ToolbarToggleButton>(host, "KaraokeSnapToggle"));
+        Assert.False(axis.IsSnapEnabled);
+        var before = line.Karaoke.Select(clip => axis.GeometryFor(clip.Id)).ToArray();
+        var point = gesture switch
+        {
+            "start" => before[1].StartHandle.Center,
+            "end" => before[1].EndHandle.Center,
+            _ => before[1].Body.Center
+        };
+        axis.BringIntoView();
+        Flush(host);
+        var rootPoint = axis.TranslatePoint(point, host)!.Value;
+        var pixels = axis.Viewport.PixelsPerSecond;
+        var movement = new Vector(pixels / 4, 0);
+        host.MouseDown(rootPoint, MouseButton.Left);
+        host.MouseMove(rootPoint + movement);
+        Flush(host);
+        Assert.True(axis.HasActiveGesture);
+        Assert.Same(original, context.Session.Editor.Snapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+        var prefixDelta = linked && gesture != "end" ? new MediaTime(1, 4) : MediaTime.Zero;
+        var suffixDelta = linked && gesture != "start" ? new MediaTime(1, 4) : MediaTime.Zero;
+        Assert.Equal(before[0].Body.X + pixels * (gesture != "end" && linked ? 0.25 : 0),
+            axis.GeometryFor(line.Karaoke[0].Id).Body.X, 6);
+        Assert.Equal(before[2].Body.X + pixels * (gesture != "start" && linked ? 0.25 : 0),
+            axis.GeometryFor(line.Karaoke[2].Id).Body.X, 6);
+        Capture(host, $"native-linked-{gesture}-{linked}.png");
+        host.MouseUp(rootPoint + movement, MouseButton.Left);
+        Flush(host);
+        var changed = context.Session.Editor.Snapshot.Subtitles[0];
+        Assert.Equal(line.Karaoke[0].Start + prefixDelta, changed.Karaoke[0].Start);
+        Assert.Equal(line.Karaoke[0].End + prefixDelta, changed.Karaoke[0].End);
+        Assert.Equal(line.Karaoke[2].Start + suffixDelta, changed.Karaoke[2].Start);
+        Assert.Equal(line.Karaoke[2].End + suffixDelta, changed.Karaoke[2].End);
+        Assert.Equal(line.Karaoke[1].Start + (gesture != "end" ? new MediaTime(1, 4) : MediaTime.Zero), changed.Karaoke[1].Start);
+        Assert.Equal(line.Karaoke[1].End + (gesture != "start" ? new MediaTime(1, 4) : MediaTime.Zero), changed.Karaoke[1].End);
+        if (linked)
+        {
+            Assert.Equal(new MediaTime(1, 8), changed.Karaoke[1].Start - changed.Karaoke[0].End);
+            Assert.Equal(new MediaTime(1, 8), changed.Karaoke[2].Start - changed.Karaoke[1].End);
+        }
+        Assert.Equal(original.Layers, context.Session.Editor.Snapshot.Layers);
+        Assert.True(context.Session.Editor.Undo());
+        Assert.Same(original, context.Session.Editor.Snapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+    }
+
+    [AvaloniaFact]
+    public async Task LinkToggleAndLanguageRefreshRetainInvalidTimingDraftWithoutEditingTheProject()
+    {
+        await using var context = new MainWindowTestContext();
+        var original = PrepareMultiple(context);
+        var host = await Open(context);
+        var axis = UiTestActions.Find<KaraokeClipAxis>(host, "KaraokeAxis");
+        ClickAxis(host, axis, original.Subtitles[0].Karaoke[1].Id, RawInputModifiers.None);
+        var popup = Assert.IsType<DraftPopup>(FlyoutBase.GetAttachedFlyout(axis));
+        var content = Assert.IsAssignableFrom<Control>(popup.Child);
+        var start = UiTestActions.Find<NumericDraftInput>(content, "KaraokeStartInput");
+        Assert.True(start.FocusInput());
+        start.RawText = "unfinished";
+        var toggle = UiTestActions.Find<ToolbarToggleButton>(host, "LinkedKaraokeTimingToggle");
+        ClickControl(toggle);
+        Flush(host);
+        Assert.True(toggle.IsChecked);
+        Assert.True(axis.IsTimingLinked);
+        Assert.True(popup.IsOpen);
+        Assert.Equal("unfinished", start.RawText);
+        Assert.Equal("unfinished", context.Session.Details.StartText);
+        context.Session.UpdatePreferences(context.Session.Preferences with { Language = "ja-JP" });
+        Flush(host);
+        Assert.Equal("unfinished", start.RawText);
+        Assert.True(toggle.IsChecked);
+        Assert.Same(original, context.Session.Editor.Snapshot);
+        Assert.False(context.Session.Editor.CanUndo);
+        context.Session.Details.Restore("Timing");
+        popup.ForceClose();
     }
 
     [AvaloniaFact]
@@ -449,7 +561,7 @@ public sealed class NativeKaraokeDetailsUiTests
         return document;
     }
 
-    private static ProjectDocument PrepareMultiple(MainWindowTestContext context, bool overlapping = false)
+    private static ProjectDocument PrepareMultiple(MainWindowTestContext context, bool overlapping = false, bool gapped = false)
     {
         var document = Prepare(context);
         var line = document.Subtitles[0] with
@@ -462,6 +574,16 @@ public sealed class NativeKaraokeDetailsUiTests
                     new(1, 2, new(4, 3), new(7, 3), SceneColor.White),
                     new(3, 1, new(7, 3), new(10, 3), SceneColor.White)]
         };
+        if (gapped)
+        {
+            line = line with
+            {
+                Karaoke = [.. line.Karaoke.Select((clip, index) => clip with
+                {
+                    Start = clip.Start + new MediaTime(index, 8), End = clip.End + new MediaTime(index, 8)
+                })]
+            };
+        }
         document = document with { Subtitles = [line] };
         context.Session.Editor.Reset(document);
         context.Session.SelectCue(line.Id);

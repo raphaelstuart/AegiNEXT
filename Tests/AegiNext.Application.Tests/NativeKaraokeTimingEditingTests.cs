@@ -6,6 +6,37 @@ namespace AegiNext.Application.Tests;
 public sealed class NativeKaraokeTimingEditingTests
 {
     [Fact]
+    public void LinkedRangePreservesCueLayerAndCachedTimingAndHasOneUndoRedo()
+    {
+        var document = Document("abcd", [new(0, 1, new(1), new(2), SceneColor.White),
+            new(1, 1, new(3), new(4), SceneColor.White), new(2, 1, new(5), new(6), SceneColor.White)]);
+        var line = document.Subtitles[0] with
+        {
+            InactiveKaraoke = [new(3, 1, new(7), new(8), SceneColor.White)]
+        };
+        document = document with { Subtitles = [line] };
+        var editor = new ProjectEditor(document);
+        editor.SetKaraokeClipRange(line.Id, line.Karaoke[1].Id, new(7, 2), new(9, 2), true);
+        var changed = editor.Snapshot;
+        var changedLine = changed.Subtitles[0];
+        Assert.Equal(new MediaTime(3, 2), changedLine.Karaoke[0].Start);
+        Assert.Equal(new MediaTime(11, 2), changedLine.Karaoke[2].Start);
+        Assert.Equal(line.InactiveKaraoke, changedLine.InactiveKaraoke);
+        Assert.Equal(line.Start, changedLine.Start);
+        Assert.Equal(line.End, changedLine.End);
+        Assert.Equal(document.Layers, changed.Layers);
+        Assert.True(editor.Undo());
+        Assert.Same(document, editor.Snapshot);
+        Assert.False(editor.CanUndo);
+        Assert.True(editor.Redo());
+        Assert.Same(changed, editor.Snapshot);
+        editor.SetKaraokeClipRange(line.Id, line.Karaoke[1].Id, new(7, 2), new(9, 2), true);
+        Assert.Same(changed, editor.Snapshot);
+        Assert.True(editor.Undo());
+        Assert.False(editor.CanUndo);
+    }
+
+    [Fact]
     public void OpeningAndEditingPreserveTheWholeSyllable()
     {
         var document = Document("你好👩‍💻", [new(0, 7, new(1, 3), new(7, 3), SceneColor.White)]);

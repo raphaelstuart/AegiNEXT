@@ -78,6 +78,7 @@ public sealed class KaraokeAxisRangeUiTests
     [InlineData("hidden")]
     [InlineData("disable")]
     [InlineData("cancel")]
+    [InlineData("mode")]
     public void InterruptedGestureNeverSubmitsOrOpensThePopup(string cancellation)
     {
         using var host = new KaraokeAxisUiTestHost(Line());
@@ -96,6 +97,7 @@ public sealed class KaraokeAxisRangeUiTests
             case "detach": host.Window.Content = null; break;
             case "hidden": host.Axis.IsVisible = false; break;
             case "disable": host.Axis.IsEnabled = false; break;
+            case "mode": host.Axis.IsTimingLinked = true; break;
             default: host.Axis.CancelGesture(); break;
         }
         Assert.Null(host.Pointer.Captured);

@@ -2,6 +2,7 @@ using System.Globalization;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
+using AegiNext.Desktop.Controls.Common;
 using AegiNext.Desktop.I18n;
 using AegiNext.Desktop.Styling;
 using Avalonia;
@@ -20,7 +21,7 @@ internal sealed partial class SubtitleDetailsPanelView
     private readonly NumericDraftInput startTime = TimingInput("KaraokeStartInput");
     private readonly NumericDraftInput endTime = TimingInput("KaraokeEndInput");
     private readonly NumericDraftInput leadingDelayTime = TimingInput("KaraokeLeadingDelayInput");
-    private readonly CheckBox linkedDuration = new() { Name = "LinkedKaraokeDurationToggle", Margin = new(0, 4, 0, 8) };
+    private readonly ToolbarToggleButton linkedTiming = new() { Name = "LinkedKaraokeTimingToggle" };
     private readonly Button createTiming = new() { Name = "CreateSelectedTimingButton" };
     private readonly Button generateTiming = new() { Name = "GenerateAllTimingButton" };
     private readonly Button restoreTiming = new() { Name = "RestoreCachedTimingButton" };
@@ -84,21 +85,19 @@ internal sealed partial class SubtitleDetailsPanelView
                 coordinator.SetHighlightKind((KaraokeHighlightKind)kind.SelectedIndex);
             }
         };
-        linkedDuration.IsCheckedChanged += (_, _) =>
+        linkedTiming.IsCheckedChanged += (_, _) =>
         {
             if (!synchronizing)
             {
-                coordinator.LinkedDurationEnabled = linkedDuration.IsChecked == true;
+                coordinator.LinkedTimingEnabled = linkedTiming.IsChecked == true;
             }
         };
-        bindings.Add(linkedDuration.Bind(ContentControl.ContentProperty, Localization.Observe("Workbench.LinkedKaraokeDuration").ToBinding()));
-        bindings.Add(linkedDuration.Bind(ToolTip.TipProperty, Localization.Observe("Workbench.LinkedKaraokeDurationHint").ToBinding()));
+        ConfigureToggle(linkedTiming, "Workbench.LinkedKaraokeTiming", WorkbenchIcon.Create("LinkedTiming"), "Workbench.LinkedKaraokeTimingHint");
         timingFields.Children.Add(Field("Workbench.KaraokeClipStart", startTime));
         timingFields.Children.Add(Field("Workbench.KaraokeClipEnd", endTime));
         timingFields.Children.Add(Field("Workbench.ClipDuration", duration));
         timingFields.Children.Add(Field("Workbench.HighlightBehavior", kind));
         timingFields.Children.Add(Field("Workbench.KaraokeEarliestStart", leadingDelayTime));
-        timingFields.Children.Add(linkedDuration);
         snap.PropertyChanged += (_, e) =>
         {
             if (e.Property == ToggleButton.IsCheckedProperty)
@@ -142,11 +141,11 @@ internal sealed partial class SubtitleDetailsPanelView
         ConfigureTimingAction(mergeTiming, "Workbench.MergeSelectedKaraokeGroups", "Merge", () => coordinator.MergeSelectedGroups(), false);
         ToolTip.SetShowOnDisabled(mergeTiming, true);
         ConfigureTimingAction(fitTiming, "Workbench.FitKaraokeAxis", "Timeline", () => axis.FitToContent());
-        foreach (var control in new Control[] { play, loop, snap, keepTimeLabels })
+        foreach (var control in new Control[] { play, loop, snap, keepTimeLabels, linkedTiming })
         {
             control.Margin = new(0, 0, 6, 6);
         }
-        keepTimeLabels.Margin = new(0, 0, 14, 6);
+        linkedTiming.Margin = new(0, 0, 14, 6);
         generateTiming.Margin = new(0);
         var resetActions = new StackPanel
         {
@@ -158,7 +157,7 @@ internal sealed partial class SubtitleDetailsPanelView
         {
             Name = "KaraokeTimingActions", Children =
             {
-                play, loop, snap, keepTimeLabels,
+                play, loop, snap, keepTimeLabels, linkedTiming,
                 createTiming, restoreTiming, splitTiming, mergeTiming, fitTiming, resetActions
             }
         };
@@ -305,8 +304,10 @@ internal sealed partial class SubtitleDetailsPanelView
         var clip = line?.Karaoke.FirstOrDefault(item => item.Id == coordinator.SelectedClipId);
         kind.ItemsSource = Enum.GetValues<KaraokeHighlightKind>().Select(value => Localization.Get("Workbench.KaraokeKind." + value)).ToArray();
         kind.SelectedIndex = clip is null ? -1 : (int)clip.HighlightKind;
-        kind.IsEnabled = duration.IsEnabled = startTime.IsEnabled = endTime.IsEnabled = linkedDuration.IsEnabled = clip is not null;
-        linkedDuration.IsChecked = coordinator.LinkedDurationEnabled;
+        kind.IsEnabled = duration.IsEnabled = startTime.IsEnabled = endTime.IsEnabled = clip is not null;
+        linkedTiming.IsEnabled = line is not null;
+        linkedTiming.IsChecked = coordinator.LinkedTimingEnabled;
+        axis.IsTimingLinked = coordinator.LinkedTimingEnabled;
         leadingDelayTime.IsEnabled = line is { Karaoke.IsEmpty: false };
         createTiming.IsEnabled = line is not null && CanCreateTiming(line, Math.Min(selectionStart, selectionEnd), Math.Abs(selectionEnd - selectionStart));
         generateTiming.IsEnabled = line is { Text.Length: > 0 };

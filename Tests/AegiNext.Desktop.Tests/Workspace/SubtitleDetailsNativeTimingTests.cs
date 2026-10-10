@@ -199,7 +199,7 @@ public sealed class SubtitleDetailsNativeTimingTests
         Assert.True(context.Editor.Undo());
         Assert.Same(original, context.Editor.Snapshot);
         Assert.False(context.Editor.CanUndo);
-        details.LinkedDurationEnabled = true;
+        details.LinkedTimingEnabled = true;
         Assert.True(details.SetDuration(line.Karaoke[0].Id, new(2)), details.Error);
         Assert.Equal(new MediaTime(10, 3), context.Editor.Snapshot.Subtitles[0].Karaoke[1].Start);
         Assert.Equal(new MediaTime(13, 3), context.Editor.Snapshot.Subtitles[0].Karaoke[1].End);

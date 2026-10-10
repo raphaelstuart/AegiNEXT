@@ -22,12 +22,25 @@ internal sealed partial class SubtitleDetailsCoordinator
     private string leadingDelayText = string.Empty;
     private string leadingDelayBaselineText = string.Empty;
     private bool leadingDelayDirty;
+    private bool linkedTimingEnabled;
 
     internal string StartText => startText;
     internal string EndText => endText;
     internal string DurationText => durationText;
     internal string LeadingDelayText => leadingDelayText;
-    internal bool LinkedDurationEnabled { get; set; }
+    internal bool LinkedTimingEnabled
+    {
+        get => linkedTimingEnabled;
+        set
+        {
+            if (linkedTimingEnabled == value)
+            {
+                return;
+            }
+            linkedTimingEnabled = value;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
     internal string? MergeSelectionErrorKey => MergeErrorKey(Line, SelectedClipIds);
     private bool HasTimingDrafts => startDirty || endDirty || durationDirty || leadingDelayDirty;
     private MediaTime AnimationOffset => session.Editor.Snapshot.Layers.FirstOrDefault(layer => layer.SubtitleId == draft?.Id)?.AnimationOffset ?? MediaTime.Zero;
@@ -60,14 +73,15 @@ internal sealed partial class SubtitleDetailsCoordinator
         Error = null;
     }
 
-    internal bool SetRange(SubtitleLine baselineLine, MediaTime offset, Guid clipId, MediaTime start, MediaTime end)
+    internal bool SetRange(SubtitleLine baselineLine, MediaTime offset, Guid clipId, MediaTime start, MediaTime end,
+        bool? linkedTiming = null)
     {
-        if (baselineLine != Line || offset != AnimationOffset)
+        if (baselineLine != Line || offset != AnimationOffset || linkedTiming is { } requested && requested != LinkedTimingEnabled)
         {
             return FailTiming("Start", Localization.Get("Workbench.SubtitleDraftConflict"));
         }
         return ExecuteTiming("Edit karaoke range", document => ProjectEditingOperations.SetKaraokeClipRange(
-            document, baselineLine.Id, clipId, start, end), "Start");
+            document, baselineLine.Id, clipId, start, end, linkedTiming ?? LinkedTimingEnabled), "Start");
     }
 
     internal bool SetDuration(Guid clipId, MediaTime duration)
@@ -263,12 +277,8 @@ internal sealed partial class SubtitleDetailsCoordinator
         {
             throw new InvalidDataException(Localization.Get("Workbench.KaraokeDurationInvalid"));
         }
-        if (LinkedDurationEnabled)
-        {
-            return ProjectEditingOperations.SetKaraokeClipDuration(document, draft!.Id, clipId, duration);
-        }
         var clip = document.Subtitles.Single(line => line.Id == draft!.Id).Karaoke.Single(clip => clip.Id == clipId);
-        return ProjectEditingOperations.SetKaraokeClipRange(document, draft!.Id, clipId, clip.Start, clip.Start + duration);
+        return ProjectEditingOperations.SetKaraokeClipRange(document, draft!.Id, clipId, clip.Start, clip.Start + duration, LinkedTimingEnabled);
     }
 
     private ProjectDocument ApplyTimingDraft(ProjectDocument document, string field)
@@ -289,7 +299,7 @@ internal sealed partial class SubtitleDetailsCoordinator
         var clip = document.Subtitles.Single(line => line.Id == draft!.Id).Karaoke.Single(clip => clip.Id == id);
         var start = field == "Start" ? TimelineTimeText.Parse(startText) + AnimationOffset : clip.Start;
         var end = field == "End" ? TimelineTimeText.Parse(endText) + AnimationOffset : clip.End;
-        return ProjectEditingOperations.SetKaraokeClipRange(document, draft!.Id, id, start, end);
+        return ProjectEditingOperations.SetKaraokeClipRange(document, draft!.Id, id, start, end, LinkedTimingEnabled);
     }
 
     private ProjectDocument ApplyEndpointDrafts(ProjectDocument document, Action<string> validating)
@@ -315,7 +325,7 @@ internal sealed partial class SubtitleDetailsCoordinator
             validating("End");
             end = TimelineTimeText.Parse(endText) + AnimationOffset;
         }
-        return ProjectEditingOperations.SetKaraokeClipRange(document, draft!.Id, id, start, end);
+        return ProjectEditingOperations.SetKaraokeClipRange(document, draft!.Id, id, start, end, LinkedTimingEnabled);
     }
 
     private bool IsTimingFieldDirty(string field) => field switch

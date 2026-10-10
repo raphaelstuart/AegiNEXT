@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Collections.Immutable;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 
@@ -110,19 +111,16 @@ public static partial class ProjectEditingOperations
         });
     }
 
-    /// <summary>独立设置计时组的精确起止时间，不移动其他组或改变字幕可见范围。</summary>
+    /// <summary>设置计时组的精确起止时间；可按正文顺序双向联动，保留字幕可见范围。</summary>
     public static ProjectDocument SetKaraokeClipRange(ProjectDocument document, Guid subtitleId, Guid clipId,
-        MediaTime start, MediaTime end)
+        MediaTime start, MediaTime end, bool linked = false)
     {
         ProjectValidator.Validate(document);
-        ValidateKaraokeRange(start, end);
         var index = SubtitleIndex(document, subtitleId);
         var line = document.Subtitles[index];
-        var clipIndex = KaraokeClipIndex(line, clipId);
-        var clip = line.Karaoke[clipIndex];
-        return clip.Start == start && clip.End == end ? document : WithSubtitleContent(document, index, line with
+        return WithSubtitleContent(document, index, line with
         {
-            Karaoke = line.Karaoke.SetItem(clipIndex, clip with { Start = start, End = end })
+            Karaoke = KaraokeTimingEditing.SetRange(line.Karaoke, clipId, start, end, linked)
         });
     }
 

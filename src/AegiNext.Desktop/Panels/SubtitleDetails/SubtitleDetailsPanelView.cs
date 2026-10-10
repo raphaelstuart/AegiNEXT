@@ -99,7 +99,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
                 Refresh();
             }
         };
-        axis.RangeRequested += (_, e) => coordinator.SetRange(e.BaselineLine, e.AnimationOffset, e.ClipId, e.Start, e.End);
+        axis.RangeRequested += (_, e) => coordinator.SetRange(e.BaselineLine, e.AnimationOffset, e.ClipId, e.Start, e.End, e.IsTimingLinked);
         axis.ClipEditRequested += (_, e) =>
         {
             if (coordinator.Line?.Id == e.SubtitleId && coordinator.SelectedClipId == e.ClipId)

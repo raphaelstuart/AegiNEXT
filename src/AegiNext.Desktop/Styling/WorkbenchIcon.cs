@@ -88,6 +88,7 @@ internal static class WorkbenchIcon
             "Timeline" or "VIEW_TIMELINE" => MaterialIconKind.Timeline,
             "Magnet" => MaterialIconKind.Magnet,
             "Clock" => MaterialIconKind.ClockOutline,
+            "LinkedTiming" => MaterialIconKind.LinkVariant,
             "Spectrum" => MaterialIconKind.ChartBar,
             "Waveform" => MaterialIconKind.Waveform,
             "Close" or "Clear" or "EXIT" or "CLOSE_PROJECT" or "Cancel" => MaterialIconKind.Close,

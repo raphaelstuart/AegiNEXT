@@ -19,7 +19,7 @@ public sealed class SubtitleDetailsKaraokeRevisionTests
         var details = context.Session.Details;
         Assert.True(details.SetVisualState(KaraokeVisualState.ACTIVE));
         details.SelectClip(line.Karaoke[0].Id);
-        details.LinkedDurationEnabled = true;
+        details.LinkedTimingEnabled = true;
         details.EditDuration("9");
         Assert.True(details.TryCommit(), details.Error);
         Assert.Equal(new MediaTime(10), context.Editor.Snapshot.Subtitles[0].Karaoke[^1].End);

@@ -1,3 +1,4 @@
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 
@@ -59,26 +60,10 @@ public static partial class ProjectEditingOperations
         var line = document.Subtitles[index];
         var clipIndex = KaraokeClipIndex(line, clipId);
         var clip = line.Karaoke[clipIndex];
-        var delta = duration - (clip.End - clip.Start);
-        if (delta == MediaTime.Zero)
+        return WithSubtitleContent(document, index, line with
         {
-            return WithSubtitleContent(document, index, line);
-        }
-        var clips = line.Karaoke.ToBuilder();
-        for (var cursor = clipIndex; cursor < clips.Count; cursor++)
-        {
-            var next = clips[cursor] with
-            {
-                Start = cursor == clipIndex ? clips[cursor].Start : clips[cursor].Start + delta,
-                End = clips[cursor].End + delta
-            };
-            if (next.Start < MediaTime.Zero || next.Start >= next.End)
-            {
-                throw new ArgumentOutOfRangeException(nameof(duration), "调整后的字时间必须具有非负起点和正时长。");
-            }
-            clips[cursor] = next;
-        }
-        return WithSubtitleContent(document, index, line with { Karaoke = clips.ToImmutable() });
+            Karaoke = KaraokeTimingEditing.SetRange(line.Karaoke, clipId, clip.Start, clip.Start + duration, true)
+        });
     }
 
     private static ProjectDocument WithSubtitleContent(ProjectDocument document, int index, SubtitleLine line)

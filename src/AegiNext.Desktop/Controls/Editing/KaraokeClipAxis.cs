@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using AegiNext.Core.Editing;
 using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Editing;
@@ -14,7 +15,7 @@ using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Controls;
 
-/// <summary>共享时间几何的计时组轴；独立编辑起点、终点与位置，释放提交一次范围请求。</summary>
+/// <summary>共享时间几何的计时组轴；支持独立及双向联动编辑，释放提交一次范围请求。</summary>
 public sealed class KaraokeClipAxis : Decorator
 {
     /// <summary>可绑定的吸附开关元数据。</summary>
@@ -25,6 +26,10 @@ public sealed class KaraokeClipAxis : Decorator
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Avalonia styled property metadata uses the public NameProperty convention.")]
     public static readonly StyledProperty<bool> KeepDurationLabelsVisibleProperty =
         AvaloniaProperty.Register<KaraokeClipAxis, bool>(nameof(KeepDurationLabelsVisible));
+    /// <summary>控制计时编辑是否按正文顺序双向联动。</summary>
+    [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Avalonia styled property metadata uses the public NameProperty convention.")]
+    public static readonly StyledProperty<bool> IsTimingLinkedProperty =
+        AvaloniaProperty.Register<KaraokeClipAxis, bool>(nameof(IsTimingLinked));
     private const double EDGE_PADDING = 12;
     private const double TRACK_TOP = 22;
     private const double LANE_HEIGHT = 42;
@@ -40,6 +45,9 @@ public sealed class KaraokeClipAxis : Decorator
     private Guid? draggingId;
     private SubtitleLine? frozen;
     private MediaTime frozenOffset;
+    private bool frozenLinkedTiming;
+    private Dictionary<Guid, KaraokeSegment> previewClipsById = [];
+    private MediaTime? minimumShiftStart;
     private TimelineViewport viewport = new();
     private TimelineViewport? frozenViewport;
     private ImmutableDictionary<Guid, int> lanes = ImmutableDictionary<Guid, int>.Empty;
@@ -106,6 +114,12 @@ public sealed class KaraokeClipAxis : Decorator
     {
         get => GetValue(IsSnapEnabledProperty);
         set => SetValue(IsSnapEnabledProperty, value);
+    }
+    /// <summary>左边界联动前组、右边界联动后组，主体联动两侧；保留原有间隔。</summary>
+    public bool IsTimingLinked
+    {
+        get => GetValue(IsTimingLinkedProperty);
+        set => SetValue(IsTimingLinkedProperty, value);
     }
     /// <summary>常驻显示实际时长；关闭后仅在拖拽期间显示。</summary>
     public bool KeepDurationLabelsVisible
@@ -218,6 +232,9 @@ public sealed class KaraokeClipAxis : Decorator
         capturedPointer = null;
         draggingId = null;
         frozen = null;
+        frozenLinkedTiming = false;
+        previewClipsById.Clear();
+        minimumShiftStart = null;
         frozenViewport = null;
         gestureKind = null;
         delta = MediaTime.Zero;
@@ -238,7 +255,8 @@ public sealed class KaraokeClipAxis : Decorator
         {
             RefreshViewport();
         }
-        if (change.Property == IsVisibleProperty && !IsVisible || change.Property == IsEnabledProperty && !IsEnabled)
+        if (change.Property == IsVisibleProperty && !IsVisible || change.Property == IsEnabledProperty && !IsEnabled ||
+            change.Property == IsTimingLinkedProperty)
         {
             CancelGesture();
         }
@@ -350,13 +368,8 @@ public sealed class KaraokeClipAxis : Decorator
     private double X(MediaTime time) => EDGE_PADDING + (ToSeconds(time - DomainMinimum) - Viewport.StartSeconds) * Viewport.PixelsPerSecond;
     private (MediaTime Start, MediaTime End) PreviewRange(KaraokeSegment clip)
     {
-        return clip.Id != draggingId ? (clip.Start, clip.End) : gestureKind switch
-        {
-            KaraokeAxisGestureKind.START => (clip.Start + delta, clip.End),
-            KaraokeAxisGestureKind.END => (clip.Start, clip.End + delta),
-            KaraokeAxisGestureKind.MOVE => (clip.Start + delta, clip.End + delta),
-            _ => (clip.Start, clip.End)
-        };
+        var preview = previewClipsById.GetValueOrDefault(clip.Id, clip);
+        return (preview.Start, preview.End);
     }
 
     internal KaraokeAxisClipGeometry GeometryFor(Guid clipId)
@@ -526,8 +539,17 @@ public sealed class KaraokeClipAxis : Decorator
             draggingId = clip.Id;
             frozen = source;
             frozenOffset = sourceOffset;
+            frozenLinkedTiming = IsTimingLinked;
             gestureKind = kind;
-            snapBoundaries = source.Karaoke.Where(item => item.Id != clip.Id).SelectMany(item => new[] { item.Start, item.End })
+            var movingPeers = source.Karaoke.Where(item => item.Id != clip.Id && frozenLinkedTiming &&
+                (kind == KaraokeAxisGestureKind.MOVE ||
+                 kind == KaraokeAxisGestureKind.START && item.Utf16Start < clip.Utf16Start ||
+                 kind == KaraokeAxisGestureKind.END && item.Utf16Start > clip.Utf16Start)).ToArray();
+            minimumShiftStart = movingPeers.Select(item => (MediaTime?)item.Start).Append(
+                kind == KaraokeAxisGestureKind.END ? null : clip.Start).Min();
+            var movingIds = movingPeers.Select(item => item.Id).ToHashSet();
+            snapBoundaries = source.Karaoke.Where(item => item.Id != clip.Id && !movingIds.Contains(item.Id))
+                .SelectMany(item => new[] { item.Start, item.End })
                 .Append(MediaTime.Zero).Append(offset).Append(offset + source.End - source.Start)
                 .Where(boundary => boundary >= MediaTime.Zero).Distinct().Order().ToArray();
             pointerStart = PointerX(e);
@@ -633,14 +655,19 @@ public sealed class KaraokeClipAxis : Decorator
         var unclamped = delta;
         delta = gestureKind switch
         {
-            KaraokeAxisGestureKind.START => Max(-clip.Start, Min(delta, duration - minimum)),
-            KaraokeAxisGestureKind.END => Max(delta, minimum - duration),
-            _ => Max(delta, -clip.Start)
+            KaraokeAxisGestureKind.START => Max(-minimumShiftStart!.Value, Min(delta, duration - minimum)),
+            KaraokeAxisGestureKind.END => Max(delta, minimumShiftStart is { } earliest
+                ? Max(minimum - duration, -earliest) : minimum - duration),
+            _ => Max(delta, -minimumShiftStart!.Value)
         };
         if (unclamped != delta)
         {
             snapTarget = null;
         }
+        var start = clip.Start + (gestureKind == KaraokeAxisGestureKind.END ? MediaTime.Zero : delta);
+        var end = clip.End + (gestureKind == KaraokeAxisGestureKind.START ? MediaTime.Zero : delta);
+        previewClipsById = KaraokeTimingEditing.SetRange(frozen.Karaoke, id, start, end, frozenLinkedTiming)
+            .ToDictionary(item => item.Id);
         UpdateDurationLabels();
         InvalidateVisual();
     }
@@ -653,6 +680,7 @@ public sealed class KaraokeClipAxis : Decorator
             var clip = clipsById[id];
             var range = PreviewRange(clip);
             var sourceOffset = frozenOffset;
+            var linkedTiming = frozenLinkedTiming;
             var editing = !pointerMoved;
             var changed = range.Start != clip.Start || range.End != clip.End;
             var anchor = GeometryFor(id).Body;
@@ -663,7 +691,7 @@ public sealed class KaraokeClipAxis : Decorator
             }
             else if (changed)
             {
-                RangeRequested?.Invoke(this, new(source, sourceOffset, id, range.Start, range.End));
+                RangeRequested?.Invoke(this, new(source, sourceOffset, id, range.Start, range.End, linkedTiming));
             }
             e.Handled = true;
         }

@@ -4,10 +4,10 @@ namespace AegiNext.Application;
 
 public sealed partial class ProjectEditor
 {
-    /// <summary>以一次撤销事务独立修改计时组的起止时间。</summary>
-    public void SetKaraokeClipRange(Guid subtitleId, Guid clipId, MediaTime start, MediaTime end)
+    /// <summary>以一次撤销事务修改计时组的起止时间，可按正文顺序双向联动。</summary>
+    public void SetKaraokeClipRange(Guid subtitleId, Guid clipId, MediaTime start, MediaTime end, bool linked = false)
     {
-        Apply("Edit karaoke range", document => ProjectEditingOperations.SetKaraokeClipRange(document, subtitleId, clipId, start, end));
+        Apply("Edit karaoke range", document => ProjectEditingOperations.SetKaraokeClipRange(document, subtitleId, clipId, start, end, linked));
     }
 
     /// <summary>以一次撤销事务为明确选择的文字创建计时组。</summary>
