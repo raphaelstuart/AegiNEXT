@@ -134,9 +134,10 @@ public sealed class AssConversionFidelityTests
         Assert.True(track.IsOrdered);
         Assert.Equal(8 * 2 / Math.Sqrt(Math.Log(256)),
             SceneEvaluator.EvaluateScalarTrack(track, clip.ContentOffset + new MediaTime(1, 2)), 10);
-        Assert.Equal(3, imported.Diagnostics.Length);
+        var shadow = Assert.Single(clip.Tracks, value => value.Property == AnimationProperty.SHADOW_BLUR);
+        Assert.Equal(SceneEvaluator.EvaluateScalarTrack(track, new(1, 2)), SceneEvaluator.EvaluateScalarTrack(shadow, new(1, 2)));
+        Assert.Equal(2, imported.Diagnostics.Length);
         Assert.Contains(imported.Diagnostics, value => value.Code == "Ass.BlurAppearance");
-        Assert.Contains(imported.Diagnostics, value => value.Code == "Ass.TransformAppearanceAnimation");
         Assert.Contains(imported.Diagnostics, value => value.Code == "Ass.ShadowComposition");
     }
 

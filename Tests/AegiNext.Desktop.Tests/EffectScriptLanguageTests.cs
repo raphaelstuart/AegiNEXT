@@ -31,6 +31,14 @@ public sealed class EffectScriptLanguageTests
     [InlineData("at 0 letter-s", "letter-spacing")]
     [InlineData("at 0 fill-b", "fill-blur")]
     [InlineData("at 0 stroke-b", "stroke-blur")]
+    [InlineData("at 0 font-s", "font-size")]
+    [InlineData("at 0 shadow-o", "shadow-offset")]
+    [InlineData("at 0 shadow-b", "shadow-blur")]
+    [InlineData("at 0 shadow-c", "shadow-color")]
+    [InlineData("at 0 font-size ", "factor(1)")]
+    [InlineData("at 0 shadow-offset ", "offset(0, 0)")]
+    [InlineData("at 0 shadow-blur ", "base")]
+    [InlineData("at 0 shadow-color ", "rgba(1, 1, 1, 1)")]
     [InlineData("at 0 letter-spacing ", "offset(0)")]
     [InlineData("at 0 fill-blur ", "factor(1)")]
     [InlineData("at 0 stroke-blur ", "base")]
@@ -78,6 +86,7 @@ public sealed class EffectScriptLanguageTests
     [Theory]
     [InlineData("fill")]
     [InlineData("stroke")]
+    [InlineData("shadow-color")]
     public void ColorCompletionOnlyOffersSupportedRgbaAndBaseValues(string property)
     {
         var source = $"at 0 {property} ";

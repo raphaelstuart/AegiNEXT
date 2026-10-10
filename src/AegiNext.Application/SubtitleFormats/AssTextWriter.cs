@@ -9,7 +9,8 @@ namespace AegiNext.Application.SubtitleFormats;
 internal static class AssTextWriter
 {
     internal static AssBodyWriteResult Write(SubtitleLine line, MediaTime origin, bool projection = false,
-        AssEventConversionContext? conversion = null, MediaTime? eventOrigin = null)
+        AssEventConversionContext? conversion = null, MediaTime? eventOrigin = null,
+        AssTextAnimationExport? textAnimation = null)
     {
         AssTextParser.ValidateLine(line);
         var result = new StringBuilder();
@@ -45,6 +46,11 @@ internal static class AssTextWriter
         {
             boundaries.Add(span.Utf16Start);
             boundaries.Add(span.Utf16Start + span.Utf16Length);
+        }
+        foreach (var range in line.AnimationRanges)
+        {
+            boundaries.Add(range.Utf16Start);
+            boundaries.Add(range.Utf16Start + range.Utf16Length);
         }
         var offsets = boundaries.ToArray();
         long time = 0;
@@ -102,7 +108,7 @@ internal static class AssTextWriter
                     }
                 }
             }
-            if (styleChanged || karaokeStyleChanged || clip != previousClip)
+            if (styleChanged || karaokeStyleChanged || clip != previousClip || !line.AnimationRanges.IsEmpty)
             {
                 CheckTagBoundary(result);
                 var outputStyle = conversion?.ConvertStyle(style) ?? style;
@@ -153,6 +159,8 @@ internal static class AssTextWriter
                     result.Append("{\\2c").Append(AssFormatValues.Color(style.Fill, false)).Append("\\2a").Append(AssFormatValues.Alpha(style.Fill)).Append('}');
                 }
                 var animationTags = conversion?.AnimationTags(style, eventOrigin ?? origin);
+                animationTags += conversion?.TextAnimationTags(offset, style, clip is not null, eventOrigin ?? origin);
+                animationTags += textAnimation?.Write(offset, style, clip is not null, eventOrigin ?? origin, new(1, 1), 0);
                 if (!string.IsNullOrEmpty(animationTags))
                 {
                     result.Append('{').Append(animationTags).Append('}');

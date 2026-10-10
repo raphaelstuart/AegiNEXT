@@ -92,7 +92,7 @@ public static class EffectScriptValidator
                     value.Literal is not { } literal || literal.Kind != expectedKind ||
                     Enumerable.Range(0, literal.ComponentCount).Any(component => !double.IsFinite(literal.GetComponent(component)))))
                 {
-                    throw new EffectScriptException("属性值维度不匹配或数值无效；位置和缩放需要二维向量，fill/stroke 需要完整线性 rgba，base 不带参数。",
+                    throw new EffectScriptException("属性值维度不匹配或数值无效；位置、缩放和阴影偏移需要二维向量，颜色需要完整线性 rgba，base 不带参数。",
                         frame.Line, frame.Column);
                 }
 
@@ -100,7 +100,7 @@ public static class EffectScriptValidator
                 {
                     if (value.Kind is not (EffectScriptValueKind.ABSOLUTE or EffectScriptValueKind.BASE))
                     {
-                        throw new EffectScriptException("fill/stroke 仅支持 rgba(r,g,b,a) 或 base，不支持 offset/factor。", frame.Line, frame.Column);
+                        throw new EffectScriptException("颜色属性仅支持 rgba(r,g,b,a) 或 base，不支持 offset/factor。", frame.Line, frame.Column);
                     }
 
                     if (value.Literal is { } colorValue && Enumerable.Range(0, 4).Any(component =>

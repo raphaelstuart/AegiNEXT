@@ -65,7 +65,7 @@ public sealed class AssSubtitleFormatTests
     {
         var parsed = AssSubtitleFormat.Parse(File("{\\move(0,0,10,10)\\t(0,100,\\fs40)\\clip(0,0,100,100)}keep{\\p1}m 0 0 l 10 10{\\p0} text"));
         Assert.Equal("keep text", Assert.Single(parsed.Lines).Text);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.UnsupportedTag");
+        Assert.Contains(Assert.Single(parsed.Clips).Tracks, track => track.Property == AnimationProperty.FONT_SIZE);
         Assert.Contains(Assert.Single(parsed.Clips).Tracks, track => track.Property == AnimationProperty.POSITION);
         Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.Drawing");
         Assert.All(parsed.Diagnostics, diagnostic => Assert.NotNull(diagnostic.SubtitleId));

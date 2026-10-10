@@ -71,8 +71,16 @@ public sealed class AssNumericTransformExportTests
         var track = new AnimationTrack(AnimationProperty.LETTER_SPACING,
             [new(new(0), 0, curve) { CurveStart = start, CurveEnd = 0.75, Exponent = 3 }, new(new(1), 10)]);
         var written = AssSubtitleFormat.Write(Document(Line(), track));
-        Assert.Contains("\\t(0,1000," + exponent + ",\\fsp10)", Body(written.Text), StringComparison.Ordinal);
-        Assert.Equal(approximate, written.Diagnostics.Any(diagnostic => diagnostic.Code == "Ass.TransformCurveApproximation"));
+        if (approximate)
+        {
+            Assert.Contains(written.Diagnostics, diagnostic => diagnostic.Code == "Ass.AnimationSampling");
+            Assert.Contains("\\fsp10", Body(written.Text), StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("\\t(0,1000," + exponent + ",\\fsp10)", Body(written.Text), StringComparison.Ordinal);
+            Assert.DoesNotContain(written.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformCurveApproximation");
+        }
     }
 
     [Fact]

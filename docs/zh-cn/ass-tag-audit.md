@@ -2,7 +2,7 @@
 
 [English](../en/ass-tag-audit.md) · [简体中文](ass-tag-audit.md) · [字幕编辑](subtitle-editing.md)
 
-本审查以 2026-10-10 当前实现和 v11 原生模型为标杆，比较 Aegisub 官方 ASS 标签语义及实际导入、导出路径。AegiNext 的编辑模型可以超出 ASS；ASS 是交换边界，不是详情编辑器的数据源。不是“所有标签已完成”的兼容声明。
+本审查以 2026-10-10 当前实现和 v12 原生模型为标杆，比较 Aegisub 官方 ASS 标签语义及实际导入、导出路径。AegiNext 的编辑模型可以超出 ASS；ASS 是交换边界，不是详情编辑器的数据源。不是“所有标签已完成”的兼容声明。
 
 ## 分类口径
 
@@ -48,7 +48,7 @@
 | `\org` | 子集 | 无法转化 | 有损转换 | 未完成 / 未完成 | 中 | 输入旋转原点未映射；原生部分二维轴心用 pos 补偿，未输出原 org，动态补偿也有限。A/G |
 | 整行 `\fscx/fscy`（含空值、零） | 超集 | 有损转换 | 有损转换 | 已完成 / 已完成 | 中 | 原生排版后缩放，ASS 排版前缩放；零轴不能逆向补偿边缘，原生负缩放导出省略该分量。C/G |
 | 整行 `\frz`/`\fr`（含空值） | 已相同实现 | 无损转换¹ / 有损转换 | 无损转换¹ / 有损转换 | 已完成 / 已完成 | 中 | 二维旋转角度及方向映射；非等比重采样组合/轴心和阴影补偿可能有损。C/G |
-| 行内不同 `\fscx/fscy/frz/fr` | 子集 | 有损转换 | 无法转化 | 未完成 / 未完成 | 高 | 观察到多种基值后舍弃该整行分量并报 InlineTransform；无局部几何变换层。C |
+| 行内不同 `\fscx/fscy/frz/fr` | 超集 | 有损转换 | 有损转换 | 已完成 / 已完成 | 中 | 保存为可见文字范围及共享字幕锚点；独立范围中心、重叠几何、塑形和布局可能不同并提示。C/P/Q |
 | `\frx`、`\fry` | 未实现 | 无法转化 | 无法转化 | 未完成 / 未完成 | 高 | 无 ASS 3D 透视旋转模型/转换器。A |
 | `\fax`、`\fay` | 未实现 | 无法转化 | 无法转化 | 未完成 / 未完成 | 高 | 无字体剪切/透视映射。A |
 | `\fe` | 未实现 | 无法转化 | 无法转化 | 未完成 / 未完成 | 中 | 输入编码字段未映射；项目正文是 Unicode，不能把忽略 fe 算作完成。A/H |
@@ -63,7 +63,8 @@
 | 未计时 ACTIVE/INACTIVE 外观、停用计时缓存 | 超集 | 无法转化 | 有损转换 | 无法完成 / 已完成 | 少 | 普通 ASS 不携带完整原生预览状态/缓存；输出保正文，报 DormantKaraokeStyle/InactiveKaraoke。不是创建假计时。B/K |
 | `\fad`、`\fade`（合法包络） | 超集 | 有损转换 | 有损转换 | 已完成 / 已完成 | 中 | 时间/端点可对应；原生整层 alpha 与 ASS 字形分量 alpha 的重叠像素不等价；多段/重叠超包络会省略。E/G |
 | `\t`：fsp/bord/blur/fscx/fscy/frz/fr | 超集 | 有损转换 | 无损转换¹ / 有损转换 | 已完成 / 已完成 | 中 | 支持四种参数形式、正/零 accel、有序重叠；负 accel/逆序舍弃。局部基值、排版/模糊/轴心耦合另列。A/F/G |
-| `\t`：一般颜色/alpha/fs/shadow/3D/shear 等 | 子集 | 无法转化 | 无法转化 | 未完成 / 未完成 | 高 | 这些一般渐变子属性未映射；混合 t 只保可映射子属性，其余省略并提示。支持的非零瞬时边缘/阴影形式和 fad/fade 是单独路径。A/G |
+| `\t`：fs/shad/xshad/yshad、颜色及 alpha | 超集 | 无损参数转换¹ / 有损转换 | 无损参数转换¹ / 有损转换 | 已完成 / 已完成 | 中 | 相对 fs 保存乘法；阴影轴、RGB 与 alpha 保存独立分量及源顺序，颜色保留 sRGB 插值。不同可见 run 保存范围，原生线性颜色/复杂曲线导出采样；布局、blur 耦合、状态边缘另列。P/Q |
+| `\t`：frx/fry/fax/fay/be | 子集 | 无法转化 | 无法转化 | 未完成 / 未完成 | 高 | 伪三维、剪切与 be 动画未映射，混合 t 保留可转换子属性并提示其余损失。A |
 | `\clip`、`\iclip`：静态矩形 | 超集 | 无损转换¹ | 无损转换¹ / 有损转换 | 已完成 / 已完成 | 少 | 整数矩形精确；非整数/旋转原生矩形转矢量并量化；反相和非零环绕原生保留。L/M |
 | 矢量 clip：`m/l/b`、scale、多轮廓 | 超集 | 无损转换¹ | 无损转换¹ / 有损转换 | 已完成 / 已完成 | 中 | 几何进入闭合贝塞尔蒙版；输出 scale7 的 1/64 像素坐标，栅格结果未保证。L/M |
 | 矢量 clip：`s` + `p`/`c` B-spline | 已相同实现 | 无损转换¹ | 有损转换 | 已完成 / 已完成 | 中 | 按数学公式转三次贝塞尔，不保源样条命令；分数节点导出可量化，尚无参考栅格全等证明。L/M |
@@ -80,7 +81,7 @@
 
 ## 容易误判的边界
 
-空参数重置使用当时的重置样式；空颜色只恢复 RGB，空透明度恢复相应 alpha。整行几何和一般数值动画只有一套图层属性，行内不同几何不会自动变成局部变换。源标签被规范化为原生值，导出会选择显式值和标准别名；原文顺序、注释和冗余标签不往返。
+空参数重置使用当时的重置样式；空颜色只恢复 RGB，空透明度恢复相应 alpha。整行与可见文字范围可分别保存样式和二维几何动画；范围采用 UTF-16 字素边界，重叠样式按范围顺序覆盖，叠加几何导出有明确限制。v12 工程持久化范围身份、状态、插值颜色空间及有序分量操作。源标签被规范化为原生值，导出会选择显式值和标准别名；原文顺序、注释和冗余标签不往返。
 
 空值重置只覆盖矩阵列出的样式/缩放/旋转标签；pos/move/clip/fad/fade/t 仍要求合法括号参数，k/kt 要求整数，结构非法可能拒绝导入。重复对齐、pos/move 和 fad/fade 采用首个值并诊断；后来的静态 clip/iclip 覆盖旧裁切，可能清除此前裁切动画并诊断。普通文字样式按后续文字范围保存，位置、换行、淡化及当前可映射几何按整行处理；不能由单标签通过推断任意混合/作用域都已相同实现。
 
@@ -117,5 +118,8 @@ SBS=“no”且缺少有效 LayoutRes 时，原视频尺寸未知，不能凭 Pl
 - **L** [AssMaskDrawing.cs](../../src/AegiNext.Application/SubtitleFormats/AssMaskDrawing.cs)：m/n/l/b/s/p/c 的实际几何转换。
 - **M** [AssMaskWriter.cs](../../src/AegiNext.Application/SubtitleFormats/AssMaskWriter.cs)：矩形变换输出、矢量坐标量化。
 - **M** [AssMaskSampling.cs](../../src/AegiNext.Application/SubtitleFormats/AssMaskSampling.cs)：复杂蒙版逐帧展开。
+
+- **P** [AssTextAnimationImport.cs](../../src/AegiNext.Application/SubtitleFormats/AssTextAnimationImport.cs): 可见范围、颜色空间与分量操作导入。
+- **Q** [AssTextAnimationExport.cs](../../src/AegiNext.Application/SubtitleFormats/AssTextAnimationExport.cs): 范围导出与采样限制；采样误差目标 1/255，最短 1 毫秒，每轨道最多 4096 点，达到限制明确提示。
 
 官方基准采用 [Aegisub ASS 标签文档](https://aegisub.org/docs/latest/ass_tags/)：空参数默认值、行级/后续文字作用域、k/kf/ko/kt、矩形与矢量动画的约束按该文档核对；其 kt 提醒尤其不能忽略。文件级缩放与换行依据 [Aegisub Script Properties](https://aegisub.org/docs/latest/properties/)。本文描述的已实现行为、诊断和剩余缺口以以上仓库代码为依据，官方标签说明不证明本项目转换成功。

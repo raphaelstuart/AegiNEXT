@@ -72,8 +72,13 @@ end
 | `opacity` | 0–1 or `base` |
 | `fill`, `stroke` | Linear `rgba(r, g, b, a)` or `base` |
 | `blur` | 0–512 pixels or `base` |
+| `stroke-width` | 0–4096 pixels or `base` |
+| `font-size` | Subtitle font size, 0.01–4096 pixels or `base` |
 | `letter-spacing` | Subtitle grapheme spacing, −4096–4096 pixels or `base` |
 | `fill-blur`, `stroke-blur` | Subtitle fill / outline blur, 0–512 pixels or `base` |
+| `shadow-offset` | Subtitle shadow offset vector: `base`, `(3, 4)`, `offset(2, -1)` |
+| `shadow-blur` | Subtitle shadow blur, 0–512 pixels or `base` |
+| `shadow-color` | Subtitle shadow linear `rgba(r, g, b, a)` or `base` |
 | `path-progress` | Explicit 0–1 |
 | `mask-rectangle-top-left`, `mask-rectangle-bottom-right` | Project-coordinate corner vectors |
 | `mask-position`, `mask-scale`, `mask-rotation` | Independent mask transform |
@@ -81,7 +86,13 @@ end
 
 `base` reads the original target value; `offset` adds and `factor` multiplies it. Colors use straight linear RGB, permitting HDR values, with alpha 0–1; UI HEX is sRGB. `#` starts a comment, so HEX literals are not script values.
 
-`letter-spacing`, `fill-blur`, and `stroke-blur` require a subtitle Clip and its original subtitle style, including when using explicit numbers. Their `base` values come from that style. The existing `blur` applies to the composited layer; the two channel blurs affect fill and outline separately. Wrap mode is a static subtitle style setting and is not an animated DSL property. These properties remain part of DSL version 1.
+`font-size`, `letter-spacing`, `fill-blur`, `stroke-blur`, and the three shadow properties require a subtitle Clip and its original subtitle style, including when using explicit numbers. Their `base` values come from that style. The existing `blur` applies to the composited layer; the two channel blurs affect fill and outline separately. Wrap mode is a static subtitle style setting and is not an animated DSL property. These properties remain part of DSL version 1.
+
+Applying a preset uses the Effects panel's current whole-line / text-range scope and Normal / Active / Inactive visual state. Templates do not store project range IDs, so the same template can target ranges in different subtitles. A range application targets one subtitle Clip; a whole-line visual state can target multiple subtitle Clips, each resolving its own base values.
+
+A Normal text range supports font size, letter spacing, fill / stroke colors and blurs, stroke width, shadow, and independent scale and Z rotation. Font size and spacing reflow on every frame. Local scale and rotation retain layout space and use the range's configured pivot. Active / Inactive targets support colors, stroke width, fill / stroke blur, and shadow, sharing Normal geometry. Position, opacity, composited layer blur, paths, and masks cannot target text ranges. Unsupported properties produce a source location diagnostic and reject the entire application.
+
+Inherited base values may be mixed within a range or a whole-line visual state because of rich text or karaoke overrides. Reading mixed values with `base`, `offset`, or `factor` rejects the entire application. With no existing target track, an undeclared leading interval also requires a uniform base. Unify the property first, or use explicit values starting at the Clip origin. Color scripts interpolate in linear RGB. If an existing matching target uses sRGB, cover its complete duration or clear the track first; partial overlays are rejected to preserve the retained intervals' interpolation.
 
 Easing is `hold`, `linear`, `ease-in`, `ease-out`, `ease-in-out`, or `power(positiveExponent)`. A point controls interpolation to the next point; default is linear.
 

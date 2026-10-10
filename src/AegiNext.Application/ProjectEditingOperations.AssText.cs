@@ -7,7 +7,7 @@ namespace AegiNext.Application;
 
 public static partial class ProjectEditingOperations
 {
-    /// <summary>原子提交高级 ASS 编辑的文字、蒙版与蒙版轨道，保留其他动画和内容时钟。</summary>
+    /// <summary>原子提交高级 ASS 编辑的文字、显式改写的文字动画及蒙版，保留未改写动画和内容时钟。</summary>
     public static ProjectDocument ApplyAssTextEdit(ProjectDocument document, Guid subtitleId, AssTextEditResult edited)
     {
         ArgumentNullException.ThrowIfNull(edited);
@@ -27,6 +27,14 @@ public static partial class ProjectEditingOperations
             Mask = edited.Mask,
             Tracks = previous.Tracks.Where(track => !AnimationPropertyMetadata.IsMaskProperty(track.Property)).ToImmutableArray().AddRange(edited.MaskTracks)
         };
+        if (edited.TextAnimationTracks is { } textTracks)
+        {
+            next = next with
+            {
+                Tracks = next.Tracks.Where(track => !AssTextAnimationProjection.IsTextTrack(track)).ToImmutableArray()
+                    .AddRange(textTracks.Where(AssTextAnimationProjection.IsTextTrack))
+            };
+        }
         var line = SubtitleAnimationRangeEditing.RemapTextChange(document.Subtitles[index], edited.Line);
         next = SubtitleAnimationRangeEditing.PruneTargets(next, line);
         if (line == document.Subtitles[index] && previous.Mask == next.Mask && previous.Tracks.SequenceEqual(next.Tracks))

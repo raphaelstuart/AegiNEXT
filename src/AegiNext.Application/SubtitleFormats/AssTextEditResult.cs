@@ -11,6 +11,7 @@ public sealed record AssTextEditResult(SubtitleLine Line, ImmutableArray<Subtitl
     public MediaTime ContentOffset { get; init; }
     public ClipMask? Mask { get; init; }
     public ImmutableArray<AnimationTrack> MaskTracks { get; init; } = [];
+    public ImmutableArray<AnimationTrack>? TextAnimationTracks { get; init; }
 
     internal LayerTransform Transform { get; init; } = new();
     internal ImmutableArray<AnimationTrack> PlacementTracks { get; init; } = [];

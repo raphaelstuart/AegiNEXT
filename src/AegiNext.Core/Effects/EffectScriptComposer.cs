@@ -9,9 +9,10 @@ namespace AegiNext.Core.Effects;
 public static class EffectScriptComposer
 {
     /// <summary>编译并组合目标的全部轨道；不连续接合、有序目标或超出预算时整体失败，不修改输入。</summary>
-    public static ImmutableArray<AnimationTrack> Compose(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle = null)
+    public static ImmutableArray<AnimationTrack> Compose(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle = null,
+        AnimationTrackTarget? targetContext = null, SubtitleLine? subtitle = null)
     {
-        var compilation = EffectScriptCompiler.CompileWithCoverage(script, target, subtitleStyle, true);
+        var compilation = EffectScriptCompiler.CompileWithCoverage(script, target, subtitleStyle, true, targetContext, subtitle);
         try
         {
             var (minimum, maximum) = LayerAnimationTiming.GetRange(target);
@@ -33,7 +34,8 @@ public static class EffectScriptComposer
                 original[added.Target] = Merge(existing, added, intervals[added.Target], minimum, maximum);
             }
 
-            var result = original.Values.OrderBy(track => track.Target.Property).ThenBy(track => track.Target.NodeId).ToImmutableArray();
+            var result = original.Values.OrderBy(track => track.Target.Property).ThenBy(track => track.Target.NodeId)
+                .ThenBy(track => track.Target.TextRangeId).ThenBy(track => track.Target.State).ToImmutableArray();
             return result.SequenceEqual(target.Tracks) ? target.Tracks : result;
         }
         catch (OverflowException error)
@@ -57,6 +59,17 @@ public static class EffectScriptComposer
             {
                 ranges.Add(interval);
             }
+        }
+
+        if (existing.ColorSpace != added.ColorSpace)
+        {
+            if (ranges.Count == 1 && ranges[0].Start == minimum && ranges[0].End == maximum)
+            {
+                return added;
+            }
+            var interval = ranges[0];
+            throw new EffectScriptException("脚本采用线性 RGB；已有轨道采用不同色空间，部分覆盖无法保留两种插值。请覆盖完整时长或清除该目标轨道。",
+                interval.Line, interval.Column);
         }
 
         var frames = ImmutableArray.CreateBuilder<Keyframe>();

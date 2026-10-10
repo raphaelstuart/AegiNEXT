@@ -9,19 +9,20 @@ namespace AegiNext.Core.Effects;
 public static class EffectScriptCompiler
 {
     /// <summary>以目标内容时钟编译脚本；使用应用前基础值，共享端点冲突或越界值整体失败。</summary>
-    public static ImmutableArray<AnimationTrack> Compile(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle = null)
+    public static ImmutableArray<AnimationTrack> Compile(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle = null,
+        AnimationTrackTarget? targetContext = null, SubtitleLine? subtitle = null)
     {
-        return CompileWithCoverage(script, target, subtitleStyle, false).Tracks;
+        return CompileWithCoverage(script, target, subtitleStyle, false, targetContext, subtitle).Tracks;
     }
 
     internal static EffectScriptCompilation CompileWithCoverage(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle,
-        bool preserveExistingAnimation)
+        bool preserveExistingAnimation, AnimationTrackTarget? targetContext, SubtitleLine? subtitle)
     {
         EffectScriptValidator.Validate(script);
         ArgumentNullException.ThrowIfNull(target);
         try
         {
-            return CompileCore(script, target, subtitleStyle, preserveExistingAnimation);
+            return CompileCore(script, target, subtitleStyle ?? subtitle?.Style, preserveExistingAnimation, targetContext, subtitle);
         }
         catch (OverflowException error)
         {
@@ -30,8 +31,28 @@ public static class EffectScriptCompiler
     }
 
     private static EffectScriptCompilation CompileCore(EffectScript script, ProjectLayer target, SubtitleStyle? subtitleStyle,
-        bool preserveExistingAnimation)
+        bool preserveExistingAnimation, AnimationTrackTarget? targetContext, SubtitleLine? subtitle)
     {
+        if (targetContext is { } context)
+        {
+            try
+            {
+                SubtitleAnimationTargetValidation.ValidateIdentity(context);
+            }
+            catch (InvalidDataException error)
+            {
+                throw new EffectScriptException(error.Message, innerException: error);
+            }
+            if (context.NodeId.HasValue)
+            {
+                throw new EffectScriptException("脚本上下文只指定文字范围和视觉状态；蒙版节点由脚本选择器指定。");
+            }
+            if ((context.TextRangeId.HasValue || context.State != SubtitleAnimationState.NORMAL) &&
+                (target.Kind != LayerKind.SUBTITLE || subtitle is null || target.SubtitleId != subtitle.Id))
+            {
+                throw new EffectScriptException("文字范围和视觉状态脚本需要目标字幕及其应用前内容。");
+            }
+        }
         if (target.SubtitleId.HasValue && subtitleStyle is null &&
             script.Segments.Any(segment => segment.Keyframes.Any(frame => frame.Property is EffectScriptProperty.STROKE_WIDTH or EffectScriptProperty.FILL or EffectScriptProperty.STROKE)))
         {
@@ -65,8 +86,11 @@ public static class EffectScriptCompiler
             foreach (var frame in segment.Keyframes)
             {
                 var time = cursor + EffectScriptTiming.Scale(length, frame.Progress);
-                var animationTarget = ResolveTarget(frame, target);
-                Add(tracks, animationTarget, frame, time, ResolveBaseValue(frame, animationTarget, target, subtitleStyle), origin,
+                var animationTarget = ResolveTarget(frame, target, targetContext, subtitle);
+                var needsBase = frame.Value.Kind != EffectScriptValueKind.ABSOLUTE ||
+                    !tracks.ContainsKey(animationTarget) && time > origin && !existingTargets.Contains(animationTarget);
+                Add(tracks, animationTarget, frame, time,
+                    ResolveBaseValue(frame, animationTarget, target, subtitleStyle, subtitle, needsBase), origin,
                     existingTargets.Contains(animationTarget));
                 if (frame.Progress == 0)
                 {
@@ -77,7 +101,8 @@ public static class EffectScriptCompiler
             cursor += length;
         }
 
-        var compiled = tracks.OrderBy(pair => pair.Key.Property).ThenBy(pair => pair.Key.NodeId).Select(pair =>
+        var compiled = tracks.OrderBy(pair => pair.Key.Property).ThenBy(pair => pair.Key.NodeId)
+            .ThenBy(pair => pair.Key.TextRangeId).ThenBy(pair => pair.Key.State).Select(pair =>
         {
             var frames = pair.Value;
             if (frames[^1].Time < end)
@@ -91,17 +116,36 @@ public static class EffectScriptCompiler
         return new(compiled, intervals.ToImmutable());
     }
 
-    private static AnimationTrackTarget ResolveTarget(EffectScriptKeyframe frame, ProjectLayer layer)
+    private static AnimationTrackTarget ResolveTarget(EffectScriptKeyframe frame, ProjectLayer layer,
+        AnimationTrackTarget? targetContext, SubtitleLine? subtitle)
     {
         var property = EffectScriptPropertyMetadata.GetAnimationProperty(frame.Property);
         if (AnimationPropertyMetadata.IsSubtitleOnlyProperty(property) &&
             (layer.Kind != LayerKind.SUBTITLE || !layer.SubtitleId.HasValue))
         {
-            throw new EffectScriptException("字幕排版和分通道模糊属性需要字幕片段。", frame.Line, frame.Column);
+            throw new EffectScriptException("字幕排版、分通道模糊和阴影属性需要字幕片段。", frame.Line, frame.Column);
         }
         if (!AnimationPropertyMetadata.IsNodeProperty(property))
         {
-            return new(property);
+            var animationTarget = new AnimationTrackTarget(property, TextRangeId: targetContext?.TextRangeId,
+                State: targetContext?.State ?? SubtitleAnimationState.NORMAL);
+            if (animationTarget.TextRangeId.HasValue || animationTarget.State != SubtitleAnimationState.NORMAL)
+            {
+                try
+                {
+                    SubtitleAnimationTargetValidation.Validate(animationTarget, subtitle, layer.Mask);
+                }
+                catch (InvalidDataException error)
+                {
+                    throw new EffectScriptException(error.Message, frame.Line, frame.Column, error);
+                }
+            }
+            return animationTarget;
+        }
+
+        if (targetContext is { } context && (context.TextRangeId.HasValue || context.State != SubtitleAnimationState.NORMAL))
+        {
+            throw new EffectScriptException("蒙版属性不能应用到文字范围或卡拉 OK 视觉状态。", frame.Line, frame.Column);
         }
 
         var selector = frame.NodeSelector!.Value;
@@ -115,11 +159,20 @@ public static class EffectScriptCompiler
     }
 
     private static AnimationValue ResolveBaseValue(EffectScriptKeyframe frame, AnimationTrackTarget animationTarget,
-        ProjectLayer layer, SubtitleStyle? subtitleStyle)
+        ProjectLayer layer, SubtitleStyle? subtitleStyle, SubtitleLine? subtitle, bool needsBase)
     {
         if (AnimationPropertyMetadata.IsSubtitleOnlyProperty(animationTarget.Property) && subtitleStyle is null)
         {
-            throw new EffectScriptException("字幕排版和分通道模糊属性需要应用前的字幕样式。", frame.Line, frame.Column);
+            throw new EffectScriptException("字幕排版、分通道模糊和阴影属性需要应用前的字幕样式。", frame.Line, frame.Column);
+        }
+        if (animationTarget.TextRangeId.HasValue || animationTarget.State != SubtitleAnimationState.NORMAL)
+        {
+            if (needsBase && !SubtitleAnimationEvaluation.IsBaseValueUniform(layer, subtitle, animationTarget))
+            {
+                throw new EffectScriptException($"{frame.Property} 的基础值在目标文字范围内混合，请统一该属性或使用从片段起点开始的显式数值。",
+                    frame.Line, frame.Column);
+            }
+            return SubtitleAnimationEvaluation.GetBaseValue(layer, subtitle, animationTarget);
         }
         if (AnimationPropertyMetadata.IsMaskProperty(animationTarget.Property))
         {
@@ -149,6 +202,10 @@ public static class EffectScriptCompiler
             AnimationProperty.LETTER_SPACING => subtitleStyle!.LetterSpacing,
             AnimationProperty.FILL_BLUR => subtitleStyle!.FillBlur,
             AnimationProperty.STROKE_BLUR => subtitleStyle!.StrokeBlur,
+            AnimationProperty.FONT_SIZE => subtitleStyle!.FontSize,
+            AnimationProperty.SHADOW_OFFSET => subtitleStyle!.ShadowOffset,
+            AnimationProperty.SHADOW_BLUR => subtitleStyle!.ShadowBlur,
+            AnimationProperty.SHADOW_COLOR => subtitleStyle!.ShadowColor,
             AnimationProperty.FILL => subtitleStyle?.Fill ?? layer.Fill,
             AnimationProperty.STROKE => subtitleStyle?.Stroke ?? layer.Stroke,
             AnimationProperty.PATH_PROGRESS => 0,

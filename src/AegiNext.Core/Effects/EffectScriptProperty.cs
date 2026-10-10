@@ -22,5 +22,9 @@ public enum EffectScriptProperty
     MASK_NODE_OUT_HANDLE,
     LETTER_SPACING,
     FILL_BLUR,
-    STROKE_BLUR
+    STROKE_BLUR,
+    FONT_SIZE,
+    SHADOW_OFFSET,
+    SHADOW_BLUR,
+    SHADOW_COLOR
 }

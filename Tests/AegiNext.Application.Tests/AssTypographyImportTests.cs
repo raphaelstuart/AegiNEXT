@@ -165,7 +165,8 @@ public sealed class AssTypographyImportTests
         if (property == AnimationProperty.STROKE_BLUR)
         {
             Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.BlurAppearance");
-            Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformAppearanceAnimation");
+            var shadow = Assert.Single(clip.Tracks, value => value.Property == AnimationProperty.SHADOW_BLUR);
+            Assert.Equal(SceneEvaluator.EvaluateScalarTrack(track, new(1)), SceneEvaluator.EvaluateScalarTrack(shadow, new(1)));
         }
         else
         {

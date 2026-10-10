@@ -30,14 +30,15 @@ public sealed partial class ProjectEditor
     }
 
     /// <summary>按目标片段编译并原子组合脚本；保留未声明区间的既有动画、内容身份和路径。</summary>
-    public void ApplyEffectScript(Guid layerId, EffectScript script)
+    public void ApplyEffectScript(Guid layerId, EffectScript script, AnimationTrackTarget? targetContext = null)
     {
-        ApplyEffectScript([layerId], script);
+        ApplyEffectScript([layerId], script, targetContext);
     }
 
     /// <summary>按每个目标片段的时长和基础值编译并一次提交全部脚本轨道；任一目标失败不修改快照或历史。</summary>
-    public void ApplyEffectScript(IReadOnlyCollection<Guid> layerIds, EffectScript script)
+    public void ApplyEffectScript(IReadOnlyCollection<Guid> layerIds, EffectScript script, AnimationTrackTarget? targetContext = null)
     {
-        Apply("Apply effect script", document => ProjectEditingOperations.ApplyEffectScript(document, layerIds, script));
+        Apply("Apply effect script", document => ProjectEditingOperations.ApplyEffectScript(document, layerIds, script,
+            targetContext: targetContext));
     }
 }

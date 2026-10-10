@@ -16,8 +16,12 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
         ArgumentNullException.ThrowIfNull(line);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(canvasWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(canvasHeight);
-        var written = AssTextWriter.Write(line, MediaTime.Zero, true);
+        var animationDiagnostics = ImmutableArray.CreateBuilder<SubtitleFormatDiagnostic>();
+        var animation = layer is null ? null : new AssTextAnimationExport(line,
+            layer with { Tracks = layer.Tracks.Where(AssTextAnimationProjection.IsTextTrack).ToImmutableArray() }, animationDiagnostics, true);
+        var written = AssTextWriter.Write(line, MediaTime.Zero, true, textAnimation: animation);
         var diagnostics = written.Diagnostics.ToBuilder();
+        diagnostics.AddRange(animationDiagnostics);
         var mask = layer is null ? string.Empty : AssMaskWriter.WriteTags(layer, MediaTime.Zero, diagnostics);
         if (mask is null)
         {
@@ -62,6 +66,8 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
             KaraokeStyleSpans = RestoreKaraokeStylePrecision(original, baseline, parsed.Line),
             KaraokeStyle = original.KaraokeStyle
         };
+        var animation = AssTextAnimationProjection.Restore(original, baselineResult, parsed, line, layer);
+        line = animation.Line;
         AssTextParser.ValidateLine(line);
         var unchangedMask = AssOverrideTags.MaskIdentity(projection.Source) == AssOverrideTags.MaskIdentity(source);
         var mask = unchangedMask ? layer?.Mask : PreserveMaskIdentity(layer?.Mask, parsed.Mask);
@@ -73,7 +79,10 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
         var maskTracks = unchangedMask ? MaskTracks(layer) : mask is null ? [] : parsedMaskTracks.AddRange(MaskTracks(layer)
             .Where(track => track.Property is not (AnimationProperty.MASK_RECTANGLE_TOP_LEFT or AnimationProperty.MASK_RECTANGLE_BOTTOM_RIGHT)));
         var diagnostics = RestoreProjectionDiagnostics(original, line, projection.Source, baselineResult, source, parsed);
-        return new(line == original ? original : line, diagnostics, parsed.SourceMap) { Mask = mask, MaskTracks = maskTracks };
+        return new(line == original ? original : line, diagnostics, parsed.SourceMap)
+        {
+            Mask = mask, MaskTracks = maskTracks, TextAnimationTracks = animation.Tracks
+        };
     }
 
     private static ImmutableArray<SubtitleFormatDiagnostic> RestoreProjectionDiagnostics(SubtitleLine original, SubtitleLine restored,
@@ -158,7 +167,8 @@ public sealed record AssTextProjection(string Source, ImmutableArray<AssSourceMa
     }
 
     private static AssTextParser Parser(SubtitleLine line, int canvasWidth, int canvasHeight) => new(line,
-        new Dictionary<string, AssStyleDefinition>(StringComparer.Ordinal), line.Style.Fill, projectSource: true, canvasWidth: canvasWidth, canvasHeight: canvasHeight);
+        new Dictionary<string, AssStyleDefinition>(StringComparer.Ordinal), line.Style.Fill, projectSource: true,
+        canvasWidth: canvasWidth, canvasHeight: canvasHeight, projectAnimations: true);
 
     private static ImmutableArray<KaraokeSegment> RemapInactiveKaraoke(SubtitleLine original, string text,
         ImmutableArray<KaraokeSegment> active)

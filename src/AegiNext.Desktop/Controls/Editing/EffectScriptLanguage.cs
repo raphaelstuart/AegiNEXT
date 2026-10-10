@@ -145,7 +145,8 @@ internal static class EffectScriptLanguage
         {
             var vector = EffectScriptPropertyMetadata.TryGetProperty(words[2], out var property) &&
                 AnimationPropertyMetadata.GetValueKind(EffectScriptPropertyMetadata.GetAnimationProperty(property)) == AnimationValueKind.VECTOR;
-            if (words[2] is "fill" or "stroke")
+            if (EffectScriptPropertyMetadata.TryGetProperty(words[2], out var colorProperty) &&
+                AnimationPropertyMetadata.GetValueKind(EffectScriptPropertyMetadata.GetAnimationProperty(colorProperty)) == AnimationValueKind.COLOR)
             {
                 candidates.Add(("base", Localization.Get("Settings.ScriptHintBase")));
                 candidates.Add(("rgba(1, 1, 1, 1)", Localization.Get("Settings.ScriptHintColor")));

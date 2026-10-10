@@ -56,13 +56,17 @@ public sealed class AssTransformImportTests
     }
 
     [Fact]
-    public void MixedInlineScaleDropsOnlyTheVaryingAxis()
+    public void MixedInlineScaleKeepsTheVaryingAxisInTextRanges()
     {
         var result = Parse("{\\fscx150\\fscy75\\fr30}a{\\fscx200}b");
 
         Assert.Equal(new ScenePoint(1, 0.75), result.Transform.Scale);
         Assert.Equal(-30, result.Transform.Rotation);
-        Assert.Single(result.Diagnostics.Where(item => item.Code == "Ass.InlineTransform"));
+        Assert.Equal(2, result.Line.AnimationRanges.Length);
+        Assert.Equal(new ScenePoint(1.5, 1), result.Line.AnimationRanges[0].Scale);
+        Assert.Equal(new ScenePoint(2, 1), result.Line.AnimationRanges[1].Scale);
+        Assert.All(result.Line.AnimationRanges, range => Assert.Equal(0, range.Rotation));
+        Assert.DoesNotContain(result.Diagnostics, item => item.Code == "Ass.InlineTransform");
     }
 
     [Theory]

@@ -8,6 +8,7 @@ namespace AegiNext.Application.SubtitleFormats;
 internal sealed class AssEventConversionContext
 {
     private readonly ProjectLayer layer;
+    private readonly AssTextAnimationExport textAnimation;
     private readonly SubtitleLine line;
     private readonly ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics;
     private readonly HashSet<AnimationProperty> consumed = [];
@@ -30,6 +31,8 @@ internal sealed class AssEventConversionContext
     internal AssEventConversionContext(ProjectDocument document, ProjectLayer layer, SubtitleLine line,
         ISubtitlePlacementMeasurer? measurer, ImmutableArray<SubtitleFormatDiagnostic>.Builder diagnostics)
     {
+        textAnimation = new(line, layer, diagnostics);
+        layer = layer with { Tracks = layer.Tracks.Where(track => !AssTextAnimationExport.Handles(track)).ToImmutableArray() };
         this.layer = layer;
         this.line = line;
         this.diagnostics = diagnostics;
@@ -189,6 +192,9 @@ internal sealed class AssEventConversionContext
         "\\fscx" + AssFormatValues.Number(scale.X * 100) + "\\fscy" + AssFormatValues.Number(scale.Y * 100) +
         "\\frz" + AssFormatValues.Number(rotation == 0 ? 0 : -rotation);
 
+    internal string TextAnimationTags(int offset, SubtitleStyle style, bool karaoke, MediaTime origin) =>
+        textAnimation.Write(offset, style, karaoke, origin, scale, rotation);
+
     internal SubtitleStyle ApplyTypographyAnimations(SubtitleStyle style)
     {
         return style with
@@ -256,7 +262,7 @@ internal sealed class AssEventConversionContext
         {
             Report("Ass.TransformAppearanceAnimation", "缩放或旋转动画已保留，但 ASS 无法同步保留独立描边、模糊或阴影的全部变换补偿，部分外观按初始变换近似。");
         }
-        if (style.ShadowColor.Alpha > 0 && (numeric.ContainsKey((blurProperty, 0)) ||
+        if (style.ShadowColor.Alpha > 0 && (numeric.ContainsKey((blurProperty, 0)) && !textAnimation.HasMatchingShadowBlur(blurProperty) ||
             uniform is not null && !style.ShadowBlur.Equals(AssBlurConversion.Sigma(style))))
         {
             Report("Ass.ShadowBlur", "ASS 的模糊动画同时改变阴影模糊，无法独立保留项目的阴影模糊外观。");

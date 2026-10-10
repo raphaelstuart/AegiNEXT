@@ -101,10 +101,6 @@ internal sealed class AssNumericTransformParser
             {
                 AddScalar(tracks, "blur", hasBorder ? AnimationProperty.STROKE_BLUR : AnimationProperty.FILL_BLUR,
                     value => value / appearanceScale);
-                if (hasShadow)
-                {
-                    Report("Ass.TransformAppearanceAnimation", "ASS 模糊动画也改变阴影模糊，原生阴影模糊没有对应动画轨道，已保留基础阴影并转换文字或描边模糊动画。");
-                }
             }
         }
         var scaleTrack = Scale(transform.Scale);

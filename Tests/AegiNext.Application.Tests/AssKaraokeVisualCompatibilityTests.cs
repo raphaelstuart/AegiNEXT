@@ -55,11 +55,13 @@ public sealed class AssKaraokeVisualCompatibilityTests
     [InlineData("\\t(200,200,\\bord6)")]
     [InlineData("\\t(250,250,\\fs20)")]
     [InlineData("\\t(250,250,\\1c&H0000FF&)")]
-    public void UnrepresentableTransformsContinueToReportLoss(string transform)
+    public void ContinuousAndInstantStylesConvertToNativeTracks(string transform)
     {
         var line = new SubtitleLine { Text = "a", End = new(1), Style = new() { ShadowBlur = 0 } };
         var parsed = AssTextProjection.Apply(line, "{\\k25}{" + transform + "\\k50}a");
-        Assert.Contains(parsed.Diagnostics, item => item.Code == "Ass.UnsupportedTag");
+        Assert.DoesNotContain(parsed.Diagnostics, item => item.Code == "Ass.UnsupportedTag");
+        Assert.NotNull(parsed.TextAnimationTracks);
+        Assert.NotEmpty(parsed.TextAnimationTracks.Value);
     }
 
     [Theory]

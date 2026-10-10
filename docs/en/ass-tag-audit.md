@@ -2,7 +2,7 @@
 
 [English](ass-tag-audit.md) · [简体中文](../zh-cn/ass-tag-audit.md) · [Subtitle editing](subtitle-editing.md)
 
-This assessment uses the current implementation and v11 native model on 2026-10-10 as the baseline, comparing Aegisub's official ASS tag semantics with actual import/export paths. The native editor can exceed ASS; ASS is an interchange boundary rather than the details editor's source model. This is not a claim that every tag is implemented.
+This assessment uses the current implementation and v12 native model on 2026-10-10 as the baseline, comparing Aegisub's official ASS tag semantics with actual import/export paths. The native editor can exceed ASS; ASS is an interchange boundary rather than the details editor's source model. This is not a claim that every tag is implemented.
 
 ## Classification
 
@@ -48,7 +48,7 @@ This assessment uses the current implementation and v11 native model on 2026-10-
 | `\org` | Subset | Unavailable | Lossy | Pending / Pending | Medium | Input rotation origin is not mapped. Some native 2D pivots are compensated via pos; org itself is not written and animated compensation is limited. A/G |
 | Whole-line `\fscx/fscy` (empty/zero included) | Superset | Lossy | Lossy | Complete / Complete | Medium | Native scale follows layout while ASS scale precedes wrapping. Zero axes prevent inverse edge compensation; native negative components are omitted on export. C/G |
 | Whole-line `\frz`/`\fr` (including empty) | Equivalent | Lossless¹ / Lossy | Lossless¹ / Lossy | Complete / Complete | Medium | Maps 2D angle and direction; anisotropic resampling, pivots, and shadow compensation may lose fidelity. C/G |
-| Mixed inline `\fscx/fscy/frz/fr` | Subset | Lossy | Unavailable | Pending / Pending | High | Mixed observed values discard that whole-line component with InlineTransform; there is no local geometry-transform layer. C |
+| Mixed inline `\fscx/fscy/frz/fr` | Superset | Lossy | Lossy | Complete / Complete | Medium | Stored as visible text ranges sharing the subtitle anchor; independent centers, overlapping geometry, shaping and layout may differ with reports. C/P/Q |
 | `\frx`, `\fry` | Unimplemented | Unavailable | Unavailable | Pending / Pending | High | No ASS 3D perspective rotation model or converter. A |
 | `\fax`, `\fay` | Unimplemented | Unavailable | Unavailable | Pending / Pending | High | No glyph shear/perspective mapping. A |
 | `\fe` | Unimplemented | Unavailable | Unavailable | Pending / Pending | Medium | Encoding overrides are not mapped. Native text is Unicode; ignoring fe is not implementation. A/H |
@@ -63,7 +63,8 @@ This assessment uses the current implementation and v11 native model on 2026-10-
 | Untimed ACTIVE/INACTIVE appearances, cached disabled timing | Superset | Unavailable | Lossy | Impossible / Complete | Low | Ordinary ASS cannot carry the complete native preview states/cache. Export preserves body text with DormantKaraokeStyle/InactiveKaraoke diagnostics and creates no fake timing. B/K |
 | `\fad`, `\fade` (valid envelopes) | Superset | Lossy | Lossy | Complete / Complete | Medium | Times/endpoints map, but native post-layer alpha differs from ASS component alpha at overlapping pixels. Dynamics beyond the supported envelope are omitted. E/G |
 | `\t`: fsp/bord/blur/fscx/fscy/frz/fr | Superset | Lossy | Lossless¹ / Lossy | Complete / Complete | Medium | Supports four argument forms, positive/zero acceleration, and ordered overlaps. Negative acceleration/reversed intervals are dropped; local bases and layout/blur/pivot coupling have separate limits. A/F/G |
-| `\t`: general colors/alpha/fs/shadow/3D/shear etc. | Subset | Unavailable | Unavailable | Pending / Pending | High | These general animated subproperties are not mapped. Mixed t retains only supported subproperties and diagnoses omissions. Nonzero instantaneous edge/shadow transitions and fad/fade are separate paths. A/G |
+| `\t`: fs/shad/xshad/yshad, colors and alpha | Superset | Lossless parameters¹ / Lossy | Lossless parameters¹ / Lossy | Complete / Complete | Medium | Relative fs retains multiplication. Shadow axes, RGB and alpha retain masks and source order; colors retain sRGB interpolation. Different visible runs retain ranges. Native linear colors/complex curves are sampled on export; layout, blur coupling and state edges have separate limits. P/Q |
+| `\t`: frx/fry/fax/fay/be | Subset | Unavailable | Unavailable | Pending / Pending | High | 3D, shear and be animation are unmapped; mixed t retains convertible properties and reports the rest. A |
 | `\clip`, `\iclip`: static rectangles | Superset | Lossless¹ | Lossless¹ / Lossy | Complete / Complete | Low | Integer rectangles map exactly. Nonintegral/rotated native rectangles become quantized vectors; inversion and nonzero winding are retained. L/M |
 | Vector clip: `m/l/b`, scale, multiple contours | Superset | Lossless¹ | Lossless¹ / Lossy | Complete / Complete | Medium | Geometry enters closed Bézier masks; output uses scale7 and 1/64-pixel coordinates, without a raster-equivalence guarantee. L/M |
 | Vector clip: `s` + `p`/`c` B-spline | Equivalent | Lossless¹ | Lossy | Complete / Complete | Medium | Mathematically converts to cubic Béziers without retaining spline commands. Fractional nodes may quantize on export; full reference raster equivalence is unverified. L/M |
@@ -80,7 +81,7 @@ This assessment uses the current implementation and v11 native model on 2026-10-
 
 ## Boundaries that are easy to misclassify
 
-Omitted-parameter resets use the current reset style. Empty colors reset RGB only; empty alpha resets the corresponding alpha. Whole-line geometry and general numeric animation have one layer-property set; mixed inline geometry does not become a local transform. Tags normalize into native values and export as explicit values/canonical aliases, losing original order, comments, and redundant tags.
+Omitted-parameter resets use the current reset style. Empty colors reset RGB only; empty alpha resets the corresponding alpha. Whole-line and visible ranges retain independent styles and 2D geometry. UTF-16 ranges use full grapheme boundaries; overlapping styles follow range order, while stacked geometry has explicit export limits. Project v12 persists range identity, state, color space and component operations. Tags normalize into native values and export as explicit values/canonical aliases, losing original order, comments, and redundant tags.
 
 Omitted-parameter resets cover only the style/scale/rotation tags listed in the matrix. pos/move/clip/fad/fade/t still require valid parenthesized arguments and k/kt require integers; malformed structures can reject import. Duplicate alignment, pos/move, and fad/fade use the first value with diagnostics. Later static clip/iclip overrides the previous mask and can clear previous mask animation with a diagnostic. Ordinary text styles apply to following text ranges; placement, wrapping, fades, and supported geometry use whole-line state. Single-tag support does not prove arbitrary mixtures or scopes equivalent.
 
@@ -117,5 +118,8 @@ Pixel identity between the native renderer and Aegisub/libass/VSFilter is not gu
 - **L** [AssMaskDrawing.cs](../../src/AegiNext.Application/SubtitleFormats/AssMaskDrawing.cs): Actual m/n/l/b/s/p/c geometry conversion.
 - **M** [AssMaskWriter.cs](../../src/AegiNext.Application/SubtitleFormats/AssMaskWriter.cs): Rectangle-transform output and vector quantization.
 - **M** [AssMaskSampling.cs](../../src/AegiNext.Application/SubtitleFormats/AssMaskSampling.cs): Complex mask event sampling.
+
+- **P** [AssTextAnimationImport.cs](../../src/AegiNext.Application/SubtitleFormats/AssTextAnimationImport.cs): Visible ranges, color space and component operations on import.
+- **Q** [AssTextAnimationExport.cs](../../src/AegiNext.Application/SubtitleFormats/AssTextAnimationExport.cs): Range export and sampling limits: target error 1/255, minimum 1 ms and at most 4096 samples per track; limits are reported.
 
 The official baseline is [Aegisub ASS Override Tags](https://aegisub.org/docs/latest/ass_tags/), checked for omitted defaults, line/following-text scope, k/kf/ko/kt, and rectangle/vector animation constraints; its kt compatibility warning remains relevant. Header scaling/wrapping is checked against [Aegisub Script Properties](https://aegisub.org/docs/latest/properties/). Implemented behavior, diagnostics, and remaining gaps above are derived from the repository code, not inferred from a tag's official documentation.

@@ -87,18 +87,20 @@ public static class SubtitleAnimationEvaluation
         };
     }
 
-    /// <summary>判断文本范围各字素是否具有同一基础值，供属性面板显示混合状态。</summary>
+    /// <summary>判断文字范围或整行指定视觉状态的各字素是否具有同一基础值，供面板及脚本识别混合状态。</summary>
     public static bool IsBaseValueUniform(ProjectLayer layer, SubtitleLine? subtitle, AnimationTrackTarget target)
     {
         var first = GetBaseValue(layer, subtitle, target);
-        if (target.TextRangeId is not { } rangeId || !styleProperties.Contains(target.Property))
+        if (!styleProperties.Contains(target.Property) ||
+            target.TextRangeId is null && target.State == SubtitleAnimationState.NORMAL)
         {
             return true;
         }
-        var range = subtitle!.AnimationRanges.Single(range => range.Id == rangeId);
-        foreach (var offset in StringInfo.ParseCombiningCharacters(subtitle.Text))
+        var range = target.TextRangeId is { } rangeId
+            ? subtitle!.AnimationRanges.Single(range => range.Id == rangeId) : null;
+        foreach (var offset in StringInfo.ParseCombiningCharacters(subtitle!.Text))
         {
-            if (offset < range.Utf16Start || offset >= range.Utf16Start + range.Utf16Length)
+            if (range is not null && (offset < range.Utf16Start || offset >= range.Utf16Start + range.Utf16Length))
             {
                 continue;
             }

@@ -95,14 +95,15 @@ public sealed class AssNumericTransformImportTests
     }
 
     [Fact]
-    public void MixedVisibleRunsDiscardOnlyTheirInconsistentProperty()
+    public void MixedVisibleRunsKeepTheirInconsistentPropertyInATextRange()
     {
         var parsed = Parse("{\\t(0,2000,\\fsp10\\frz90)}a{\\fsp4}b");
         var clip = Assert.Single(parsed.Clips);
 
-        Assert.DoesNotContain(clip.Tracks, track => track.Property == AnimationProperty.LETTER_SPACING);
+        var spacing = Assert.Single(clip.Tracks, track => track.Property == AnimationProperty.LETTER_SPACING);
+        Assert.Equal(Assert.Single(clip.Line.AnimationRanges).Id, spacing.Target.TextRangeId);
         Assert.Contains(clip.Tracks, track => track.Property == AnimationProperty.ROTATION);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.InlineTransform" && diagnostic.Message.Contains("fsp", StringComparison.Ordinal));
+        Assert.DoesNotContain(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.InlineTransform");
     }
 
     [Fact]
@@ -132,14 +133,16 @@ public sealed class AssNumericTransformImportTests
     }
 
     [Fact]
-    public void IndependentOverlappingAxisOperationsAreDiagnosedWithoutInventingAVectorOrder()
+    public void IndependentOverlappingAxisOperationsKeepTheirOrderedComponentMasks()
     {
         var parsed = Parse("{\\t(0,1500,\\fscx200)\\t(500,2000,\\fscx300)\\t(0,2000,\\fscy400\\fsp10)}a");
         var clip = Assert.Single(parsed.Clips);
 
-        Assert.DoesNotContain(clip.Tracks, track => track.Property == AnimationProperty.SCALE);
+        var scale = Assert.Single(clip.Tracks, track => track.Property == AnimationProperty.SCALE);
+        Assert.True(scale.IsOrdered);
+        Assert.Equal(1, scale.Transforms[0].ComponentMask);
+        Assert.Equal(2, scale.Transforms[^1].ComponentMask);
         Assert.Contains(clip.Tracks, track => track.Property == AnimationProperty.LETTER_SPACING);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformScaleAxes");
     }
 
     [Fact]
@@ -158,7 +161,7 @@ public sealed class AssNumericTransformImportTests
     [Theory]
     [InlineData("\\bord0", AnimationProperty.FILL_BLUR)]
     [InlineData("\\bord2", AnimationProperty.STROKE_BLUR)]
-    public void BlurAnimationUsesStableBorderPresenceAndLeavesShadowBlurStatic(string border, AnimationProperty property)
+    public void BlurAnimationUsesStableBorderPresenceAndAnimatesShadowBlur(string border, AnimationProperty property)
     {
         var parsed = Parse("{" + border + "\\blur2\\t(0,2000,\\blur6)}a");
         var clip = Assert.Single(parsed.Clips);
@@ -166,7 +169,8 @@ public sealed class AssNumericTransformImportTests
 
         Assert.Equal(4 * AssBlurConversion.SigmaPerUnit, SceneEvaluator.EvaluateScalarTrack(track, new(1)), 10);
         Assert.Equal(2 * AssBlurConversion.SigmaPerUnit, clip.Line.InlineSpans[0].Style.ShadowBlur!.Value, 10);
-        Assert.Contains(parsed.Diagnostics, diagnostic => diagnostic.Code == "Ass.TransformAppearanceAnimation");
+        var shadow = Assert.Single(clip.Tracks, track => track.Property == AnimationProperty.SHADOW_BLUR);
+        Assert.Equal(4 * AssBlurConversion.SigmaPerUnit, SceneEvaluator.EvaluateScalarTrack(shadow, new(1)), 10);
     }
 
     [Fact]
