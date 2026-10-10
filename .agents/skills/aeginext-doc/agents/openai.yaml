@@ -1,0 +1,4 @@
+interface:
+  display_name: "AegiNext Doc"
+  short_description: "Maintain user and developer guides with dark app screenshots."
+  default_prompt: "Use $aeginext-doc to update stable AegiNext documentation and automatically capture annotated screenshots of the real app in dark mode for user guides."
