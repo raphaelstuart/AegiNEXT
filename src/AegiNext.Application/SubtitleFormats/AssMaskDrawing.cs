@@ -19,6 +19,7 @@ internal static partial class AssMaskDrawing
         var nodes = new List<MaskNode>();
         var cursor = 0;
         var nodeCount = 0;
+        var previousSourcePoint = default(ScenePoint);
         while (cursor < tokens.Length)
         {
             var command = tokens[cursor++];
@@ -40,6 +41,7 @@ internal static partial class AssMaskDrawing
                     }
                     FlushContour();
                     nodes.Add(new() { Position = points[^1] });
+                    previousSourcePoint = points[^1];
                     break;
                 case "n":
                     RequireStart();
@@ -51,6 +53,7 @@ internal static partial class AssMaskDrawing
                     {
                         nodes[0] = nodes[0] with { Position = points[^1] };
                     }
+                    previousSourcePoint = points[^1];
                     break;
                 case "l":
                     RequireStart();
@@ -62,6 +65,7 @@ internal static partial class AssMaskDrawing
                     {
                         nodes.Add(new() { Position = point });
                     }
+                    previousSourcePoint = points[^1];
                     break;
                 case "b":
                     RequireStart();
@@ -73,6 +77,7 @@ internal static partial class AssMaskDrawing
                     {
                         AddCubic(points[index], points[index + 1], points[index + 2]);
                     }
+                    previousSourcePoint = points[^1];
                     break;
                 case "s":
                     RequireStart();
@@ -80,7 +85,7 @@ internal static partial class AssMaskDrawing
                     {
                         throw new InvalidDataException("ASS s 命令至少需要三个控制点。");
                     }
-                    var spline = new List<ScenePoint> { nodes[^1].Position };
+                    var spline = new List<ScenePoint> { previousSourcePoint };
                     spline.AddRange(points);
                     while (cursor < tokens.Length && tokens[cursor] == "p")
                     {
@@ -95,6 +100,7 @@ internal static partial class AssMaskDrawing
                         cursor++;
                         spline.AddRange(spline.Take(3).ToArray());
                     }
+                    previousSourcePoint = spline[^1];
                     for (var index = 0; index + 3 < spline.Count; index++)
                     {
                         var first = Weighted(spline[index], spline[index + 1], spline[index + 2], 1, 4, 1, 6);
