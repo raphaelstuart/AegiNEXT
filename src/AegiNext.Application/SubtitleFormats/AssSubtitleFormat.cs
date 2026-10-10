@@ -10,7 +10,8 @@ namespace AegiNext.Application.SubtitleFormats;
 public static class AssSubtitleFormat
 {
     /// <summary>以目标画布重采样静态字幕布局，保留对白来源的稳定顺序。</summary>
-    public static AssImportResult Parse(string source, int targetWidth = 1920, int targetHeight = 1080)
+    public static AssImportResult Parse(string source, int targetWidth = 1920, int targetHeight = 1080,
+        IAssFontWeightResolver? fontWeightResolver = null)
     {
         AssFormatValues.CheckText(source);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetWidth);
@@ -184,7 +185,7 @@ public static class AssSubtitleFormat
             }
             var parsed = new AssTextParser(line, styles, definition.Secondary, scaleX, scaleY, canvasWidth: targetWidth,
                 canvasHeight: targetHeight, wrapStyle: wrapStyle, blurScaleX: blurScaleX, blurScaleY: blurScaleY,
-                blurUsesPlayRes: blurUsesPlayRes, resolution: resolution).Parse(Required(fields, "Text"));
+                blurUsesPlayRes: blurUsesPlayRes, resolution: resolution, fontWeightResolver: fontWeightResolver).Parse(Required(fields, "Text"));
             var importedLine = parsed.Line;
             lines.Add(importedLine);
             clips.Add(new(importedLine, parsed.Mask, parsed.MaskTracks.AddRange(parsed.PlacementTracks).AddRange(parsed.OpacityTracks).AddRange(parsed.NumericTracks), parsed.ContentOffset)

@@ -207,8 +207,11 @@ internal static class AssTextWriter
         {
             throw new InvalidDataException("ASS 字体名包含标签控制字符。");
         }
+        var weight = !projection && !style.FontAssetId.HasValue && style.FontVariant is { Weight: >= 100 and <= 1000 } variant
+            ? variant.Weight : style.Bold ? 1 : 0;
+        var italic = style.Italic || !projection && !style.FontAssetId.HasValue && style.FontVariant is { Italic: true };
         return string.Create(CultureInfo.InvariantCulture,
-            $"\\fn{style.FontFamily}\\fs{AssFormatValues.Number(style.FontSize)}\\fsp{AssFormatValues.Number(style.LetterSpacing)}\\b{(style.Bold ? 1 : 0)}\\i{(style.Italic ? 1 : 0)}\\u{(style.Underline ? 1 : 0)}\\s{(style.Strikethrough ? 1 : 0)}\\1c{AssFormatValues.Color(style.Fill, false)}\\1a{AssFormatValues.Alpha(style.Fill)}\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? string.Empty : style.WrapMode == SubtitleWrapMode.NO_WRAP ? "\\q2" : "\\q1") + "\\blur" + BlurValue(style, projection, id, diagnostics);
+            $"\\fn{style.FontFamily}\\fs{AssFormatValues.Number(style.FontSize)}\\fsp{AssFormatValues.Number(style.LetterSpacing)}\\b{weight}\\i{(italic ? 1 : 0)}\\u{(style.Underline ? 1 : 0)}\\s{(style.Strikethrough ? 1 : 0)}\\1c{AssFormatValues.Color(style.Fill, false)}\\1a{AssFormatValues.Alpha(style.Fill)}\\3c{AssFormatValues.Color(style.Stroke, false)}\\3a{AssFormatValues.Alpha(style.Stroke)}\\4c{AssFormatValues.Color(style.ShadowColor, false)}\\4a{AssFormatValues.Alpha(style.ShadowColor)}\\bord{AssFormatValues.Number(style.StrokeWidth)}\\xshad{AssFormatValues.Number(style.ShadowOffset.X)}\\yshad{AssFormatValues.Number(style.ShadowOffset.Y)}") + (projection ? string.Empty : style.WrapMode == SubtitleWrapMode.NO_WRAP ? "\\q2" : "\\q1") + "\\blur" + BlurValue(style, projection, id, diagnostics);
     }
 
     private static bool OutOfGamut(SceneColor color) => color.Red is < 0 or > 1 || color.Green is < 0 or > 1 || color.Blue is < 0 or > 1;
@@ -292,7 +295,11 @@ internal static class AssTextWriter
         }
         if (!projection && style.FontVariant is not null)
         {
-            diagnostics.Add(new("Ass.FontVariant", "ASS 的字体家族与粗体、斜体标记无法完整保留系统字体命名变体。", SubtitleId: id));
+            diagnostics.Add(new("Ass.FontVariant", "ASS 的字体家族、字重及斜体标签不能完整保留命名变体的名称、PostScript 身份和设计宽度；播放器可能选择其他字形或合成粗体、斜体。", SubtitleId: id));
+            if (!style.FontAssetId.HasValue && style.FontVariant is { Weight: < 100 })
+            {
+                diagnostics.Add(new("Ass.FontWeight", "原生字体变体的字重低于 ASS 数值字重交换范围 100 至 1000，已使用普通或粗体标签。", SubtitleId: id));
+            }
         }
         if (OutOfGamut(style.Fill) || OutOfGamut(style.Stroke) || OutOfGamut(style.ShadowColor))
         {

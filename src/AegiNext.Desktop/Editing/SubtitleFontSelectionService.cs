@@ -9,13 +9,18 @@ namespace AegiNext.Desktop.Editing;
 internal sealed class SubtitleFontSelectionService
 {
     private ImmutableArray<SystemFontFace> faces;
-    private readonly AegiTaskService? tasks;
+    private readonly Func<Task<SystemFontCatalog>>? loadCatalog;
     private readonly Lock loadingGate = new();
     private Task? loading;
 
-    internal SubtitleFontSelectionService(AegiTaskService tasks) : this(SystemFontCatalog.Empty)
+    internal SubtitleFontSelectionService(AegiTaskService tasks) : this(() => tasks.Submit(new EnumerateSystemFontsTask()).Completion)
     {
-        this.tasks = tasks;
+    }
+
+    internal SubtitleFontSelectionService(Func<Task<SystemFontCatalog>> loadCatalog) : this(SystemFontCatalog.Empty)
+    {
+        ArgumentNullException.ThrowIfNull(loadCatalog);
+        this.loadCatalog = loadCatalog;
     }
 
     internal event EventHandler? Changed;
@@ -34,11 +39,11 @@ internal sealed class SubtitleFontSelectionService
 
     private async Task LoadAsync()
     {
-        if (tasks is null)
+        if (loadCatalog is null)
         {
             return;
         }
-        var catalog = await tasks.Submit(new EnumerateSystemFontsTask()).Completion;
+        var catalog = await loadCatalog();
         Catalog = catalog;
         LoadFaces(catalog.Faces);
         Changed?.Invoke(this, EventArgs.Empty);
@@ -67,6 +72,7 @@ internal sealed class SubtitleFontSelectionService
     }
 
     internal SystemFontCatalog? Catalog { get; private set; }
+    internal ImmutableArray<SystemFontFace> Faces => faces;
     internal IFontNamePreviewProvider? PreviewProvider { get; set; }
     internal ImmutableArray<FontPickerCandidate> Candidates { get; private set; }
 

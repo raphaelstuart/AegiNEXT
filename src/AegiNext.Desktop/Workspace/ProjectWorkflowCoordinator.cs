@@ -641,12 +641,13 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         var captured = session.Editor.Snapshot;
         var trackId = session.CurrentTrackId;
         var presetId = session.ViewModel.Styles.SelectedPreset?.Id;
+        var fontLoading = ass ? session.Fonts.EnsureLoadedAsync() : Task.CompletedTask;
         await session.ApplicationContext.Tasks.Submit(new ImportSubtitlesTask(session, this, path, ass,
-            captured, session.TaskInputRevision, trackId, presetId)).Completion;
+            captured, session.TaskInputRevision, trackId, presetId, fontLoading)).Completion;
     }
 
     internal async Task ImportSubtitlesCoreAsync(string path, bool ass, ProjectDocument captured, long inputRevision,
-        Guid? trackId, Guid? presetId, AegiTaskExecutionContext context)
+        Guid? trackId, Guid? presetId, Task fontLoading, AegiTaskExecutionContext context)
     {
         Guid? firstCueId;
         var text = await ReadSubtitleFileAsync(path, context.CancellationToken);
@@ -657,7 +658,9 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
         AssImportResult? assResult = null;
         if (ass)
         {
-            var result = await Task.Run(() => AssSubtitleFormat.Parse(text, captured.Width, captured.Height), context.CancellationToken);
+            var fontWeightResolver = await CaptureAssFontWeightResolverAsync(fontLoading, context.CancellationToken);
+            var result = await Task.Run(() => AssSubtitleFormat.Parse(text, captured.Width, captured.Height, fontWeightResolver),
+                context.CancellationToken);
             if (!await ConfirmConversionAsync(result.Diagnostics.AddRange(timingDiagnostics), result.Lines))
             {
                 return;
@@ -701,6 +704,21 @@ internal sealed partial class ProjectWorkflowCoordinator(WorkbenchSession sessio
             session.SelectTrack(session.ClipIndex.GetSubtitleTrackId(id));
             session.SelectCue(id);
         }
+    }
+
+    private async Task<AssFontWeightResolver> CaptureAssFontWeightResolverAsync(Task fontLoading, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await fontLoading.WaitAsync(cancellationToken);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new([]);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(session.Fonts.Faces);
     }
 
     internal async Task ExportSubtitlesAsync(bool ass = false)

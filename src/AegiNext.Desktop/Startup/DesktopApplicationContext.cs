@@ -37,14 +37,14 @@ internal sealed class DesktopApplicationContext : IAsyncDisposable
     private readonly Dictionary<PersonalLibraryKind, Exception> libraryLoadErrors = [];
 
     internal DesktopApplicationContext(WorkbenchPreferencesStore? preferencesStore = null,
-        WorkbenchPreferences? initialPreferences = null)
+        WorkbenchPreferences? initialPreferences = null, SubtitleFontSelectionService? fontSelectionService = null)
     {
         PreferencesStore = preferencesStore ?? new(Environment.GetEnvironmentVariable("AEGINEXT_PREFERENCES_DIRECTORY"));
         this.initialPreferences = initialPreferences;
         preferences = initialPreferences ?? new();
         Tasks = new();
         Tasks.MaximumConcurrentTasks = preferences.MaximumConcurrentTasks;
-        fonts = new(Tasks);
+        fonts = fontSelectionService ?? new(Tasks);
         fontNamePreviews = new(Path.Combine(PreferencesStore.DirectoryPath, "caches", "fonts", "v1"),
             new SystemFontNamePreviewRenderer(() => fonts.Catalog));
         fonts.PreviewProvider = fontNamePreviews;

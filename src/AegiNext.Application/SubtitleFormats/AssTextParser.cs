@@ -10,7 +10,7 @@ namespace AegiNext.Application.SubtitleFormats;
 internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<string, AssStyleDefinition> styles,
     SceneColor secondary, double scaleX = 1, double scaleY = 1, bool projectSource = false, int canvasWidth = 1920, int canvasHeight = 1080,
     int wrapStyle = 0, double? blurScaleX = null, double? blurScaleY = null, bool blurUsesPlayRes = true,
-    AssResolutionContext? resolution = null, bool projectAnimations = false)
+    AssResolutionContext? resolution = null, bool projectAnimations = false, IAssFontWeightResolver? fontWeightResolver = null)
 {
     private readonly AssResolutionContext borderResolution = resolution ?? new(scaleX, scaleY);
     private readonly AssMaskParser maskParser = new(original.End - original.Start, scaleX, scaleY, canvasWidth, canvasHeight);
@@ -28,6 +28,12 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
     private SubtitleStyle current = original.Style;
     private SubtitleStyle lineStyle = original.Style;
     private SubtitleStyle resetStyle = original.Style;
+    private int? requestedFontWeight = original.Style.FontAssetId.HasValue ? null : original.Style.FontVariant?.Weight;
+    private int requestedFontWidth = original.Style.FontVariant?.Width ?? 5;
+    private bool fontWeightDirty;
+    private int fontWeightSourceStart;
+    private int fontWeightSourceLength;
+    private readonly HashSet<(string Family, int Weight, int Width, bool Italic)> reportedFontWeights = [];
     private readonly HashSet<string> typographyDiagnostics = [];
     private readonly int defaultWrapStyle = wrapStyle;
     private int currentWrapStyle = wrapStyle;
@@ -96,6 +102,10 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             var offset = text.Length;
             if (!drawing)
             {
+                if (!projectSource && content.Any(character => character is not ('\r' or '\n')))
+                {
+                    ResolveFontWeight();
+                }
                 if ((!projectSource || projectAnimations) && content.Any(character => character is not ('\r' or '\n')))
                 {
                     geometryParser.Observe();
@@ -259,6 +269,16 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         {
             case "fn":
                 var family = value.Length == 0 ? baseline.FontFamily : value;
+                if (!projectSource)
+                {
+                    if (family != current.FontFamily)
+                    {
+                        requestedFontWidth = value.Length == 0 ? baseline.FontVariant?.Width ?? 5 : 5;
+                    }
+                    current = current with { FontFamily = family, FontAssetId = null, FontVariant = null };
+                    RefreshFontWeight(sourceStart, sourceLength);
+                    break;
+                }
                 current = current with
                 {
                     FontFamily = family, FontAssetId = null,
@@ -286,6 +306,22 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 }
                 break;
             case "b":
+                if (!projectSource)
+                {
+                    var resetWeight = !baseline.FontAssetId.HasValue ? baseline.FontVariant?.Weight : null;
+                    var requested = value.Length == 0 ? resetWeight ?? (baseline.Bold ? 1 : 0) : AssFormatValues.Integer(value);
+                    var explicitWeight = value.Length == 0 ? resetWeight.HasValue : requested is not (-1 or 0 or 1);
+                    requestedFontWeight = explicitWeight ? requested : null;
+                    fontWeightSourceStart = sourceStart;
+                    fontWeightSourceLength = sourceLength;
+                    fontWeightDirty = explicitWeight;
+                    current = current with
+                    {
+                        Bold = explicitWeight ? requested >= 600 : requested is -1 or 1,
+                        FontVariant = null
+                    };
+                    break;
+                }
                 var weight = value.Length == 0 ? (baseline.Bold ? 1 : 0) : AssFormatValues.Integer(value);
                 var bold = weight is -1 or 1 || weight >= 600;
                 current = current with { Bold = bold, FontVariant = bold == current.Bold ? current.FontVariant : null };
@@ -296,6 +332,12 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
                 break;
             case "i":
                 var italic = value.Length == 0 ? baseline.Italic : AssFormatValues.Integer(value) != 0;
+                if (!projectSource)
+                {
+                    current = current with { Italic = italic, FontVariant = null };
+                    RefreshFontWeight(sourceStart, sourceLength);
+                    break;
+                }
                 current = current with { Italic = italic, FontVariant = italic == current.Italic ? current.FontVariant : null };
                 break;
             case "u": current = current with { Underline = value.Length == 0 ? baseline.Underline : AssFormatValues.Integer(value) != 0 }; break;
@@ -356,6 +398,14 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
             case "r":
                 current = value.Length == 0 ? original.Style : styles.TryGetValue(value, out var style) ? style.Style : original.Style;
                 resetStyle = current;
+                if (!projectSource)
+                {
+                    requestedFontWeight = current.FontAssetId.HasValue ? null : current.FontVariant?.Weight;
+                    requestedFontWidth = current.FontVariant?.Width ?? 5;
+                    fontWeightDirty = false;
+                    fontWeightSourceStart = 0;
+                    fontWeightSourceLength = 0;
+                }
                 inactive = value.Length == 0 ? secondaryColor : styles.TryGetValue(value, out var reset) ? reset.Secondary : secondaryColor;
                 resetSecondaryColor = inactive.Value;
                 instantVisual = null;
@@ -787,6 +837,39 @@ internal sealed class AssTextParser(SubtitleLine original, IReadOnlyDictionary<s
         if (typographyDiagnostics.Add(code))
         {
             Report(code, message, 0, 0);
+        }
+    }
+
+    private void RefreshFontWeight(int sourceStart, int sourceLength)
+    {
+        fontWeightDirty = requestedFontWeight.HasValue;
+        if (fontWeightDirty && fontWeightSourceLength == 0)
+        {
+            fontWeightSourceStart = sourceStart;
+            fontWeightSourceLength = sourceLength;
+        }
+    }
+
+    private void ResolveFontWeight()
+    {
+        if (!fontWeightDirty || requestedFontWeight is not { } weight)
+        {
+            return;
+        }
+        fontWeightDirty = false;
+        var variant = weight is >= 100 and <= 1000 && !current.FontAssetId.HasValue
+            ? fontWeightResolver?.ResolveVariant(current.FontFamily, weight, requestedFontWidth, current.Italic) : null;
+        if (variant is { } matched && matched.Weight == weight && matched.Width == requestedFontWidth && matched.Italic == current.Italic)
+        {
+            var resolved = current with { FontVariant = matched, Bold = weight >= 700 };
+            ProjectValidator.ValidateSubtitleStyle(resolved);
+            current = resolved;
+            return;
+        }
+        current = current with { FontVariant = null, Bold = weight >= 600 };
+        if (reportedFontWeights.Add((current.FontFamily, weight, requestedFontWidth, current.Italic)))
+        {
+            Report("Ass.FontWeight", "ASS 显式字体粗细未匹配到真实命名变体，已转换为普通或粗体。", fontWeightSourceStart, fontWeightSourceLength);
         }
     }
 
