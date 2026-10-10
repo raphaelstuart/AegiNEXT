@@ -59,6 +59,7 @@ internal sealed partial class SubtitleDetailsCoordinator : IDisposable
     internal bool HasDrafts => draft is not null && (HasTimingDrafts || draft != original ||
         StyleDraft.IsDirty || HighlightDraft.IsDirty);
     internal Guid? SelectedClipId { get; private set; }
+    internal ImmutableArray<Guid> SelectedClipIds { get; private set; } = [];
     internal bool IsPlaying => playbackCancellation is { } cancellation && session.Controller.IsPlaybackRangeOwnedBy(cancellation.Token);
     internal bool IsKaraokeEnabled => draft is { Karaoke.IsEmpty: false };
     internal bool SelectionHasTimedKaraoke => draft is not null && draft.Karaoke.Any(clip =>
@@ -140,6 +141,7 @@ internal sealed partial class SubtitleDetailsCoordinator : IDisposable
         {
             _ = StopPlaybackAsync();
             SelectedClipId = null;
+            SelectedClipIds = [];
             styleSelectionStart = styleSelectionLength = 0;
         }
         else if (selected?.Start != original?.Start || selected?.End != original?.End || selected?.Karaoke != original?.Karaoke)
@@ -380,15 +382,35 @@ internal sealed partial class SubtitleDetailsCoordinator : IDisposable
 
     internal bool SelectClip(Guid? clipId)
     {
+        return SelectClips(clipId is { } id ? [id] : [], clipId);
+    }
+
+    internal bool SelectClips(IEnumerable<Guid> clipIds, Guid? primaryClipId)
+    {
+        var requested = clipIds.Distinct().ToArray();
+        var line = Line;
+        if (requested.Any(id => line?.Karaoke.Any(clip => clip.Id == id) != true) ||
+            primaryClipId is { } primary && !requested.Contains(primary))
+        {
+            return FailTiming("Start", Localization.Get("Workbench.SubtitleDraftConflict"));
+        }
         if (!TryCommit())
         {
             return false;
         }
-        SelectedClipId = clipId;
-        durationClipId = clipId;
+        SetClipSelection(requested, primaryClipId);
         RefreshDuration();
         Changed?.Invoke(this, EventArgs.Empty);
         return true;
+    }
+
+    private void SetClipSelection(IEnumerable<Guid> clipIds, Guid? primaryClipId)
+    {
+        var ids = clipIds.ToHashSet();
+        SelectedClipIds = draft?.Karaoke.Where(clip => ids.Contains(clip.Id)).Select(clip => clip.Id).ToImmutableArray() ?? [];
+        SelectedClipId = primaryClipId is { } primary && SelectedClipIds.Contains(primary)
+            ? primary : SelectedClipIds.IsEmpty ? null : SelectedClipIds[0];
+        durationClipId = SelectedClipId;
     }
 
     internal bool FollowTextSelection(int start, int length)
@@ -397,7 +419,7 @@ internal sealed partial class SubtitleDetailsCoordinator : IDisposable
         var clip = draft?.Karaoke.FirstOrDefault(value => value.Utf16Start <= start && value.Utf16Start + value.Utf16Length >= end &&
             (length > 0 || start < value.Utf16Start + value.Utf16Length || start == draft.Text.Length));
         var clipId = clip?.Id;
-        if (clipId == SelectedClipId)
+        if (clipId == SelectedClipId && SelectedClipIds.Length <= 1)
         {
             return true;
         }
@@ -405,7 +427,7 @@ internal sealed partial class SubtitleDetailsCoordinator : IDisposable
         {
             return false;
         }
-        SelectedClipId = durationClipId = clipId;
+        SetClipSelection(clipId is { } id ? [id] : [], clipId);
         RefreshDuration();
         return true;
     }

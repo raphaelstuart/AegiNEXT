@@ -41,7 +41,7 @@ public sealed class KaraokeAxisSnappingUiTests
                 new(1, 1, Time(originalEnd), new(2), SceneColor.White)]
         };
         var axis = new KaraokeClipAxis { IsSnapEnabled = snap };
-        axis.ClipSelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.ClipId);
+        axis.SelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.PrimaryClipId, e.SelectedClipIds);
         var requests = new List<KaraokeClipRangeEventArgs>();
         axis.RangeRequested += (_, e) => requests.Add(e);
         axis.SetContent(line, MediaTime.Zero, null);

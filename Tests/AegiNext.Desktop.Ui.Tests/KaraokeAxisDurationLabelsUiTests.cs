@@ -31,7 +31,7 @@ public sealed class KaraokeAxisDurationLabelsUiTests
                 new(index, 50), new(index + 1, 50), SceneColor.White))] };
         var axis = new KaraokeClipAxis { IsSnapEnabled = false };
         Assert.False(axis.KeepDurationLabelsVisible);
-        axis.ClipSelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.ClipId);
+        axis.SelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.PrimaryClipId, e.SelectedClipIds);
         axis.SetContent(line, MediaTime.Zero, line.Karaoke[5].Id);
         var window = new Window { Width = 300, Height = 300, Content = new StackPanel
             { Children = { new Border { Height = 150 }, axis } } };
@@ -224,7 +224,7 @@ public sealed class KaraokeAxisDurationLabelsUiTests
         using var environment = new UiTestEnvironment();
         var line = DurationLine();
         var axis = new KaraokeClipAxis { IsSnapEnabled = false, KeepDurationLabelsVisible = true };
-        axis.ClipSelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.ClipId);
+        axis.SelectionRequested += (_, e) => axis.SetContent(line, MediaTime.Zero, e.PrimaryClipId, e.SelectedClipIds);
         var requests = new List<KaraokeClipRangeEventArgs>();
         axis.RangeRequested += (_, e) => requests.Add(e);
         axis.SetContent(line, MediaTime.Zero, null);

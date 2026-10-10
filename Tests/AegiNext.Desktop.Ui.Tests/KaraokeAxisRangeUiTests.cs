@@ -109,7 +109,7 @@ public sealed class KaraokeAxisRangeUiTests
     public void SourceChangeDuringSelectionDoesNotStartAStaleGesture()
     {
         using var host = new KaraokeAxisUiTestHost(Line());
-        host.Axis.ClipSelectionRequested += (_, e) => host.Axis.SetContent(host.Line with { End = new(6) }, host.Offset, e.ClipId);
+        host.Axis.SelectionRequested += (_, e) => host.Axis.SetContent(host.Line with { End = new(6) }, host.Offset, e.PrimaryClipId, e.SelectedClipIds);
         var point = host.Axis.GeometryFor(host.Line.Karaoke[1].Id).Body.Center;
         host.Drag(point, new(30, 0));
         Assert.Empty(host.Requests);

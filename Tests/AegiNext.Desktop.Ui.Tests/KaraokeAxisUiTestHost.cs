@@ -26,11 +26,11 @@ internal sealed class KaraokeAxisUiTestHost : IDisposable
         Line = line;
         Offset = offset;
         Axis.SetContent(line, offset, line.Karaoke.FirstOrDefault()?.Id);
-        Axis.ClipSelectionRequested += (_, e) => Axis.SetContent(Line, Offset, e.ClipId);
+        Axis.SelectionRequested += (_, e) => Axis.SetContent(Line, Offset, e.PrimaryClipId, e.SelectedClipIds);
         Axis.RangeRequested += (_, e) => Requests.Add(e);
         Axis.ClipEditRequested += (_, e) => EditRequests.Add(e);
         Axis.AddHandler(InputElement.PointerPressedEvent, (_, e) => Pointer = e.Pointer, RoutingStrategies.Bubble, true);
-        Window = new() { Width = 424, Height = 180, Content = Axis };
+        Window = new() { Width = 424, Height = Math.Max(180, Axis.Height + 80), Content = Axis };
         Window.Show();
         Flush();
     }

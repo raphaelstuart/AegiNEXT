@@ -7,6 +7,37 @@ namespace AegiNext.Desktop.Tests.Workspace;
 public sealed class SubtitleDetailsNativeTimingTests
 {
     [Fact]
+    public async Task FirstEnableGeneratesCompleteGraphemesAndLaterEnablesPreserveWholeGroups()
+    {
+        var document = Document();
+        var line = document.Subtitles[0] with { Text = "e\u0301😀z", Karaoke = [] };
+        document = document with { Subtitles = [line] };
+        await using var context = new WorkspaceSessionTestContext(document);
+        await context.InitializeAsync();
+        context.Session.SelectCue(line.Id);
+        var details = context.Session.Details;
+        details.SetKaraokeEnabled(true);
+        var generated = context.Editor.Snapshot;
+        Assert.Equal([2, 2, 1], generated.Subtitles[0].Karaoke.Select(clip => clip.Utf16Length));
+        Assert.Equal(new MediaTime(4, 3), generated.Subtitles[0].Karaoke[0].End);
+        Assert.Equal(new MediaTime(4), generated.Subtitles[0].Karaoke[^1].End);
+        details.SetKaraokeEnabled(true);
+        Assert.Same(generated, context.Editor.Snapshot);
+        Assert.True(context.Editor.Undo());
+        Assert.Same(document, context.Editor.Snapshot);
+        Assert.False(context.Editor.CanUndo);
+
+        Assert.True(details.CreateTiming(0, 5, "0.25", "3.5"), details.Error);
+        var grouped = context.Editor.Snapshot;
+        var group = Assert.Single(grouped.Subtitles[0].Karaoke);
+        details.SetKaraokeEnabled(true);
+        Assert.Same(grouped, context.Editor.Snapshot);
+        details.SetKaraokeEnabled(false);
+        details.SetKaraokeEnabled(true);
+        Assert.Same(group, Assert.Single(context.Editor.Snapshot.Subtitles[0].Karaoke));
+    }
+
+    [Fact]
     public async Task EditingOneEndpointPreservesTheOtherExactRationalAndDoesNotMoveNeighbors()
     {
         await using var context = new WorkspaceSessionTestContext(Document());
@@ -73,7 +104,7 @@ public sealed class SubtitleDetailsNativeTimingTests
     }
 
     [Fact]
-    public async Task EnablingEmptyTimingIsANoOpAndManualCreationRequiresExplicitSignedTimes()
+    public async Task ManualCreationRequiresExplicitSignedTimesAndSplittingRequiresAnExplicitCommand()
     {
         var document = Document();
         var line = document.Subtitles[0] with { Karaoke = [] };
@@ -82,15 +113,15 @@ public sealed class SubtitleDetailsNativeTimingTests
         await context.InitializeAsync();
         context.Session.SelectCue(line.Id);
         var details = context.Session.Details;
-        details.SetKaraokeEnabled(true);
-        Assert.Same(document, context.Editor.Snapshot);
         Assert.False(details.CreateTiming(0, 2, "", ""));
         details.DismissCreationError();
         Assert.True(details.CreateTiming(0, 2, "0.333333333333", "2"), details.Error);
         Assert.Single(context.Editor.Snapshot.Subtitles[0].Karaoke);
         Assert.True(details.SplitSelectedGroup(), details.Error);
         Assert.Equal(2, context.Editor.Snapshot.Subtitles[0].Karaoke.Length);
-        Assert.True(details.MergeSelectedNext(), details.Error);
+        var ids = context.Editor.Snapshot.Subtitles[0].Karaoke.Select(clip => clip.Id).ToArray();
+        Assert.True(details.SelectClips(ids, ids[0]));
+        Assert.True(details.MergeSelectedGroups(), details.Error);
         Assert.Single(context.Editor.Snapshot.Subtitles[0].Karaoke);
     }
 

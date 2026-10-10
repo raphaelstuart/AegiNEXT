@@ -24,8 +24,7 @@ internal sealed partial class SubtitleDetailsPanelView
     private readonly Button generateTiming = new() { Name = "GenerateAllTimingButton" };
     private readonly Button restoreTiming = new() { Name = "RestoreCachedTimingButton" };
     private readonly Button splitTiming = new() { Name = "SplitKaraokeGroupButton" };
-    private readonly Button mergePrevious = new() { Name = "MergePreviousKaraokeGroupButton" };
-    private readonly Button mergeNext = new() { Name = "MergeNextKaraokeGroupButton" };
+    private readonly Button mergeTiming = new() { Name = "MergeSelectedKaraokeGroupsButton" };
     private readonly Button fitTiming = new() { Name = "FitKaraokeAxisButton" };
     private readonly DraftPopup createTimingPopup = new()
     {
@@ -139,25 +138,28 @@ internal sealed partial class SubtitleDetailsPanelView
         ConfigureTimingAction(generateTiming, "Workbench.GenerateAllTiming", "Clock", () => coordinator.GenerateAllTiming());
         ConfigureTimingAction(restoreTiming, "Workbench.RestoreCachedTiming", "Restore", () => coordinator.RestoreCachedTiming());
         ConfigureTimingAction(splitTiming, "Workbench.SplitKaraokeGroup", "Split", () => coordinator.SplitSelectedGroup());
-        ConfigureTimingAction(mergePrevious, "Workbench.MergePreviousKaraokeGroup", "Merge", () => coordinator.MergeSelectedPrevious());
-        ConfigureTimingAction(mergeNext, "Workbench.MergeNextKaraokeGroup", "Merge", () => coordinator.MergeSelectedNext());
+        ConfigureTimingAction(mergeTiming, "Workbench.MergeSelectedKaraokeGroups", "Merge", () => coordinator.MergeSelectedGroups(), false);
+        ToolTip.SetShowOnDisabled(mergeTiming, true);
         ConfigureTimingAction(fitTiming, "Workbench.FitKaraokeAxis", "Timeline", () => axis.FitToContent());
         BuildManualTimingPopup();
         return new()
         {
             Name = "KaraokeTimingActions", Children =
             {
-                createTiming, generateTiming, restoreTiming, splitTiming, mergePrevious, mergeNext, fitTiming
+                createTiming, generateTiming, restoreTiming, splitTiming, mergeTiming, fitTiming
             }
         };
     }
 
-    private void ConfigureTimingAction(Button button, string key, string icon, Action action)
+    private void ConfigureTimingAction(Button button, string key, string icon, Action action, bool bindHint = true)
     {
         button.Content = IconLabel(key, icon);
         button.Margin = new(0, 0, 6, 6);
         bindings.Add(button.Bind(AutomationProperties.NameProperty, Localization.Observe(key).ToBinding()));
-        bindings.Add(button.Bind(ToolTip.TipProperty, Localization.Observe(key + "Hint").ToBinding()));
+        if (bindHint)
+        {
+            bindings.Add(button.Bind(ToolTip.TipProperty, Localization.Observe(key + "Hint").ToBinding()));
+        }
         button.Click += async (_, _) => await session.RunCommandAsync(() =>
         {
             action();
@@ -299,9 +301,9 @@ internal sealed partial class SubtitleDetailsPanelView
         var boundaries = clip is null ? null : new SubtitleTextBoundaries(line!.Text);
         splitTiming.IsEnabled = clip is not null && boundaries!.IndexOf(clip.Utf16Start + clip.Utf16Length) -
             boundaries.IndexOf(clip.Utf16Start) > 1;
-        var index = clip is null ? -1 : line!.Karaoke.IndexOf(clip);
-        mergePrevious.IsEnabled = index > 0 && CanMergeTiming(line!.Karaoke[index - 1], clip!);
-        mergeNext.IsEnabled = index >= 0 && index + 1 < line!.Karaoke.Length && CanMergeTiming(clip!, line.Karaoke[index + 1]);
+        var mergeReason = coordinator.MergeSelectionErrorKey;
+        mergeTiming.IsEnabled = mergeReason is null;
+        ToolTip.SetTip(mergeTiming, Localization.Get(mergeReason ?? "Workbench.MergeSelectedKaraokeGroupsHint"));
         fitTiming.IsEnabled = line is not null;
         if (clip is null && clipPopup.IsOpen)
         {
@@ -314,12 +316,6 @@ internal sealed partial class SubtitleDetailsPanelView
         return length > 0 && start >= 0 && (long)start + length <= line.Text.Length &&
             !line.Karaoke.Concat(line.InactiveKaraoke).Any(clip => clip.Utf16Start < start + length &&
                 clip.Utf16Start + clip.Utf16Length > start);
-    }
-
-    private static bool CanMergeTiming(KaraokeSegment first, KaraokeSegment second)
-    {
-        return first.Utf16Start + first.Utf16Length == second.Utf16Start && first.End == second.Start &&
-            first.HighlightKind == second.HighlightKind;
     }
 
     private static NumericDraftInput TimingInput(string name)

@@ -28,6 +28,7 @@ internal sealed partial class SubtitleDetailsCoordinator
     internal string DurationText => durationText;
     internal string LeadingDelayText => leadingDelayText;
     internal bool LinkedDurationEnabled { get; set; }
+    internal string? MergeSelectionErrorKey => MergeErrorKey(Line, SelectedClipIds);
     private bool HasTimingDrafts => startDirty || endDirty || durationDirty || leadingDelayDirty;
     private MediaTime AnimationOffset => session.Editor.Snapshot.Layers.FirstOrDefault(layer => layer.SubtitleId == draft?.Id)?.AnimationOffset ?? MediaTime.Zero;
 
@@ -104,7 +105,8 @@ internal sealed partial class SubtitleDetailsCoordinator
         }, () => field);
         if (result)
         {
-            SelectedClipId = draft!.Karaoke.Single(clip => clip.Utf16Start == selectionStart && clip.Utf16Length == length).Id;
+            var id = draft!.Karaoke.Single(clip => clip.Utf16Start == selectionStart && clip.Utf16Length == length).Id;
+            SetClipSelection([id], id);
             RefreshDuration();
             Changed?.Invoke(this, EventArgs.Empty);
         }
@@ -127,37 +129,67 @@ internal sealed partial class SubtitleDetailsCoordinator
             document, draft.Id, clipId), "Start");
     }
 
-    internal bool MergeSelectedPrevious() => MergeSelectedGroup(-1);
-    internal bool MergeSelectedNext() => MergeSelectedGroup(1);
-
-    private bool MergeSelectedGroup(int direction)
+    internal bool MergeSelectedGroups()
     {
-        if (draft is null || SelectedClipId is not { } clipId)
+        if (draft is null)
         {
             return false;
         }
+        var ids = SelectedClipIds;
         Guid? mergedId = null;
         var result = ExecuteTiming("Merge karaoke groups", document =>
         {
             var line = document.Subtitles.Single(line => line.Id == draft.Id);
-            var index = Array.FindIndex(line.Karaoke.ToArray(), clip => clip.Id == clipId);
-            var other = index + direction;
-            if (index < 0 || other < 0 || other >= line.Karaoke.Length)
+            if (MergeErrorKey(line, ids) is { } reason)
             {
-                throw new InvalidOperationException("所选计时组没有可合并的相邻组。");
+                throw new InvalidOperationException(Localization.Get(reason));
             }
-            var first = line.Karaoke[Math.Min(index, other)].Id;
-            var second = line.Karaoke[Math.Max(index, other)].Id;
-            mergedId = first;
-            return ProjectEditingOperations.MergeKaraokeClips(document, draft.Id, first, second);
+            mergedId = ids[0];
+            foreach (var id in ids.Skip(1))
+            {
+                document = ProjectEditingOperations.MergeKaraokeClips(document, draft.Id, ids[0], id);
+            }
+            return document;
         }, "Start");
         if (result)
         {
-            SelectedClipId = mergedId;
+            SetClipSelection([mergedId!.Value], mergedId);
             RefreshDuration();
             Changed?.Invoke(this, EventArgs.Empty);
         }
         return result;
+    }
+
+    private static string? MergeErrorKey(SubtitleLine? line, IReadOnlyList<Guid> ids)
+    {
+        if (line is null || ids.Count < 2)
+        {
+            return "Workbench.MergeKaraokeSelectionMultiple";
+        }
+        var selectedIds = ids.ToHashSet();
+        var clips = line.Karaoke.Where(clip => selectedIds.Contains(clip.Id)).ToArray();
+        if (clips.Length != ids.Count)
+        {
+            return "Workbench.SubtitleDraftConflict";
+        }
+        for (var index = 1; index < clips.Length; index++)
+        {
+            var first = clips[index - 1];
+            var second = clips[index];
+            if (first.Utf16Start + first.Utf16Length != second.Utf16Start)
+            {
+                return "Workbench.MergeKaraokeSelectionContiguous";
+            }
+            if (first.End != second.Start)
+            {
+                return "Workbench.MergeKaraokeSelectionTimeAdjacent";
+            }
+            if (first.HighlightKind != second.HighlightKind)
+            {
+                return "Workbench.MergeKaraokeSelectionMode";
+            }
+        }
+        return null;
     }
 
     internal bool GenerateAllTiming()
@@ -181,7 +213,7 @@ internal sealed partial class SubtitleDetailsCoordinator
 
     internal void SetKaraokeEnabled(bool enabled)
     {
-        if (draft is null || enabled == IsKaraokeEnabled || enabled && draft.InactiveKaraoke.IsEmpty)
+        if (draft is null || enabled == IsKaraokeEnabled)
         {
             return;
         }
@@ -321,6 +353,7 @@ internal sealed partial class SubtitleDetailsCoordinator
 
     private void RefreshDuration()
     {
+        SetClipSelection(SelectedClipIds, SelectedClipId);
         if (!leadingDelayDirty)
         {
             var earliest = draft?.Karaoke.IsEmpty == false ? draft.Karaoke.Min(clip => clip.Start) : MediaTime.Zero;

@@ -15,7 +15,7 @@ using Avalonia.VisualTree;
 namespace AegiNext.Desktop.Controls;
 
 /// <summary>共享时间几何的计时组轴；独立编辑起点、终点与位置，释放提交一次范围请求。</summary>
-public sealed class KaraokeClipAxis : Control
+public sealed class KaraokeClipAxis : Decorator
 {
     /// <summary>可绑定的吸附开关元数据。</summary>
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Avalonia styled property metadata uses the public NameProperty convention.")]
@@ -29,9 +29,14 @@ public sealed class KaraokeClipAxis : Control
     private const double TRACK_TOP = 22;
     private const double LANE_HEIGHT = 42;
     private const double LANE_PITCH = 50;
+    private const int MAX_VISIBLE_LANES = 4;
+    private const double SCROLLBAR_WIDTH = 14;
     private SubtitleLine? line;
     private MediaTime offset;
     private Guid? selectedId;
+    private Guid? selectionAnchorId;
+    private ImmutableArray<Guid> selectedIds = [];
+    private HashSet<Guid> selectedIdSet = [];
     private Guid? draggingId;
     private SubtitleLine? frozen;
     private MediaTime frozenOffset;
@@ -50,19 +55,30 @@ public sealed class KaraokeClipAxis : Control
     private readonly KaraokeDurationLabelsAdorner durationLabelsAdorner = new();
     private AdornerLayer? durationLabelLayer;
     private readonly List<Visual> visibilityAncestors = [];
+    private readonly ScrollBar verticalScrollBar = new()
+    {
+        Orientation = Avalonia.Layout.Orientation.Vertical, Width = SCROLLBAR_WIDTH,
+        SmallChange = LANE_PITCH, Minimum = 0, Visibility = ScrollBarVisibility.Disabled
+    };
+    private bool synchronizingScrollBar;
+    private bool revealAfterArrange;
+    private bool requestingSelection;
     internal IReadOnlyList<KaraokeDurationLabel> DurationLabels { get; private set; } = [];
     internal TimelineViewport Viewport => frozenViewport ?? viewport;
     internal IReadOnlyDictionary<Guid, int> ClipLanes => lanes;
     internal bool HasActiveGesture => draggingId is not null;
     internal MediaTime? SnapTarget => snapTarget;
+    internal ScrollBar VerticalScrollBar => verticalScrollBar;
     private double Seconds => line is null ? 1 : ToSeconds(line.End - line.Start);
     private MediaTime ActiveOffset => frozen is not null ? frozenOffset : offset;
     private MediaTime DomainMinimum => Min(ActiveOffset, MediaTime.Zero);
     private double ContentDuration => Math.Max(0.001, Math.Max(ToSeconds(offset) + Seconds,
         line?.Karaoke.Select(clip => ToSeconds(clip.End)).DefaultIfEmpty(0).Max() ?? 0) - ToSeconds(DomainMinimum));
-    private double ContentHeight => Math.Max(1, lanes.Values.DefaultIfEmpty(0).Max() + 1) * LANE_PITCH - 8;
+    private int LaneCount => Math.Max(1, lanes.Values.DefaultIfEmpty(0).Max() + 1);
+    private double ContentHeight => LaneCount * LANE_PITCH - 8;
     private double NavigationDuration => ContentDuration + Viewport.VisibleDuration;
-    private Rect TrackBounds => new(EDGE_PADDING, TRACK_TOP, Math.Max(1, Bounds.Width - EDGE_PADDING * 2),
+    private Rect TrackBounds => new(EDGE_PADDING, TRACK_TOP, Math.Max(1, Bounds.Width - EDGE_PADDING * 2 -
+        (verticalScrollBar.IsVisible ? SCROLLBAR_WIDTH + 4 : 0)),
         Math.Max(1, Bounds.Height - TRACK_TOP - 22));
 
     /// <summary>创建可捕获本地指针、缩放及滚动的卡拉 OK 计时轴。</summary>
@@ -72,11 +88,15 @@ public sealed class KaraokeClipAxis : Control
         Height = 88;
         ClipToBounds = true;
         Focusable = true;
+        Child = verticalScrollBar;
+        verticalScrollBar.PropertyChanged += OnScrollBarChanged;
         AddHandler(PointerTouchPadGestureMagnifyEvent, OnMagnify);
     }
 
-    /// <summary>请求选中计时组。</summary>
-    public event EventHandler<KaraokeClipSelectionEventArgs>? ClipSelectionRequested;
+    /// <summary>请求同步按文字顺序排列的计时组多选与主选择。</summary>
+    public event EventHandler<KaraokeClipSelectionEventArgs>? SelectionRequested;
+    /// <summary>当前按文字顺序排列的选中片段 ID；同步不产生文档编辑。</summary>
+    public IReadOnlyList<Guid> SelectedClipIds => selectedIds;
     /// <summary>释放拖拽后基于冻结数据提交一次范围请求。</summary>
     public event EventHandler<KaraokeClipRangeEventArgs>? RangeRequested;
     /// <summary>单击片段请求弹出属性。</summary>
@@ -97,27 +117,59 @@ public sealed class KaraokeClipAxis : Control
     public bool HasOverflow => line is not null && line.Karaoke.Any(clip => PreviewRange(clip).End > offset + line.End - line.Start);
 
     /// <summary>同步数据；外部字幕、内容偏移及选择变化取消未完成的拖拽。</summary>
-    public void SetContent(SubtitleLine? value, MediaTime animationOffset, Guid? selectedClipId)
+    public void SetContent(SubtitleLine? value, MediaTime animationOffset, Guid? selectedClipId,
+        IReadOnlyList<Guid>? selectedClipIds = null)
     {
+        var requested = (selectedClipIds ?? (selectedClipId is { } single ? [single] : Array.Empty<Guid>())).ToHashSet();
+        var selection = (value?.Karaoke ?? []).OrderBy(clip => clip.Utf16Start).ThenBy(clip => clip.Id)
+            .Where(clip => requested.Contains(clip.Id)).Select(clip => clip.Id).ToImmutableArray();
+        var primary = selectedClipId is { } preferred && selection.Contains(preferred)
+            ? preferred : selection.IsEmpty ? (Guid?)null : selection[0];
         var changed = value != line || animationOffset != offset;
         var targetChanged = value?.Id != line?.Id || animationOffset != offset;
-        if (changed || draggingId is not null && selectedClipId != selectedId)
+        var selectionChanged = primary != selectedId || !selectedIds.SequenceEqual(selection);
+        if (changed || draggingId is not null && selectionChanged)
         {
             CancelGesture();
         }
         line = value;
         offset = animationOffset;
-        selectedId = selectedClipId;
+        selectedId = primary;
+        selectedIds = selection;
+        selectedIdSet = selection.ToHashSet();
+        var laneLayoutChanged = false;
         if (changed)
         {
-            lanes = KaraokeAxisLaneAllocator.Allocate(value?.Karaoke ?? []);
+            var allocated = KaraokeAxisLaneAllocator.Allocate(value?.Karaoke ?? []);
+            laneLayoutChanged = allocated.Count != lanes.Count || allocated.Any(pair => !lanes.TryGetValue(pair.Key, out var lane) || lane != pair.Value);
+            lanes = allocated;
             clipsById = value?.Karaoke.ToDictionary(clip => clip.Id) ?? [];
+            Height = MinHeight + (Math.Min(MAX_VISIBLE_LANES, LaneCount) - 1) * LANE_PITCH;
+            verticalScrollBar.Visibility = LaneCount > MAX_VISIBLE_LANES ? ScrollBarVisibility.Visible : ScrollBarVisibility.Disabled;
             if (targetChanged)
             {
                 fitted = true;
+                viewport = viewport with { VerticalOffset = 0 };
+                selectionAnchorId = primary;
             }
             RefreshViewport();
         }
+        if (!requestingSelection && selectionChanged || selectionAnchorId is null || !clipsById.ContainsKey(selectionAnchorId.Value))
+        {
+            selectionAnchorId = primary;
+        }
+        if ((selectionChanged || laneLayoutChanged || targetChanged) && !HasActiveGesture && !requestingSelection)
+        {
+            if (Bounds.Height > 0 && Bounds.Height == Height)
+            {
+                RevealSelectedClip();
+            }
+            else
+            {
+                revealAfterArrange = true;
+            }
+        }
+        SynchronizeScrollBar();
         UpdateDurationLabels();
         InvalidateVisual();
     }
@@ -130,9 +182,33 @@ public sealed class KaraokeClipAxis : Control
             return;
         }
         fitted = true;
+        viewport = viewport with { VerticalOffset = 0 };
         RefreshViewport();
         UpdateDurationLabels();
         InvalidateVisual();
+    }
+
+    /// <inheritdoc />
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        verticalScrollBar.Measure(new(SCROLLBAR_WIDTH, Math.Max(0, Height - TRACK_TOP - 22)));
+        return new(0, Height);
+    }
+
+    /// <inheritdoc />
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        verticalScrollBar.Arrange(new(Math.Max(0, finalSize.Width - EDGE_PADDING - SCROLLBAR_WIDTH), TRACK_TOP,
+            SCROLLBAR_WIDTH, Math.Max(0, finalSize.Height - TRACK_TOP - 22)));
+        if (revealAfterArrange && !HasActiveGesture)
+        {
+            revealAfterArrange = false;
+            RefreshViewport();
+            RevealSelectedClip();
+            SynchronizeScrollBar();
+            UpdateDurationLabels();
+        }
+        return finalSize;
     }
 
     /// <summary>丢弃尚未释放的手势，不发出业务请求。</summary>
@@ -177,8 +253,9 @@ public sealed class KaraokeClipAxis : Control
         var width = TrackBounds.Width;
         var height = TrackBounds.Height;
         viewport = fitted
-            ? new TimelineViewport(0, width / ContentDuration, 0, width, height).Normalize(ContentDuration, ContentHeight)
+            ? new TimelineViewport(0, width / ContentDuration, viewport.VerticalOffset, width, height).Normalize(ContentDuration, ContentHeight)
             : viewport.Resize(width, height, NavigationDuration, ContentHeight);
+        SynchronizeScrollBar();
     }
 
     private void SetViewport(TimelineViewport value)
@@ -189,8 +266,47 @@ public sealed class KaraokeClipAxis : Control
         }
         fitted = false;
         viewport = value;
+        SynchronizeScrollBar();
         UpdateDurationLabels();
         InvalidateVisual();
+    }
+
+    private void RevealSelectedClip()
+    {
+        if (selectedId is not { } id || !lanes.TryGetValue(id, out var lane))
+        {
+            return;
+        }
+        var top = lane * LANE_PITCH;
+        var bottom = top + LANE_HEIGHT;
+        var vertical = top < viewport.VerticalOffset ? top : bottom > viewport.VerticalOffset + viewport.Height
+            ? bottom - viewport.Height : viewport.VerticalOffset;
+        viewport = (viewport with { VerticalOffset = vertical }).Normalize(NavigationDuration, ContentHeight);
+    }
+
+    private void SynchronizeScrollBar()
+    {
+        synchronizingScrollBar = true;
+        try
+        {
+            verticalScrollBar.Maximum = Math.Max(0, ContentHeight - viewport.Height);
+            verticalScrollBar.ViewportSize = viewport.Height;
+            verticalScrollBar.LargeChange = Math.Max(LANE_PITCH, viewport.Height);
+            verticalScrollBar.Value = viewport.VerticalOffset;
+            verticalScrollBar.IsEnabled = !HasActiveGesture;
+        }
+        finally
+        {
+            synchronizingScrollBar = false;
+        }
+    }
+
+    private void OnScrollBarChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (!synchronizingScrollBar && e.Property == RangeBase.ValueProperty && !HasActiveGesture)
+        {
+            SetViewport((viewport with { VerticalOffset = verticalScrollBar.Value }).Normalize(NavigationDuration, ContentHeight));
+        }
     }
 
     /// <inheritdoc />
@@ -253,7 +369,7 @@ public sealed class KaraokeClipAxis : Control
         var timeBounds = new Rect(start, y, Math.Max(0, end - start), LANE_HEIGHT);
         var body = new Rect(timeBounds.Center.X - Math.Max(1, timeBounds.Width) / 2, y,
             Math.Max(1, timeBounds.Width), LANE_HEIGHT);
-        var floating = clip.Id == selectedId && timeBounds.Width < 28 && body.Intersects(TrackBounds);
+        var floating = selectedIdSet.Contains(clip.Id) && timeBounds.Width < 28 && body.Intersects(TrackBounds);
         var left = floating ? Math.Clamp(timeBounds.Center.X - 18, TrackBounds.Left + 10,
             Math.Max(TrackBounds.Left + 10, TrackBounds.Right - 41)) : start + Math.Min(3, timeBounds.Width / 4);
         var right = floating ? left + 36 : end - Math.Min(3, timeBounds.Width / 4);
@@ -272,12 +388,24 @@ public sealed class KaraokeClipAxis : Control
         }
         using (context.PushClip(TrackBounds))
         {
+            for (var lane = 0; lane < LaneCount; lane++)
+            {
+                var y = TRACK_TOP + lane * LANE_PITCH - Viewport.VerticalOffset;
+                var row = new Rect(TrackBounds.Left, y, TrackBounds.Width, LANE_HEIGHT);
+                if (!row.Intersects(TrackBounds))
+                {
+                    continue;
+                }
+                context.DrawRectangle(new SolidColorBrush(Color.FromArgb((byte)(lane % 2 == 0 ? 12 : 24), 120, 120, 120)), null, row);
+                context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(60, 120, 120, 120))),
+                    new(TrackBounds.Left, y + LANE_PITCH - 4), new(TrackBounds.Right, y + LANE_PITCH - 4));
+            }
             var visibleStart = X(offset);
             var visibleEnd = X(offset + line.End - line.Start);
             var visible = new Rect(Math.Clamp(visibleStart, TrackBounds.Left, TrackBounds.Right), TrackBounds.Top,
                 Math.Max(0, Math.Min(visibleEnd, TrackBounds.Right) - Math.Max(visibleStart, TrackBounds.Left)), TrackBounds.Height);
             context.DrawRectangle(new SolidColorBrush(Color.FromArgb(18, 30, 144, 255)), null, visible);
-            foreach (var clip in line.Karaoke.OrderBy(value => value.Id == selectedId))
+            foreach (var clip in line.Karaoke.OrderBy(value => selectedIdSet.Contains(value.Id)))
             {
                 DrawClip(context, clip);
             }
@@ -303,7 +431,7 @@ public sealed class KaraokeClipAxis : Control
         {
             return;
         }
-        var selected = clip.Id == selectedId;
+        var selected = selectedIdSet.Contains(clip.Id);
         context.DrawRectangle(new SolidColorBrush(selected ? Color.Parse("#496CA9") : Color.Parse("#58717D")),
             new Pen(selected ? Brushes.DodgerBlue : Brushes.Gray, selected ? 2 : 1), geometry.Body);
         using var text = WorkbenchTextFormatting.CreateLayout(this, line!.Text.Substring(clip.Utf16Start, clip.Utf16Length), 14,
@@ -381,7 +509,14 @@ public sealed class KaraokeClipAxis : Control
             }
             var kind = start && (!end || point.X < geometry.TimeBounds.Center.X)
                 ? KaraokeAxisGestureKind.START : end ? KaraokeAxisGestureKind.END : KaraokeAxisGestureKind.MOVE;
-            ClipSelectionRequested?.Invoke(this, new(clip.Id));
+            var selecting = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Shift)) != 0;
+            RequestSelection(source, clip.Id, e.KeyModifiers);
+            if (selecting)
+            {
+                Focus();
+                e.Handled = true;
+                return;
+            }
             if (selectedId != clip.Id || line != source || offset != sourceOffset)
             {
                 return;
@@ -399,10 +534,64 @@ public sealed class KaraokeClipAxis : Control
             pointerMoved = false;
             delta = MediaTime.Zero;
             capturedPointer = e.Pointer;
+            SynchronizeScrollBar();
             e.Pointer.Capture(this);
             e.Handled = true;
             InvalidateVisual();
             return;
+        }
+        selectionAnchorId = null;
+        SelectionRequested?.Invoke(this, new(Array.Empty<Guid>(), null));
+        Focus();
+        e.Handled = true;
+    }
+
+    private void RequestSelection(SubtitleLine source, Guid clipId, KeyModifiers modifiers)
+    {
+        var ordered = source.Karaoke.OrderBy(clip => clip.Utf16Start).ThenBy(clip => clip.Id).Select(clip => clip.Id).ToArray();
+        var requested = selectedIdSet.ToHashSet();
+        Guid? primary = clipId;
+        if ((modifiers & KeyModifiers.Shift) != 0)
+        {
+            var anchor = Array.IndexOf(ordered, selectionAnchorId ?? selectedId ?? clipId);
+            var target = Array.IndexOf(ordered, clipId);
+            if (anchor < 0)
+            {
+                anchor = target;
+            }
+            var range = ordered.Skip(Math.Min(anchor, target)).Take(Math.Abs(target - anchor) + 1);
+            if ((modifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
+            {
+                requested.Clear();
+            }
+            requested.UnionWith(range);
+        }
+        else if ((modifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0)
+        {
+            if (!requested.Add(clipId))
+            {
+                requested.Remove(clipId);
+                primary = selectedId is { } previous && requested.Contains(previous) ? previous
+                    : ordered.Where(requested.Contains).Select(id => (Guid?)id).FirstOrDefault();
+            }
+            selectionAnchorId = primary;
+        }
+        else
+        {
+            if (!requested.Contains(clipId))
+            {
+                requested = [clipId];
+            }
+            selectionAnchorId = clipId;
+        }
+        requestingSelection = true;
+        try
+        {
+            SelectionRequested?.Invoke(this, new(ordered.Where(requested.Contains).ToImmutableArray(), primary));
+        }
+        finally
+        {
+            requestingSelection = false;
         }
     }
 

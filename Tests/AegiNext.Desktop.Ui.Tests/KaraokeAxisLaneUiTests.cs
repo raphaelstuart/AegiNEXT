@@ -3,14 +3,111 @@ using AegiNext.Core.Projects;
 using AegiNext.Core.Timing;
 using AegiNext.Desktop.Controls;
 using Avalonia;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.VisualTree;
 
 namespace AegiNext.Desktop.Ui.Tests;
 
 public sealed class KaraokeAxisLaneUiTests
 {
+    [AvaloniaTheory]
+    [InlineData(0, "start")]
+    [InlineData(1, "start")]
+    [InlineData(2, "start")]
+    [InlineData(0, "end")]
+    [InlineData(1, "end")]
+    [InlineData(2, "end")]
+    public void OverlappingGroupsAreFullyVisibleOnSeparateRowsAndEveryHandleIsReachable(int index, string edge)
+    {
+        var line = new SubtitleLine { Text = "abc", End = new(4), Karaoke = [Clip(0, 0, 2), Clip(1, 0, 2), Clip(2, 0, 2)] };
+        using var host = new KaraokeAxisUiTestHost(line);
+        Assert.Equal(188, host.Axis.Height);
+        var bodies = line.Karaoke.Select(clip => host.Axis.GeometryFor(clip.Id).Body).ToArray();
+        Assert.All(bodies, body => Assert.True(body.Bottom <= host.Axis.Bounds.Height - 22));
+        Assert.Equal(3, bodies.Select(body => body.Top).Distinct().Count());
+        var geometry = host.Axis.GeometryFor(line.Karaoke[index].Id);
+        host.Drag(edge == "start" ? geometry.StartHandle.Center : geometry.EndHandle.Center, new(20, 0));
+        Assert.Equal(line.Karaoke[index].Id, Assert.Single(host.Requests).ClipId);
+    }
+
+    [AvaloniaFact]
+    public void MoreThanFourRowsHaveAVisibleScrollbarAndCanRevealAndEditTheLastGroup()
+    {
+        var line = new SubtitleLine { Text = "abcdefg", End = new(4), Karaoke = Enumerable.Range(0, 7).Select(index => Clip(index, 0, 2)).ToImmutableArray() };
+        using var host = new KaraokeAxisUiTestHost(line);
+        Assert.Equal(238, host.Axis.Height);
+        Assert.True(host.Axis.VerticalScrollBar.IsVisible);
+        Assert.True(host.Axis.VerticalScrollBar.Maximum > 0);
+        host.Window.MouseWheel(host.Point(new(100, 40)), new(0, -20));
+        Assert.Equal(host.Axis.VerticalScrollBar.Maximum, host.Axis.VerticalScrollBar.Value);
+        var last = line.Karaoke[^1];
+        var geometry = host.Axis.GeometryFor(last.Id);
+        Assert.True(geometry.Body.Bottom <= host.Axis.Bounds.Height - 22);
+        host.Drag(geometry.EndHandle.Center, new(20, 0));
+        Assert.Equal(last.Id, Assert.Single(host.Requests).ClipId);
+        Assert.Empty(host.EditRequests);
+    }
+
+    [AvaloniaFact]
+    public void ExternalSelectionAutomaticallyRevealsAGroupBelowTheVisibleRows()
+    {
+        var line = new SubtitleLine { Text = "abcdefg", End = new(4), Karaoke = Enumerable.Range(0, 7).Select(index => Clip(index, 0, 2)).ToImmutableArray() };
+        using var host = new KaraokeAxisUiTestHost(line);
+        var last = line.Karaoke[^1];
+        host.Axis.SetContent(line, host.Offset, last.Id);
+        host.Flush();
+        Assert.True(host.Axis.GeometryFor(last.Id).Body.Bottom <= host.Axis.Bounds.Height - 22);
+        Assert.True(host.Axis.VerticalScrollBar.Value > 0);
+        Assert.Empty(host.Requests);
+    }
+
+    [AvaloniaFact]
+    public void ScrollbarThumbBrowsesRowsWithoutChangingSelectionOrEditingAndRefreshKeepsTheView()
+    {
+        var line = new SubtitleLine { Text = "abcdefg", End = new(4), Karaoke = Enumerable.Range(0, 7).Select(index => Clip(index, 0, 2)).ToImmutableArray() };
+        using var host = new KaraokeAxisUiTestHost(line);
+        var selected = host.Axis.SelectedClipIds.ToArray();
+        var thumb = Assert.Single(host.Axis.VerticalScrollBar.GetVisualDescendants().OfType<Thumb>());
+        var point = thumb.TranslatePoint(new(thumb.Bounds.Width / 2, thumb.Bounds.Height / 2), host.Window)!.Value;
+        host.Window.MouseDown(point, MouseButton.Left);
+        host.Window.MouseMove(point + new Vector(0, 40));
+        host.Window.MouseUp(point + new Vector(0, 40), MouseButton.Left);
+        host.Flush();
+        var vertical = host.Axis.Viewport.VerticalOffset;
+        Assert.True(vertical > 0);
+        Assert.Equal(vertical, host.Axis.VerticalScrollBar.Value);
+        host.Axis.SetContent(line, host.Offset, line.Karaoke[0].Id, selected);
+        host.Flush();
+        Assert.Equal(vertical, host.Axis.Viewport.VerticalOffset);
+        host.Replace(line with { Style = line.Style with { FontSize = 60 } }, line.Karaoke[0].Id);
+        Assert.Equal(vertical, host.Axis.Viewport.VerticalOffset);
+        Assert.Equal(selected, host.Axis.SelectedClipIds);
+        Assert.Empty(host.Requests);
+        Assert.Empty(host.EditRequests);
+    }
+
+    [AvaloniaFact]
+    public void ScrollbarAndWheelAreFrozenDuringADragBelowTheFirstRow()
+    {
+        var line = new SubtitleLine { Text = "abcdefg", End = new(4), Karaoke = Enumerable.Range(0, 7).Select(index => Clip(index, 0, 2)).ToImmutableArray() };
+        using var host = new KaraokeAxisUiTestHost(line);
+        host.Window.MouseWheel(host.Point(new(100, 40)), new(0, -20));
+        var last = line.Karaoke[^1];
+        var point = host.Point(host.Axis.GeometryFor(last.Id).EndHandle.Center);
+        host.Window.MouseDown(point, MouseButton.Left);
+        var viewport = host.Axis.Viewport;
+        Assert.False(host.Axis.VerticalScrollBar.IsEnabled);
+        host.Window.MouseWheel(point, new(0, 20));
+        Assert.Equal(viewport, host.Axis.Viewport);
+        host.Window.MouseMove(point + new Vector(20, 0));
+        host.Window.MouseUp(point + new Vector(20, 0), MouseButton.Left);
+        Assert.True(host.Axis.VerticalScrollBar.IsEnabled);
+        Assert.Equal(last.Id, Assert.Single(host.Requests).ClipId);
+    }
+
     [Fact]
     public void OverlappingAndReverseTimedGroupsUseStableMinimalLanesRegardlessOfInputOrder()
     {
@@ -53,7 +150,7 @@ public sealed class KaraokeAxisLaneUiTests
     }
 
     [AvaloniaFact]
-    public void DragKeepsItsLaneUntilReleaseThenCommittedOverlapReallocatesAndVerticalPanReachesIt()
+    public void DragKeepsItsLaneUntilReleaseThenCommittedOverlapReallocatesIntoFullyVisibleRows()
     {
         var line = new SubtitleLine { Text = "ab", End = new(4), Karaoke = [Clip(0, 0, 1), Clip(1, 2, 3)] };
         using var host = new KaraokeAxisUiTestHost(line);
@@ -72,11 +169,13 @@ public sealed class KaraokeAxisLaneUiTests
         host.Replace(changed, clip.Id);
         Assert.Equal(1, host.Axis.ClipLanes[clip.Id]);
         Assert.True(host.Axis.GeometryFor(clip.Id).Body.Top >= 72);
+        Assert.Equal(138, host.Axis.Height);
+        Assert.False(host.Axis.VerticalScrollBar.IsVisible);
         var wheelPoint = host.Point(new(100, 40));
         host.Window.MouseWheel(wheelPoint, new(0, -3));
-        Assert.True(host.Axis.Viewport.VerticalOffset > 0);
+        Assert.Equal(0, host.Axis.Viewport.VerticalOffset);
         var moved = host.Axis.GeometryFor(clip.Id);
-        Assert.True(moved.Body.Center.Y < 66);
+        Assert.True(moved.Body.Bottom <= host.Axis.Bounds.Height - 22);
         host.Drag(moved.Body.Center, new(20, 0));
         Assert.Equal(2, host.Requests.Count);
     }

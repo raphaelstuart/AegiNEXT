@@ -4,6 +4,8 @@
 
 AegiNext retains its native expressive range. Import and export convert meaningful counterparts and report losses without a compatibility switch or changes to the project.
 
+See the [ASS tag audit](ass-tag-audit.md) for the four requested dimensions: native capability relationship, each conversion direction, implementation status, and remaining change size.
+
 ## Classification
 
 **Corresponding** means both formats have the same concept; **superset** means the native model also supports values or combinations unavailable in ASS; **missing** means native editing has no equivalent yet.
@@ -29,12 +31,22 @@ AegiNext retains its native expressive range. Import and export convert meaningf
 | `WrapStyle` / `\q` | Partial correspondence and gaps | Implemented lossless for no-wrap and explicit line-break semantics. Natural wrapping corresponds to q1, with font/algorithm differences. q0/q3 import as natural with a report; balanced wrapping is feasible but unimplemented. Grapheme export uses q1 with a report. |
 | Common whole-line numeric `\t` | Superset | Implemented lossless for representable spacing, stroke width, edge blur, scale, and Z-rotation parameters with linear/power/ordered timing. Mixed inline animation, complex independent axes, moving pivots, and appearance coupling have specific limits; other easing or cropped curves may use a reported linear approximation. |
 | Color animation | Superset | Generally not lossless: native interpolation uses linear RGBA, while ASS uses a different color space. Not currently imported as equivalent animation. |
-| `\k`, `\kf`/`\K`, `\ko` | Superset | Implemented lossless for ordinary syllable timing and modes. Independent before/after appearance, sweeps, and centisecond rounding have reported limits. |
+| `\k`, `\kf`/`\K`, `\ko`, `\kt` | Superset | Complete multi-character groups, independent endpoints, gaps, overlaps, and reverse order are preserved. Representable centisecond timing and modes convert without parameter loss; necessary `\kt` carries a player compatibility report. State edges, style runs within a group, inactive caches, and untimed state appearance have specific loss reports. |
 | Rectangle/vector clips | Superset | Implemented lossless for supported static geometry, inversion, and expressible rectangle animation. Other animation uses frame samples with rounding/sampling reports. |
 | `\p` vector drawing | Partial correspondence and gaps | Native Bézier shapes exist. Lossless single-contour conversion is feasible but unimplemented; mixed text/drawing and multiple contours lack a complete counterpart. Drawing commands are not imported as ordinary text. |
 | Opaque ASS background box | Missing | Corresponding rendering feasible, but complete box semantics are unimplemented and reported as omitted. |
 | Pseudo-3D X/Y rotation, shear, `\be` | Missing | Unimplemented; these infrequent features are outside the current priority scope. |
 | Native images, shapes, layer blur, HDR composition, scripts | Superset | Not generally convertible without loss. Complete projects and video export retain these capabilities. |
+
+## Fidelity repairs in this revision
+
+- Opening, previewing, editing, and saving imported multi-character groups no longer split them automatically. Explicit “Split into characters” or “Reset” redistributes time. Enabling highlighting also generates grapheme timing on first use when no timing records exist; existing records are retained or restored. Complete Unicode graphemes and original rational boundaries are retained. Legacy redistribution runs once while migrating v3–v10 projects to v11.
+- Empty `\c` / `\1c`–`\4c` reset RGB while retaining channel alpha. Empty alpha resets opacity; empty `\xshad` and `\yshad` reset only their axis, and empty `\an` / `\a` use the current reset style's alignment.
+- `ScaledBorderAndShadow: yes` uses target/PlayRes for border and shadow; `no` uses target/LayoutRes, with scale 1 and a report when LayoutRes is absent or incomplete. Shadow axes scale independently. Nonuniform border scaling uses a reported geometric-mean approximation, without additional changes to font, position, margins, or blur conversion.
+- Each group's start and end are quantized independently. Export retains out-of-window clocks and all text instead of pushing a group after its predecessor. Ordinary cumulative tags remain in use when sufficient; overlaps, reverse order, and pre-event clocks use `\kt`. Collapsed positive durations retain at least one centisecond with a report; values outside the player's 32-bit millisecond clock are rejected.
+- Karaoke, motion, fades, numeric transforms, and masks share the actual quantized event origin. Negative instantaneous visual transforms are retained. Zero-origin state changes avoid `\t(0,0,...)`, which libass interprets as a whole-event transition; unavailable hidden appearance is reported.
+
+Native shadows originate from filled glyphs, while ASS shadows include outlines; zero-offset ASS shadows also differ from a native composited layer. These remain reported lossy conversions without changing native project rendering. Untimed/inactive state appearance and cached inactive timing also receive loss reports because ordinary ASS body text cannot store them.
 
 ## Priority
 
@@ -55,4 +67,4 @@ Attachments, dialogue Effect fields, legacy encodings, and Aegisub project metad
 
 ## Evidence
 
-Tag semantics follow the [official Aegisub tag reference](https://aegisub.org/docs/latest/ass_tags/). Automated checks cover conversion parameters, clocks, evaluation, undo, persistence, rendering geometry, and UI. There is no independent libass pixel comparison, so pixel-identical conversion is not claimed.
+Tag semantics follow the [official Aegisub tag reference](https://aegisub.org/docs/latest/ass_tags/). Automated checks cover conversion parameters, clocks, evaluation, undo, persistence, rendering geometry, and UI. The optional [libass reference suite](../../Tests/AegiNext.Rendering.Tests/Reference/README.md) was also run against libass 0.17.2: 16 cases passed, comprising one runtime/font check, seven strict timing/color/alpha comparisons, five known-loss characterizations, and three oracle/negative controls. These checks confirm the tested behavior and the reported shadow differences; they do not establish pixel-identical conversion for every tag combination.

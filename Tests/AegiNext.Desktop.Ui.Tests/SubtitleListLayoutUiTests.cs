@@ -69,7 +69,6 @@ public sealed class SubtitleListLayoutUiTests
                 var previous = buttons[index - 1];
                 Assert.Equal(8, buttons[index].Bounds.X - previous.Bounds.Right);
             }
-
             Assert.DoesNotContain(filter.GetVisualDescendants().OfType<TextBlock>(),
                 text => text.IsEffectivelyVisible && !string.IsNullOrEmpty(text.Text));
 

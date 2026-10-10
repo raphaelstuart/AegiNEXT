@@ -43,7 +43,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
     private readonly ComboBox kind = new() { Name = "KaraokeHighlightKindInput", Width = 200 };
     private readonly ComboBox presets = new() { Name = "SelectionStylePresetCombo", Width = 200 };
     private readonly FontFamilyPicker selectionFont = new() { Name = "SelectionFontInput", Width = 200, RestoreOnEscape = false, CommitOnLostFocus = false };
-    private readonly ComboBox visualState = new() { Name = "SubtitleVisualStateInput", Width = 132 };
+    private readonly ComboBox visualState = new() { Name = "SubtitleVisualStateInput", Width = 180 };
     private readonly DraftPopup clipPopup = new() { OverlayDismissEventPassThrough = true,
         Placement = PlacementMode.BottomEdgeAlignedLeft, VerticalOffset = 4 };
     private readonly ToolbarToggleButton enableKaraoke = new() { Name = "EnableKaraokeToggle" };
@@ -88,11 +88,14 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         rich.TextEditRequested += OnTextEdit;
         rich.SelectionChanged += OnSelection;
         rich.RestoreRequested += (_, _) => coordinator.Restore("Text");
-        axis.ClipSelectionRequested += (_, e) =>
+        axis.SelectionRequested += (_, e) =>
         {
-            if (coordinator.SelectClip(e.ClipId) && coordinator.Line?.Karaoke.FirstOrDefault(value => value.Id == e.ClipId) is { } clip)
+            if (coordinator.SelectClips(e.SelectedClipIds, e.PrimaryClipId))
             {
-                SetTextSelection(clip.Utf16Start, clip.Utf16Start + clip.Utf16Length);
+                if (coordinator.Line?.Karaoke.FirstOrDefault(value => value.Id == e.PrimaryClipId) is { } clip)
+                {
+                    SetTextSelection(clip.Utf16Start, clip.Utf16Start + clip.Utf16Length);
+                }
                 Refresh();
             }
         };
@@ -135,7 +138,8 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
         };
         ConfigureToggle(snap, "Workbench.KaraokeSnap", WorkbenchIcon.Create("Magnet"), "Workbench.KaraokeSnapHint");
         ConfigureToggle(keepTimeLabels, "Workbench.KaraokeKeepTimeLabels", WorkbenchIcon.Create("Clock"), "Workbench.KaraokeKeepTimeLabelsHint");
-        ConfigureToggle(enableKaraoke, "Workbench.EnableKaraoke", IconLabel("Workbench.EnableKaraoke", "EnableHighlight"));
+        ConfigureToggle(enableKaraoke, "Workbench.EnableKaraoke", IconLabel("Workbench.EnableKaraoke", "EnableHighlight"),
+            "Workbench.EnableKaraokeHint");
         enableKaraoke.Width = double.NaN;
         enableKaraoke.Padding = new(8, 0);
         visualState.SelectionChanged += (_, _) =>
@@ -677,7 +681,8 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
                 selectionStart = selectionEnd = 0;
             }
             RefreshTimingControls(line);
-            axis.SetContent(line, line is null ? MediaTime.Zero : line.Start - coordinator.ContentOrigin, coordinator.SelectedClipId);
+            axis.SetContent(line, line is null ? MediaTime.Zero : line.Start - coordinator.ContentOrigin,
+                coordinator.SelectedClipId, coordinator.SelectedClipIds);
             var localTime = session.ProjectPosition - coordinator.ContentOrigin;
             rich.SetContent(coordinator.PreviewDocument, line, session.ProjectDirectory, localTime >= MediaTime.Zero ? localTime : MediaTime.Zero,
                 coordinator.VisualState switch
@@ -698,7 +703,7 @@ internal sealed partial class SubtitleDetailsPanelView : UserControl, IWorkbench
             ToolTip.SetTip(play, playbackHint);
             AutomationProperties.SetName(play, playbackHint);
             lastPlaybackState = coordinator.IsPlaying;
-            enableKaraoke.IsEnabled = line is not null && (!line.Karaoke.IsEmpty || !line.InactiveKaraoke.IsEmpty);
+            enableKaraoke.IsEnabled = line is { Text.Length: > 0 };
             enableKaraoke.IsChecked = coordinator.IsKaraokeEnabled;
             axis.IsVisible = line is not null;
             visualState.IsEnabled = line is not null;

@@ -24,7 +24,14 @@ public sealed class AssAppearanceWorkflowTests
         await context.Session.ExecuteCommandAsync(WorkbenchCommand.IMPORT_ASS);
 
         Assert.Null(context.Session.LastError);
-        Assert.StartsWith("Ass.BlurAppearance:", Assert.Single(context.Dialogs.ConversionDiagnostics), StringComparison.Ordinal);
+        Assert.Equal(border == 0 ? 1 : 2, context.Dialogs.ConversionDiagnostics.Count);
+        Assert.Single(context.Dialogs.ConversionDiagnostics, diagnostic =>
+            diagnostic.StartsWith("Ass.BlurAppearance:", StringComparison.Ordinal));
+        if (border > 0)
+        {
+            Assert.Single(context.Dialogs.ConversionDiagnostics, diagnostic =>
+                diagnostic.StartsWith("Ass.ShadowComposition:", StringComparison.Ordinal));
+        }
         var imported = context.Editor.Snapshot;
         var line = Assert.Single(imported.Subtitles);
         Assert.Equal(line.Id, context.Session.SelectedCueId);
